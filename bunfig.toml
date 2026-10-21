@@ -1,0 +1,5 @@
+[install]
+# One copy of each package for every workspace: drizzle's tables, queries and types must come from one drizzle-orm, and Bun's isolated
+# linker gives a workspace its own copy for every distinct set of optional peers it resolves (pg for the package and ID, @opentelemetry/api for
+# the Toolbox), which made their types incompatible.
+linker = "hoisted"

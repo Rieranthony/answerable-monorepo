@@ -1,11 +1,13 @@
 import { afterAll, expect, test } from "bun:test"
 import { defineMutation, defineProvider, defineTool } from "@answerable/mcp"
+import { rowsOf } from "@answerable/mcp-postgres/testing"
 import { z } from "zod"
 import { ingest, readCatalogue, writeCatalogue } from "./catalogue"
 import { serving } from "./test/database"
 
 const login = await serving()
 const { db } = login
+const query = rowsOf(db)
 afterAll(() => login.drop())
 
 const providerId = () => `c${crypto.randomUUID().slice(0, 8)}`
@@ -27,25 +29,25 @@ function provider(id: string, { version = "2026-09-29", title = "Search tickets"
   }))
   return defineProvider({ id, version, tools: [search, close, ...added] })
 }
-const rows = (id: string) => db`select identity, version, kind, risk, title, input -> 'required' as required from capabilities where provider_id = ${id} order by identity, version`
+const rows = (id: string) => query<{ identity: string; version: string; kind: string; risk: string | null; title: string | null; required: string[] }>`select identity, version, kind, risk, title, input -> 'required' as required from capabilities where provider_id = ${id} order by identity, version`
 
 test("ingest stores a provider's id and each capability, without the commit tools; a mutation's class is not stored, since its risk gives it", async () => {
   const id = providerId()
   await ingest(db, [provider(id)])
-  expect<unknown>(await db`select * from providers where id = ${id}`).toEqual([{ id }])
+  expect(await query`select * from providers where id = ${id}`).toEqual([{ id }])
   expect(await rows(id)).toEqual([
     { identity: `${id}/tickets.close`, version: "2026-09-29", kind: "mutate", risk: "high", title: null, required: ["id"] },
     { identity: `${id}/tickets.search`, version: "2026-09-29", kind: "read", risk: null, title: "Search tickets", required: ["query"] },
   ])
-  const columns = await db`select column_name from information_schema.columns where table_schema = current_schema() and table_name = 'capabilities' order by ordinal_position`
-  expect(columns.map((row: { column_name: string }) => row.column_name)).toEqual(["provider_id", "identity", "version", "kind", "risk", "title", "description", "input", "output", "search"])
+  const columns = await query`select column_name from information_schema.columns where table_schema = current_schema() and table_name = 'capabilities' order by ordinal_position`
+  expect(columns.map(row => row.column_name)).toEqual(["provider_id", "identity", "version", "kind", "risk", "title", "description", "input", "output", "search"])
 })
 
 test("a new title or description updates in place", async () => {
   const id = providerId()
   await ingest(db, [provider(id)])
   await ingest(db, [provider(id, { title: "Find tickets" })])
-  expect((await rows(id)).map((row: { title: string | null }) => row.title)).toEqual([null, "Find tickets"])
+  expect((await rows(id)).map(row => row.title)).toEqual([null, "Find tickets"])
 })
 
 test("a changed contract under the same version refuses the boot, naming the capability and what changed; a new version stands beside the old", async () => {
@@ -54,9 +56,9 @@ test("a changed contract under the same version refuses the boot, naming the cap
   await expect(ingest(db, [provider(id, { limit: 50 })])).rejects.toThrow(
     `Capability ${id}/tickets.search version 2026-09-29 changed its input without a new version; give the tool a new version (YYYY-MM-DD) in its definition or its provider`,
   )
-  expect((await rows(id)).map((row: { version: string }) => row.version)).toEqual(["2026-09-29", "2026-09-29"])
+  expect((await rows(id)).map(row => row.version)).toEqual(["2026-09-29", "2026-09-29"])
   await ingest(db, [provider(id, { limit: 50, version: "2026-10-01" })])
-  expect((await rows(id)).map((row: { identity: string; version: string }) => `${row.identity}@${row.version}`)).toEqual([
+  expect((await rows(id)).map(row => `${row.identity}@${row.version}`)).toEqual([
     `${id}/tickets.close@2026-09-29`, `${id}/tickets.close@2026-10-01`, `${id}/tickets.search@2026-09-29`, `${id}/tickets.search@2026-10-01`,
   ])
 })

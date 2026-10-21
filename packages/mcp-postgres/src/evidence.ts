@@ -1,14 +1,11 @@
-import type { SQL } from "bun"
-
-/** What an evidence event records. */
-type EvidenceKind =
-  | "capability.completed" | "capability.denied" | "intent.prepared" | "intent.approval_requested" | "intent.committed" | "intent.stale"
-  | "intent.expired" | "receipt.issued"
+import { and, eq, isNull, sql } from "drizzle-orm"
+import type { Executor } from "./connect"
+import { evidenceEvents, evidencePayloads, type evidenceKinds } from "./schema"
 
 /** One event, as the caller gives it; the chain adds `id`, `seq`, `occurred_at` and the hashes. Never inputs, results or secrets. */
 export type EvidenceEvent = {
   organisation_id: string
-  kind: EvidenceKind
+  kind: (typeof evidenceKinds)[number]
   actor_type: "user"
   actor_id: string
   outcome: "success" | "failure" | "denied"
@@ -32,7 +29,7 @@ export type EvidenceEvent = {
 
 const genesis = "0".repeat(64)
 const batch = 1000
-// The chained fields, in the order of the byte layout in migrations/0001_initial.sql.
+// The chained fields, in the order of the byte layout in sql/evidence-chain.sql.
 const chained = [
   "schema_version", "organisation_id", "seq", "id", "occurred_at", "kind", "actor_type", "actor_id", "client_id", "capability_identity", "capability_version",
   "execution_id", "intent_id", "receipt_id", "upstream", "outcome", "reason", "error_code", "request_id", "trace_id", "span_id", "data", "payload_ref",
@@ -47,20 +44,23 @@ const rowHash = (row: Row) => sha256(row.prev_hash + chained.map(name => field(r
 const payloadHolds = (row: Row) => row.payload_ref === null || (row.stored && (row.body === null || (sha256(row.body) === row.stored_hash && row.stored_hash === row.payload_hash)))
 
 /** An MCP server's evidence: `record` appends to an organisation's chain, `verify` recomputes it, `erase` removes a payload's body. */
-export function createEvidence(db: SQL) {
+export function createEvidence(db: Executor) {
   return {
     /** Append an event to its organisation's chain; the database assigns its `seq` and hashes. */
     async record({ payload, data = {}, ...fields }: EvidenceEvent): Promise<{ id: string; seq: number; payload_ref: string | null }> {
-      return db.begin(async tx => {
-        const row: Record<string, unknown> = { id: Bun.randomUUIDv7(), ...fields, data }
+      return db.transaction(async tx => {
+        // The chain's trigger assigns seq and the hashes before the row is written; the insert's type asks for them.
+        const row: typeof evidenceEvents.$inferInsert = { id: Bun.randomUUIDv7(), ...fields, data, seq: 0, prev_hash: "", row_hash: "" }
         if (payload) {
-          const [stored] = await tx`insert into evidence_payloads (id, organisation_id, body, hash)
-            select ${Bun.randomUUIDv7()}, ${fields.organisation_id}, body, encode(sha256(convert_to(body::text, 'UTF8')), 'hex') from (select ${payload}::jsonb as body) as payload
-            returning id, hash`
-          Object.assign(row, { payload_ref: stored.id, payload_hash: stored.hash })
+          // The hash is over the body as Postgres prints it, which is how verify reads it back.
+          const [stored] = await tx.insert(evidencePayloads).values({
+            id: Bun.randomUUIDv7(), organisation_id: fields.organisation_id, body: payload,
+            hash: sql`encode(sha256(convert_to(${JSON.stringify(payload)}::text::jsonb::text, 'UTF8')), 'hex')`,
+          }).returning({ id: evidencePayloads.id, hash: evidencePayloads.hash })
+          Object.assign(row, { payload_ref: stored!.id, payload_hash: stored!.hash })
         }
-        const [event] = await tx`insert into evidence_events ${tx(row)} returning id, seq::int as seq, payload_ref`
-        return event
+        const [event] = await tx.insert(evidenceEvents).values(row).returning({ id: evidenceEvents.id, seq: sql<number>`${evidenceEvents.seq}::int`, payload_ref: evidenceEvents.payload_ref })
+        return event!
       })
     },
     /**
@@ -71,15 +71,15 @@ export function createEvidence(db: SQL) {
       let previous = genesis
       let length = 0
       for (;;) {
-        const rows: (Row & { seq: string })[] = await db`
+        const { rows } = await db.execute<Row & { seq: string }>(sql`
           select event.prev_hash, event.row_hash, event.schema_version::text as schema_version, event.organisation_id::text as organisation_id,
             event.seq::text as seq, event.id::text as id, to_char(event.occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as occurred_at,
             event.kind, event.actor_type, event.actor_id, event.client_id, event.capability_identity, event.capability_version,
             event.execution_id::text as execution_id, event.intent_id::text as intent_id, event.receipt_id::text as receipt_id, event.upstream, event.outcome,
             event.reason, event.error_code, event.request_id, event.trace_id, event.span_id, event.data::text as data, event.payload_ref::text as payload_ref,
             event.payload_hash, payload.id is not null as stored, payload.hash as stored_hash, payload.body::text as body
-          from evidence_events as event left join evidence_payloads as payload on payload.id = event.payload_ref
-          where event.organisation_id = ${organisationId} and event.seq > ${length} order by event.seq limit ${batch}`
+          from ${evidenceEvents} as event left join ${evidencePayloads} as payload on payload.id = event.payload_ref
+          where event.organisation_id = ${organisationId} and event.seq > ${length} order by event.seq limit ${batch}`)
         for (const row of rows) {
           length++
           if (Number(row.seq) !== length || row.prev_hash !== previous || row.row_hash !== rowHash(row) || !payloadHolds(row)) return { ok: false, length, broken_at: Number(row.seq) }
@@ -90,7 +90,7 @@ export function createEvidence(db: SQL) {
     },
     /** Remove a payload's body for good; its hash stays, so the chain still verifies. */
     async erase(payloadId: string) {
-      await db`update evidence_payloads set body = null, erased_at = now() where id = ${payloadId} and erased_at is null`
+      await db.update(evidencePayloads).set({ body: null, erased_at: sql`now()` }).where(and(eq(evidencePayloads.id, payloadId), isNull(evidencePayloads.erased_at)))
     },
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@answerable/acceptance",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "type": "module",
   "exports": {
@@ -20,6 +20,7 @@
     "@answerable/mcp-toolbox": "workspace:*",
     "@modelcontextprotocol/client": "2.1.0",
     "@playwright/test": "1.63.0",
+    "drizzle-orm": "0.45.4",
     "jose": "6.2.12",
     "zod": "4.6.5"
   },

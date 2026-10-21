@@ -2,13 +2,15 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import type { Intent, Receipt } from "@answerable/mcp"
 import { createEvidence } from "./evidence"
 import { createPostgresIntentStore } from "./intents"
-import { migrate, migrations } from "./migrate"
+import { migrate, migrationsFolder } from "./migrate"
 import { database } from "./test/database"
+import { refusalOf, rowsOf } from "./testing"
 
 const db = database.connect()
+const query = rowsOf(db)
 const evidence = createEvidence(db)
-beforeAll(() => migrate(db, [migrations]))
-afterAll(() => db.close())
+beforeAll(() => migrate(db, { folder: migrationsFolder }))
+afterAll(() => db.$client.end())
 const openStore = (now?: () => number) => createPostgresIntentStore(db, evidence, { now })
 
 const minute = 60_000
@@ -87,9 +89,10 @@ test("with an injected clock, get and transition mark a prepared or waiting inte
 test("without an injected clock, expiry follows the database's clock", async () => {
   const store = openStore()
   expect(Math.abs(store.now() - Date.now())).toBeLessThan(1000)
-  const [{ now }] = await db`select now()`
-  const past = intent({ expires_at: new Date(now.getTime() - 1).toISOString() }, now.getTime() - minute)
-  const future = intent({ expires_at: new Date(now.getTime() + minute).toISOString() })
+  const [{ now }] = await query<{ now: string }>`select to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as now`
+  const at = Date.parse(now)
+  const past = intent({ expires_at: new Date(at - 1).toISOString() }, at - minute)
+  const future = intent({ expires_at: new Date(at + minute).toISOString() })
   for (const stored of [past, future]) await store.insert(stored)
   expect((await store.get(past.intent_id))!.status).toBe("expired")
   expect((await store.get(future.intent_id))!.status).toBe("prepared")
@@ -98,9 +101,9 @@ test("without an injected clock, expiry follows the database's clock", async () 
 test("the table refuses an intent that expires before it was created, and a commit token hash that is not lower-case SHA-256 hex", async () => {
   const store = openStore()
   const at = Date.now()
-  await expect(store.insert(intent({ expires_at: new Date(at).toISOString() }, at))).rejects.toThrow('violates check constraint "intents_check"')
+  expect(await refusalOf(store.insert(intent({ expires_at: new Date(at).toISOString() }, at)))).toContain('violates check constraint "intents_check"')
   for (const commit_token_hash of ["A".repeat(64), "a".repeat(63), `act_${"a".repeat(60)}`]) {
-    await expect(store.insert(intent({ commit_token_hash }))).rejects.toThrow('violates check constraint "intents_commit_token_hash_check"')
+    expect(await refusalOf(store.insert(intent({ commit_token_hash })))).toContain('violates check constraint "intents_commit_token_hash_check"')
   }
 })
 
@@ -120,7 +123,7 @@ test("an insert sweeps the table at most once a minute: what can no longer be co
   const mine = [open, lapsed, waiting, ...settled, running, committed]
   for (const item of mine) await store.insert(item)
   // As stored, without expiring anything.
-  const present = async () => Promise.all(mine.map(async item => (await db`select status from intents where intent_id = ${item.intent_id}`)[0]?.status ?? null))
+  const present = async () => Promise.all(mine.map(async item => (await query`select status from intents where intent_id = ${item.intent_id}`)[0]?.status ?? null))
   clock = start + 59_999
   await store.insert(intent({ expires_at: later(2 * day) }, start))
   expect(await present()).toEqual(["prepared", "prepared", "awaiting_approval", "expired", "failed", "stale", "committing", "committed"])
@@ -133,10 +136,11 @@ test("an insert sweeps the table at most once a minute: what can no longer be co
 })
 
 // Evidence: every step of an intent, in the organisation's chain.
-const events = (organisation: string) => db`select kind, outcome, actor_id, client_id, capability_identity, capability_version, intent_id::text, receipt_id::text, data,
+type Event = Record<"kind" | "outcome" | "actor_id" | "client_id" | "capability_identity" | "capability_version", string> & Record<"intent_id" | "receipt_id" | "payload_ref" | "payload_hash", string | null> & { data: unknown }
+const events = (organisation: string) => query<Event>`select kind, outcome, actor_id, client_id, capability_identity, capability_version, intent_id::text, receipt_id::text, data,
     payload_ref::text, payload_hash from evidence_events where organisation_id = ${organisation} order by seq`
-const kinds = async (organisation: string) => (await events(organisation)).map((row: { kind: string }) => row.kind)
-const expiries = async (organisation: string) => (await events(organisation)).filter((row: { kind: string }) => row.kind === "intent.expired").map((row: { intent_id: string }) => row.intent_id)
+const kinds = async (organisation: string) => (await events(organisation)).map(row => row.kind)
+const expiries = async (organisation: string) => (await events(organisation)).filter(row => row.kind === "intent.expired").map(row => row.intent_id)
 
 test("an intent's preparation is evidence: its preview stored beside the chain by hash, and a human-class intent's approval request", async () => {
   const store = openStore()
@@ -149,7 +153,7 @@ test("an intent's preparation is evidence: its preview stored beside the chain b
     capability_version: "2026-09-29", intent_id: agent.intent_id, receipt_id: null, data: { policy_class: "controlled" },
     payload_ref: expect.any(String), payload_hash: expect.stringMatching(/^[0-9a-f]{64}$/),
   })
-  expect<unknown>(await db`select body, hash from evidence_payloads where id = ${prepared.payload_ref}`).toEqual([{ body: agent.preview, hash: prepared.payload_hash }])
+  expect(await query`select body, hash from evidence_payloads where id = ${prepared!.payload_ref}`).toEqual([{ body: agent.preview, hash: prepared!.payload_hash }])
   await store.insert(intent({ organisation_id: organisation, policy_class: "human", status: "awaiting_approval" }))
   expect(await kinds(organisation)).toEqual(["intent.prepared", "intent.prepared", "intent.approval_requested"])
   expect(await evidence.verify(organisation)).toEqual({ ok: true, length: 3 })
@@ -168,7 +172,7 @@ test("a commit is evidence when it ends committed, with the receipt, or stale; c
   await store.transition(stale.intent_id, "committing", "stale")
   await store.transition(failed.intent_id, "committing", "failed")
   const rows = (await events(organisation)).slice(3)
-  expect(rows.map((row: { kind: string; intent_id: string; receipt_id: string | null }) => [row.kind, row.intent_id, row.receipt_id])).toEqual([
+  expect(rows.map(row => [row.kind, row.intent_id, row.receipt_id])).toEqual([
     ["intent.committed", committed.intent_id, issued.receipt_id], ["receipt.issued", committed.intent_id, issued.receipt_id], ["intent.stale", stale.intent_id, null],
   ])
   expect(await evidence.verify(organisation)).toEqual({ ok: true, length: 6 })

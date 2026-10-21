@@ -1,15 +1,16 @@
 import { afterAll, afterEach, expect, setSystemTime, spyOn, test } from "bun:test"
-import { SQL } from "bun"
 import { createIdAdmin } from "@answerable/id-admin"
 import { createFakeId } from "@answerable/id-admin/testing"
 import { errorOf, type TestMcp } from "@answerable/mcp/testing"
-import { createEvidence } from "@answerable/mcp-postgres"
+import { connect, createEvidence } from "@answerable/mcp-postgres"
+import { rowsOf } from "@answerable/mcp-postgres/testing"
 import { createAdminMcp } from "./admin"
 import { createAdmin, resource, seed, type FakeId } from "./test/admin"
 import { serving } from "./test/database"
 
 const login = await serving()
 const { db } = login
+const query = rowsOf(db)
 afterAll(() => login.drop())
 const admins: Awaited<ReturnType<typeof createAdmin>>[] = []
 afterEach(async () => {
@@ -33,7 +34,7 @@ const ownerTools = [
 ]
 type Event = Record<"kind" | "outcome" | "actor_id" | "client_id" | "capability_identity" | "capability_version", string> &
   Record<"reason" | "error_code" | "upstream" | "execution_id" | "request_id", string | null> & { data: Record<string, unknown> }
-const events = (platform: string): Promise<Event[]> => db`
+const events = (platform: string) => query<Event>`
   select kind, outcome, actor_id, client_id, capability_identity, capability_version, reason, error_code, data, execution_id::text, request_id, upstream
   from evidence_events where organisation_id = ${platform} order by seq`
 const accessReads = (id: { received: { request: string }[] }) => id.received.filter(({ request }) => request.endsWith("/access")).length
@@ -158,7 +159,7 @@ test("every call leaves one evidence row on the platform organisation's chain, a
 })
 
 test("health answers ok only while the database answers", async () => {
-  const own = new SQL({ url: login.url, max: 1 })
+  const own = connect(login.url, { max: 1 })
   const id = createFakeId({ clientId: "admin-mcp" })
   const server = createAdminMcp({ auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(id.config), platform: id.organizationId })
   const health = async () => {
@@ -166,7 +167,7 @@ test("health answers ok only while the database answers", async () => {
     return [response.status, await response.json()]
   }
   expect(await health()).toEqual([200, { status: "ok" }])
-  await own.close()
+  await own.$client.end()
   expect(await health()).toEqual([503, { status: "unavailable" }])
 })
 

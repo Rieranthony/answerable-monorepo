@@ -1,6 +1,7 @@
 import { afterAll, afterEach, expect, test } from "bun:test"
 import { defineProvider, defineTool, manifest, type Provider } from "@answerable/mcp"
 import { errorOf } from "@answerable/mcp/testing"
+import { rowsOf } from "@answerable/mcp-postgres/testing"
 import { z } from "zod"
 import { writeCatalogue, writeHostClient } from "./catalogue"
 import { serving } from "./test/database"
@@ -8,6 +9,7 @@ import { createHub, e2e, names, type Client, type Hub } from "./test/hub"
 
 const login = await serving()
 const { db } = login
+const query = rowsOf(db)
 afterAll(() => login.drop())
 const hubs: Hub[] = []
 afterEach(async () => { await Promise.all(hubs.splice(0).map(hub => hub.mcp.close())) })
@@ -30,7 +32,8 @@ async function call(client: Client, name: string, args: Record<string, unknown>)
   return result.structuredContent as Record<string, unknown>
 }
 const refusal = async (client: Client, name: string, args: Record<string, unknown>) => errorOf(await client.callTool({ name, arguments: args }))
-const events = (organisation: string) => db`select kind, outcome, capability_identity, error_code, reason, intent_id::text from evidence_events where organisation_id = ${organisation} order by seq`
+type Event = Record<"kind" | "outcome" | "capability_identity", string> & Record<"error_code" | "reason" | "intent_id", string | null>
+const events = (organisation: string) => query<Event>`select kind, outcome, capability_identity, error_code, reason, intent_id::text from evidence_events where organisation_id = ${organisation} order by seq`
 // 41 reads: one more than the default direct limit.
 const wide = defineProvider({ id: "wide", version: "2026-09-29", tools: Array.from({ length: 41 }, (_, index) => defineTool({
   name: `items.get${index}`, description: `Read item ${index} of the wide fixture; it changes nothing.`, input: z.object({}), output: z.object({}), async execute() { return {} },
@@ -160,7 +163,7 @@ test("toolbox_prepare prepares a mutation as its direct prepare tool would, and 
   expect(await call(client, "toolbox_commit_confirmed", { intent_id: remove.intent_id, commit_token: remove.commit_token, preview_summary: remove.preview.summary })).toMatchObject({ status: "committed", results: { deleted: true } })
   expect(await refusal(client, "toolbox_prepare", { identity: "e2e/records.list" })).toMatchObject({ code: "INVALID_INPUT", message: "e2e/records.list is a read; run it with toolbox_execute" })
   expect(await refusal(client, "toolbox_prepare", { identity: "e2e/records.create", arguments: {} })).toMatchObject({ code: "INVALID_INPUT", details: { field_violations: [{ field: "title" }] } })
-  const kinds = (await events(alpha.organizationId)).map((row: { kind: string; capability_identity: string }) => `${row.kind} ${row.capability_identity}`)
+  const kinds = (await events(alpha.organizationId)).map(row => `${row.kind} ${row.capability_identity}`)
   expect(kinds).toEqual([
     "capability.completed e2e/records.create", "intent.prepared e2e/records.create", "capability.completed e2e/records.create",
     "intent.committed e2e/records.create", "receipt.issued e2e/records.create", "capability.completed toolbox/commit",

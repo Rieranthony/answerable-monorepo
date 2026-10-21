@@ -1,7 +1,8 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { SQL } from "bun"
+import { connect, type Database } from "@answerable/mcp-postgres"
+import { sql } from "drizzle-orm"
 import { z } from "zod"
 import { addDomain, createAdmin, setSsoProvider } from "./admin"
 import { cleanup, onCleanup } from "./cleanup"
@@ -122,16 +123,16 @@ export async function createDatabase(name: string) {
   const postgres = "postgres://answerable:answerable@127.0.0.1:47532"
   const role = `${name}_runtime`
   const password = crypto.randomUUID().replaceAll("-", "")
-  const server = new SQL({ url: `${postgres}/answerable_id_test`, max: 1 })
+  const server = connect(`${postgres}/answerable_id_test`, { max: 1 })
   try {
-    await server.unsafe(`create database ${name}`)
+    await server.execute(sql.raw(`create database ${name}`))
     // CREATE ROLE takes no parameters; the name is the caller's and the password is generated here.
-    await server.unsafe(`create role ${role} login password '${password}' nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls`)
+    await server.execute(sql.raw(`create role ${role} login password '${password}' nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls`))
   } finally {
-    await server.close()
+    await server.$client.end()
   }
-  const owner = new SQL({ url: `${postgres}/${name}`, max: 4 })
-  const runtime = new SQL({ url: `postgres://${role}:${password}@127.0.0.1:47532/${name}`, max: 4 })
-  onCleanup(() => Promise.all([owner.close(), runtime.close()]))
+  const owner: Database = connect(`${postgres}/${name}`, { max: 4 })
+  const runtime: Database = connect(`postgres://${role}:${password}@127.0.0.1:47532/${name}`, { max: 4 })
+  onCleanup(() => Promise.all([owner.$client.end(), runtime.$client.end()]))
   return { owner, runtime, role }
 }

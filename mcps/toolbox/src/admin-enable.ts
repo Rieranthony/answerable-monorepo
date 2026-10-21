@@ -1,6 +1,6 @@
-import type { SQL } from "bun"
 import { found, IdError, pages, type IdAdmin } from "@answerable/id-admin"
 import type { Provider } from "@answerable/mcp"
+import type { Database } from "@answerable/mcp-postgres"
 import { z } from "zod"
 import { readCatalogue, writeCatalogue } from "./catalogue"
 import { allowedScopes } from "./grants"
@@ -34,7 +34,7 @@ function exists(row: Row | undefined, needed: readonly string[], label: string, 
  * It reads what ID holds first, stops on a row that does not fit, then creates what is missing in order: the Toolbox resource's allowed scopes, then for each
  * host client its link and the organisation's login and `toolbox` capabilities and entitlements, then the catalogue rows. Repeating it changes nothing.
  */
-export function createEnable({ db, providers, id, resource }: { db: SQL; providers: readonly Provider[]; id: IdAdmin; resource: string }) {
+export function createEnable({ db, providers, id, resource }: { db: Database; providers: readonly Provider[]; id: IdAdmin; resource: string }) {
   const at = `/resources/${encodeURIComponent(resource)}`
   const mounted = new Map(providers.map(provider => [provider.id, provider]))
   // Every row of one of ID's paged lists.

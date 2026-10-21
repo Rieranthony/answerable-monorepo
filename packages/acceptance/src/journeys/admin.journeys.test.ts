@@ -2,6 +2,7 @@
 // organisation through the tools, and its person uses the Toolbox. The registrations are the ones the admin MCP's setup page shows (`startAdminStack`).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { createEvidence } from "@answerable/mcp-postgres"
+import { rowsOf } from "@answerable/mcp-postgres/testing"
 import { errorOf } from "@answerable/mcp/testing"
 import type { Client } from "@modelcontextprotocol/client"
 import type { BrowserContext } from "@playwright/test"
@@ -109,7 +110,7 @@ async function until(wanted: string[]) {
   return Math.round(performance.now() - started)
 }
 
-const chain = (): Promise<Row[]> => stack.database`select seq::int as seq, kind, outcome, capability_identity, execution_id::text as execution_id, intent_id::text as intent_id,
+const chain = () => rowsOf(stack.database)<Row>`select seq::int as seq, kind, outcome, capability_identity, execution_id::text as execution_id, intent_id::text as intent_id,
   receipt_id::text as receipt_id, actor_id, reason, error_code, upstream, data from evidence_events where organisation_id = ${platformOrganization()} order by seq`
 
 /** ID's audit row of one operation, through the admin MCP's `audit_list` and through ID's admin API as root: the same single row, written by the machine client with the commit's execution id as `requestId`, which the commit call's own evidence row carries. */
@@ -330,7 +331,7 @@ describe("A8 tool-level access", () => {
     expect(await tool(toolbox, "toolbox_whoami")).toMatchObject({ grants: ["e2e/records.list"], capabilities: [{ identity: "e2e/records.list", kind: "read", policy_class: null }] })
     expect(await tool(toolbox, "e2e_records_list")).toEqual({ items: [], next_cursor: null, has_more: false })
     await expect(toolbox.callTool({ name: "e2e_records_show", arguments: {} })).rejects.toThrow("Tool e2e_records_show not found")
-    const denied = await stack.toolboxDatabase`select kind, outcome, capability_identity, reason from evidence_events where organisation_id = ${newco.organizationId} and kind = 'capability.denied'`
+    const denied = await rowsOf(stack.toolboxDatabase)`select kind, outcome, capability_identity, reason from evidence_events where organisation_id = ${newco.organizationId} and kind = 'capability.denied'`
     expect(denied).toEqual([{ kind: "capability.denied", outcome: "denied", capability_identity: "e2e/records.show", reason: "not granted" }])
   })
 
@@ -392,7 +393,7 @@ describe("A4 refusals", () => {
       ["admin/organisations.list", "role_below_minimum", { held: null, needed: "team" }],
       ["admin/organisations.disable", "role_below_minimum", { held: "admin", needed: "owner" }],
     ])
-    const intents = async () => (await stack.database`select count(*)::int as n from intents where capability_identity = 'admin/groups.addmember'`)[0].n as number
+    const intents = async () => (await rowsOf(stack.database)`select count(*)::int as n from intents where capability_identity = 'admin/groups.addmember'`)[0]!.n as number
     const [before, members] = [await intents(), `/organizations/${platformOrganization()}/groups/${stack.groups.owner}/members`]
     const denied = await refusal(colleagueClient, "groups_addmember", { organizationId: platformOrganization(), groupId: stack.groups.owner, memberId: colleagueMember })
     expect(denied).toMatchObject({ code: "PERMISSION_DENIED", message: expect.stringContaining("owner's critical operation") })
@@ -505,7 +506,7 @@ describe("A7 evidence", () => {
     const commitsDone = new Set(rows.filter(row => row.kind === "capability.completed" && row.capability_identity === "admin/commit_confirmed" && row.outcome === "success").map(row => row.execution_id))
     for (const event of audit) expect(commitsDone.has(event.requestId), `${event.action} ${event.requestId}`).toBe(true)
     // Each committed intent that wrote to ID wrote once: the Toolbox's enable is the Toolbox's own writes, under its own client.
-    const [{ n }] = await stack.database`select count(*)::int as n from intents where status = 'committed' and capability_identity <> 'admin/toolbox.enable'`
+    const [{ n }] = await rowsOf(stack.database)<{ n: number }>`select count(*)::int as n from intents where status = 'committed' and capability_identity <> 'admin/toolbox.enable'`
     expect(new Set(audit.map(event => event.requestId)).size).toBe(n)
     for (const { tool: name, receipt } of writes.filter(write => write.tool !== "toolbox_enable")) {
       // staff_revoke leaves each group in turn, one operation each.

@@ -1,13 +1,15 @@
-import { SQL } from "bun"
-import { migrate, migrations } from "../src/migrate"
+import { sql } from "drizzle-orm"
+import { connect } from "../src/connect"
+import { migrate, migrationsFolder } from "../src/migrate"
 import { database } from "../src/test/database"
 
-// Reset the test database's public schema and apply this package's migrations. The tests that need a database start from this.
+// Reset the test database and apply this package's migrations. The tests that need a database start from this.
 database.assertDisposable("reset")
-const db = new SQL({ url: database.url, max: 1 })
+const db = connect(database.url, { max: 1 })
 try {
-  await db.unsafe("drop schema public cascade; create schema public").simple()
-  console.log(`Migrated ${new URL(database.url).pathname.slice(1)}: ${(await migrate(db, [migrations])).join(", ")}`)
+  await db.execute(sql.raw("drop schema public cascade; drop schema if exists drizzle cascade; create schema public"))
+  await migrate(db, { folder: migrationsFolder })
+  console.log(`Migrated ${new URL(database.url).pathname.slice(1)}`)
 } finally {
-  await db.close()
+  await db.$client.end()
 }

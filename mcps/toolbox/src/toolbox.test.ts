@@ -1,10 +1,10 @@
 import { afterAll, afterEach, expect, spyOn, test } from "bun:test"
-import { SQL } from "bun"
 import { createIdAdmin } from "@answerable/id-admin"
 import { createFakeId } from "@answerable/id-admin/testing"
 import { defineMutation, defineProvider, defineTool, type Provider } from "@answerable/mcp"
 import { errorOf } from "@answerable/mcp/testing"
-import { createEvidence } from "@answerable/mcp-postgres"
+import { connect, createEvidence } from "@answerable/mcp-postgres"
+import { rowsOf } from "@answerable/mcp-postgres/testing"
 import { z } from "zod"
 import { writeCatalogue } from "./catalogue"
 import { createMemoryTracer } from "./spans"
@@ -14,6 +14,7 @@ import { createToolbox } from "./toolbox"
 
 const login = await serving()
 const { db } = login
+const query = rowsOf(db)
 const evidence = createEvidence(db)
 afterAll(() => login.drop())
 const hubs: Hub[] = []
@@ -39,7 +40,8 @@ async function hub(providers?: Provider[]) {
   hubs.push(created)
   return created
 }
-const events = (organisation: string) => db`select kind, outcome, capability_identity, error_code, data, trace_id, span_id, execution_id::text, request_id, reason from evidence_events where organisation_id = ${organisation} order by seq`
+type Event = Record<"kind" | "outcome" | "capability_identity", string> & Record<"error_code" | "trace_id" | "span_id" | "execution_id" | "request_id" | "reason", string | null> & { data: Record<string, unknown> }
+const events = (organisation: string) => query<Event>`select kind, outcome, capability_identity, error_code, data, trace_id, span_id, execution_id::text, request_id, reason from evidence_events where organisation_id = ${organisation} order by seq`
 const everything = ["toolbox_whoami", "e2e_identity_get", "e2e_records_create", "e2e_records_delete", "e2e_records_list", "e2e_records_show", "toolbox_commit", "toolbox_commit_confirmed"]
 
 test("a member granted a provider sees toolbox_whoami, then its capabilities by provider, domain and operation, then the commit tools", async () => {
@@ -110,7 +112,7 @@ test("a token without the toolbox scope sees nothing, and each call is the unkno
   const client = await outsider.connect()
   expect(await names(client)).toEqual([])
   await expect(client.callTool({ name: "toolbox_whoami", arguments: {} })).rejects.toThrow("Tool toolbox_whoami not found")
-  expect((await events(outsider.organizationId)).map((event: { reason: string }) => event.reason)).toEqual(["no toolbox scope"])
+  expect((await events(outsider.organizationId)).map(event => event.reason)).toEqual(["no toolbox scope"])
 })
 
 test("every call leaves one evidence row and one span: a success with its size, a failure with its code", async () => {
@@ -122,13 +124,13 @@ test("every call leaves one evidence row and one span: a success with its size, 
   await client.callTool({ name: "e2e_records_delete", arguments: { id: crypto.randomUUID() } })
   await client.callTool({ name: "e2e_records_list", arguments: { limit: 0 } })
   const rows = await events(alpha.organizationId)
-  expect(rows.map((row: { outcome: string; error_code: string | null; capability_identity: string }) => [row.capability_identity, row.outcome, row.error_code])).toEqual([
+  expect(rows.map(row => [row.capability_identity, row.outcome, row.error_code])).toEqual([
     ["e2e/records.list", "success", null], ["e2e/records.delete", "failure", "NOT_FOUND"], ["e2e/records.list", "failure", "INVALID_INPUT"],
   ])
-  expect(rows[0].data).toEqual({ result_bytes: Buffer.byteLength(JSON.stringify(listed.structuredContent)) })
+  expect(rows[0]!.data).toEqual({ result_bytes: Buffer.byteLength(JSON.stringify(listed.structuredContent)) })
   const [first] = spans().filter(span => span.attributes["answerable.organisation.id"] === alpha.organizationId)
-  expect(rows[0]).toMatchObject({ trace_id: "4bf92f3577b34da6a3ce929d0e0e4736", span_id: first!.spanContext().spanId, execution_id: first!.attributes["gen_ai.tool.call.id"], request_id: first!.attributes["jsonrpc.request.id"] })
-  expect(first!.attributes).toMatchObject({ "answerable.outcome": "success", "answerable.result.bytes": rows[0].data.result_bytes, "answerable.client.name": "test-client" })
+  expect(rows[0]!).toMatchObject({ trace_id: "4bf92f3577b34da6a3ce929d0e0e4736", span_id: first!.spanContext().spanId, execution_id: first!.attributes["gen_ai.tool.call.id"], request_id: first!.attributes["jsonrpc.request.id"] })
+  expect(first!.attributes).toMatchObject({ "answerable.outcome": "success", "answerable.result.bytes": rows[0]!.data.result_bytes, "answerable.client.name": "test-client" })
   expect(spans().filter(span => span.attributes["answerable.organisation.id"] === alpha.organizationId).map(span => span.attributes["error.type"])).toEqual([undefined, "NOT_FOUND", "INVALID_INPUT"])
   expect(await evidence.verify(alpha.organizationId)).toEqual({ ok: true, length: 3 })
 })
@@ -143,7 +145,7 @@ test("a read's result above 100 KiB answers RESULT_TOO_LARGE, a failure in the e
     message: "The result of bulk/items.dump is 102401 bytes, above the 100 KiB limit (102400 bytes); narrow the request with limit, cursor or filters",
   })
   expect((await client.callTool({ name: "bulk_items_load", arguments: { size: 110_000 } })).structuredContent).toMatchObject({ commit_tool: "toolbox_commit" })
-  expect((await events(reader.organizationId)).map((row: { kind: string; outcome: string; error_code: string | null; data: unknown }) => [row.kind, row.outcome, row.error_code, row.data])).toEqual([
+  expect((await events(reader.organizationId)).map(row => [row.kind, row.outcome, row.error_code, row.data])).toEqual([
     ["capability.completed", "success", null, { result_bytes: 102_400 }], ["capability.completed", "failure", "RESULT_TOO_LARGE", {}],
     ["intent.prepared", "success", null, { policy_class: "agent" }], ["capability.completed", "success", null, { result_bytes: expect.any(Number) }],
   ])
@@ -158,8 +160,8 @@ test("intents live in Postgres and each transition is evidence; a commit call ha
   const args = { intent_id: intent.intent_id, commit_token: intent.commit_token }
   expect(errorOf(await client.callTool({ name: "toolbox_commit_confirmed", arguments: { ...args, preview_summary: "x" } })).code).toBe("APPROVAL_REQUIRED")
   const receipt = (await client.callTool({ name: "toolbox_commit", arguments: args })).structuredContent as { receipt_id: string }
-  expect<unknown>(await db`select status, receipt ->> 'receipt_id' as receipt_id from intents where intent_id = ${intent.intent_id}`).toEqual([{ status: "committed", receipt_id: receipt.receipt_id }])
-  const rows = await db`select kind, outcome, capability_identity, capability_version, error_code, intent_id::text, receipt_id::text from evidence_events where organisation_id = ${alpha.organizationId} order by seq`
+  expect(await query`select status, receipt ->> 'receipt_id' as receipt_id from intents where intent_id = ${intent.intent_id}`).toEqual([{ status: "committed", receipt_id: receipt.receipt_id }])
+  const rows = await query`select kind, outcome, capability_identity, capability_version, error_code, intent_id::text, receipt_id::text from evidence_events where organisation_id = ${alpha.organizationId} order by seq`
   const row = (kind: string, capability_identity: string, fields: object = {}) => ({
     kind, outcome: "success", capability_identity, capability_version: "2026-09-29", error_code: null, intent_id: intent.intent_id, receipt_id: null, ...fields,
   })
@@ -212,10 +214,10 @@ test("when ID cannot say what a member may use, a call answers UPSTREAM_UNAVAILA
 })
 
 test("health answers ok only while the database answers", async () => {
-  const own = new SQL({ url: login.url, max: 1 })
+  const own = connect(login.url, { max: 1 })
   const toolbox = await createToolbox({ providers: [], auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(createFakeId().config), spans: createMemoryTracer().tracer })
   expect(await (await toolbox.fetch(new Request("https://mcp.test/health"))).json()).toEqual({ status: "ok" })
-  await own.close()
+  await own.$client.end()
   const down = await toolbox.fetch(new Request("https://mcp.test/health"))
   expect(down.status).toBe(503)
   expect(await down.json()).toEqual({ status: "unavailable" })

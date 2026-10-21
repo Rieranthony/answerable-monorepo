@@ -1,24 +1,30 @@
 {
   "name": "@answerable/mcp-postgres",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./schema": "./src/schema.ts",
     "./testing": "./src/testing.ts"
   },
   "scripts": {
     "test": "bun run db:test:migrate && bun test",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src scripts --max-warnings 0",
+    "lint": "eslint src scripts drizzle.config.ts --max-warnings 0",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:test:migrate": "bun scripts/test-migrate.ts"
   },
   "dependencies": {
-    "@answerable/mcp": "workspace:*"
+    "@answerable/mcp": "workspace:*",
+    "drizzle-orm": "0.45.4",
+    "pg": "8.23.1"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
     "@types/bun": "1.3.1",
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "0.31.11",
     "eslint": "9.39.5",
     "typescript": "5.9.3",
     "typescript-eslint": "8.48.1"

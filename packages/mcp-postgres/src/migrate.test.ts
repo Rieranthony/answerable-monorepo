@@ -1,104 +1,147 @@
 import { afterAll, expect, test } from "bun:test"
-import { SQL } from "bun"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { appendFile, cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { pathToFileURL } from "node:url"
-import { migrate, migrations } from "./migrate"
+import { sql } from "drizzle-orm"
+import { generateDrizzleJson, generateMigration } from "drizzle-kit/api"
+import type { Database } from "./connect"
+import { createEvidence } from "./evidence"
+import { evidenceChainSql, legacyBaseline, migrate, migrationsFolder } from "./migrate"
+import * as schema from "./schema"
 import { database } from "./test/database"
+import { refusalOf, rowsOf } from "./testing"
 
 const db = database.connect()
-afterAll(() => db.close())
-
-const names = (rows: { name: string }[]) => rows.map(row => row.name)
+afterAll(() => db.$client.end())
 const sha256 = (text: string) => new Bun.CryptoHasher("sha256").update(text).digest("hex")
+const receipts = (on = db) => rowsOf(on)`select hash, created_at::text as created_at from drizzle.__drizzle_migrations order by id`
+const tables = async (on: Database) => (await rowsOf(on)`select table_name from information_schema.tables where table_schema = 'public' order by table_name`).map(row => row.table_name)
+/** The file this package's file migrator applied before drizzle, kept for the adoption test. */
+export const legacyFile = { name: "mcp-postgres/0001_initial.sql", url: new URL("test/legacy/0001_initial.sql", import.meta.url) }
 
-// A schema of its own, so that a test can start from nothing while the others share the public one. Its own pool rather than a reserved
-// connection: Bun 1.3.1 does not reject a failed transaction on a reserved connection, so a test could not see a migration fail.
-async function inSchema<T>(run: (scoped: SQL) => Promise<T>) {
-  const schema = `migrate_${crypto.randomUUID().replaceAll("-", "")}`
-  await db.unsafe(`create schema ${schema}`)
-  const scoped = new SQL({ url: database.url, max: 2, connection: { search_path: schema } })
-  try {
-    return await run(scoped)
-  } finally {
-    await scoped.close()
-    await db.unsafe(`drop schema ${schema} cascade`)
+/** What the file migrator did: its table, each file in its own transaction, recorded with the SHA-256 of its text. */
+export async function applyLegacy(on: Database, files: { name: string; url: URL }[]) {
+  await on.execute(sql`create table if not exists schema_migrations (name text primary key, checksum text not null, applied_at timestamptz not null default now())`)
+  for (const file of files) {
+    const text = await Bun.file(file.url).text()
+    await on.transaction(async tx => {
+      await tx.execute(sql.raw(text))
+      await tx.execute(sql`insert into schema_migrations (name, checksum) values (${file.name}, ${sha256(text)})`)
+    })
   }
 }
 
-// A directory of migrations named `name`, holding the files of `files`, and ways to rewrite or delete one of them.
-async function directory(name: string, files: Record<string, string>) {
-  const path = await mkdtemp(join(tmpdir(), "migrations-"))
-  const write = (file: string, sql: string) => writeFile(join(path, file), sql)
-  for (const [file, sql] of Object.entries(files)) await write(file, sql)
-  const drop = (file: string) => rm(join(path, file))
-  return { name, url: new URL(`${pathToFileURL(path).href}/`), write, drop, remove: () => rm(path, { recursive: true }) }
+/** Everything that defines a database's schema, as the catalogue prints it, and drizzle's receipts. */
+export async function describe(on: Database) {
+  const rows = rowsOf(on)
+  return {
+    columns: await rows`select table_schema, table_name, column_name, ordinal_position, data_type, is_nullable, column_default, is_generated, generation_expression
+      from information_schema.columns where table_schema in ('public', 'drizzle') order by table_schema, table_name, ordinal_position`,
+    constraints: await rows`select n.nspname as schema, c.conrelid::regclass::text as table, c.conname as name, pg_get_constraintdef(c.oid) as definition
+      from pg_constraint c join pg_namespace n on n.oid = c.connamespace where n.nspname in ('public', 'drizzle') order by 1, 2, 3`,
+    indexes: await rows`select schemaname, tablename, indexname, indexdef from pg_indexes where schemaname in ('public', 'drizzle') order by 1, 2, 3`,
+    triggers: await rows`select tgrelid::regclass::text as table, tgname as name, pg_get_triggerdef(oid) as definition from pg_trigger where not tgisinternal order by 1, 2`,
+    functions: await rows`select p.proname as name, pg_get_functiondef(p.oid) as definition from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' order by 1`,
+    receipts: await receipts(on),
+  }
 }
 
-test("the package's migrations apply once, recorded as mcp-postgres/<file> with the SHA-256 of their text, and a second run changes nothing", async () => {
-  await migrate(db, [migrations])
-  const before = await db`select name, checksum, applied_at from schema_migrations order by name`
-  expect(names(before)).toEqual(["mcp-postgres/0001_initial.sql"])
-  for (const row of before) expect(row.checksum).toBe(sha256(await Bun.file(new URL(row.name.split("/")[1], migrations.url)).text()))
-  expect(await migrate(db, [migrations])).toEqual([])
-  expect(await db`select name, checksum, applied_at from schema_migrations order by name`).toEqual(before)
-  const tables = await db`select table_name from information_schema.tables where table_schema = 'public' order by table_name`
-  expect(tables.map((row: { table_name: string }) => row.table_name)).toEqual(["evidence_events", "evidence_payloads", "intents", "schema_migrations"])
+test("the migrations apply once, each recorded by the hash of its text and its journal time, and a second run changes nothing", async () => {
+  await migrate(db, { folder: migrationsFolder })
+  const journal = JSON.parse(await readFile(join(migrationsFolder, "meta/_journal.json"), "utf8")) as { entries: { tag: string; when: number }[] }
+  const applied = await receipts()
+  expect(applied).toEqual(await Promise.all(journal.entries.map(async entry => ({ hash: sha256(await readFile(join(migrationsFolder, `${entry.tag}.sql`), "utf8")), created_at: String(entry.when) }))))
+  await migrate(db, { folder: migrationsFolder })
+  expect(await receipts()).toEqual(applied)
+  expect(await tables(db)).toEqual(["evidence_events", "evidence_payloads", "intents"])
 })
 
-test("two migrators on a fresh schema at once apply each file once, and both succeed", async () => {
-  await inSchema(async scoped => {
-    const applied = await Promise.all([migrate(scoped, [migrations]), migrate(scoped, [migrations])])
-    expect(applied.flat()).toEqual(["mcp-postgres/0001_initial.sql"])
-    expect(names(await scoped`select name from schema_migrations order by name`)).toEqual(["mcp-postgres/0001_initial.sql"])
-  })
+test("the schema matches the committed migrations, whose custom file is the evidence chain's SQL", async () => {
+  const folder = new URL("../drizzle/", import.meta.url)
+  const journal: { entries: { tag: string }[] } = await Bun.file(new URL("meta/_journal.json", folder)).json()
+  expect(journal.entries.map(({ tag }) => tag)).toEqual(["0000_initial", "0001_evidence_chain"])
+  expect((await readdir(folder)).filter(name => name.endsWith(".sql")).sort()).toEqual(journal.entries.map(({ tag }) => `${tag}.sql`))
+  expect((await readdir(new URL("meta/", folder))).filter(name => name.endsWith("_snapshot.json")).sort()).toEqual(journal.entries.map(({ tag }) => `${tag.split("_")[0]}_snapshot.json`))
+  expect((await Bun.file(new URL("meta/0000_snapshot.json", folder)).json()).prevId).toBe("00000000-0000-0000-0000-000000000000")
+  // Drizzle names snapshots by the migration number, without the SQL name; a custom migration keeps the snapshot before it.
+  const previous = await Bun.file(new URL("meta/0001_snapshot.json", folder)).json()
+  expect(await generateMigration(previous, generateDrizzleJson(schema, previous.id)), "Schema drifted from the committed migrations; run `bun run db:generate`").toEqual([])
+  expect(await Bun.file(new URL("0001_evidence_chain.sql", folder)).text()).toBe(evidenceChainSql)
+  expect(legacyBaseline).toEqual({ records: { [legacyFile.name]: sha256(await Bun.file(legacyFile.url).text()) }, entries: 2 })
 })
 
-test("directories apply in the order given and their files in the order of their names; one file name in two directories is two migrations", async () => {
-  // The second directory's file needs the first's tables, and its name sorts first.
-  const [shared, server] = await Promise.all([
-    directory("zeta", { "0002_more.sql": "create table more (id int primary key references base (id))", "0001_initial.sql": "create table base (id int primary key)", "notes.txt": "not SQL" }),
-    directory("alpha", { "0001_initial.sql": "create table uses (id int references more (id) on delete cascade)" }),
-  ])
+async function editJournal(folder: string, edit: (entries: { tag: string; when: number }[]) => void) {
+  const path = join(folder, "meta/_journal.json")
+  const journal = JSON.parse(await readFile(path, "utf8"))
+  edit(journal.entries)
+  await writeFile(path, JSON.stringify(journal))
+}
+
+test.each([
+  ["an applied file was edited", "drizzle/0001_evidence_chain.sql", (folder: string) => appendFile(join(folder, "0001_evidence_chain.sql"), "\n-- edited\n")],
+  ["an applied file was regenerated with a new journal time", "drizzle/0000_initial.sql", (folder: string) => editJournal(folder, entries => { entries[0]!.when += 1 })],
+  ["an applied file was removed", "the file applied as migration 2", (folder: string) => editJournal(folder, entries => { entries.pop() })],
+])("migration refuses, naming the file, when %s", async (_, file, change) => {
+  const folder = await mkdtemp(join(tmpdir(), "mcp-postgres-migrations-"))
   try {
-    await inSchema(async scoped => {
-      await expect(migrate(scoped, [server, shared])).rejects.toThrow('relation "more" does not exist')
-      expect(await migrate(scoped, [shared, server])).toEqual(["zeta/0001_initial.sql", "zeta/0002_more.sql", "alpha/0001_initial.sql"])
-      expect(await migrate(scoped, [shared, server])).toEqual([])
-      expect(names(await scoped`select name from schema_migrations order by name`)).toEqual(["alpha/0001_initial.sql", "zeta/0001_initial.sql", "zeta/0002_more.sql"])
-    })
-  } finally { await Promise.all([shared.remove(), server.remove()]) }
+    await cp(migrationsFolder, folder, { recursive: true })
+    await change(folder)
+    const applied = await receipts()
+    await expect(migrate(db, { folder })).rejects.toThrow(`Refusing to migrate: ${file} is not the migration this database applied`)
+    expect(await receipts()).toEqual(applied)
+  } finally {
+    await rm(folder, { recursive: true, force: true })
+  }
 })
 
-test("a file changed after it was applied refuses the run before anything applies, naming it", async () => {
-  const files = await directory("server", { "0001_initial.sql": "create table a (id int)" })
+test("a database the file migrator built is adopted without DDL: it equals a fresh one, and the chain its triggers built still verifies", async () => {
+  const [legacy, fresh] = await Promise.all([database.scratch("legacy"), database.scratch("fresh")])
   try {
-    await inSchema(async scoped => {
-      await migrate(scoped, [files])
-      await files.write("0001_initial.sql", "create table a (id int, name text)")
-      await files.write("0002_next.sql", "create table b (id int)")
-      await expect(migrate(scoped, [files])).rejects.toThrow("Migration server/0001_initial.sql changed after it was applied; restore it and put the change in a new file")
-      expect((await scoped`select table_name from information_schema.tables where table_schema = current_schema() order by 1`).map((row: { table_name: string }) => row.table_name)).toEqual(["a", "schema_migrations"])
-    })
-  } finally { await files.remove() }
+    await applyLegacy(legacy.db, [legacyFile])
+    const organisation = crypto.randomUUID()
+    const evidence = createEvidence(legacy.db)
+    const event = (kind: "intent.prepared" | "capability.completed", payload?: Record<string, unknown>) => evidence.record({ organisation_id: organisation, kind, actor_type: "user", actor_id: "ada", outcome: "success", payload })
+    const { payload_ref } = await event("intent.prepared", { summary: "Delete" })
+    await event("capability.completed")
+    await migrate(legacy.db, { folder: migrationsFolder, legacy: legacyBaseline })
+    await migrate(fresh.db, { folder: migrationsFolder })
+    expect(await describe(legacy.db)).toEqual(await describe(fresh.db))
+    expect(await tables(legacy.db)).toEqual(["evidence_events", "evidence_payloads", "intents"])
+    await evidence.erase(payload_ref!)
+    await event("capability.completed")
+    expect(await evidence.verify(organisation)).toEqual({ ok: true, length: 3 })
+    // A second run is an ordinary drizzle one, and changes nothing.
+    await migrate(legacy.db, { folder: migrationsFolder, legacy: legacyBaseline })
+    expect(await describe(legacy.db)).toEqual(await describe(fresh.db))
+  } finally {
+    await Promise.all([legacy.drop(), fresh.drop()])
+  }
 })
 
-test("a file applied and since gone from its directory refuses the run before anything applies, naming it; a directory not given is not checked", async () => {
-  const [files, other] = await Promise.all([
-    directory("server", { "0001_first.sql": "create table a (id int)", "0002_second.sql": "create table b (id int)" }),
-    directory("other", { "0001_initial.sql": "create table c (id int)" }),
-  ])
+test("adoption refuses a schema_migrations that is not exactly the legacy records, naming what differs, and one beside drizzle's receipts; without legacy, nothing is adopted", async () => {
+  const scratch = await database.scratch("refused")
   try {
-    await inSchema(async scoped => {
-      await migrate(scoped, [files, other])
-      await other.drop("0001_initial.sql")
-      expect(await migrate(scoped, [files])).toEqual([])
-      // Two applied files squashed into one, as a reset does.
-      await Promise.all([files.drop("0001_first.sql"), files.drop("0002_second.sql")])
-      await files.write("0001_initial.sql", "create table a (id int); create table b (id int)")
-      await expect(migrate(scoped, [files])).rejects.toThrow("Migration server/0001_first.sql was applied but its file is gone; restore it, or recreate the database")
-      expect((await scoped`select table_name from information_schema.tables where table_schema = current_schema() order by 1`).map((row: { table_name: string }) => row.table_name)).toEqual(["a", "b", "c", "schema_migrations"])
-    })
-  } finally { await Promise.all([files.remove(), other.remove()]) }
+    const on = scratch.db
+    const checksum = legacyBaseline.records[legacyFile.name]!
+    await applyLegacy(on, [legacyFile])
+    const refused = (problems: string) => `Refusing to adopt a database the file migrator built: ${problems}. Recreate a disposable database, or restore its files`
+    await on.execute(sql`update schema_migrations set checksum = 'f'`)
+    await expect(migrate(on, { folder: migrationsFolder, legacy: legacyBaseline })).rejects.toThrow(refused("mcp-postgres/0001_initial.sql was applied with another text"))
+    await on.execute(sql`update schema_migrations set name = 'mcp-postgres/0001_evidence.sql', checksum = ${checksum}`)
+    await expect(migrate(on, { folder: migrationsFolder, legacy: legacyBaseline })).rejects.toThrow(refused("mcp-postgres/0001_initial.sql was never applied; mcp-postgres/0001_evidence.sql is not a file the first 2 drizzle migrations reproduce"))
+    await on.execute(sql`update schema_migrations set name = ${legacyFile.name}`)
+    await on.execute(sql`insert into schema_migrations (name, checksum) values ('toolbox/0001_initial.sql', 'a')`)
+    await expect(migrate(on, { folder: migrationsFolder, legacy: legacyBaseline })).rejects.toThrow(refused("toolbox/0001_initial.sql is not a file the first 2 drizzle migrations reproduce"))
+    await on.execute(sql`delete from schema_migrations where name = 'toolbox/0001_initial.sql'`)
+    // Without legacy, the table is not looked at: drizzle tries its first migration against the tables that are there, and leaves its empty receipts table.
+    expect(await refusalOf(migrate(on, { folder: migrationsFolder }))).toBe('relation "evidence_events" already exists')
+    expect(await tables(on)).toEqual(["evidence_events", "evidence_payloads", "intents", "schema_migrations"])
+    expect(await receipts(on)).toEqual([])
+    await migrate(on, { folder: migrationsFolder, legacy: legacyBaseline })
+    expect(await tables(on)).toEqual(["evidence_events", "evidence_payloads", "intents"])
+    await on.execute(sql`create table schema_migrations (name text primary key, checksum text not null, applied_at timestamptz not null default now())`)
+    await expect(migrate(on, { folder: migrationsFolder, legacy: legacyBaseline })).rejects.toThrow("Refusing to migrate: schema_migrations, the file migrator's table, is beside drizzle's receipts; drop whichever is not this database's history")
+  } finally {
+    await scratch.drop()
+  }
 })

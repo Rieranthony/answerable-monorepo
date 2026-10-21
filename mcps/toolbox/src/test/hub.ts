@@ -1,9 +1,9 @@
 // The Toolbox in process, over the test database and a fake ID: members of fresh organisations to call its MCP endpoint, and staff to call its admin API.
-import type { SQL } from "bun"
 import { createIdAdmin } from "@answerable/id-admin"
 import { createFakeId } from "@answerable/id-admin/testing"
 import { defineMutation, defineProvider, defineTool, type Provider } from "@answerable/mcp"
 import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
+import type { Database } from "@answerable/mcp-postgres"
 import { createRecordStore } from "@answerable/mcp-e2e/records"
 import { createTestMcp } from "@answerable/mcp/testing"
 import { z } from "zod"
@@ -33,7 +33,7 @@ export function records(id: string, { version = "2026-09-29", extra = [] as stri
 /** A provider id no other test uses. */
 export const providerId = () => `a${crypto.randomUUID().slice(0, 8)}`
 
-export async function createHub(db: SQL, providers: readonly Provider[] = [e2e()], { secret, pageSize }: { secret?: string; pageSize?: number } = {}) {
+export async function createHub(db: Database, providers: readonly Provider[] = [e2e()], { secret, pageSize }: { secret?: string; pageSize?: number } = {}) {
   const id = createFakeId({ pageSize })
   const { tracer, spans } = createMemoryTracer()
   let toolbox!: Awaited<ReturnType<typeof createToolbox>>

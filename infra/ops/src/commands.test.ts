@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { existsSync, readFileSync, statSync } from "node:fs"
 import { X509Certificate } from "node:crypto"
 import type { Sql } from "./bootstrap"
-import { bunSql, main } from "./commands"
+import { main, pgSql } from "./commands"
 import { INTERMEDIATE, LEAF, ROOT } from "./test-certificates"
 import { fakeFetchChain, fakeIdAdmin, fakeKubernetes } from "./testing"
 
@@ -157,8 +157,8 @@ test("a failure is printed without its stack and exits 1", async () => {
   expect(signedOut.err).toStartWith("make-admin failed: No member of the platform organisation has the email you@answerable.org")
 })
 
-test("the database connection is Bun.SQL through connect, verifying the URL's sslrootcert, with one connection", async () => {
-  const database = bunSql("postgres://nobody:x@127.0.0.1:1/postgres")
+test("the database connection is a pg pool through connect, verifying the URL's sslrootcert, with one connection", async () => {
+  const database = pgSql("postgres://nobody:x@127.0.0.1:1/postgres")
   await expect(database.sql("select 1")).rejects.toThrow()
   await database.close()
 })

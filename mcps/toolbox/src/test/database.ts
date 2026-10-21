@@ -13,7 +13,7 @@ export async function serving() {
   try {
     await migrate(owner)
   } finally {
-    await owner.close()
+    await owner.$client.end()
   }
   return database.runtimeLogin(runtimeGrants)
 }

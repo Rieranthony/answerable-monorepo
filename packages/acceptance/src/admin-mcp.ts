@@ -2,10 +2,11 @@
 // The admin journeys and the admin lane both start from here, so what the page shows is what both run.
 import { createIdAdmin, type IdConfig } from "@answerable/id-admin"
 import { createAdminMcp } from "@answerable/mcp-admin/admin"
+import { migrate as migrateAdmin } from "@answerable/mcp-admin/migrate"
 import { readPlatform } from "@answerable/mcp-admin/platform"
 import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
 import { createRecordStore } from "@answerable/mcp-e2e/records"
-import { assertRuntimeRole, configureRuntimeRole, migrate, migrations, runtimeGrants } from "@answerable/mcp-postgres"
+import { assertRuntimeRole, configureRuntimeRole, runtimeGrants } from "@answerable/mcp-postgres"
 import { toolboxAdminResource } from "@answerable/mcp-toolbox/admin"
 import { migrate as migrateToolbox, runtimeGrants as toolboxGrants } from "@answerable/mcp-toolbox/migrate"
 import { startGrantsPoller } from "@answerable/mcp-toolbox/poller"
@@ -68,7 +69,7 @@ export async function startAdminStack(id: Id, { adminHost, toolboxHost, fetch }:
   const ids = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...machine, fetch })
   const learned = await readPlatform(ids)
   const adminDb = await createDatabase("answerable_admin_acceptance")
-  await migrate(adminDb.owner, [migrations])
+  await migrateAdmin(adminDb.owner)
   await configureRuntimeRole(adminDb.owner, adminDb.role, runtimeGrants)
   await assertRuntimeRole(adminDb.runtime)
 

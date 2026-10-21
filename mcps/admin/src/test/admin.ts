@@ -1,7 +1,7 @@
-import type { SQL } from "bun"
 import { createIdAdmin } from "@answerable/id-admin"
 import { createFakeId } from "@answerable/id-admin/testing"
 import { createTestMcp, type TestMcp } from "@answerable/mcp/testing"
+import type { Database } from "@answerable/mcp-postgres"
 import { createAdminMcp } from "../admin"
 
 /** The admin MCP's resource in the tests: the URL `createTestMcp` serves at, and the audience of every token it signs. */
@@ -85,7 +85,7 @@ export function seed(id: FakeId) {
 }
 
 /** The admin MCP in-process on a fake ID whose machine client belongs to the platform organisation, a fake Toolbox, and staff to sign in as. */
-export async function createAdmin(db: SQL, { freshSeconds }: { freshSeconds?: number } = {}) {
+export async function createAdmin(db: Database, { freshSeconds }: { freshSeconds?: number } = {}) {
   const id = createIdFake()
   const toolbox = createFakeToolbox(id)
   const platform = id.organizationId

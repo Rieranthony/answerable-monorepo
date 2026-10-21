@@ -12,7 +12,7 @@ const { databaseUrl, auth, hostname, port, id: idConfig, otlpEndpoint } = readTo
 const db = connect(databaseUrl)
 // Serve as the restricted runtime login only: the owner could drop the evidence triggers. Checked before the boot's ingest writes anything.
 await assertRuntimeRole(db).catch(async (error: Error) => {
-  await db.close()
+  await db.$client.end()
   console.error(`The Toolbox cannot start: ${error.message}`)
   process.exit(1)
 })
@@ -31,7 +31,7 @@ async function close() {
   poller.stop()
   await server.stop()
   await telemetry.shutdown()
-  await db.close()
+  await db.$client.end()
 }
 process.on("SIGINT", close)
 process.on("SIGTERM", close)

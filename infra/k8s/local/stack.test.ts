@@ -247,30 +247,27 @@ describe("inside the cluster", () => {
     expect(result.outcome).toStartWith("blocked")
   })
 
-  test("Postgres takes TLS only: Bun.SQL through connect verifies the server against the URL's sslrootcert; plain, a wrong authority and Bun alone fail", async () => {
+  test("Postgres takes TLS only: pg through connect verifies the server against the URL's sslrootcert; plain and a wrong authority fail", async () => {
     const result = await inPod("toolbox", "/app/mcps/toolbox", `
       import { connect } from "@answerable/mcp-postgres"
-      import { SQL } from "bun"
       const url = process.env.TOOLBOX_DATABASE_URL
       const probe = async db => {
-        try { const [row] = await db\`select ssl, current_user as login from pg_stat_ssl where pid = pg_backend_pid()\`; return "ssl=" + row.ssl + " as " + row.login }
+        try { const { rows: [row] } = await db.$client.query("select ssl, current_user as login from pg_stat_ssl where pid = pg_backend_pid()"); return "ssl=" + row.ssl + " as " + row.login }
         catch (error) { return "refused: " + error.message.split("\\n")[0] }
-        finally { await Promise.race([db.close({ timeout: 0 }).catch(() => {}), Bun.sleep(500)]) }
+        finally { await db.$client.end().catch(() => {}) }
       }
       const variant = change => { const parsed = new URL(url); change(parsed.searchParams); return parsed.toString() }
       console.log(JSON.stringify({
         verified: await probe(connect(url, { max: 1 })),
-        plaintext: await probe(new SQL({ url: variant(params => { params.set("sslmode", "disable"); params.delete("sslrootcert") }), max: 1 })),
+        plaintext: await probe(connect(variant(params => { params.set("sslmode", "disable"); params.delete("sslrootcert") }), { max: 1 })),
         wrongAuthority: await probe(connect(variant(params => params.set("sslrootcert", "/etc/ssl/extra/ca.pem")), { max: 1 })),
-        bunAlone: await probe(new SQL({ url, max: 1 })),
       }))
       process.exit(0)`)
     // The Toolbox serves as its restricted runtime login, which its migration provisioned.
     expect(result.verified).toBe("ssl=true as answerable_toolbox_runtime")
     expect(result.plaintext).toContain("no encryption")
     // The database presents its root with its certificate, so a wrong authority meets a self-signed root it does not trust.
-    expect(result.wrongAuthority).toMatch(/^refused: (self[- ]signed certificate in certificate chain|unable to verify)/)
-    expect(result.bunAlone).toStartWith("refused")
+    expect(result.wrongAuthority).toMatch(/^refused: .*(self[- ]signed|unable to (verify|get))/)
   })
 
   test("Postgres takes TLS only: pg in ID verifies the server with verify-full and the URL's sslrootcert; plain and a wrong authority fail", async () => {

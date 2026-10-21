@@ -6,11 +6,11 @@
 # (and crash on the read-only root filesystem) instead of letting the import fail as the library expects.
 ARG BUN_IMAGE=oven/bun:1.3.1-slim@sha256:86604aff15a156a8854137896af174e2d29e2310f9c9f1aa63de13882e25893d
 
-# The lockfile and every workspace's package.json, alone, so that the install layers change only when they do.
+# The lockfile, bunfig.toml (the linker) and every workspace's package.json, alone, so that the install layers change only when they do.
 FROM ${BUN_IMAGE} AS manifests
 WORKDIR /src
 COPY . .
-RUN find . -type f ! -name package.json ! -name bun.lock -delete && find . -depth -type d -empty -delete
+RUN find . -type f ! -name package.json ! -name bun.lock ! -name bunfig.toml -delete && find . -depth -type d -empty -delete
 
 FROM ${BUN_IMAGE} AS build
 WORKDIR /app

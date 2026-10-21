@@ -1,7 +1,7 @@
-import type { SQL } from "bun"
 import type { IdAdmin } from "@answerable/id-admin"
 import { createMcpServer, errorCodeOf, ToolError, type IdVerifierConfig, type Mutation, type Provider, type Served, type Tool, type UserPrincipal } from "@answerable/mcp"
-import { createEvidence, createPostgresIntentStore, type EvidenceEvent } from "@answerable/mcp-postgres"
+import { createEvidence, createPostgresIntentStore, type Database, type EvidenceEvent } from "@answerable/mcp-postgres"
+import { sql } from "drizzle-orm"
 import type { Tracer } from "@opentelemetry/api"
 import { createAdmin } from "./admin"
 import { ingest, readCatalogue, readHostClient, type Catalogue, type HostClient } from "./catalogue"
@@ -15,7 +15,7 @@ import { traced } from "./spans"
 export type ToolboxConfig = {
   providers: readonly Provider[]
   auth: IdVerifierConfig
-  db: SQL
+  db: Database
   /** ID's admin API as the Toolbox's machine client: `createIdAdmin(config)`, shared with `startGrantsPoller`. */
   id: IdAdmin
   /** Where spans go: `createTracer(endpoint).tracer`, or `createMemoryTracer().tracer` in tests. */
@@ -133,7 +133,7 @@ export async function createToolbox({ providers, auth, db, id, spans }: ToolboxC
       if (/^\/admin\/v1(\/|$)/.test(pathname)) return admin(request)
       if (request.method === "GET" && pathname === "/health") {
         try {
-          await db`select 1`
+          await db.execute(sql`select 1`)
           return Response.json({ status: "ok" })
         } catch {
           return Response.json({ status: "unavailable" }, { status: 503 })

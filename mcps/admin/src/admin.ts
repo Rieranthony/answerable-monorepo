@@ -1,7 +1,7 @@
-import type { SQL } from "bun"
 import type { IdAdmin } from "@answerable/id-admin"
 import { createMcpServer, errorCodeOf, ToolError, type IdVerifierConfig, type UserPrincipal } from "@answerable/mcp"
-import { createEvidence, createPostgresIntentStore, type EvidenceEvent } from "@answerable/mcp-postgres"
+import { createEvidence, createPostgresIntentStore, type Database, type EvidenceEvent } from "@answerable/mcp-postgres"
+import { sql } from "drizzle-orm"
 import { reauthenticationRequired } from "./fresh"
 import { createAdminProvider } from "./provider"
 import { createRoles } from "./roles"
@@ -10,7 +10,7 @@ import { createToolboxAdmin } from "./toolbox"
 /** What `createAdminMcp` takes: the ID issuer and resource to trust, the database, ID's admin API as the machine client, and the platform organisation's id. */
 export type AdminMcpConfig = {
   auth: IdVerifierConfig
-  db: SQL
+  db: Database
   /** ID's admin API as the admin MCP's machine client: `createIdAdmin(config)`. */
   id: IdAdmin
   /** The platform organisation's id, from `readPlatform(id)`. */
@@ -62,7 +62,7 @@ export function createAdminMcp({ auth, db, id, platform, freshSeconds = 1800, to
     async fetch(request: Request) {
       if (request.method === "GET" && new URL(request.url).pathname === "/health") {
         try {
-          await db`select 1`
+          await db.execute(sql`select 1`)
           return Response.json({ status: "ok" })
         } catch {
           return Response.json({ status: "unavailable" }, { status: 503 })

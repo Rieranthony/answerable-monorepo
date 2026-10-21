@@ -1,8 +1,7 @@
-import type { SQL } from "bun"
 import { createIdVerifier } from "@answerable/auth"
 import type { IdAdmin } from "@answerable/id-admin"
 import { manifest, type IdVerifierConfig, type Provider } from "@answerable/mcp"
-import type { createEvidence } from "@answerable/mcp-postgres"
+import type { createEvidence, Database } from "@answerable/mcp-postgres"
 import { z } from "zod"
 import { createEnable } from "./admin-enable"
 import { hostClientSettings, listHostClients, overridesSchema, readCatalogue, removeHostClient, writeCatalogue, writeHostClient } from "./catalogue"
@@ -33,7 +32,7 @@ function decode(part: string) {
  */
 export function createAdmin({ auth, db, providers, id, evidence }: {
   auth: IdVerifierConfig
-  db: SQL
+  db: Database
   /** The mounted providers, in the order `GET /providers` lists them. */
   providers: readonly Provider[]
   id: IdAdmin

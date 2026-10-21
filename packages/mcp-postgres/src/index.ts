@@ -1,5 +1,6 @@
-export { connect, type ConnectOptions } from "./connect"
+export { connect, type ConnectOptions, type Database, type Executor } from "./connect"
 export { createEvidence, type EvidenceEvent } from "./evidence"
 export { createPostgresIntentStore } from "./intents"
-export { migrate, migrations } from "./migrate"
+export { evidenceChainSql, legacyBaseline, migrate, type LegacyBaseline } from "./migrate"
 export { assertRuntimeRole, configureRuntimeRole, runtimeGrants, type Grant, type Privilege } from "./runtime-role"
+export { evidenceEvents, evidenceKinds, evidenceOutcomes, evidencePayloads, intents, intentStatuses, policyClasses } from "./schema"

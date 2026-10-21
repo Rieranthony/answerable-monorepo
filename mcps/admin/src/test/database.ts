@@ -1,5 +1,6 @@
-import { migrate, migrations, runtimeGrants } from "@answerable/mcp-postgres"
+import { runtimeGrants } from "@answerable/mcp-postgres"
 import { testDatabase } from "@answerable/mcp-postgres/testing"
+import { migrate } from "../db/migrate"
 
 /** The admin MCP's disposable test database, `answerable_admin_test` (`ADMIN_TEST_DATABASE_URL`). */
 export const database = testDatabase("answerable_admin_test", process.env.ADMIN_TEST_DATABASE_URL)
@@ -11,9 +12,9 @@ export const database = testDatabase("answerable_admin_test", process.env.ADMIN_
 export async function serving() {
   const owner = database.connect()
   try {
-    await migrate(owner, [migrations])
+    await migrate(owner)
   } finally {
-    await owner.close()
+    await owner.$client.end()
   }
   return database.runtimeLogin(runtimeGrants)
 }

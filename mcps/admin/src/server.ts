@@ -13,7 +13,7 @@ const platform = await readPlatform(id).catch((error: Error) => {
 const db = connect(databaseUrl)
 // Serve as the restricted runtime login only: the owner could drop the evidence triggers.
 await assertRuntimeRole(db).catch(async (error: Error) => {
-  await db.close()
+  await db.$client.end()
   console.error(`The admin MCP cannot start: ${error.message}`)
   process.exit(1)
 })
@@ -24,7 +24,7 @@ async function close() {
   if (closing) return
   closing = true
   await server.stop()
-  await db.close()
+  await db.$client.end()
 }
 process.on("SIGINT", close)
 process.on("SIGTERM", close)

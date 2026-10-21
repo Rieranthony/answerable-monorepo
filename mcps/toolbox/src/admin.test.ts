@@ -1,6 +1,5 @@
 import { afterAll, expect, spyOn, test } from "bun:test"
-import { SQL } from "bun"
-import { createEvidence } from "@answerable/mcp-postgres"
+import { connect, createEvidence } from "@answerable/mcp-postgres"
 import { toolboxAdminResource } from "./admin"
 import { serving } from "./test/database"
 import { adminResource, createHub, providerId, records, resource } from "./test/hub"
@@ -135,9 +134,9 @@ test("GET evidence/verify runs the organisation's chain check", async () => {
 })
 
 test("a failure the admin API did not expect answers 500 without its cause, and is logged", async () => {
-  const own = new SQL({ url: login.url, max: 1 })
+  const own = connect(login.url, { max: 1 })
   const { admin: call } = await createHub(own, [records(providerId())])
-  await own.close()
+  await own.$client.end()
   const log = spyOn(console, "error").mockImplementation(() => {})
   try {
     expect(await call("GET", "/host-clients")).toMatchObject({ status: 500, body: { error: { code: "internal_error", message: "The Toolbox failed to answer; its log says why" } } })

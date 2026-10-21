@@ -1,7 +1,7 @@
 // Real Answerable ID, a real browser and the official MCP OAuth client against the Toolbox, with the e2e provider mounted.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import type { SQL } from "bun"
-import { createEvidence } from "@answerable/mcp-postgres"
+import { createEvidence, type Database } from "@answerable/mcp-postgres"
+import { rowsOf } from "@answerable/mcp-postgres/testing"
 import { allowedScopes } from "@answerable/mcp-toolbox/grants"
 import type { Client } from "@modelcontextprotocol/client"
 import { decodeJwt } from "jose"
@@ -26,7 +26,9 @@ const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: t
 
 let id: Id
 let stack: Awaited<ReturnType<typeof startToolboxStack>>
-let db: SQL
+let db: Database
+const query = <T extends Record<string, unknown> = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]) => rowsOf(db)<T>(strings, ...values)
+type Event = Record<"kind" | "outcome" | "capability_identity", string> & Record<"execution_id" | "trace_id" | "span_id", string | null>
 let browser: Awaited<ReturnType<typeof launchBrowser>>
 const sessions = new Map<string, { organizationId: string; oauth: OAuthSession }>()
 let meta: OAuthSession
@@ -53,7 +55,7 @@ function session(slug: string) {
 const tenant = (slug: string) => id.manifest.tenants.find(entry => entry.slug === slug)!
 const clientFor = (slug: string, protocol: "2025" | "2026-07-28" = "2026-07-28") => connect(resource, session(slug).oauth.provider, protocol)
 const names = async (client: Client) => (await client.listTools()).tools.map(item => item.name)
-const events = (organisation: string) => db`select kind, outcome, capability_identity, execution_id::text as execution_id, trace_id, span_id from evidence_events where organisation_id = ${organisation} order by seq`
+const events = (organisation: string) => query<Event>`select kind, outcome, capability_identity, execution_id::text as execution_id, trace_id, span_id from evidence_events where organisation_id = ${organisation} order by seq`
 
 beforeAll(async () => {
   id = await startId({ tenants: tenants.map(({ slug, signIns }) => ({ slug, signIns })) })
@@ -135,8 +137,8 @@ describe("J1 direct list", () => {
     expect(await tool(await clientFor("toolbox-alpha"), "e2e_records_list")).toEqual({ items: [], next_cursor: null, has_more: false })
     const span = stack.spans().findLast(item => item.name === "tools/call e2e/records.list" && item.attributes["answerable.organisation.id"] === organizationId)!
     expect(span.attributes).toMatchObject({ "mcp.method.name": "tools/call", "gen_ai.tool.name": "e2e_records_list", "answerable.outcome": "success", "answerable.client.name": clientId })
-    const row = (await events(organizationId)).find((event: { execution_id: string }) => event.execution_id === span.attributes["gen_ai.tool.call.id"])
-    expect(row).toEqual({
+    const row = (await events(organizationId)).find(event => event.execution_id === span.attributes["gen_ai.tool.call.id"])
+    expect<unknown>(row).toEqual({
       kind: "capability.completed", outcome: "success", capability_identity: "e2e/records.list", execution_id: span.attributes["gen_ai.tool.call.id"],
       trace_id: span.spanContext().traceId, span_id: span.spanContext().spanId,
     })
@@ -175,9 +177,9 @@ describe("J6 human class", () => {
       // No approval.url: approval pages are Not yet.
       expect(refused.details).toEqual({ approval: { class: "human", commit_tool: "toolbox_commit_confirmed", status: "pending" } })
     }
-    expect<unknown>(await db`select status from intents where intent_id = ${intent.intent_id}`).toEqual([{ status: "awaiting_approval" }])
-    const kinds = await db`select kind from evidence_events where intent_id = ${intent.intent_id} order by seq`
-    expect(kinds.map((row: { kind: string }) => row.kind)).toEqual(["intent.prepared", "intent.approval_requested", "capability.completed"])
+    expect(await query`select status from intents where intent_id = ${intent.intent_id}`).toEqual([{ status: "awaiting_approval" }])
+    const kinds = await query`select kind from evidence_events where intent_id = ${intent.intent_id} order by seq`
+    expect(kinds.map(row => row.kind)).toEqual(["intent.prepared", "intent.approval_requested", "capability.completed"])
     step("toolbox-beta: the intent waits as awaiting_approval; the approval page is Not yet")
   })
 })
@@ -264,7 +266,7 @@ test("J2: disabling gamma's organisation stops refresh with invalid_grant", asyn
 
 describe("J10 evidence", () => {
   const alpha = () => session("toolbox-alpha").organizationId
-  const length = async () => (await db`select count(*)::int as events from evidence_events where organisation_id = ${alpha()}`)[0].events as number
+  const length = async () => (await query`select count(*)::int as events from evidence_events where organisation_id = ${alpha()}`)[0]!.events as number
 
   test("alpha's chain verifies: its calls, intents, commits and receipts", async () => {
     const events = await length()
@@ -275,10 +277,10 @@ describe("J10 evidence", () => {
 
 test("the grant cache answered most reads; what the Toolbox asked ID is logged for the evidence report", async () => {
   const latencies = asked.access.toSorted((a, b) => a - b)
-  const [chains] = await db`select count(*)::int as events, count(distinct organisation_id)::int as organisations from evidence_events`
+  const [chains] = await query<{ events: number; organisations: number }>`select count(*)::int as events, count(distinct organisation_id)::int as organisations from evidence_events`
   step(`grants: ${reads} reads, ${latencies.length} access-view calls to ID, hit rate ${((1 - latencies.length / reads) * 100).toFixed(1)}%`)
   step(`access view latency: median ${latencies[Math.floor(latencies.length / 2)]!.toFixed(1)} ms, max ${latencies.at(-1)!.toFixed(1)} ms`)
-  step(`other ID calls: ${asked.tokens} token requests, ${asked.polls} audit-log reads; evidence: ${chains.events} events in ${chains.organisations} chains`)
+  step(`other ID calls: ${asked.tokens} token requests, ${asked.polls} audit-log reads; evidence: ${chains!.events} events in ${chains!.organisations} chains`)
   expect(latencies.length).toBeLessThan(reads)
   // One machine client: a platform:read token for the grants reader and the poller, and a platform:read platform:write token for the enable calls.
   expect(asked.tokens).toBe(2)

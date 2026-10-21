@@ -20,12 +20,11 @@ type Deps = {
   error: (line: string) => void
 }
 
-/** The administrative connection: Bun.SQL through `connect`, so the URL's `sslrootcert` is verified (D5), one connection, statements outside a transaction. */
-export function bunSql(url: string) {
-  const db = connect(url, { max: 1 })
-  // A Bun.SQL query starts when awaited: awaiting it here hands callers an ordinary promise.
-  const sql: Sql = async (text, params = []) => await db.unsafe(text, params)
-  return { sql, close: () => db.close() }
+/** The administrative connection: a `pg` pool through `connect`, so the URL's `sslrootcert` is verified (D5), one connection, statements outside a transaction. */
+export function pgSql(url: string) {
+  const { $client: pool } = connect(url, { max: 1 })
+  const sql: Sql = async (text, params = []) => (await pool.query(text, params)).rows
+  return { sql, close: () => pool.end() }
 }
 
 const COMMANDS = ["bootstrap", "register", "make-admin"] as const
