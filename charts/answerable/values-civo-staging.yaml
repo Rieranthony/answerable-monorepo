@@ -17,6 +17,11 @@ id:
     - https://oauth2.googleapis.com
     - https://www.googleapis.com
     - https://openidconnect.googleapis.com
+  # The staff email domain and the staff directory's Microsoft Entra tenant, the ones the local ID setup uses. The
+  # register Job adds the domain to the platform organisation and connects the tenant through Answerable's Microsoft
+  # platform application, whose client ID and secret are the environment's MICROSOFT_* secrets, never values here.
+  staffDomain: omniaccelerator.ai
+  entraTenant: 999a3be8-1a6c-4f1f-beb1-d6f6c2114bc6
 
 toolbox:
   autoscaling: { enabled: true, minReplicas: 2, maxReplicas: 3 }

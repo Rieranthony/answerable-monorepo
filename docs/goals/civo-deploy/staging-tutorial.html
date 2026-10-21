@@ -123,8 +123,8 @@ footer { color: var(--muted); font-size: 13px; }
   <div class="details">
     <div class="eyebrow">Your details, to fill in the commands</div>
     <div class="row">
-      <label for="email">Your work email at answerable.org
-        <input id="email" type="email" autocomplete="off" spellcheck="false" placeholder="you@answerable.org">
+      <label for="email">Your work email at omniaccelerator.ai, the staff domain
+        <input id="email" type="email" autocomplete="off" spellcheck="false" placeholder="you@omniaccelerator.ai">
       </label>
       <label for="tenant">Your staff directory's Entra tenant ID
         <input id="tenant" type="text" autocomplete="off" spellcheck="false" placeholder="00000000-0000-0000-0000-000000000000">
@@ -231,13 +231,9 @@ footer { color: var(--muted); font-size: 13px; }
 
   <div class="step" data-step="4.3">
     <div class="title"><input type="checkbox" id="s4.3" aria-label="Done"><h3><span class="num">4.3</span>Tell the chart about the directory</h3><span class="time">3 min</span></div>
-    <p>In <code>charts/answerable/values-civo-staging.yaml</code>, under <code>id:</code>, set the staff domain and the tenant, commit and push to <code>main</code>. The register Job reads them on the first deploy and connects the directory to the platform organisation.</p>
-    <div class="cmd"><pre>cd ~/code/answerable &amp;&amp; git pull
-# edit charts/answerable/values-civo-staging.yaml, under id:
-#   staffDomain: answerable.org
-#   entraTenant: <span class="v" data-for="tenant">&lt;tenant ID&gt;</span>
-git commit -am "Name the staff directory for staging" &amp;&amp; git push origin main</pre></div>
-    <div class="expect"><b>You should see</b> the push's CI run start on GitHub. Neither value is a secret.</div>
+    <p>Done on 21 October 2026: <code>charts/answerable/values-civo-staging.yaml</code> names <code>omniaccelerator.ai</code> as the staff domain and the local ID setup's Entra tenant under <code>id:</code>, on <code>main</code>. The register Job reads them on the first deploy and connects the directory to the platform organisation. Neither value is a secret; the Microsoft client ID and secret are two of part 5's secrets.</p>
+    <div class="cmd"><pre>git -C ~/code/answerable show origin/main:charts/answerable/values-civo-staging.yaml | grep -A1 staffDomain</pre></div>
+    <div class="expect"><b>You should see</b> <code>staffDomain: omniaccelerator.ai</code> and the tenant ID. To add <code>answerable.org</code> as a second staff domain later: one POST to the platform organisation's <code>/domains</code> through the admin API; the SSO provider keeps one domain.</div>
   </div>
 </section>
 

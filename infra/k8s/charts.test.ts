@@ -201,9 +201,14 @@ describe("charts/answerable", () => {
         expect(env(register, "OPS_ADMIN_MCP_URL").value).toBe(env(named(manifests, "Deployment", "admin-mcp")!, "ADMIN_RESOURCE_URL").value.replace(/\/mcp$/, ""))
         const replicas = name === "values-local.yaml" ? 1 : 2
         expect(env(register, "OPS_START_DEPLOYMENTS").value).toBe(`toolbox=${replicas},admin-mcp=${replicas}`)
-        // No staff directory unless the overlay names one.
-        expect(env(register, "OPS_STAFF_DOMAIN")).toBeUndefined()
-        expect(env(register, "OPS_ENTRA_TENANT")).toBeUndefined()
+        // A staff directory only where the overlay names one: staging names the local ID setup's.
+        if (name === "values-civo-staging.yaml") {
+          expect(env(register, "OPS_STAFF_DOMAIN").value).toBe("omniaccelerator.ai")
+          expect(env(register, "OPS_ENTRA_TENANT").value).toMatch(/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
+        } else {
+          expect(env(register, "OPS_STAFF_DOMAIN")).toBeUndefined()
+          expect(env(register, "OPS_ENTRA_TENANT")).toBeUndefined()
+        }
         // make-admin calls only ID, with the root secret: no Kubernetes token, no Secret but id-env's.
         expect(podSpec(makeAdmin).serviceAccountName).toBeUndefined()
         expect(podSpec(makeAdmin).automountServiceAccountToken).toBe(false)
