@@ -1,0 +1,163 @@
+<title>Typed configuration</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Layout: one quiet column; the answer first, then one table per service, the decisions as a numbered list, small type, tight rows. */
+  :root {
+    --bg: #fbfbfa; --fg: #1d2129; --muted: #5d6675; --line: #e3e5e9; --soft: #f1f2f4;
+    --accent: #2f5d8a; --accent-soft: #e6eef6; --warn: #8a5a1f; --warn-soft: #f7efe2; --ok: #2e6b4a; --ok-soft: #e5f1ea;
+    --sans: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #15181d; --fg: #e4e6ea; --muted: #9aa3b1; --line: #2a2f37; --soft: #1c2026;
+    --accent: #8fb5dd; --accent-soft: #1f2a37; --warn: #d9a860; --warn-soft: #2b241a; --ok: #86c3a1; --ok-soft: #1a2a21; color-scheme: dark } }
+  :root[data-theme="dark"] {
+    --bg: #15181d; --fg: #e4e6ea; --muted: #9aa3b1; --line: #2a2f37; --soft: #1c2026;
+    --accent: #8fb5dd; --accent-soft: #1f2a37; --warn: #d9a860; --warn-soft: #2b241a; --ok: #86c3a1; --ok-soft: #1a2a21; color-scheme: dark }
+  body { background: var(--bg); color: var(--fg); font: 13.5px/1.5 var(--sans); padding-block: 32px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  main { max-width: 980px; margin: 0 auto; display: grid; gap: 28px; }
+  h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4px; text-wrap: balance; }
+  h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; text-wrap: balance; }
+  h3 { font-size: 13.5px; font-weight: 600; margin: 14px 0 4px; }
+  p { margin: 0 0 8px; max-width: 72ch; }
+  .meta { color: var(--muted); font-size: 12.5px; }
+  .lead { font-size: 14.5px; max-width: 76ch; }
+  section { display: grid; gap: 6px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  .scroll { overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td:first-child { white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
+  code { font: 12px var(--mono); background: var(--soft); padding: 1px 4px; border-radius: 3px; }
+  td code, li code { white-space: nowrap; }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  ol.decisions { padding-left: 0; margin: 0; list-style: none; display: grid; gap: 14px; }
+  ol.decisions > li { border-left: 3px solid var(--accent); padding-left: 14px; display: grid; gap: 4px; }
+  ol.decisions b { font-weight: 600; }
+  ul { margin: 0 0 6px; padding-left: 18px; }
+  li { margin: 2px 0; }
+  .numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .numbers div { border-top: 2px solid var(--line); padding-top: 6px; }
+  .numbers strong { display: block; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .numbers span { color: var(--muted); font-size: 12px; }
+  footer { color: var(--muted); font-size: 12px; }
+  footer a, a { color: var(--accent); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<main>
+  <header>
+    <h1>Typed configuration</h1>
+    <p class="meta">Asked on 21 October 2026 at step 6.1 of the staging tutorial: what the other variables and secrets are, what they default to, and whether the defaults should live in code with one typed place for secrets and settings. Every claim below was read from the tree at <code>e7bce746</code>; the file paths are in <code>docs/goals/typed-config/findings.md</code>. Nothing is coded yet.</p>
+  </header>
+
+  <section>
+    <h2>The short answer</h2>
+    <p class="lead">The secrets already flow the way you asked for: nothing non-secret is pasted into GitHub, and every other value a pod sees is generated in the cluster or computed by the chart from three hostnames. What is missing is the typed place. The defaults are written four times by hand, a clone needs 29 lines of <code>.env</code> to run, and the docs table has drifted once already. The proposal keeps the secrets exactly where they are, moves the development and test defaults into code, and generates the inventories and the docs table from one typed definition per service.</p>
+    <div class="numbers">
+      <div><strong>14</strong><span>names in the staging environment: 5 pasted, 4 generated, 3 from Terraform, 2 optional</span></div>
+      <div><strong>0</strong><span>non-secret settings pasted; the 5 identifiers among the 14 each travel with their secret</span></div>
+      <div><strong>78</strong><span>names in <code>default.env</code>, 18 of them tested against a schema</span></div>
+      <div><strong>29</strong><span>lines in <code>.env.example</code> to run locally; 28 are localhost values</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Your five sentences, answered</h2>
+    <div class="scroll"><table>
+      <tr><th></th><th>You said</th><th>Answer</th></tr>
+      <tr><td>1</td><td>Defaults in code: localhost locally, the same for staging and production</td><td>Yes for development and test (D2). No for staging and production (D1): their only differences are hostnames, scale and secrets, which already live in the chart overlay, the tfvars and the GitHub environment, and a <code>staging</code> branch in code would be the first place staging stops proving production.</td></tr>
+      <tr><td>2</td><td>We just pass a node env (staging, development, production)</td><td>That switch exists: <code>NODE_ENV</code> with <code>development</code>, <code>test</code>, <code>production</code>, set to <code>production</code> in every image. It also drives Better Auth's rate limiter and ID's production checks, so it keeps its three values and gains no fourth.</td></tr>
+      <tr><td>3</td><td>If env vars are present, they overwrite defaults</td><td>Already how every loader works; the change only adds the development and test defaults they lack.</td></tr>
+      <tr><td>4</td><td>A central place that manages secrets and envs, typed</td><td><code>packages/config</code>: one definition per service that names each variable, its type, whether it is a secret, its defaults and its doc line (D3). The inventories and the docs table are generated from it (D4).</td></tr>
+      <tr><td>5</td><td>Actual secrets in GitHub secrets, passed at build or deploy time</td><td>Already so, at deploy time only: the images are public on GHCR and immutable by digest, so no secret ever enters a build; the deploy step writes them into the Secret <code>id-env</code> and the ops Jobs generate the rest (D5). One gap found on the way: <code>BETTER_AUTH_SECRETS</code> is never handed to the deploy, so the ring rotation the runbook describes cannot run.</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Where every value comes from today, in staging</h2>
+    <p>"Default" is what the code uses when the variable is unset. The images fix <code>NODE_ENV=production</code>, the ports and the listen addresses.</p>
+    <h3>Answerable ID, <code>apps/id/src/env.ts</code>, 15 variables</h3>
+    <div class="scroll"><table>
+      <tr><th>Variable</th><th>Secret</th><th>Default</th><th>Staging source</th></tr>
+      <tr><td><code>DATABASE_URL</code></td><td><span class="pill warn">login</span></td><td>required</td><td>Secret <code>id-database</code>, written by the ops <code>bootstrap</code> Job</td></tr>
+      <tr><td><code>BETTER_AUTH_URL</code></td><td>no</td><td>required</td><td>chart, from <code>hostnames.id</code></td></tr>
+      <tr><td><code>BETTER_AUTH_SECRET</code></td><td><span class="pill warn">secret</span></td><td>required</td><td>GitHub environment, generated by Bootstrap, into the Secret <code>id-env</code></td></tr>
+      <tr><td><code>BETTER_AUTH_SECRETS</code></td><td><span class="pill warn">secret</span></td><td>optional</td><td>never handed over by the deploy steps (F2)</td></tr>
+      <tr><td><code>MICROSOFT_CLIENT_ID</code>, <code>_SECRET</code></td><td>ID no, secret yes</td><td>optional, together</td><td>GitHub environment, pasted, into <code>id-env</code></td></tr>
+      <tr><td><code>GOOGLE_CLIENT_ID</code>, <code>_SECRET</code></td><td>ID no, secret yes</td><td>optional, together</td><td>GitHub environment, optional, into <code>id-env</code></td></tr>
+      <tr><td><code>ROOT_ADMIN_SECRET</code></td><td><span class="pill warn">secret</span></td><td>optional</td><td>GitHub environment, generated by Bootstrap, into <code>id-env</code></td></tr>
+      <tr><td><code>BETTER_AUTH_TRUSTED_ORIGINS</code></td><td>no</td><td>empty; production requires origins</td><td>chart, <code>id.trustedOrigins</code>: the six platform-application origins, the same in every deployed environment</td></tr>
+      <tr><td><code>TRUSTED_PROXY_CIDRS</code></td><td>no</td><td>optional; production requires</td><td>ConfigMap <code>trusted-proxies</code>, written by Terraform</td></tr>
+      <tr><td><code>NODE_ENV</code>, <code>PORT</code></td><td>no</td><td><code>development</code>, 47300</td><td>image</td></tr>
+      <tr><td><code>DATABASE_POOL_MAX</code>, <code>ROOT_ADMIN_BREAK_GLASS</code></td><td>no</td><td>20, <code>false</code></td><td>the defaults</td></tr>
+    </table></div>
+    <p class="meta">Tooling, never in a pod: <code>DATABASE_MIGRATION_URL</code> (the owner login, Secret <code>id-database-owner</code>, the migration Job only), <code>DATABASE_RUNTIME_ROLE</code>, <code>TEST_DATABASE_URL</code>. Constants in <code>env.ts</code>, not variables: the log interval, the sweep, five database timeouts, the platform organisation's slug and name.</p>
+
+    <h3>The Toolbox, <code>mcps/toolbox/src/environment.ts</code>, 9 variables</h3>
+    <div class="scroll"><table>
+      <tr><th>Variable</th><th>Secret</th><th>Default</th><th>Staging source</th></tr>
+      <tr><td><code>TOOLBOX_DATABASE_URL</code></td><td><span class="pill warn">login</span></td><td>required</td><td>Secret <code>toolbox-database</code>, ops <code>bootstrap</code></td></tr>
+      <tr><td><code>TOOLBOX_ID_CLIENT_SECRET</code></td><td><span class="pill warn">secret</span></td><td>required</td><td>Secret <code>toolbox-id-client</code>, ops <code>register</code></td></tr>
+      <tr><td><code>TOOLBOX_ID_ISSUER</code>, <code>TOOLBOX_RESOURCE_URL</code>, <code>TOOLBOX_ID_ADMIN_RESOURCE</code></td><td>no</td><td>required</td><td>chart, from the hostnames</td></tr>
+      <tr><td><code>TOOLBOX_ID_CLIENT_ID</code></td><td>no</td><td>required</td><td>chart, <code>toolbox.clientId</code> = <code>toolbox-hub</code></td></tr>
+      <tr><td><code>TOOLBOX_HOST</code>, <code>TOOLBOX_PORT</code></td><td>no</td><td><code>127.0.0.1</code>, 47400</td><td>image: <code>0.0.0.0</code>, 47400</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_ENDPOINT</code></td><td>no</td><td>unset</td><td>unset</td></tr>
+    </table></div>
+
+    <h3>The admin MCP, <code>mcps/admin/src/environment.ts</code>, 10 variables</h3>
+    <p>The same shape with the <code>ADMIN_</code> prefix, plus <code>ADMIN_TOOLBOX_ADMIN_RESOURCE</code> (chart, from the Toolbox's hostname) and <code>ADMIN_FRESH_SECONDS</code> (default 1,800; unset in staging). Its two secrets, the database login and the client secret, come from the same two ops Jobs.</p>
+
+    <h3>The ops Jobs, <code>infra/ops/src/commands.ts</code>, 14 variables</h3>
+    <p>All <code>OPS_*</code>, set by the chart from the hostnames and the overlay; no defaults. Secrets among them: <code>OPS_DATABASE_ADMIN_URL</code> (Secret <code>postgres-admin</code>, by Terraform), <code>OPS_ID_ROOT_SECRET</code> (<code>id-env</code>'s root secret) and the optional <code>OPS_ID_TOKEN</code>, a staff token set by hand once root locks.</p>
+
+    <h3>The GitHub environment, 14 names</h3>
+    <div class="scroll"><table>
+      <tr><th>Group</th><th>Names</th><th>Written by</th></tr>
+      <tr><td>Pasted</td><td><code>CIVO_TOKEN</code>, <code>CLOUDFLARE_API_TOKEN</code>, <code>MICROSOFT_CLIENT_ID</code>, <code>MICROSOFT_CLIENT_SECRET</code>, <code>GH_SECRETS_TOKEN</code></td><td>you, once</td></tr>
+      <tr><td>Generated</td><td><code>STATE_ACCESS_KEY_ID</code>, <code>STATE_SECRET_ACCESS_KEY</code>, <code>BETTER_AUTH_SECRET</code>, <code>ROOT_ADMIN_SECRET</code></td><td>the Bootstrap workflow, step 6.1</td></tr>
+      <tr><td>Cluster</td><td><code>KUBE_SERVER</code>, <code>KUBE_CA</code>, <code>KUBE_TOKEN</code></td><td>Terraform, during the first tag</td></tr>
+      <tr><td>Optional</td><td><code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code></td><td>you, if Google sign-in is wanted</td></tr>
+    </table></div>
+
+    <h3>Local today</h3>
+    <p><code>.env.example</code> has 29 active lines: 28 localhost values and one secret. The credentials no default can replace, because another system issues them: your Entra app's pair, Google's, the machine clients your local ID registers for the Toolbox and the admin MCP, and the web app's test consumer. The kind stack already generates its own secrets and never reads <code>.env</code>.</p>
+  </section>
+
+  <section>
+    <h2>Decisions <span class="pill warn">need your yes</span></h2>
+    <ol class="decisions">
+      <li><b>D1 <code>NODE_ENV</code> stays the only switch, with its three values.</b> No <code>staging</code> value and no per-environment branch in application code. Staging and production run the same production profile; their differences stay in <code>values-civo-&lt;env&gt;.yaml</code>, <code>envs/&lt;env&gt;.tfvars</code> and the GitHub environment, where Ingress, DNS, the certificates and the deploy already read them.</li>
+      <li><b>D2 Development and test defaults move into code.</b> Every non-secret variable of ID, the Toolbox and the admin MCP gets its localhost value as the default under <code>development</code> and <code>test</code>; ID's own two secrets get a fixed development-only value that the production profile refuses. Result: a fresh clone runs ID with no <code>.env</code>; the Toolbox and the admin MCP need only the client pair your local ID issued; <code>.env</code> holds credentials and nothing else.</li>
+      <li><b>D3 One shared package, <code>packages/config</code>.</b> <code>defineConfig(label, fields)</code>, each field <code>{ schema, secret, default?: { development?, test? }, doc }</code>; it returns a typed <code>read(env)</code> that names the variable it refuses, as the loaders do today, and the fields' metadata. ID's <code>env.ts</code>, the Toolbox's and the admin MCP's <code>environment.ts</code>, the ops Jobs' <code>commands.ts</code> and the SDK's <code>readMcpEnvironment</code> move onto it. No behaviour change under <code>NODE_ENV=production</code>.</li>
+      <li><b>D4 Generated, not hand-written.</b> <code>default.env</code> and <code>.env.example</code> come from the metadata, and a test fails when either drifts, as the OpenAPI snapshot and the MCP reference do. docs/06's configuration table becomes a docs component rendered from the same metadata, with its Markdown form.</li>
+      <li><b>D5 Secrets do not move.</b> The environment keeps its 14 names and the ops Jobs keep generating the rest. The pipeline reads which secrets go into <code>id-env</code> from ID's metadata, so a new ID secret fails a pipeline test until a workflow hands it over. In the same stroke, both deploy steps pass <code>BETTER_AUTH_SECRETS</code> (F2).</li>
+      <li><b>D6 After <code>staging/first</code>.</b> This changes how the services read their environment, so staging proves the current build first; the change ships under the second staging tag.</li>
+      <li><b>D7 Hostnames stay out of application code.</b> They remain in the tfvars, the chart overlay and the pipeline's <code>ZONES</code>, which the chart tests and the pipeline tests already tie together.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Found on the way</h2>
+    <div class="scroll"><table>
+      <tr><th></th><th>Finding</th><th>Done or proposed</th></tr>
+      <tr><td>F1</td><td>Step 6.1 of the tutorial promised a fifth generated name, <code>UPSTREAM_TOKEN_SECRETS</code>. ID stopped reading it in the v0 code audit on 20 October; the Bootstrap workflow writes four.</td><td><span class="pill ok">done</span> The sentence now lists the four names, nine in the environment after the run; republished.</td></tr>
+      <tr><td>F2</td><td>The runbook rotates <code>BETTER_AUTH_SECRET</code> through the ring <code>BETTER_AUTH_SECRETS</code>, and the pipeline accepts it, but neither deploy workflow passes it to the deploy step.</td><td>One line per workflow, with D5.</td></tr>
+      <tr><td>F3</td><td>The defaults are written four times: the schemas, <code>.env.example</code>, <code>default.env</code>, docs/06. Only ID's 18 names in <code>default.env</code> are tested; the other 60 are by hand.</td><td>D3 and D4.</td></tr>
+      <tr><td>F4</td><td>Two stale worktrees from other sessions under <code>.claude/worktrees/</code>, still holding the deleted <code>infra/setup</code>.</td><td>Not touched; say the word and they go.</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>The plan, once decided</h2>
+    <div class="scroll"><table>
+      <tr><th>Brief</th><th>Scope</th><th>Gates</th></tr>
+      <tr><td>B1</td><td><code>packages/config</code> with 100% coverage; the five loaders on it; development and test defaults; <code>default.env</code> and <code>.env.example</code> generated with a drift test; ID runs from a clone with no <code>.env</code>; the ID test suite's inventory test moves to the generator.</td><td><code>bun --filter @answerable/id test:coverage</code>, <code>bun run mcp:test</code>, <code>bun run mcp:check</code> for the Toolbox, the admin MCP and <code>infra-ops</code>, <code>bunx knip</code></td></tr>
+      <tr><td>B2</td><td>The docs component and docs/06's table; the pipeline's <code>id-env</code> list from the metadata; <code>BETTER_AUTH_SECRETS</code> in both deploy steps; <code>infra/README.md</code>, <code>AGENTS.md</code>, the apps' READMEs.</td><td><code>bun --filter web test</code>, <code>bun run infra:check</code>, the pipeline suite</td></tr>
+      <tr><td>Ship</td><td>A tag <code>staging/&lt;name&gt;</code> after <code>staging/first</code> has passed; the smoke test is the proof, plus one <code>bun dev</code> from a clean clone.</td><td><code>bun run infra:test</code> once, on one machine</td></tr>
+    </table></div>
+    <p class="meta">Size: about 600 changed lines across the two briefs, one agent-day. Nothing in B1 or B2 touches a value in staging; under <code>NODE_ENV=production</code> every variable stays required exactly as now.</p>
+  </section>
+
+  <footer>Planning files: <code>docs/goals/typed-config/</code> (<code>task_plan.md</code>, <code>findings.md</code>, <code>progress.md</code>). Report written 21 October 2026.</footer>
+</main>
