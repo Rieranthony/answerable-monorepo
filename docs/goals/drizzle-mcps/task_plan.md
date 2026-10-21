@@ -17,9 +17,9 @@
 | 5 | `mcps/admin` on drizzle: schema, migrate script, drizzle folder, tests green at 100% | complete |
 | 6 | `infra/ops`, `packages/acceptance`, `infra/k8s` (stack probe), Dockerfiles, chart test | complete |
 | 7 | Docs: READMEs, AGENTS.md, docs/09, docs/11, the five docs pages, `docs/02-plan.md` register row, CHANGELOGs, reference.mdx if needed | complete |
-| 8 | Gates: typecheck, lint, build, mcp:test, mcp:check ×4, web test, ID suite (dependency upgrade), knip | in_progress |
-| 9 | Acceptance (`mcp:test:e2e`) and the kind stack (`infra:test`, once) | pending |
-| 10 | Commits and the report | pending |
+| 8 | Gates: typecheck, lint, build, mcp:test, mcp:check ×4, web test, ID suite (dependency upgrade), knip | complete |
+| 9 | Acceptance (`mcp:test:e2e`) and the kind stack (`infra:test`, once) | complete |
+| 10 | Commits and the report | complete |
 
 ## Decisions
 
@@ -42,9 +42,16 @@
 | `Types have separate declarations of a private property 'shouldInlineParams'` across the package and the Toolbox | 1 | Two `drizzle-orm` instances under the isolated linker; D9, the hoisted linker |
 | Scaffold test: `Cannot find module '@answerable/mcp'` in its temporary server | 1 | It linked `mcps/e2e/node_modules`, gone under hoisting; it links the repository's `node_modules` at the temporary root |
 | Parallel shell calls shared one working directory, so two edits ran in `mcps/admin` | 1 | Absolute paths in every command |
+| ID: `ENOENT …/apps/id/node_modules/@better-auth/oauth-provider/dist/` in `native-shapes.test.ts` | 1 | Hoisting again; the test resolves the package with `import.meta.resolve` |
 | `DROP DATABASE cannot run inside a transaction block` from `scratch()` | 1 | A multi-statement simple query is one implicit transaction: the drop and the create run as two statements |
 | An adoption after a run without `legacy` was refused as "beside drizzle's receipts" | 1 | Drizzle's migrator creates its empty receipts table before the failed transaction; "applied" now means at least one receipt |
 
 ## Report
 
-(Written at the end.)
+**What changed.** `packages/mcp-postgres`, `mcps/toolbox` and `mcps/admin` store through drizzle-orm over `pg` and migrate with drizzle-kit folders, the model `apps/id` uses. The package's three tables are drizzle schema (constraints named as the SQL files named them, D3), `sql/evidence-chain.sql` holds the triggers and is each server's custom migration, `migrate(db, { folder, legacy })` is ID's migrator plus the adoption of a database the file migrator built (D5), and `connect` returns a drizzle database over a `pg` pool that reads `sslmode` and `sslrootcert` from the URL (D2). The Toolbox composes the package's tables with its own (`tsvector` as a custom type), and its catalogue, host clients and search are drizzle queries; the admin MCP composes the package's alone and exports `./migrate`. `infra/ops` connects through a `pg` pool, the acceptance kit makes drizzle databases and the journeys read through `rowsOf`, the kind stack's TLS probe uses `pg`. The SQL-file migrator, `migrations/` directories and `schema_migrations` are gone; the old files live under `src/test/legacy/` for the adoption tests. The repository pins drizzle-orm 0.45.4, drizzle-kit 0.31.11, pg 8.23.1 and @types/pg 8.23.1 (D1), and `bunfig.toml` sets Bun's hoisted linker so one `drizzle-orm` types every workspace (D9); the Dockerfiles keep `bunfig.toml`, and two tests that read a workspace's own `node_modules` resolve packages instead. Docs: the package README, both server READMEs, AGENTS.md, README.md, docs/11, the Toolbox, admin and MCP docs pages, the changelogs, and the "do not re-propose" row in docs/02-plan.md.
+
+**What was proven.** In each of the three workspaces, a database built by the old migrator from the kept SQL files, with evidence recorded under it, is adopted by the new `migrate` and then equals a fresh drizzle database column for column, constraint for constraint, index, trigger, function and receipt, and its chain keeps growing and verifies; a partial or edited legacy record refuses, naming the file; a run without `legacy` leaves the schema alone. The evidence chain's hashes, triggers, erasure and `verify`, the intent store's compare-and-set, expiry, sweep and evidence, `runtimeGrants`, `configureRuntimeRole`'s idempotence and take-backs, and `assertRuntimeRole`'s refusals hold with the adapted tests (the receipts guarantee moved from `schema_migrations` to schema `drizzle`, D6). The acceptance's 57 journeys pass against real ID with every chain verified. The kind stack is below.
+
+**Gates** (progress.md has each number): typecheck 17/17, lint 17/17, build 3/3; mcp:test all green with 100% coverage where gated (mcp-postgres 44, toolbox 83, admin 126, infra-ops 61, scripts 16); mcp:check on the four workspaces is those three commands; web test 88; ID 1488 pass at 100%; knip clean; infra:check passed; charts 82; acceptance 57; kind stack (`bun run infra:test`, once, images built from this branch, deploy from empty, TLS probe through pg, the three migration Jobs and the two ops Jobs completed) 105 pass, 0 fail.
+
+**Left.** Two migrators at once are no longer tested (D8). pg warns once per process that `verify-ca` will weaken in pg 9; deployments use `verify-full`. The owner lands the branch after the first staging tag; a staging database the old migrator built is adopted by the first `db:migrate` after that.

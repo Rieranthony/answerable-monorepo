@@ -30,3 +30,10 @@
 | `bun --filter web test` | 88 pass, 0 fail |
 | `bunx knip` | no unused files, exports or dependencies (configuration hints only, as before) |
 | `bun run infra:check` | passed (charts, Terraform, trivy, actionlint) |
+| `bun test charts.test.ts` in `infra/k8s` | 82 pass, 0 fail |
+| `bun --filter @answerable/id test` (first run) | 1486 pass, 2 fail, 21,889 expect() calls, 130 files, 333 s: the two failures were `src/auth/native-shapes.test.ts` reading `apps/id/node_modules/@better-auth/oauth-provider/dist/`, which the hoisted linker leaves at the root; fixed in 62f883ad to resolve the package; the file passes alone, the full suite runs again below |
+| `bun run mcp:test:e2e` | 57 pass, 0 fail, 5 files, 127 s; the platform organisation's chain verified with 133 events, the Toolbox journeys' 46 events in 3 chains verified |
+| `bun --filter @answerable/id test` (second run, after 62f883ad) | 1488 pass, 0 fail, 130 files, 293 s, 100% lines and functions |
+| `bun run infra:test` (the kind stack, once; no cluster existed before, none after) | 105 pass, 0 fail, 2 files, 191 s: the chart tests and the stack, with the images built from this branch |
+
+- Commits: 2cc45e89 (the move), 0f19462e (docs), e4ac9de8 (scaffold test links the root's node_modules), 62f883ad (ID's shape test resolves the package), and the plan files' final commit.
