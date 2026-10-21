@@ -4,7 +4,7 @@
 
 **Asked on 2026-10-21** by the owner at step 6.1 of the staging tutorial: "What about the other secrets / var envs? What are the defaults? Maybe we should have our var env default being set in code (local have default localhost, same for staging and prod). This way we don't have to have var env as secret for everything. We just pass a node env (staging, development, production). If var env are present, they overwrite defaults. Plan with files, we should have a central place that manages secrets and envs and typed. Other actual secrets, salts and everything should live in GitHub secrets and passed at build / deploy time." Then: "report before coding".
 
-**Status:** report published, decisions open. No code until the owner decides. Planning files: this one, `findings.md` (the inventory, every claim read from the tree at e7bce746), `progress.md`, `report.md` (the report's text; published at the link in `progress.md`).
+**Status:** D1 to D7 approved by the owner on 2026-10-21 ("Continue the tutorial first; run B1 and B2 after staging/first"). Briefs written: `briefs/b1.md`, `briefs/b2.md`. Nothing coded; B1 starts once `staging/first` has deployed and smoke-tested. Planning files: this one, `findings.md` (the inventory, every claim read from the tree at e7bce746), `progress.md`, `report.md` (the report's text; published at the link in `progress.md`).
 
 ## Phases
 
@@ -13,11 +13,11 @@
 | 1 | Inventory: every variable, its reader, secret or not, its default, who sets it in staging | complete |
 | 2 | Design: what moves into code, what stays in the chart and the GitHub environment | complete |
 | 3 | Report with the decisions D1 to D7 | complete |
-| 4 | B1: `packages/config`, the five readers on it, development and test defaults, generated inventories | waiting for the decisions |
-| 5 | B2: the docs component, docs/06, the pipeline's `id-env` list from the metadata, `BETTER_AUTH_SECRETS` in the deploy steps, runbook | waiting for the decisions |
+| 4 | B1: `packages/config`, the five readers on it, development and test defaults, generated inventories | briefed; starts after `staging/first` |
+| 5 | B2: the docs component, docs/06, the pipeline's `id-env` list from the metadata, `BETTER_AUTH_SECRETS` in the deploy steps, runbook | briefed; after B1 |
 | 6 | Ship under the second staging tag; prove with the smoke test and a `bun dev` from a clone with no `.env` | after B1 and B2 |
 
-## Decisions proposed (the report has the reasons)
+## Decisions (approved 2026-10-21; the report has the reasons)
 
 - **D1** `NODE_ENV` stays the only mode switch, with its three values `development`, `test`, `production`. No `staging` value, no per-environment branch in application code: staging and production run the same production profile and differ only in hostnames, scale and secrets, which stay in the chart overlay, the tfvars and the GitHub environment.
 - **D2** Development and test defaults move into code: every non-secret variable of ID, the Toolbox and the admin MCP gets its localhost value as the `development` and `test` default, and each service's own secrets (`BETTER_AUTH_SECRET`, `ROOT_ADMIN_SECRET`) get a fixed development-only value that the production profile refuses. `.env` becomes optional for ID and holds only credentials issued elsewhere.
