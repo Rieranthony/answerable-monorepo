@@ -27,9 +27,11 @@ export {
   type GroupTokenValue,
 } from "./emit"
 export {
+  categoryFallback,
   findFont,
   fontStack,
   googleFontsHref,
+  nearestWeight,
   type FontRequest,
   type GoogleFont,
 } from "./fonts"

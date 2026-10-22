@@ -3,13 +3,17 @@
 import { Slider as SliderPrimitive } from "@base-ui/react/slider"
 import { cn } from "@answerable/ui/lib/utils"
 
-/** A 4px separator-fill track, the foreground for the range, and a 16px square thumb. */
+/**
+ * A 4px separator-fill track, the foreground for the range, and a 16px square thumb. Children render
+ * before the track: put a `SliderLabel` there to name the thumbs.
+ */
 function Slider({
   className,
   defaultValue,
   value,
   min = 0,
   max = 100,
+  children,
   ...props
 }: SliderPrimitive.Root.Props) {
   const _values = Array.isArray(value)
@@ -29,6 +33,7 @@ function Slider({
       thumbAlignment="edge"
       {...props}
     >
+      {children}
       <SliderPrimitive.Control className="relative flex w-full touch-none items-center py-1.5 select-none data-disabled:opacity-50 data-vertical:h-full data-vertical:min-h-40 data-vertical:w-auto data-vertical:flex-col data-vertical:px-1.5 data-vertical:py-0">
         <SliderPrimitive.Track
           data-slot="slider-track"
@@ -51,4 +56,14 @@ function Slider({
   )
 }
 
-export { Slider }
+function SliderLabel({ className, ...props }: SliderPrimitive.Label.Props) {
+  return (
+    <SliderPrimitive.Label
+      data-slot="slider-label"
+      className={cn("type-label", className)}
+      {...props}
+    />
+  )
+}
+
+export { Slider, SliderLabel }
