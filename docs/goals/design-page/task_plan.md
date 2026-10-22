@@ -12,7 +12,7 @@ Started 2026-10-22. Owner's ask, in their words: a `/design` page on the landing
 | 3 | Publish the report with decisions for the owner | complete (report.html) |
 | 4 | Owner approves decisions D1 to D14 | complete (decisions.md) |
 | 5 | Briefs for Opus 5.5 (B1 tokens + UI lib, B2 parser + spec, B3 page + pane), run them | complete (B1 fb32b381, B2 ca2e1be4, B3 31551495) |
-| 6 | Review, gates, land on main, Vercel check | in_progress |
+| 6 | Review, gates, land on main, Vercel check | complete (main 2d310d80, Vercel success) |
 
 ## Decisions
 
