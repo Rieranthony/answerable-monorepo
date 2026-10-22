@@ -11,7 +11,7 @@ Started 2026-10-22. Owner's ask, in their words: a `/design` page on the landing
 | 2 | Write the design: our spec on top of design.md, the token pipeline, the page, the pane | complete (design.md) |
 | 3 | Publish the report with decisions for the owner | complete (report.html) |
 | 4 | Owner approves decisions D1 to D14 | complete (decisions.md) |
-| 5 | Briefs for Opus 5.5 (B1 tokens + UI lib, B2 parser + spec, B3 page + pane), run them | in_progress (B1, B2 started; B3 waits) |
+| 5 | Briefs for Opus 5.5 (B1 tokens + UI lib, B2 parser + spec, B3 page + pane), run them | in_progress (B1 and B2 landed on main; B3 next) |
 | 6 | Review, gates, land on main, Vercel check | pending |
 
 ## Decisions
