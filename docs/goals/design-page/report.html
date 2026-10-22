@@ -1,0 +1,246 @@
+<title>Design page plan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;700;900&display=swap">
+<style>
+  /* Layout: one 680px reading column, sections divided by 1px separators, each section
+     carrying one accent as a small square marker (rotation: sky, yellow, green, coral). */
+  :root {
+    --bg: #ffffff;
+    --fg: #000000;
+    --shell: #fafafa;
+    --fill: #f4f4f5;
+    --fill-2: #e4e4e7;
+    --sep: #e4e4e7;
+    --muted: #52525b;
+    --on-dark: #ffffff;
+    --dark: #000000;
+    --sky: #a8dce8;
+    --yellow: #f3dd8f;
+    --green: #98af48;
+    --coral: #e9895e;
+    --on-accent: #000000;
+    --font: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #000000; --fg: #ffffff; --shell: #0a0a0b; --fill: #18181b; --fill-2: #27272a;
+      --sep: #27272a; --muted: #a1a1aa; --on-dark: #000000; --dark: #ffffff; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #000000; --fg: #ffffff; --shell: #0a0a0b; --fill: #18181b; --fill-2: #27272a;
+    --sep: #27272a; --muted: #a1a1aa; --on-dark: #000000; --dark: #ffffff; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font);
+    font-size: 14px; line-height: 1.5; font-weight: 400;
+    padding-block: 40px 64px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  main { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 0; }
+  h1, h2, h3, p, ul, ol, table, pre, figure { margin: 0; }
+  .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); line-height: 1.2; }
+  h1 { font-size: 36px; font-weight: 900; line-height: 1.1; letter-spacing: -0.8px; text-wrap: balance; margin-top: 12px; }
+  .lead { font-size: 18px; line-height: 1.5; margin-top: 16px; color: var(--fg); }
+  .meta { margin-top: 16px; color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+  .meta code { color: var(--fg); }
+  section { padding-block: 32px; border-top: 1px solid var(--sep); display: flex; flex-direction: column; gap: 16px; }
+  section.first { border-top: 0; padding-top: 40px; }
+  .heading { display: flex; align-items: center; gap: 10px; }
+  .heading .mark { width: 10px; height: 10px; flex: none; background: var(--sky); }
+  .heading.yellow .mark { background: var(--yellow); }
+  .heading.green .mark { background: var(--green); }
+  .heading.coral .mark { background: var(--coral); }
+  h2 { font-size: 20px; font-weight: 700; line-height: 1.25; letter-spacing: -0.2px; }
+  h3 { font-size: 15px; font-weight: 700; line-height: 1.4; margin-top: 8px; }
+  p { max-width: 65ch; }
+  ul, ol { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; max-width: 65ch; }
+  li { padding-left: 2px; }
+  strong { font-weight: 700; }
+  code { font-family: var(--mono); font-size: 12.5px; background: var(--fill); padding: 1px 4px; }
+  pre { background: var(--fill); padding: 12px 14px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th { text-align: left; font-size: 12px; font-weight: 700; letter-spacing: 0.2px; color: var(--muted); padding: 8px 10px 8px 0; border-bottom: 1px solid var(--sep); vertical-align: bottom; }
+  td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--sep); vertical-align: top; }
+  td:last-child, th:last-child { padding-right: 0; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pill { display: inline-block; font-size: 12px; font-weight: 700; line-height: 1; padding: 4px 6px; color: var(--on-accent); background: var(--fill-2); white-space: nowrap; }
+  .pill.yes { background: var(--green); }
+  .pill.err { background: var(--coral); }
+  .pill.warn { background: var(--yellow); }
+  .pill.info { background: var(--sky); }
+  .panel { background: var(--dark); color: var(--on-dark); padding: 24px; display: flex; flex-direction: column; gap: 8px; }
+  .panel h3 { margin: 0; font-size: 22px; font-weight: 900; letter-spacing: -0.4px; line-height: 1.15; }
+  .panel p { color: var(--on-dark); }
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .tile { background: var(--fill); padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .tile .k { font-size: 12px; font-weight: 700; letter-spacing: 0.2px; color: var(--muted); }
+  .tile .v { font-weight: 700; }
+  .tile p { font-size: 13px; color: var(--muted); max-width: none; }
+  .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .cols > div { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .steps { display: flex; flex-direction: column; gap: 12px; padding: 0; list-style: none; max-width: none; }
+  .steps li { display: grid; grid-template-columns: 40px 1fr; gap: 12px; padding: 0; }
+  .steps .n { font-size: 28px; font-weight: 900; line-height: 1; letter-spacing: -1px; }
+  .steps .t { font-weight: 700; }
+  .steps p { margin-top: 2px; color: var(--muted); }
+  .decision td:first-child { font-weight: 700; white-space: nowrap; }
+  .ok { color: var(--muted); }
+  a { color: inherit; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  a:focus-visible, button:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--fg); }
+  @media (max-width: 640px) {
+    h1 { font-size: 28px; }
+    .grid, .cols { grid-template-columns: 1fr; }
+    body { padding-block: 24px 48px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<main>
+  <section class="first">
+    <p class="eyebrow">Answerable · 22 October 2026 · before any code</p>
+    <h1>A page that shows a DESIGN.md working</h1>
+    <p class="lead">Take a <code>DESIGN.md</code>, turn it into the variables the UI library reads, and show the whole system live: palette, type, shape, every component, with a pane at the top right that changes any token. Ours first; later anyone's, and files generated on the fly.</p>
+    <div class="meta">
+      <span>Design: <code>docs/goals/design-page/design.md</code></span>
+      <span>Facts: <code>findings.md</code></span>
+      <span>Decisions to take: 14, at the end</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="heading"><span class="mark"></span><h2>What the probes found</h2></div>
+    <p>Every claim below was tested on this machine or against the live source today. The design rests on these.</p>
+
+    <h3>Our DESIGN.md through the official tooling</h3>
+    <p>Google ships <code>@google/design.md</code> 0.4.0 on npm: a parser, a linter with eleven rules, and exporters to CSS variables, Tailwind 4 and W3C tokens. Run on the file at the repository root:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>State of the file</th><th>Result</th><th class="num">Errors</th><th class="num">Warnings</th></tr></thead>
+      <tbody>
+        <tr><td>As committed</td><td>Nothing parses. The file is wrapped in a code fence and starts with a blank line, so there is no front matter at line 1.</td><td class="num">0</td><td class="num">1</td></tr>
+        <tr><td>Fence and blank line removed</td><td>YAML rejects it: <code>statement-quote:{</code> and <code>nav-link-active:{</code> lack the space after the colon.</td><td class="num">0</td><td class="num">1</td></tr>
+        <tr><td>Those two typos fixed</td><td>28 colours, 29 type levels, 3 radii, 12 spacing steps and 42 components parse. The errors are references into our own groups (<code>{sizes.control-md}</code>, <code>{elevation.xs}</code>, <code>{lines.interface-separator}</code>). 43 warnings come from <code>fontFamily</code>, <code>weights</code> and <code>rules</code> sitting beside the type levels; the rest are references inside free text, orphaned accents, no <code>primary</code>, and Elevation before Layout.</td><td class="num">20</td><td class="num">142</td></tr>
+      </tbody>
+    </table></div>
+    <p>The official model is good at what it covers: it resolves <code>{colors.neutral-100}</code> chains, reads <code>rgba(0, 0, 0, 0.5)</code> with its alpha, carries a typography reference inside a component through to the level, and hands back our six extension groups (<code>output-rules</code>, <code>sizes</code>, <code>elevation</code>, <code>lines</code>, <code>focus</code>, <code>motion</code>) as raw YAML. It also accepts "Colour" and "Shape" as section names. What it does not do is resolve a reference into a group the spec does not name, although the spec's own wording allows one.</p>
+
+    <h3>The mechanics we rely on</h3>
+    <div class="grid">
+      <div class="tile"><span class="k">Tailwind 4.3.3</span><span class="v">Inline theme values pass through</span><p><code>@theme inline { --color-primary: var(--primary) }</code> emits <code>.bg-primary { background-color: var(--primary) }</code>. Verified for colours, font sizes, weights, radius, shadows, tracking, easing, durations and the spacing unit.</p></div>
+      <div class="tile"><span class="k">React 19.2</span><span class="v">Hoisted style blocks</span><p>A <code>&lt;style href precedence&gt;</code> rendered by a component lands in <code>&lt;head&gt;</code> on the server and the client, so the first paint carries the design.</p></div>
+      <div class="tile"><span class="k">Next 16.2</span><span class="v">Several root layouts</span><p>Route groups each own an <code>&lt;html&gt;</code>: the site stays dark, <code>/design</code> is light.</p></div>
+      <div class="tile"><span class="k">Google Fonts</span><span class="v">1,950 families with categories</span><p>The public metadata endpoint lists family, category, weights, axes and popularity. The CSS2 API loads any family at runtime with the weights asked for.</p></div>
+      <div class="tile"><span class="k">culori 4.0.2</span><span class="v">Any CSS colour in, hex or oklch out</span><p>Hex, rgb, hsl, hwb, lab, oklch and names parse; <code>color-mix()</code> does not. Black on Coral measures 8.20:1, white on Coral 2.56:1.</p></div>
+      <div class="tile"><span class="k">shadcn base-nova</span><span class="v">Every component we need is served</span><p>badge, card, tabs, switch, checkbox, radio, select, slider, dialog, tooltip, popover, menu, table, alert, progress, skeleton, avatar, separator, textarea, toggle, kbd, toast. ID's login inputs share <code>inputClassName</code>.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="heading yellow"><span class="mark"></span><h2>The design in three pieces</h2></div>
+
+    <h3>1. A token contract in the UI library</h3>
+    <p>Every visual decision a component makes reads a variable with our default, and every default can be overridden by a second variable the library never sets. Whoever declares the hook wins, with no specificity fight, and <code>unset</code> restores the default.</p>
+<pre><code>:where(:root, [data-design-scope]) {
+  --primary:    var(--design-primary, #000000);
+  --control-md: var(--design-control-md, 36px);
+  --spacing:    var(--design-spacing-unit, 0.25rem);  /* scales every p-*, gap-*, h-*, size-* */
+}
+@theme inline {
+  --color-primary: var(--primary);   /* Tailwind emits var(--primary) into the utility */
+}</code></pre>
+    <p>The contract covers colour roles (shadcn's twenty plus ours: overlay, on-dark, on-accent, the four-colour rotation, success, warning, info), fonts, every type level as four variables, the three weight roles, radius, the spacing unit, control and shell sizes, elevation, lines, the focus ring and motion. Each type level also becomes a utility (<code>type-heading-h2</code>, <code>type-button</code>, <code>type-statement-xl</code>) so a level edited in the pane moves every component that uses it. The light defaults are generated from <code>DESIGN.md</code> and committed, with a drift test like <code>openapi.json</code>; the dark scheme stays hand-written until the profile has a dark group.</p>
+    <p>The showcase needs the components the file names, so the library gains the base-nova set and restyles everything to the file: fills instead of borders, square corners, three weights, 32/36/40/48px controls, elevation instead of outlines, the black focus ring. The statement layer (hero statement, stat, quote panel, highlight panel, numbered steps, divider, accent button) is new and lives in the library too.</p>
+
+    <h3>2. Our spec on top of design.md</h3>
+    <p>The Answerable profile keeps a file valid design.md and adds typed groups the spec leaves to prose. A reference may point anywhere in the YAML tree. The official linter still reports those references as broken; our linter wraps its rules, resolves them, and the page shows both verdicts. We file the upstream issue.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Group</th><th>Holds</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td><code>fonts</code></td><td>family, provider (Google), weights, fallback, default</td><td>Replaces the three keys that sit beside the type levels today; levels without a family inherit the default.</td></tr>
+        <tr><td><code>roles</code></td><td>role → reference, for every contract colour, radius and font</td><td>Binds a design's own names (<code>accent-coral</code>, <code>neutral-100</code>) to the library's slots. Missing roles are inferred, which is what lets someone else's file render at all.</td></tr>
+        <tr><td><code>sizes</code>, <code>elevation</code>, <code>lines</code>, <code>focus</code>, <code>motion</code></td><td>Dimensions, shadows, width + colour pairs, the ring, durations and easing</td><td>Typed instead of free text, so the pane can edit them and the emitter can write them.</td></tr>
+        <tr><td><code>spacing.unit</code></td><td>One dimension, required</td><td>Tailwind 4 scales from one unit; the named steps stay as documentation.</td></tr>
+        <tr><td><code>output-rules</code></td><td>Rules for agents producing documents</td><td>Kept and shown, never styled.</td></tr>
+      </tbody>
+    </table></div>
+    <p>Our file changes in seven small ways: the fence and blank line go, the two YAML typos go, the three stray typography keys move into <code>fonts.sans</code> and the prose, <code>spacing.unit: 4px</code> and <code>colors.primary</code> are added, the <code>roles</code> group is added, and Layout moves above Elevation. The prose stays the owner's words.</p>
+
+    <h3>3. The runtime and the page</h3>
+    <p><code>@answerable/design</code> is a pure package: the parser on Google's linter (server only, since that module imports <code>node:fs</code>), the profile resolver, a CSS emitter, a DESIGN.md writer for "Copy DESIGN.md", colour conversion, and the fonts catalogue. The UI library gains <code>DesignProvider</code> (the one shared state), <code>DesignVars</code> (the hoisted <code>:root</code> block) and <code>DesignFonts</code> (a CSS2 link for any family <code>next/font</code> did not self-host). <code>/design</code> parses the repository file at build, so the page is static, and <code>/design.md</code> serves the raw file.</p>
+  </section>
+
+  <section>
+    <div class="heading green"><span class="mark"></span><h2>The page, top to bottom</h2></div>
+    <p>Content follows the file's own sections, so a different DESIGN.md reorders the page by itself. Each section is a real layout built from the library, with the matching prose one click away.</p>
+    <ol class="steps">
+      <li><span class="n">1</span><div><span class="t">Header</span><p>Name, description, version, both lint verdicts, and Copy CSS, Copy DESIGN.md, Download.</p></div></li>
+      <li><span class="n">2</span><div><span class="t">Overview</span><p>A hero statement in <code>statement-xl</code>, the lead, one accent button (Sky first in the rotation).</p></div></li>
+      <li><span class="n">3</span><div><span class="t">Colour</span><p>Core, neutral and accent swatches with hex and oklch; every role's contrast against its background with the WCAG verdict; the rotation shown as four stat blocks.</p></div></li>
+      <li><span class="n">4</span><div><span class="t">Typography</span><p>The full scale as a specimen table, each level set in itself; the three weights; a paragraph at <code>prose-max</code>.</p></div></li>
+      <li><span class="n">5</span><div><span class="t">Shape, lines, focus, elevation, layout</span><p>Square controls, the two line kinds, the ring on a focused control, the four shadow levels beside a flat statement panel, the app shell at 56/256/1200px with both card kinds on their right surfaces.</p></div></li>
+      <li><span class="n">6</span><div><span class="t">Components, interface layer</span><p>Buttons in every variant and size; forms with the error marker; card, dialog, menu, popover, tooltip; tabs and sidebar; badge, alert, toast, skeleton, progress; a table with tabular numbers and a small chart in the four accents.</p></div></li>
+      <li><span class="n">7</span><div><span class="t">Components, statement layer</span><p>Stat row, stat display, both quote panels, highlight panel, numbered steps, divider.</p></div></li>
+      <li><span class="n">8</span><div><span class="t">Do's and don'ts, then lint</span><p>Two columns from the prose; every finding with its path, ours and the official one.</p></div></li>
+    </ol>
+    <div class="panel">
+      <h3>The pane</h3>
+      <p>Floating at the top right, collapsing to a 36px square, and always wearing the default design through its own scope so it stays readable whatever the page becomes. Colours: swatch, a field that accepts any CSS colour and converts it on blur, hex and oklch readouts, contrast against the role's background. Type: a combobox over the Google Fonts catalogue grouped by category, the three weight roles, the level table. Shape, spacing unit, sizes, elevation, lines, motion. Reset all, Copy CSS, Copy DESIGN.md. State lives only in the provider; the URL carries nothing yet.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="heading coral"><span class="mark"></span><h2>Later, not in this goal</h2></div>
+    <div class="cols">
+      <div>
+        <p><strong>Other people's files.</strong> Paste, upload or a URL, parsed by a server action with the same parser; the roles inference and the three Google example files as fixtures make this a page change, not a library change.</p>
+        <p><strong>Share links.</strong> The overrides encoded in the URL.</p>
+      </div>
+      <div>
+        <p><strong>Generate with AI.</strong> A server action writes a DESIGN.md from a prompt with the Claude API, then the same pipeline; the profile's typed groups are the schema the model fills.</p>
+        <p><strong>A dark group in the profile</strong>, so the site's hand-written dark block is generated too.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="heading"><span class="mark"></span><h2>Briefs and gates</h2></div>
+    <p>Three briefs for Opus 5.5, each a session in its own worktree, landed straight on main. B1 and B2 run in parallel against the contract table in the design; B3 starts when both have landed.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Brief</th><th>Scope</th><th>Proof</th></tr></thead>
+      <tbody>
+        <tr><td><strong>B1</strong> the contract and the components</td><td><code>packages/ui</code>: tokens.css by hand per the contract, globals on the hooks, the type utilities, the base-nova set added and restyled, the statement components, the provider and the two injectors.</td><td>Typecheck, lint; the landing page, the docs and ID's login unchanged in dark, by eye.</td></tr>
+        <tr><td><strong>B2</strong> the package and the file</td><td><code>packages/design</code>: parser, profile, roles, emitter, markdown writer, colour, fonts catalogue and its script, the generator, fixtures; the seven DESIGN.md edits.</td><td>100% coverage; the generator reproduces B1's tokens.css byte for byte; our linter passes on the repository file.</td></tr>
+        <tr><td><strong>B3</strong> the page</td><td><code>apps/web</code>: route groups, <code>/design</code>, <code>/design.md</code>, the showcase, the pane, turbo inputs, metadata, sitemap, check-metadata.</td><td>Build, web tests, check-metadata with <code>/design</code>; the page at desktop and phone width with a colour, a font, the radius and the unit changed, by eye.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <div class="heading yellow"><span class="mark"></span><h2>Decisions for the owner</h2></div>
+    <p>Answer by number. "Yes to all" takes every recommendation.</p>
+    <div class="table-wrap"><table class="decision">
+      <thead><tr><th>#</th><th>Decision</th><th>Recommended</th></tr></thead>
+      <tbody>
+        <tr><td>D1</td><td>Edit DESIGN.md as listed: fence, blank line, two YAML typos, fonts group, spacing unit, primary, roles, section swap. Nothing in the prose changes.</td><td><span class="pill yes">Yes</span></td></tr>
+        <tr><td>D2</td><td>The profile accepts that the official linter reports references into profile groups as errors; we file the upstream issue. The alternative, literal values in components, loses the references that make the file readable.</td><td><span class="pill yes">Yes</span></td></tr>
+        <tr><td>D3</td><td>A new pure package <code>@answerable/design</code> plus the React runtime in <code>@answerable/ui</code>, rather than everything in the UI package.</td><td><span class="pill yes">Yes</span></td></tr>
+        <tr><td>D4</td><td>The UI library's light defaults are generated from DESIGN.md and committed with a drift test; the dark scheme stays hand-written for now.</td><td><span class="pill yes">Yes</span></td></tr>
+        <tr><td>D5</td><td>Restyle every component to DESIGN.md through the contract (fills, square, three weights, control heights), knowing ID's login inputs follow. It is also the brand rule already on record: no borders, filled inputs.</td><td><span class="pill yes">Yes</span></td></tr>
+        <tr><td>D6</td><td>Type levels as generated <code>type-&lt;level&gt;</code> utilities, with <code>text-xs/sm/base/lg</code> bound to the four interface levels.</td><td><span class="pill yes">Yes</span></td></tr>
+        <tr><td>D7</td><td>Two root layouts through route groups; <code>/design</code> is light, the rest of the site stays dark.</td><td><span class="pill yes">Yes</span></td></tr>
+        <tr><td>D8</td><td>Our file is parsed at build; other files later through a server action, never in the browser.</td><td><span class="pill yes">Yes</span></td></tr>
+        <tr><td>D9</td><td>The fonts catalogue is generated from Google's public metadata endpoint (categories, popularity) and committed. Next's own list has no categories.</td><td><span class="pill yes">Yes</span></td></tr>
+        <tr><td>D10</td><td>Colours are kept as written, converted to hex for DESIGN.md and CSS, with an oklch readout in the pane. The spec recommends hex and the official model works in sRGB.</td><td><span class="pill yes">Yes</span></td></tr>
+        <tr><td>D11</td><td>The statement layer components live in the library, not in the page.</td><td><span class="pill yes">Yes</span></td></tr>
+        <tr><td>D12</td><td><code>/design.md</code> serves the raw file.</td><td><span class="pill yes">Yes</span></td></tr>
+        <tr><td>D13</td><td>The page header shows the design's name and description, although the output rules forbid the brand name in produced documents. The page is about the system, not a document made with it.</td><td><span class="pill yes">Yes</span></td></tr>
+        <tr><td>D14</td><td>Three briefs to Opus 5.5 in worktree sessions, B1 and B2 in parallel, then B3, landed straight on main.</td><td><span class="pill yes">Yes</span></td></tr>
+      </tbody>
+    </table></div>
+  </section>
+</main>
