@@ -72,8 +72,10 @@ jobs:
           done
           gh secret list --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY" --json name > /dev/null
 
-      # The credential first, so that the bucket is created with it as its owner. The Civo CLI reads CIVO_TOKEN and
-      # CIVO_REGION from the environment. Values go from one command's output straight into another's standard input.
+      # The credential first, so that the bucket is created with it as its owner. The Civo CLI reads CIVO_TOKEN from the
+      # environment but no region variable: without a config file it defaults to NYC1, so every call names the region
+      # (found on the first staging run, 22 October 2026: a credential and a bucket in NYC1, and the LON1 endpoint
+      # answered InvalidAccessKeyId). Values go from one command's output straight into another's standard input.
       - name: Create the state bucket and its credential, when missing
         if: inputs.rotate == 'none'
         run: |
@@ -82,23 +84,58 @@ jobs:
             echo "The state credential is already in the environment; the bucket is left as it is."
             exit 0
           fi
-          if ! civo objectstore credential ls -o json | jq -e --arg name "$BUCKET" '.[] | select(.name == $name)' > /dev/null; then
-            civo objectstore credential create "$BUCKET" --wait > /dev/null
-            echo "Created the credential $BUCKET."
+          for region in $(civo region ls -o json | jq -r '.[].code'); do
+            if [ "$region" != "$CIVO_REGION" ] && civo objectstore show "$BUCKET" --region "$region" -o json > /dev/null 2>&1; then
+              echo "::error::a store named $BUCKET exists in $region, not $CIVO_REGION; delete it and its credential in the Civo dashboard, then run again"
+              exit 1
+            fi
+          done
+          if ! civo objectstore credential ls --region "$CIVO_REGION" -o json | jq -e --arg name "$BUCKET" '.[] | select(.name == $name)' > /dev/null; then
+            civo objectstore credential create "$BUCKET" --region "$CIVO_REGION" --wait > /dev/null
+            echo "Created the credential $BUCKET in $CIVO_REGION."
           fi
-          access_key=$(civo objectstore credential ls -o json | jq -r --arg name "$BUCKET" '.[] | select(.name == $name) | .access_key')
+          access_key=$(civo objectstore credential ls --region "$CIVO_REGION" -o json | jq -r --arg name "$BUCKET" '.[] | select(.name == $name) | .access_key')
           if [ -z "$access_key" ] || [ "$access_key" = null ]; then
             echo "::error::the credential $BUCKET has no access key; look at it in the Civo dashboard under Object stores > Credentials"
             exit 1
           fi
-          if ! civo objectstore show "$BUCKET" -o json > /dev/null 2>&1; then
-            civo objectstore create "$BUCKET" --size 500 --owner-name "$BUCKET" --wait > /dev/null
-            echo "Created the bucket $BUCKET (500 GB, the smallest Civo sells)."
+          if ! civo objectstore show "$BUCKET" --region "$CIVO_REGION" -o json > /dev/null 2>&1; then
+            civo objectstore create "$BUCKET" --size 500 --owner-name "$BUCKET" --region "$CIVO_REGION" --wait > /dev/null
+            echo "Created the bucket $BUCKET in $CIVO_REGION (500 GB, the smallest Civo sells)."
+          fi
+          secret_key=$(civo objectstore credential secret --access-key "$access_key" --region "$CIVO_REGION" -o json | jq -r '.secret_access_key_id')
+          if [ -z "$secret_key" ] || [ "$secret_key" = null ]; then
+            echo "::error::the credential $BUCKET has no secret key; look at it in the Civo dashboard under Object stores > Credentials"
+            exit 1
           fi
           printf '%s' "$access_key" | gh secret set STATE_ACCESS_KEY_ID --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY"
-          civo objectstore credential secret --access-key "$access_key" -o json | jq -r '.secret_access_key_id' \
-            | gh secret set STATE_SECRET_ACCESS_KEY --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY"
+          printf '%s' "$secret_key" | gh secret set STATE_SECRET_ACCESS_KEY --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY"
           echo "Wrote STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY to the environment $ENVIRONMENT."
+
+      # The credential the environment holds, against the endpoint Terraform's backend uses (infra/civo/backend.tf), so a
+      # wrong region or a stale pair fails here with the store's answer, not at the first tag's init. The runner's AWS CLI
+      # speaks S3 to the store; it is signed with the region the backend signs with.
+      - name: Check the state credential against the LON1 endpoint
+        if: inputs.rotate == 'none'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          endpoint="https://objectstore.$(tr '[:upper:]' '[:lower:]' <<< "$CIVO_REGION").civo.com"
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            # The pair was written seconds ago by this run: GitHub resolves secrets when the job starts, so a first run
+            # checks on its next run, and a repeat run checks what it holds.
+            echo "The pair was written by this run; run the workflow once more to check it against $endpoint."
+            exit 0
+          fi
+          if ! aws s3api list-objects-v2 --bucket "$BUCKET" --max-keys 1 --endpoint-url "$endpoint" --region "$CIVO_REGION" > /dev/null; then
+            echo "::error::the credential in the environment cannot list $BUCKET at $endpoint; delete STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY from the environment and run again, which writes a fresh pair (infra/README.md, Rotate)"
+            exit 1
+          fi
+          echo "The state credential lists $BUCKET at $endpoint."
 
       # 48 random bytes for the two secrets docs/06 sizes that way.
       - name: Generate ID's secrets, when missing
