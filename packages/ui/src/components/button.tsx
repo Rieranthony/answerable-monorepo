@@ -7,13 +7,16 @@ import { cn } from "@answerable/ui/lib/utils"
 function Button({
   className,
   variant = "default",
-  size = "default",
+  // The accent button is the statement call to action: 48px unless sized.
+  size = variant === "accent" ? "xl" : "default",
+  highlight,
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
   return (
     <ButtonPrimitive
       data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
+      data-variant={variant}
+      className={cn(buttonVariants({ variant, size, highlight, className }))}
       {...props}
     />
   )

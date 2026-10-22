@@ -7,15 +7,13 @@ function Field({ className, ...props }: FieldPrimitive.Root.Props) {
   return (
     <FieldPrimitive.Root
       data-slot="field"
-      className={cn(
-        "group/field flex w-full flex-col gap-2 data-invalid:text-destructive",
-        className,
-      )}
+      className={cn("group/field flex w-full flex-col gap-2", className)}
       {...props}
     />
   )
 }
 
+/** The label, with a 4px square destructive marker beside it while the field is invalid. */
 function FieldLabel({
   className,
   nativeLabel,
@@ -29,7 +27,7 @@ function FieldLabel({
       // Base UI expects a non-<label> element when the control is a button.
       render={render ?? (nativeLabel === false ? <span /> : undefined)}
       className={cn(
-        "flex w-fit items-center gap-2 text-sm leading-none font-medium select-none group-data-disabled/field:opacity-50",
+        "flex w-fit items-center gap-2 type-label text-foreground select-none group-data-disabled/field:opacity-50 after:hidden after:size-1 after:shrink-0 after:bg-destructive after:content-[''] group-data-invalid/field:after:block",
         className,
       )}
       {...props}
@@ -37,14 +35,29 @@ function FieldLabel({
   )
 }
 
-function FieldError({ className, ...props }: FieldPrimitive.Error.Props) {
+/** Helper text beneath the control. */
+function FieldDescription({
+  className,
+  ...props
+}: FieldPrimitive.Description.Props) {
   return (
-    <FieldPrimitive.Error
-      data-slot="field-error"
-      className={cn("text-sm font-medium text-destructive", className)}
+    <FieldPrimitive.Description
+      data-slot="field-description"
+      className={cn("-mt-0.5 type-caption text-muted-foreground", className)}
       {...props}
     />
   )
 }
 
-export { Field, FieldLabel, FieldError }
+/** The error message: helper text in the foreground colour, never coloured. */
+function FieldError({ className, ...props }: FieldPrimitive.Error.Props) {
+  return (
+    <FieldPrimitive.Error
+      data-slot="field-error"
+      className={cn("-mt-0.5 type-caption text-foreground", className)}
+      {...props}
+    />
+  )
+}
+
+export { Field, FieldLabel, FieldDescription, FieldError }

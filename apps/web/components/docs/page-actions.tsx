@@ -27,13 +27,18 @@ export function PageActions({ pageUrl }: { pageUrl: string }) {
 
   return (
     <div className="mt-3 flex items-center gap-2">
-      <Button variant="outline" size="xs" type="button" onClick={copyMarkdown}>
+      <Button
+        variant="secondary"
+        size="sm"
+        type="button"
+        onClick={copyMarkdown}
+      >
         {copied ? <Check /> : <Copy />}
         {copied ? "Copied" : "Copy Markdown"}
       </Button>
       <Button
-        variant="outline"
-        size="xs"
+        variant="secondary"
+        size="sm"
         nativeButton={false}
         render={<a href={markdownUrl} />}
       >

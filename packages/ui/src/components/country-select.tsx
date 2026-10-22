@@ -2,7 +2,6 @@
 
 import { Combobox as ComboboxPrimitive } from "@base-ui/react/combobox"
 import { countryGroups, findCountry, type Country } from "@answerable/countries"
-import { Button } from "@answerable/ui/components/button"
 import {
   Combobox,
   ComboboxCollection,
@@ -18,6 +17,7 @@ import {
   ComboboxValue,
 } from "@answerable/ui/components/combobox"
 import { Flag } from "@answerable/ui/components/flag"
+import { selectTriggerClassName } from "@answerable/ui/lib/input"
 import { cn } from "@answerable/ui/lib/utils"
 
 const GROUPS = countryGroups().map((g) => ({ value: g.label, items: g.items }))
@@ -65,15 +65,7 @@ function CountrySelect({
     >
       <ComboboxTrigger
         id={id}
-        render={
-          <Button
-            variant="outline"
-            className={cn(
-              "w-full justify-between text-base font-normal md:text-sm",
-              className,
-            )}
-          />
-        }
+        className={cn(selectTriggerClassName, "w-full", className)}
       >
         <ComboboxValue>
           {(c: Country | null) =>
