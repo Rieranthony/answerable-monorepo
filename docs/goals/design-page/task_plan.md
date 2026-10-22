@@ -11,12 +11,16 @@ Started 2026-10-22. Owner's ask, in their words: a `/design` page on the landing
 | 2 | Write the design: our spec on top of design.md, the token pipeline, the page, the pane | complete (design.md) |
 | 3 | Publish the report with decisions for the owner | complete (report.html) |
 | 4 | Owner approves decisions D1 to D14 | complete (decisions.md) |
-| 5 | Briefs for Opus 5.5 (B1 tokens + UI lib, B2 parser + spec, B3 page + pane), run them | in_progress (B1 and B2 landed on main; B3 next) |
-| 6 | Review, gates, land on main, Vercel check | pending |
+| 5 | Briefs for Opus 5.5 (B1 tokens + UI lib, B2 parser + spec, B3 page + pane), run them | complete (B1 fb32b381, B2 ca2e1be4, B3 31551495) |
+| 6 | Review, gates, land on main, Vercel check | in_progress |
 
 ## Decisions
 
-Recorded in `decisions.md` once the owner approves them (D1…).
+Recorded in `decisions.md` (D1 to D14, approved 2026-10-22, with the coordinator's adjustments).
+
+## Left for later
+
+From the sessions' reports: a share link with the overrides in the URL; Escape closing the pane; the type levels' own weights are not clamped when a picked font lacks a weight (only the three roles are); `/design` is 906 KB of HTML (96 KB gzipped) because the server-rendered tables repeat in the page payload; the upstream issue on references into unknown groups (D2) is not filed; the later phases of the design (other people's files through a server action, AI generation, a dark group in the profile).
 
 ## Errors encountered
 
