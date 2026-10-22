@@ -29,7 +29,7 @@ export interface DesignState {
   set(name: string, value: string): void
   /** Removes one override, or all of them. */
   reset(name?: string): void
-  /** Token name → value: what `DesignVars` declares as `--design-<name>`. */
+  /** Every contract token → its value, overrides applied: what `DesignVars` declares as `--design-<name>`. */
   hooks: Record<string, string>
   /** The `:root` block of hooks. */
   css: string
@@ -75,11 +75,10 @@ export function DesignProvider({
       }),
     [],
   )
-  const base = useMemo(() => designToTokens(design), [design])
   const value = useMemo<Context>(() => {
     const current = applyOverrides(design, overrides)
     const tokens = designToTokens(current)
-    const hooks = designHooks(base, current, tokens, fonts)
+    const hooks = designHooks(current, tokens, fonts)
     let markdown: string | undefined
     return {
       design,
@@ -96,7 +95,7 @@ export function DesignProvider({
         return markdown
       },
     }
-  }, [design, overrides, base, fonts, set, reset])
+  }, [design, overrides, fonts, set, reset])
   return <DesignContext value={value}>{children}</DesignContext>
 }
 
@@ -113,7 +112,8 @@ export function useDesign(): DesignState {
 }
 
 /**
- * Declares the hooks: every token the overrides change, and `--design-font-sans` with the self-hosted family.
+ * Declares the hooks: every contract token of the design, overrides applied, with `--design-font-sans` carrying
+ * the self-hosted family.
  * With `scope`, under `[data-design-scope="<scope>"]` instead of `:root`. A plain `<style>`, rendered where it
  * sits, so the server's HTML carries it and React keeps its text in step with the overrides.
  */

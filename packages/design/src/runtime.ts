@@ -9,20 +9,18 @@ const lookup = (fonts: Record<string, string>, family: string) =>
   )?.[1]
 
 /**
- * The hooks to declare: every token whose value differs from the design's own, and `font-sans` carrying the
- * self-hosted family when `fonts` (family → the CSS family `next/font` gives it) has the default font.
+ * The hooks to declare: every contract token of the design, since tokens.css carries Answerable's defaults and
+ * any other design differs from them, with `font-sans` carrying the self-hosted family when `fonts`
+ * (family → the CSS family `next/font` gives it) has the default font.
  */
 export function designHooks(
-  base: readonly DesignToken[],
   current: Design,
   tokens: readonly DesignToken[],
   fonts: Record<string, string>,
 ): Record<string, string> {
-  const before = new Map(base.map((token) => [token.name, token.value]))
-  const hooks: Record<string, string> = {}
-  for (const token of tokens) {
-    if (before.get(token.name) !== token.value) hooks[token.name] = token.value
-  }
+  const hooks = Object.fromEntries(
+    tokens.map((token) => [token.name, token.value]),
+  )
   const font = defaultFont(current)
   const selfHosted = font && lookup(fonts, font.family)
   if (

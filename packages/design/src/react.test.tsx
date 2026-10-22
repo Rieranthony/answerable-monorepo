@@ -14,33 +14,53 @@ import {
 const read = (path: string) =>
   readFileSync(new URL(path, import.meta.url), "utf8")
 const design = parseDesign(read("../../../DESIGN.md"))
+const totality = parseDesign(read("./fixtures/google/totality-festival.md"))
 const fonts = { "Public Sans": "'Public Sans', 'Public Sans Fallback'" }
+const declarations = (css: string) => css.match(/--design-[a-z0-9-]+:/g) ?? []
 
 describe("on the server", () => {
-  test("DesignVars declares the self-hosted font at :root", () => {
+  test("DesignVars declares every contract token at :root, the self-hosted font included", () => {
     const html = renderToStaticMarkup(
       <DesignProvider design={design} fonts={fonts}>
         <DesignVars />
       </DesignProvider>,
     )
-    expect(html).toBe(
-      `<style data-design-vars="root">:root {\n  --design-font-sans: 'Public Sans', 'Public Sans Fallback', system-ui, sans-serif;\n}\n</style>`,
+    expect(html).toStartWith(
+      `<style data-design-vars="root">:root {\n  --design-background: #ffffff;\n  --design-foreground: #000000;\n`,
     )
+    expect(html).toContain(
+      `  --design-font-sans: 'Public Sans', 'Public Sans Fallback', system-ui, sans-serif;\n`,
+    )
+    expect(html).toEndWith(
+      `  --design-ease: cubic-bezier(0.2, 0, 0, 1);\n}\n</style>`,
+    )
+    expect(declarations(html)).toHaveLength(176)
   })
 
-  test("DesignVars with a scope declares under the scope; with nothing to declare it is empty", () => {
+  test("DesignVars with a scope declares under the scope", () => {
     const html = renderToStaticMarkup(
       <DesignProvider design={design}>
         <DesignVars scope="pane one" />
       </DesignProvider>,
     )
-    expect(html).toBe(`<style data-design-vars="pane-one"></style>`)
-    const scoped = renderToStaticMarkup(
-      <DesignProvider design={design} fonts={fonts}>
-        <DesignVars scope="pane" />
+    expect(html).toStartWith(
+      `<style data-design-vars="pane-one">[data-design-scope="pane-one"] {\n`,
+    )
+    expect(declarations(html)).toHaveLength(176)
+  })
+
+  test("DesignVars declares another design's own values", () => {
+    const html = renderToStaticMarkup(
+      <DesignProvider design={totality}>
+        <DesignVars />
       </DesignProvider>,
     )
-    expect(scoped).toContain(`[data-design-scope="pane"] {`)
+    expect(html).toContain("  --design-background: #121318;\n")
+    expect(html).toContain("  --design-primary: #fff6df;\n")
+    expect(html).toContain(
+      `  --design-font-sans: "Inter", system-ui, sans-serif;\n`,
+    )
+    expect(html).toContain("  --design-radius: 0.25rem;\n")
   })
 
   test("DesignFonts links every family the provider does not self-host", () => {
@@ -124,9 +144,11 @@ describe("in the browser", () => {
       "#ff0000",
     )
     expect(state!.current.fonts.sans?.family).toBe("Inter")
-    expect(style()).toBe(
-      `:root {\n  --design-primary: #ff0000;\n  --design-font-sans: "Inter", system-ui, sans-serif;\n}\n`,
+    expect(style()).toContain("  --design-primary: #ff0000;\n")
+    expect(style()).toContain(
+      `  --design-font-sans: "Inter", system-ui, sans-serif;\n`,
     )
+    expect(declarations(style()!)).toHaveLength(176)
     expect(state!.css).toBe(style()!)
     expect(
       document.head.querySelector('link[href*="family=Inter"]'),
@@ -137,7 +159,7 @@ describe("in the browser", () => {
 
     await act(async () => state!.reset("primary"))
     expect(state!.overrides).toEqual({ "fonts.sans.family": "Inter" })
-    expect(style()).not.toContain("--design-primary")
+    expect(style()).toContain("  --design-primary: #000000;\n")
 
     await act(async () => state!.reset())
     expect(state!.overrides).toEqual({})
