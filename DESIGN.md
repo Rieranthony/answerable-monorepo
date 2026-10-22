@@ -1,5 +1,3 @@
-```
-
 ---
 version: beta
 name: Answerable
@@ -37,6 +35,7 @@ colors:
   # Core
   background: "#FFFFFF"
   foreground: "#000000"
+  primary: "{colors.foreground}"
   on-dark: "#FFFFFF"
   on-accent: "#000000"
 
@@ -65,23 +64,23 @@ colors:
   info: "{colors.accent-sky}"
   destructive: "{colors.accent-coral}"
 
-typography:
-  fontFamily: "Public Sans, system-ui, sans-serif"
-  weights:
-    regular: 400   # Body text — the default
-    bold: 700      # Subheadings, labels, buttons
-    black: 900     # Main headings, statements, big numbers
-  rules:
-    - "Only three weights exist: 400, 700, 900. Never use 100, 200, 300, 500, 600 or 800."
-    - "Regular text is never smaller than 14px. Bold labels are never smaller than 12px."
-    - "All text must reach at least 4.5:1 contrast with its background. Prefer pure black."
-    - "On slides, body text is never smaller than body-lg (18px at a 1280×720 canvas); scale proportionally for larger canvases."
+fonts:
+  sans:
+    family: "Public Sans"
+    provider: google
+    weights:
+      body: 400        # Body text — the default
+      label: 700       # Subheadings, labels, buttons
+      statement: 900   # Main headings, statements, big numbers
+    fallback: "system-ui, sans-serif"
+    default: true
 
+typography:
   # ── Statement layer (Black 900) ──
   statement-xl:   { fontSize: 72px, fontWeight: 900, lineHeight: 1.0,  letterSpacing: -2px }
   statement-lg:   { fontSize: 56px, fontWeight: 900, lineHeight: 1.02, letterSpacing: -1.5px }
   statement-md:   { fontSize: 40px, fontWeight: 900, lineHeight: 1.05, letterSpacing: -1px }
-  statement-quote:{ fontSize: 28px, fontWeight: 900, lineHeight: 1.2,  letterSpacing: -0.4px }
+  statement-quote: { fontSize: 28px, fontWeight: 900, lineHeight: 1.2,  letterSpacing: -0.4px }
   number-display: { fontSize: 96px, fontWeight: 900, lineHeight: 0.9,  letterSpacing: -3px }
   number-stat:    { fontSize: 48px, fontWeight: 900, lineHeight: 1.0,  letterSpacing: -1.5px }
   list-marker:    { fontSize: 32px, fontWeight: 900, lineHeight: 1.0,  letterSpacing: -1px }
@@ -107,7 +106,7 @@ typography:
   label:          { fontSize: 14px, fontWeight: 700, lineHeight: 1.2,  letterSpacing: 0 }
   button:         { fontSize: 14px, fontWeight: 700, lineHeight: 1.0,  letterSpacing: 0 }
   nav-link:       { fontSize: 14px, fontWeight: 400, lineHeight: 1.4,  letterSpacing: 0 }
-  nav-link-active:{ fontSize: 14px, fontWeight: 700, lineHeight: 1.4,  letterSpacing: 0 }
+  nav-link-active: { fontSize: 14px, fontWeight: 700, lineHeight: 1.4,  letterSpacing: 0 }
   badge:          { fontSize: 12px, fontWeight: 700, lineHeight: 1.0,  letterSpacing: 0.1px }
   eyebrow:        { fontSize: 12px, fontWeight: 700, lineHeight: 1.2,  letterSpacing: 1.2px, textTransform: uppercase }
   table-head:     { fontSize: 12px, fontWeight: 700, lineHeight: 1.3,  letterSpacing: 0.2px }
@@ -119,7 +118,8 @@ rounded:
   default: "{rounded.none}"
 
 spacing:
-  "0.5": 2px
+  unit: 4px
+  half: 2px
   "1": 4px
   "2": 8px
   "3": 12px
@@ -420,6 +420,59 @@ components:
   photo-tile:
     rounded: "{rounded.none}"
     padding: "0"
+
+roles:
+  background: "{colors.background}"
+  foreground: "{colors.foreground}"
+  card: "{colors.surface-card}"
+  card-foreground: "{colors.foreground}"
+  popover: "{colors.background}"
+  popover-foreground: "{colors.foreground}"
+  primary: "{colors.primary}"
+  primary-foreground: "{colors.on-dark}"
+  secondary: "{colors.neutral-100}"
+  secondary-foreground: "{colors.foreground}"
+  muted: "{colors.muted}"
+  muted-foreground: "{colors.muted-foreground}"
+  accent: "{colors.neutral-100}"         # Hover fills
+  accent-foreground: "{colors.foreground}"
+  destructive: "{colors.destructive}"
+  destructive-foreground: "{colors.on-accent}"
+  border: "{colors.separator}"
+  input: "{colors.neutral-100}"
+  ring: "{colors.ring}"
+  sidebar: "{colors.neutral-50}"
+  sidebar-foreground: "{colors.foreground}"
+  sidebar-primary: "{colors.foreground}"
+  sidebar-primary-foreground: "{colors.on-dark}"
+  sidebar-accent: "{colors.neutral-100}"
+  sidebar-accent-foreground: "{colors.foreground}"
+  sidebar-border: "{colors.separator}"
+  sidebar-ring: "{colors.ring}"
+  overlay: "{colors.overlay}"
+  surface-dark: "{colors.surface-dark}"
+  on-dark: "{colors.on-dark}"
+  on-accent: "{colors.on-accent}"
+  success: "{colors.success}"
+  warning: "{colors.warning}"
+  info: "{colors.info}"
+  # The rotation order: Sky Blue, Yellow, Green, Coral
+  highlight-1: "{colors.accent-sky}"
+  highlight-2: "{colors.accent-yellow}"
+  highlight-3: "{colors.accent-green}"
+  highlight-4: "{colors.accent-coral}"
+  chart-1: "{colors.foreground}"
+  chart-2: "{colors.accent-sky}"
+  chart-3: "{colors.accent-yellow}"
+  chart-4: "{colors.accent-green}"
+  chart-5: "{colors.accent-coral}"
+  radius: "{rounded.default}"
+  radius-full: "{rounded.full}"
+  font-sans: "{fonts.sans}"
+  weight-body: "{fonts.sans.weights.body}"
+  weight-label: "{fonts.sans.weights.label}"
+  weight-statement: "{fonts.sans.weights.statement}"
+  spacing-unit: "{spacing.unit}"
 ---
 
 # Design System
@@ -541,6 +594,10 @@ The four accents have **equal status**. None is the primary or default.
 
 Public Sans is the only typeface, and only **three weights** are used. Weight does the heavy lifting in the hierarchy. Body text is Regular and calm, so the Black moments really land.
 
+- Regular text is never smaller than 14px. Bold labels are never smaller than 12px.
+- All text must reach at least 4.5:1 contrast with its background. Prefer pure black.
+- On slides, body text is never smaller than body-lg (18px at a 1280×720 canvas); scale proportionally for larger canvases.
+
 ### Weight roles
 
 | Weight | Role |
@@ -626,23 +683,6 @@ Do not use black statement dividers inside dense interface areas, and do not use
 
 ---
 
-## Elevation
-
-Elevation separates floating layers from the page without outlines. Shadows are soft, neutral and always blurred.
-
-| Token | Use |
-|---|---|
-| xs | Cards on neutral-50 shells, active tab, switch thumb |
-| sm | Sticky headers, raised cards on hover |
-| md | Dropdowns, popovers, comboboxes |
-| lg | Dialogs, toasts, sheets |
-
-Never use a zero-blur or spread-only shadow. That is an outline in disguise.
-
-Statement components (quote panels, highlight panels, hero) are **flat**. Their contrast comes from solid black and white, not shadow.
-
----
-
 ## Layout
 
 - **Spacing:** 4px base unit. Use the spacing scale only.
@@ -660,6 +700,23 @@ Statement components (quote panels, highlight panels, hero) are **flat**. Their 
   - 680px maximum for long-form reading.
 - **Density:** interface screens are compact (16–24px gaps). Statement sections and slides are generous (64–96px vertical padding).
 - **Grid:** 12 columns for app layouts. Editorial square-tile grids (3 / 2 / 1 columns) for presentations and statement pages.
+
+---
+
+## Elevation
+
+Elevation separates floating layers from the page without outlines. Shadows are soft, neutral and always blurred.
+
+| Token | Use |
+|---|---|
+| xs | Cards on neutral-50 shells, active tab, switch thumb |
+| sm | Sticky headers, raised cards on hover |
+| md | Dropdowns, popovers, comboboxes |
+| lg | Dialogs, toasts, sheets |
+
+Never use a zero-blur or spread-only shadow. That is an outline in disguise.
+
+Statement components (quote panels, highlight panels, hero) are **flat**. Their contrast comes from solid black and white, not shadow.
 
 ---
 
@@ -866,5 +923,3 @@ Imagery follows a **heterogeneous architectural collage** methodology.
 - Don't combine browser list markers with custom markers.
 - Don't skip heading levels for visual effect.
 - Don't remove focus indicators.
-
-```
