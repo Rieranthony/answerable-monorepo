@@ -1,0 +1,2 @@
+# Generated: `bun run --filter @answerable/design generate` writes it, and Prettier would rewrap its long lines.
+src/styles/tokens.css

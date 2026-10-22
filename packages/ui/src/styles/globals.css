@@ -1,37 +1,94 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+/* The token contract: every default behind its `--design-*` hook, and the type levels. */
+@import "./tokens.css";
 
 /* Package sources sit outside the consuming app's cwd, so register them. */
 @source "../**/*.{ts,tsx}";
 
 @custom-variant dark (&:is(.dark *));
 
-@theme inline {
+/*
+ * Tailwind reads the contract: `inline` makes each utility emit `var(--token)`,
+ * so an override declared on any ancestor restyles everything below it.
+ */
+/*
+ * Tokens bound to a variable of the same name. `reference` keeps Tailwind from
+ * also writing `--font-sans: var(--font-sans)` into its theme layer.
+ */
+@theme inline reference {
   --font-sans: var(--font-sans);
+  --radius-full: var(--radius-full);
+}
+
+@theme inline {
   /* Native UI font, for glyphs Public Sans does not carry (e.g. ⏎). */
   --font-system:
     ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
     sans-serif;
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
+  --font-weight-body: var(--weight-body);
+  --font-weight-label: var(--weight-label);
+  --font-weight-statement: var(--weight-statement);
+
+  /* Tailwind's interface sizes follow the badge, ui-text, body-md and body-lg levels. */
+  --text-xs: var(--type-badge-size);
+  --text-xs--line-height: var(--type-badge-leading);
+  --text-sm: var(--type-ui-text-size);
+  --text-sm--line-height: var(--type-ui-text-leading);
+  --text-base: var(--type-body-md-size);
+  --text-base--line-height: var(--type-body-md-leading);
+  --text-lg: var(--type-body-lg-size);
+  --text-lg--line-height: var(--type-body-lg-leading);
+
   --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-overlay: var(--overlay);
+  --color-surface-dark: var(--surface-dark);
+  --color-on-dark: var(--on-dark);
+  --color-on-accent: var(--on-accent);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-highlight-1: var(--highlight-1);
+  --color-highlight-2: var(--highlight-2);
+  --color-highlight-3: var(--highlight-3);
+  --color-highlight-4: var(--highlight-4);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
   --color-mosaic-mark: var(--mosaic-mark);
+
+  /* One unit scales every `p-*`, `gap-*`, `h-*`, `size-*` and `/n` leading. */
+  --spacing: var(--spacing-unit);
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -39,70 +96,107 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* `shadow-none` stays Tailwind's static utility: it never reads `--shadow-none`. */
+  --shadow-xs: var(--elevation-xs);
+  --shadow-sm: var(--elevation-sm);
+  --shadow-md: var(--elevation-md);
+  --shadow-lg: var(--elevation-lg);
+
+  --default-transition-duration: var(--duration-base);
+  --default-transition-timing-function: var(--ease);
+  --ease-design: var(--ease);
+}
+
+@utility duration-fast {
+  --tw-duration: var(--duration-fast);
+  transition-duration: var(--duration-fast);
+}
+@utility duration-base {
+  --tw-duration: var(--duration-base);
+  transition-duration: var(--duration-base);
+}
+@utility duration-slow {
+  --tw-duration: var(--duration-slow);
+  transition-duration: var(--duration-slow);
+}
+
+/* The only ring: a temporary state on `focus-visible`, never a border. */
+@utility focus-ring {
+  box-shadow: var(--focus-ring);
+}
+
+/* Library-owned: the mosaic's punctuation marks, a lighter tint of Answerable Grey. */
+:root {
+  --mosaic-mark: #e3e3eb;
 }
 
 /*
- * Answerable brand — monochrome only:
- * black #000 / white #fff primary, Answerable Grey #d2d2de secondary.
+ * The dark scheme, hand-written until the profile grows a `schemes` group.
+ * Same hooks as tokens.css, dark defaults; the accents stay as they are.
  */
-:root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0 0 0);
-  --primary: oklch(0 0 0);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: #d2d2de;
-  --secondary-foreground: oklch(0 0 0);
-  --muted: #d2d2de;
-  --muted-foreground: oklch(0.5 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: #d2d2de;
-  --ring: oklch(0 0 0);
-  /* Mosaic punctuation marks: a lighter tint of Answerable Grey. */
-  --mosaic-mark: #e3e3eb;
-  --radius: 0;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0 0 0);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0 0 0);
-}
-
 .dark {
-  --background: oklch(0 0 0);
-  --foreground: oklch(0.92 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(1 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(1 0 0);
-  --primary: oklch(1 0 0);
-  --primary-foreground: oklch(0 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(1 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.65 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(1 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(1 0 0);
+  --background: var(--design-background, oklch(0 0 0));
+  --foreground: var(--design-foreground, oklch(0.92 0 0));
+  --card: var(--design-card, oklch(0.145 0 0));
+  --card-foreground: var(--design-card-foreground, oklch(1 0 0));
+  --popover: var(--design-popover, oklch(0.145 0 0));
+  --popover-foreground: var(--design-popover-foreground, oklch(1 0 0));
+  --primary: var(--design-primary, oklch(1 0 0));
+  --primary-foreground: var(--design-primary-foreground, oklch(0 0 0));
+  --secondary: var(--design-secondary, oklch(0.269 0 0));
+  --secondary-foreground: var(--design-secondary-foreground, oklch(1 0 0));
+  --muted: var(--design-muted, oklch(0.269 0 0));
+  --muted-foreground: var(--design-muted-foreground, oklch(0.65 0 0));
+  --accent: var(--design-accent, oklch(0.269 0 0));
+  --accent-foreground: var(--design-accent-foreground, oklch(1 0 0));
+  --destructive: var(--design-destructive, #e9895e);
+  --destructive-foreground: var(--design-destructive-foreground, #000000);
+  --border: var(--design-border, oklch(1 0 0 / 10%));
+  --input: var(--design-input, oklch(0.269 0 0));
+  --ring: var(--design-ring, oklch(1 0 0));
+  --sidebar: var(--design-sidebar, oklch(0.145 0 0));
+  --sidebar-foreground: var(--design-sidebar-foreground, oklch(1 0 0));
+  --sidebar-primary: var(--design-sidebar-primary, oklch(1 0 0));
+  --sidebar-primary-foreground: var(
+    --design-sidebar-primary-foreground,
+    oklch(0 0 0)
+  );
+  --sidebar-accent: var(--design-sidebar-accent, oklch(0.269 0 0));
+  --sidebar-accent-foreground: var(
+    --design-sidebar-accent-foreground,
+    oklch(1 0 0)
+  );
+  --sidebar-border: var(--design-sidebar-border, oklch(1 0 0 / 10%));
+  --sidebar-ring: var(--design-sidebar-ring, oklch(1 0 0));
+  --overlay: var(--design-overlay, oklch(0 0 0 / 60%));
+  /* The statement surface inverts: a white panel with black text on a black page. */
+  --surface-dark: var(--design-surface-dark, oklch(1 0 0));
+  --on-dark: var(--design-on-dark, oklch(0 0 0));
+  --on-accent: var(--design-on-accent, #000000);
+  --success: var(--design-success, #98af48);
+  --warning: var(--design-warning, #f3dd8f);
+  --info: var(--design-info, #a8dce8);
+  --highlight-1: var(--design-highlight-1, #a8dce8);
+  --highlight-2: var(--design-highlight-2, #f3dd8f);
+  --highlight-3: var(--design-highlight-3, #98af48);
+  --highlight-4: var(--design-highlight-4, #e9895e);
+  --chart-1: var(--design-chart-1, oklch(0.92 0 0));
+  --chart-2: var(--design-chart-2, #a8dce8);
+  --chart-3: var(--design-chart-3, #f3dd8f);
+  --chart-4: var(--design-chart-4, #98af48);
+  --chart-5: var(--design-chart-5, #e9895e);
+  --line-separator-color: var(
+    --design-line-separator-color,
+    oklch(1 0 0 / 10%)
+  );
+  --line-statement-color: var(--design-line-statement-color, oklch(1 0 0));
+  --focus-ring: var(
+    --design-focus-ring,
+    0 0 0 2px oklch(0 0 0),
+    0 0 0 4px oklch(1 0 0)
+  );
   --mosaic-mark: oklch(0.269 0 0);
-  --sidebar: oklch(0.145 0 0);
-  --sidebar-foreground: oklch(1 0 0);
-  --sidebar-primary-foreground: oklch(0 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(1 0 0);
 }
 
 @layer base {
