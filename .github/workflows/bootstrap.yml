@@ -125,6 +125,8 @@ jobs:
           AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
         run: |
           endpoint="https://objectstore.$(tr '[:upper:]' '[:lower:]' <<< "$CIVO_REGION").civo.com"
+          # Path-style addressing, as the backend uses: the AWS CLI takes it from its config file only.
+          mkdir -p ~/.aws && printf '[default]\ns3 =\n    addressing_style = path\n' > ~/.aws/config
           if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
             # The pair was written seconds ago by this run: GitHub resolves secrets when the job starts, so a first run
             # checks on its next run, and a repeat run checks what it holds.
