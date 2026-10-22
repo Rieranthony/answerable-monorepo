@@ -48,6 +48,11 @@
       "dependsOn": ["^build"],
       "outputs": ["coverage/**"]
     },
+    "@answerable/design#test": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "../../DESIGN.md", "../ui/src/styles/tokens.css"],
+      "outputs": ["coverage/**"]
+    },
     "@answerable/mcp-e2e#test": {
       "cache": false,
       "dependsOn": ["^build"]

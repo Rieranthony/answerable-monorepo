@@ -36,6 +36,16 @@
         "**/*.{ts,tsx,mjs}"
       ]
     },
+    "packages/design": {
+      "entry": [
+        "src/**/*.test.{ts,tsx}",
+        "scripts/*.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}",
+        "scripts/*.ts"
+      ]
+    },
     "packages/*": {
       "entry": [
         "src/index.ts",
