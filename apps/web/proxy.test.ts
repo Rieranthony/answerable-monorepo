@@ -26,6 +26,19 @@ test("HTML docs URLs negotiate Markdown and preserve query parameters", () => {
   expect(response?.headers.get("vary")).toBe("Accept")
 })
 
+test("the design page negotiates the DESIGN.md it renders", () => {
+  const response = proxy(
+    new NextRequest("https://www.answerable.org/design", {
+      headers: { Accept: "text/markdown" },
+    }),
+  )
+  expect(response?.headers.get("x-middleware-rewrite")).toBe(
+    "https://www.answerable.org/design.md",
+  )
+  expect(response?.headers.get("vary")).toBe("Accept")
+  expect(response?.headers.get("x-robots-tag")).toBe("noindex, follow")
+})
+
 test("browser requests keep the HTML docs page", () => {
   expect(
     proxy(

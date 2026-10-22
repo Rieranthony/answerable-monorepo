@@ -9,6 +9,7 @@
       "dependsOn": ["^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
+        "../../DESIGN.md",
         "../id/openapi.json",
         "../id/openapi.admin.json",
         "../../packages/auth/src/**",

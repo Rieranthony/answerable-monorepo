@@ -9,7 +9,11 @@ export function proxy(request: NextRequest) {
   if (request.nextUrl.pathname.endsWith(".md")) return
   if (!isMarkdownPreferred(request)) return
 
-  const pathname = markdownPath.rewrite(request.nextUrl.pathname)
+  // The design page's Markdown is the DESIGN.md it renders.
+  const pathname =
+    request.nextUrl.pathname === "/design"
+      ? "/design.md"
+      : markdownPath.rewrite(request.nextUrl.pathname)
 
   if (!pathname) return
 
@@ -18,8 +22,10 @@ export function proxy(request: NextRequest) {
 
   const response = NextResponse.rewrite(url)
   response.headers.set("Vary", "Accept")
+  // Markdown is never indexed, whichever URL it was negotiated on.
+  response.headers.set("X-Robots-Tag", "noindex, follow")
 
   return response
 }
 
-export const config = { matcher: ["/docs/:path*"] }
+export const config = { matcher: ["/docs/:path*", "/design"] }

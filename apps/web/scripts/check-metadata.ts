@@ -31,7 +31,7 @@ for (const agent of [
   "facebookexternalhit/1.1",
   "LinkedInBot/1.0",
 ]) {
-  for (const path of ["/", "/docs", "/docs/id/sign-in", apiPage]) {
+  for (const path of ["/", "/design", "/docs", "/docs/id/sign-in", apiPage]) {
     const response = await fetch(base + path, {
       headers: { "User-Agent": agent },
     })
@@ -51,7 +51,9 @@ for (const agent of [
     assert.ok(meta.get("og:image:alt"))
     assert.equal(
       meta.get("robots"),
-      pathname === "/" ? "index, follow" : "noindex, follow",
+      pathname === "/" || pathname === "/design"
+        ? "index, follow"
+        : "noindex, follow",
     )
     assert.ok(
       meta
@@ -78,6 +80,8 @@ for (const agent of [
 
 for (const [path, accept] of [
   ["/docs.md", "text/markdown"],
+  ["/design.md", "text/markdown"],
+  ["/design", "text/markdown"],
   ["/docs/id/sign-in.md", "text/markdown"],
   ["/docs/id/sign-in.md", "*/*"],
   ["/docs/id/sign-in", "text/markdown"],
@@ -98,7 +102,7 @@ for (const [path, accept] of [
 const sitemap = await (await fetch(base + "/sitemap.xml")).text()
 assert.deepEqual(
   [...sitemap.matchAll(/<loc>(.*?)<\/loc>/g)].map((m) => m[1]),
-  [origin + "/"],
+  [origin + "/", origin + "/design"],
 )
 const robots = await (await fetch(base + "/robots.txt")).text()
 assert.ok(robots.includes(`Sitemap: ${origin}/sitemap.xml`))
@@ -146,12 +150,18 @@ for (const path of [
   }
 }
 for (const path of [
+  "/does-not-exist",
   "/og/docs/id/sign-in/wrong.png",
   "/og/docs/does-not-exist/image.png",
   "/docs/does-not-exist",
 ]) {
   assert.equal((await fetch(base + path)).status, 404, path)
 }
+// A URL no route matches still wears the dark site, though the site has two root layouts.
+assert.match(
+  await (await fetch(base + "/does-not-exist")).text(),
+  /<html[^>]*class="dark /,
+)
 for (const path of ["/favicon.ico", "/apple-icon.png", "/icon.svg"]) {
   assert.equal((await fetch(base + path)).status, 200, path)
 }

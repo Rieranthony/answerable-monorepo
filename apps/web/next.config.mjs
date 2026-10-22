@@ -1,18 +1,30 @@
+import { fileURLToPath } from "node:url"
 import { createMDX } from "fumadocs-mdx/next"
 
 /** @type {import("next").NextConfig} */
 const config = {
+  // app/global-not-found.tsx: with two root layouts, an unmatched URL has no layout of its own.
+  experimental: { globalNotFound: true },
   logging: {
     incomingRequests: {
       ignore: [/^\/api\/oauth-test\/callback(?:\?|$)/],
     },
   },
-  serverExternalPackages: ["@takumi-rs/core"],
-  transpilePackages: ["@answerable/ui", "@answerable/countries"],
+  // The repository root, not the nearest lockfile Next infers: a worktree sits
+  // inside the main checkout, and Tailwind scans from this root.
+  turbopack: { root: fileURLToPath(new URL("../..", import.meta.url)) },
+  // Google's design.md linter reads its spec file beside its own module.
+  serverExternalPackages: ["@takumi-rs/core", "@google/design.md"],
+  transpilePackages: [
+    "@answerable/ui",
+    "@answerable/countries",
+    "@answerable/design",
+  ],
   async headers() {
     return [
       "/docs/:path*",
       "/docs.md",
+      "/design.md",
       "/llms.mdx/:path*",
       "/llms.txt",
       "/llms-full.txt",

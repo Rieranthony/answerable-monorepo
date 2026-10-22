@@ -4,6 +4,8 @@ import { expect, test } from "bun:test"
 import { existsSync, readFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import GithubSlugger from "github-slugger"
+import { sectionId } from "../components/design/lib"
+import { loadDesign } from "./design"
 
 const web = join(import.meta.dir, "..")
 const repo = join(web, "../..")
@@ -44,6 +46,18 @@ for (const file of scan("**/*.mdx", content)) {
   pages.set(urlOf(file), anchorsOf(read(join(content, file))))
 }
 
+// The design page renders DESIGN.md, a section per heading and the lint findings last; /design.md serves the file.
+pages.set(
+  "/design",
+  new Set([
+    ...loadDesign()
+      .sections.filter((section) => section.heading)
+      .map((section) => sectionId(section.heading)),
+    "lint",
+  ]),
+)
+pages.set("/design.md", null)
+
 // OpenAPI pages: /docs/id/<api|admin-api>/<tag, slugified>/<operationId>, as fumadocs-openapi names them.
 for (const [base, contract] of [
   ["/docs/id/api", "apps/id/openapi.json"],
@@ -69,8 +83,8 @@ function links(file: string, source: string) {
   const text = prose(source)
 
   return [
-    ...text.matchAll(/\]\((\/docs[^)\s]*|#[^)\s]+)\)/g),
-    ...text.matchAll(/href="(\/docs[^"]*)"/g),
+    ...text.matchAll(/\]\((\/(?:docs|design)[^)\s]*|#[^)\s]+)\)/g),
+    ...text.matchAll(/href="(\/(?:docs|design)[^"]*)"/g),
   ].map(([, link]) => ({ file, link: link! }))
 }
 
@@ -124,8 +138,16 @@ test("every link from the repository's Markdown into the docs' sources reaches a
   expect(broken).toEqual([])
 })
 
-test("the checker sees the pages it must: MDX pages and OpenAPI operations", () => {
+test("the checker sees the pages it must: MDX pages, OpenAPI operations and the design page", () => {
   expect(pages.has("/docs")).toBe(true)
+  expect(pages.get("/design")).toContain("lines-separators-and-focus")
+  expect(pages.get("/design")).toContain("lint")
+  expect(pages.has("/design.md")).toBe(true)
+  expect(
+    links("x.mdx", "[the design](/design) and [its file](/design.md)").map(
+      ({ link }) => link,
+    ),
+  ).toEqual(["/design", "/design.md"])
   expect(pages.has("/docs/mcp/reference")).toBe(true)
   expect(pages.has("/docs/id/api/token/issueToken")).toBe(true)
   expect(anchorsOf("## The `sub` rule\n\n```sh\n# not a heading\n```")).toEqual(

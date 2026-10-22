@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next"
 import { Public_Sans } from "next/font/google"
 
-import "./globals.css"
+import "../globals.css"
 import { createMetadata, SITE } from "@/lib/metadata"
 import { cn } from "@answerable/ui/lib/utils"
 
