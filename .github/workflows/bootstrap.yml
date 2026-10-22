@@ -84,8 +84,9 @@ jobs:
             echo "The state credential is already in the environment; the bucket is left as it is."
             exit 0
           fi
-          for region in $(civo region ls -o json | jq -r '.[].code'); do
-            if [ "$region" != "$CIVO_REGION" ] && civo objectstore show "$BUCKET" --region "$region" -o json > /dev/null 2>&1; then
+          # Region codes come back in lower case (nyc1), whatever case the flag takes.
+          for region in $(civo region ls -o json | jq -r '.[].code | ascii_downcase'); do
+            if [ "$region" != "$(tr '[:upper:]' '[:lower:]' <<< "$CIVO_REGION")" ] && civo objectstore show "$BUCKET" --region "$region" -o json > /dev/null 2>&1; then
               echo "::error::a store named $BUCKET exists in $region, not $CIVO_REGION; delete it and its credential in the Civo dashboard, then run again"
               exit 1
             fi
