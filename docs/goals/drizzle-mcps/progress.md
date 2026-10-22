@@ -37,3 +37,7 @@
 | `bun run infra:test` (the kind stack, once; no cluster existed before, none after) | 105 pass, 0 fail, 2 files, 191 s: the chart tests and the stack, with the images built from this branch |
 
 - Commits: 2cc45e89 (the move), 0f19462e (docs), e4ac9de8 (scaffold test links the root's node_modules), 62f883ad (ID's shape test resolves the package), and the plan files' final commit.
+
+## 2026-10-22
+
+- Landed on `main` by fast-forward as 1e9a842a, before `staging/first`, on the owner's decision; CI run 39740626258 green (infra-check, validate, containers). The main checkout reinstalled under the hoisted linker and typechecks clean.
