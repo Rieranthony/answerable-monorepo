@@ -101,7 +101,6 @@ export async function configureRuntimeRole(db: Executor, role: string, grants: r
       grant usage on schema public to ${quoted};
       revoke all on all tables in schema public from public, ${quoted};
       revoke all on all sequences in schema public from public, ${quoted};
-      revoke all on all functions in schema public from ${quoted};
       alter default privileges revoke all on tables from public, ${quoted};
       alter default privileges revoke all on sequences from public, ${quoted};
       alter default privileges in schema public revoke all on tables from public, ${quoted};
@@ -111,6 +110,11 @@ export async function configureRuntimeRole(db: Executor, role: string, grants: r
       revoke all on all sequences in schema drizzle from public, ${quoted};` : ""}
       ${grants.filter(grant => grant.privileges.length).map(grant => `grant ${grant.privileges.join(", ")} on public.${quote(grant.table)} to ${quoted};`).join("\n")}
     `))
+    // Only the routines the owner holds: a managed Postgres keeps extension routines in public under another owner (Civo's
+    // pg_stat_monitor), and a revoke on those is refused, not skipped.
+    const routines = await rows<{ signature: string }>(tx, sql`select format('%I.%I(%s)', n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)) as signature
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and pg_get_userbyid(p.proowner) = current_user`)
+    for (const routine of routines) await tx.execute(sql.raw(`revoke all on routine ${routine.signature} from ${quoted}`))
   })
 }
 

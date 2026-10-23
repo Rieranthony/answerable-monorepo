@@ -188,3 +188,18 @@ test("assertRuntimeRole names each attribute, membership, ownership and privileg
   }
   await assertRuntimeRole(login.db)
 })
+
+test("the owner's own routines are revoked from the role, and another owner's are left alone, as a managed Postgres keeps extension routines in public", async () => {
+  const foreign = `mcp_test_foreign_${crypto.randomUUID().replaceAll("-", "")}`
+  await run(`create role ${foreign} nologin;
+    create function mcp_test_owned_fn() returns int language sql as 'select 1';
+    revoke execute on function mcp_test_owned_fn() from public; grant execute on function mcp_test_owned_fn() to ${login.role};
+    create function mcp_test_foreign_fn() returns int language sql as 'select 2'; alter function mcp_test_foreign_fn() owner to ${foreign};
+    revoke execute on function mcp_test_foreign_fn() from public; grant execute on function mcp_test_foreign_fn() to ${login.role}`)
+  try {
+    await configureRuntimeRole(owner, login.role, runtimeGrants)
+    expect(await query`select has_function_privilege(${login.role}::name, 'mcp_test_owned_fn()', 'execute') as owned, has_function_privilege(${login.role}::name, 'mcp_test_foreign_fn()', 'execute') as foreign`).toEqual([{ owned: false, foreign: true }])
+  } finally {
+    await run(`drop function mcp_test_owned_fn(); drop function mcp_test_foreign_fn(); drop role ${foreign}`)
+  }
+})

@@ -82,9 +82,18 @@ export function configureRuntimeRole(db: Database, roleName: string) {
     await tx.execute(
       sql`revoke all on all tables in schema public from public, ${role}`,
     );
-    await tx.execute(
-      sql`revoke execute on all functions in schema public from ${role}`,
+    // Only the routines the owner holds: a managed Postgres keeps extension
+    // routines in public under another owner (Civo's pg_stat_monitor), and a
+    // revoke on those is refused, not skipped.
+    const routines = await tx.execute<{ signature: string }>(
+      sql`select format('%I.%I(%s)', n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)) as signature
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and pg_get_userbyid(p.proowner) = current_user`,
     );
+    for (const routine of routines.rows)
+      await tx.execute(
+        sql`revoke execute on routine ${sql.raw(routine.signature)} from ${role}`,
+      );
     await tx.execute(
       sql`grant select, insert, update, delete on all tables in schema public to ${role}`,
     );

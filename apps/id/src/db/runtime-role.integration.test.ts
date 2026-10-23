@@ -810,3 +810,46 @@ test("runtime lifecycle audit indexes recorded users without direct subject writ
   );
   await assertRuntimeRole(runtime.db);
 });
+
+test("provisioning revokes execute on the owner's own routines and leaves another owner's alone", async () => {
+  // A managed Postgres keeps extension routines in public under another owner
+  // (Civo's pg_stat_monitor): a revoke on those is refused, so they are skipped.
+  const foreign = `id_test_foreign_${crypto.randomUUID().replaceAll("-", "")}`;
+  const role = sql.identifier(roleName);
+  await owner.db.execute(sql`create role ${sql.identifier(foreign)} nologin`);
+  await owner.db.execute(
+    sql`create function id_test_owned_fn() returns int language sql as 'select 1'`,
+  );
+  await owner.db.execute(
+    sql`revoke execute on function id_test_owned_fn() from public`,
+  );
+  await owner.db.execute(
+    sql`grant execute on function id_test_owned_fn() to ${role}`,
+  );
+  await owner.db.execute(
+    sql`create function id_test_foreign_fn() returns int language sql as 'select 2'`,
+  );
+  await owner.db.execute(
+    sql`alter function id_test_foreign_fn() owner to ${sql.identifier(foreign)}`,
+  );
+  await owner.db.execute(
+    sql`revoke execute on function id_test_foreign_fn() from public`,
+  );
+  await owner.db.execute(
+    sql`grant execute on function id_test_foreign_fn() to ${role}`,
+  );
+  try {
+    await configureRuntimeRole(owner.db, roleName);
+    const privileges = await owner.db.execute<{
+      owned: boolean;
+      foreign: boolean;
+    }>(
+      sql`select has_function_privilege(${roleName}::name, 'id_test_owned_fn()', 'execute') as owned, has_function_privilege(${roleName}::name, 'id_test_foreign_fn()', 'execute') as foreign`,
+    );
+    expect(privileges.rows).toEqual([{ owned: false, foreign: true }]);
+  } finally {
+    await owner.db.execute(sql`drop function id_test_owned_fn()`);
+    await owner.db.execute(sql`drop function id_test_foreign_fn()`);
+    await owner.db.execute(sql`drop role ${sql.identifier(foreign)}`);
+  }
+});
