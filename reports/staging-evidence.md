@@ -9,6 +9,7 @@ What the first staging deploy on Civo established, run by run, with the numbers 
 | `staging/first` (75f74819) | 39758319327 | Terraform init refused: the state credential and bucket were in NYC1 (the Civo CLI reads no region variable). Rerun after the fix: the lock write refused with `XAmzContentSHA256Mismatch` (the AWS SDK's default trailing checksum). |
 | `staging/second` (5de5bcf1) | 39918756680 | Lock acquired; network, three firewalls, reserved address and database created; the cluster refused `-Traefik-v2-nodeport` (the marketplace name is `traefik2-nodeport`). |
 | `staging/third` (e349de58) | 39922177773 | Apply complete, 33 resources; images pulled; ops `bootstrap` created the three databases and six logins; ID's migration Job refused `revoke execute on all functions in schema public` (`pgsm_create_view`, Civo's pg_stat_monitor); release rolled back. |
+| `staging/fourth` (ba5832f9) | 39925680328 | CI failed once on a flaky pipeline test (Bun 1.3.1 stack without its message); rerun of the failed job: apply (no change), four builds, deploy with `bootstrap` and `register`, smoke test **8 of 8**. Staging is live. |
 
 ## The environment after `staging/third`
 
@@ -31,6 +32,25 @@ What the first staging deploy on Civo established, run by run, with the numbers 
 
 The cluster pulled `ghcr.io/rieranthony/answerable/ops` by digest without a change to the packages' visibility, so the tutorial's step 7.2 was not needed.
 
-## Still to record
+## The smoke test (`staging/fourth`, 2026-10-23 09:00 UTC, through Cloudflare)
 
-The ops `register` Job's two `claude mcp add` lines, the smoke test's checks, Traefik's seen address.
+| Check | Result | Time |
+| --- | --- | --- |
+| id `/healthz` | PASS, status ok | 712 ms |
+| id `/readyz` | PASS, status ok | 176 ms |
+| id discovery | PASS, issuer `https://id.answerable-staging.uk` | 174 ms |
+| id jwks | PASS, 1 signing key | 358 ms |
+| toolbox `/health` | PASS, status ok | 904 ms |
+| toolbox resource metadata | PASS, names `https://id.answerable-staging.uk` | 194 ms |
+| admin-mcp `/health` | PASS, status ok | 1,057 ms |
+| admin-mcp resource metadata | PASS, names `https://id.answerable-staging.uk` | 162 ms |
+
+So the load balancer reaches the node ports through the cluster firewall, Cloudflare's origin pull is accepted by Traefik, and the three services answer behind it.
+
+## The ops `register` Job
+
+It ran in the same deploy (`toolbox-id-client` and `admin-id-client` did not exist yet): the two machine clients and the staff directory are registered, the Toolbox and the admin MCP started. The deploy prints a Job's log only when the upgrade fails, so its two `claude mcp add` lines are not in this run's log; they are the two commands of the tutorial's part 9.
+
+## Still open
+
+Traefik's seen address (read `X-Forwarded-For` at ID once a request can be traced), and Bun's identity check for an IP host under `verify-full` (above).
