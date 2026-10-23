@@ -66,5 +66,9 @@ if [ -n "${STATE_SECRET_ACCESS_KEY:-}" ]; then
   AWS_SECRET_ACCESS_KEY=$STATE_SECRET_ACCESS_KEY
   export AWS_SECRET_ACCESS_KEY
 fi
+# No checksum the store does not speak. backend.tf's skip_s3_checksum stops the backend's own SHA-256 checksum, but the
+# AWS SDK underneath still adds its default CRC32 as a trailing checksum on every upload, and Civo's store answers
+# XAmzContentSHA256Mismatch (the first staging apply, 23 October 2026; hashicorp/terraform#36704). The SDK reads these two.
+export AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
 
 exec terraform "$command" "$@"

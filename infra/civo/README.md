@@ -179,7 +179,7 @@ Each of these could not be proved without a Civo account. Record the answer in [
 
 | Question | How to check | If it differs |
 | --- | --- | --- |
-| Does Civo's object store honour `use_lockfile`? | The first `init` and `apply`: a refused write of `<environment>.tfstate.tflock` fails them | `use_lockfile = false` in `backend.tf`, and rely on the workflows never running two applies of one environment at once |
+| Does Civo's object store honour `use_lockfile`? The first apply's lock write failed on the SDK's default trailing checksum, not on the conditional write; `terraform.sh` switches that checksum off | The first `init` and `apply`: a refused write of `<environment>.tfstate.tflock` fails them | `use_lockfile = false` in `backend.tf`, and rely on the workflows never running two applies of one environment at once |
 | Is Traefik absent? The root removes `Traefik-v2-nodeport`, the name Civo's CLI documentation uses | Automatic: a postcondition fails the apply when the cluster reports a Traefik application | Correct the name in `modules/cluster/main.tf` and recreate the cluster |
 | Does Cloudflare accept the ECDSA client certificate and key for zone-level origin pulls? Its examples use RSA | The full apply creates `cloudflare_authenticated_origin_pulls_certificate` or fails | Make `tls_private_key.origin_pull_client` RSA 2048 |
 | Does the load balancer reach the ingress node ports through the cluster firewall? It admits TCP 30000-32767 from the private network | The smoke test through Cloudflare once the records are live | Find the load balancer's source address and admit it on the node ports |

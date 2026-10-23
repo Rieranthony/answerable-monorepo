@@ -2,7 +2,8 @@
 # bootstrap workflow creates with the Civo CLI. The bucket and the key are left out here (partial configuration):
 # ./terraform.sh <environment> passes them to `init`, and hands STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY to this
 # backend. Civo's object store speaks S3 with path-style addressing and without the account, metadata and checksum
-# calls the backend makes by default, so those are switched off below. Whether it honours the conditional writes
+# calls the backend makes by default, so those are switched off below; the SDK's own default trailing checksum, which
+# skip_s3_checksum does not reach, is switched off by terraform.sh. Whether it honours the conditional writes
 # `use_lockfile` relies on is confirmed on the first apply; the fallback is in the README.
 terraform {
   backend "s3" {
