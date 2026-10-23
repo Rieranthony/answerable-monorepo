@@ -79,7 +79,7 @@ Nothing secret is committed and no Terraform variable holds a secret. Terraform 
 | --- | --- | --- |
 | `CIVO_TOKEN` | The environment's Civo account API key | The owner, once |
 | `CLOUDFLARE_API_TOKEN` | A token scoped to the environment's zone only, with the permissions listed below | The owner, once |
-| `STATE_ACCESS_KEY_ID`, `STATE_SECRET_ACCESS_KEY` | The state bucket's credential; `terraform.sh` hands it to the S3 backend | The bootstrap workflow, which creates the bucket and the credential with the Civo CLI |
+| `STATE_ACCESS_KEY_ID`, `STATE_SECRET_ACCESS_KEY` | The state bucket's credential; `terraform.sh` hands it to the S3 backend | The bootstrap workflow: it creates the credential and the bucket with the Civo CLI, naming the region on every call (the CLI reads no region variable and defaults to NYC1), reads both keys from Civo's API (the CLI's JSON for the secret is empty) and lists the bucket with them at the region's endpoint, `infra/civo/check-state.sh`, before it declares success |
 | `GITHUB_TOKEN` | The environment's `GH_SECRETS_TOKEN`, under the name the GitHub provider reads, with the permissions listed below | The owner pastes `GH_SECRETS_TOKEN` once; the workflow maps it |
 
 The zone's Cloudflare token needs these permissions, on that zone only:

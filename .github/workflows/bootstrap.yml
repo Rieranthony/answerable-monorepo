@@ -115,33 +115,28 @@ jobs:
           printf '%s' "$access_key" | gh secret set STATE_ACCESS_KEY_ID --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY"
           printf '%s' "$secret_key" | gh secret set STATE_SECRET_ACCESS_KEY --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY"
           echo "Wrote STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY to the environment $ENVIRONMENT."
+          if ! AWS_ACCESS_KEY_ID=$access_key AWS_SECRET_ACCESS_KEY=$secret_key infra/civo/check-state.sh "$CIVO_REGION" "$BUCKET"; then
+            echo "::error::the new credential cannot list $BUCKET at the $CIVO_REGION endpoint; look at the store and the credential in the Civo dashboard, then delete STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY from the environment and run again"
+            exit 1
+          fi
 
-      # The credential the environment holds, against the endpoint Terraform's backend uses (infra/civo/backend.tf), so a
-      # wrong region or a stale pair fails here with the store's answer, not at the first tag's init. The runner's AWS CLI
-      # speaks S3 to the store; it is signed with the region the backend signs with.
-      - name: Check the state credential against the LON1 endpoint
+      # On a repeat run, the pair the environment holds, against the endpoint Terraform's backend uses, with the same
+      # check the first run made on the pair it wrote (GitHub resolves secrets when the job starts, so a first run's pair
+      # is not in scope here).
+      - name: Check the state credential the environment holds
         if: inputs.rotate == 'none'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
-          AWS_EC2_METADATA_DISABLED: "true"
-          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
-          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
         run: |
-          endpoint="https://objectstore.$(tr '[:upper:]' '[:lower:]' <<< "$CIVO_REGION").civo.com"
-          # Path-style addressing, as the backend uses: the AWS CLI takes it from its config file only.
-          mkdir -p ~/.aws && printf '[default]\ns3 =\n    addressing_style = path\n' > ~/.aws/config
           if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
-            # The pair was written seconds ago by this run: GitHub resolves secrets when the job starts, so a first run
-            # checks on its next run, and a repeat run checks what it holds.
-            echo "The pair was written by this run; run the workflow once more to check it against $endpoint."
+            echo "The pair was written and checked by this run."
             exit 0
           fi
-          if ! aws s3api list-objects-v2 --bucket "$BUCKET" --max-keys 1 --endpoint-url "$endpoint" --region "$CIVO_REGION" > /dev/null; then
-            echo "::error::the credential in the environment cannot list $BUCKET at $endpoint; delete STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY from the environment and run again, which writes a fresh pair (infra/README.md, Rotate)"
+          if ! infra/civo/check-state.sh "$CIVO_REGION" "$BUCKET"; then
+            echo "::error::the credential in the environment cannot list $BUCKET at the $CIVO_REGION endpoint; delete STATE_ACCESS_KEY_ID and STATE_SECRET_ACCESS_KEY from the environment and run again, which writes a fresh pair (infra/README.md, Rotate)"
             exit 1
           fi
-          echo "The state credential lists $BUCKET at $endpoint."
 
       # 48 random bytes for the two secrets docs/06 sizes that way.
       - name: Generate ID's secrets, when missing
