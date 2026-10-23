@@ -148,16 +148,15 @@ jobs:
         if: inputs.rotate == 'none'
         run: |
           existing=$(gh secret list --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY" --json name --jq '.[].name')
-          write() {
-            if grep -qx "$1" <<< "$existing"; then
-              echo "$1 exists; kept."
+          # Generated only when written: a pipeline whose reader exits without reading breaks the pipe under pipefail.
+          for name in BETTER_AUTH_SECRET ROOT_ADMIN_SECRET; do
+            if grep -qx "$name" <<< "$existing"; then
+              echo "$name exists; kept."
             else
-              gh secret set "$1" --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY"
-              echo "$1 written."
+              openssl rand -base64 48 | tr -d '\n' | gh secret set "$name" --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY"
+              echo "$name written."
             fi
-          }
-          openssl rand -base64 48 | tr -d '\n' | write BETTER_AUTH_SECRET
-          openssl rand -base64 48 | tr -d '\n' | write ROOT_ADMIN_SECRET
+          done
 
       # ROOT_ADMIN_SECRET is replaced outright. BETTER_AUTH_SECRET is never replaced here: it encrypts ID's stored
       # signing keys (apps/id/README.md, Application secret rotation).
