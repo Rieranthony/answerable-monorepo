@@ -91,23 +91,26 @@ jobs:
               exit 1
             fi
           done
-          if ! civo objectstore credential ls --region "$CIVO_REGION" -o json | jq -e --arg name "$BUCKET" '.[] | select(.name == $name)' > /dev/null; then
+          # The keys come from Civo's API, not the CLI: `civo objectstore credential secret -o json` prints an empty object
+          # (its JSON branch appends nothing; v1.5.5), and only its plain text carries the secret. The list carries both keys.
+          credentials() {
+            curl --fail --silent --show-error --retry 3 -H "Authorization: Bearer $CIVO_TOKEN" \
+              "https://api.civo.com/v2/objectstore/credentials?region=$CIVO_REGION&per_page=100" \
+              | jq -r --arg name "$BUCKET" --arg field "$1" '(.items // .) | map(select(.name == $name)) | .[0][$field] // empty'
+          }
+          if [ -z "$(credentials access_key_id)" ]; then
             civo objectstore credential create "$BUCKET" --region "$CIVO_REGION" --wait > /dev/null
             echo "Created the credential $BUCKET in $CIVO_REGION."
           fi
-          access_key=$(civo objectstore credential ls --region "$CIVO_REGION" -o json | jq -r --arg name "$BUCKET" '.[] | select(.name == $name) | .access_key')
-          if [ -z "$access_key" ] || [ "$access_key" = null ]; then
-            echo "::error::the credential $BUCKET has no access key; look at it in the Civo dashboard under Object stores > Credentials"
+          access_key=$(credentials access_key_id)
+          secret_key=$(credentials secret_access_key_id)
+          if [ -z "$access_key" ] || [ -z "$secret_key" ]; then
+            echo "::error::the credential $BUCKET has no access key or no secret key yet; look at it in the Civo dashboard under Object stores > Credentials and run again"
             exit 1
           fi
           if ! civo objectstore show "$BUCKET" --region "$CIVO_REGION" -o json > /dev/null 2>&1; then
             civo objectstore create "$BUCKET" --size 500 --owner-name "$BUCKET" --region "$CIVO_REGION" --wait > /dev/null
             echo "Created the bucket $BUCKET in $CIVO_REGION (500 GB, the smallest Civo sells)."
-          fi
-          secret_key=$(civo objectstore credential secret --access-key "$access_key" --region "$CIVO_REGION" -o json | jq -r '.secret_access_key_id')
-          if [ -z "$secret_key" ] || [ "$secret_key" = null ]; then
-            echo "::error::the credential $BUCKET has no secret key; look at it in the Civo dashboard under Object stores > Credentials"
-            exit 1
           fi
           printf '%s' "$access_key" | gh secret set STATE_ACCESS_KEY_ID --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY"
           printf '%s' "$secret_key" | gh secret set STATE_SECRET_ACCESS_KEY --env "$ENVIRONMENT" --repo "$GITHUB_REPOSITORY"
