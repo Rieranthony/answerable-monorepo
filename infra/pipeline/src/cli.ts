@@ -159,7 +159,9 @@ export async function main(argv: readonly string[], deps: CliDeps): Promise<numb
       deps.err(`error: ${error.message}\n`)
       return 1
     }
-    deps.err(`unexpected error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`)
+    // Bun 1.3.1 sometimes gives a stack without its first line, the message, so the message is printed on its own.
+    const text = error instanceof Error ? (error.stack?.includes(error.message) ? error.stack : `${error.message}\n${error.stack ?? ""}`) : String(error)
+    deps.err(`unexpected error: ${text}\n`)
     return 1
   }
 }

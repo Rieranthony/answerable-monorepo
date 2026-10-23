@@ -230,6 +230,16 @@ describe("main", () => {
     expect(f.err()).toContain("the runner broke")
   })
 
+  test("reports the message of an error whose stack lacks it", async () => {
+    const f = await fixture(() => {
+      const error = new Error("the runner broke")
+      error.stack = "Error\n    at somewhere"
+      throw error
+    })
+    expect(await main(["run-job", "bootstrap", "--environment", "staging"], f.deps)).toBe(1)
+    expect(f.err()).toContain("unexpected error: the runner broke\nError\n    at somewhere")
+  })
+
   test("reports an unexpected value that is not an Error", async () => {
     const f = await fixture(() => {
       throw "plain text"
