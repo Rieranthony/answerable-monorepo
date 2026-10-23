@@ -2,10 +2,12 @@ locals {
   name = "answerable-${var.environment}-cluster"
 
   # Marketplace applications, comma-separated, a leading "-" removing a default one. Civo installs its own Traefik by
-  # default, named Traefik-v2-nodeport in `civo kubernetes show` and in the Civo CLI's own removal example. The edge
-  # is the Traefik that charts/platform pins (D31), so Civo's copy goes and only one controller exists. metrics-server,
-  # also a default, stays: the HorizontalPodAutoscalers read it. Civo cannot change applications after creation.
-  applications = "-Traefik-v2-nodeport"
+  # default, named traefik2-nodeport: the marketplace manifest's name (civo/kubernetes-marketplace). The CLI README's
+  # example, Traefik-v2-nodeport, is stale, and Civo's API refused it on the first staging apply (23 October 2026).
+  # The edge is the Traefik that charts/platform pins (D31), so Civo's copy goes and only one controller exists.
+  # metrics-server, also a default, stays: the HorizontalPodAutoscalers read it. Civo cannot change applications
+  # after creation.
+  applications = "-traefik2-nodeport"
 }
 
 # Civo clusters always have a public address. This firewall admits the Kubernetes API from the internet and, from the

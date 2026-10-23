@@ -43,7 +43,7 @@ run "builds_the_cluster_on_the_private_network" {
   }
 
   assert {
-    condition     = contains(split(",", civo_kubernetes_cluster.this.applications), "-Traefik-v2-nodeport")
+    condition     = contains(split(",", civo_kubernetes_cluster.this.applications), "-traefik2-nodeport")
     error_message = "The cluster must remove Civo's marketplace Traefik so that charts/platform's Traefik is the only ingress controller."
   }
 
@@ -192,7 +192,7 @@ run "fails_when_civo_installs_traefik_anyway" {
     override_during = plan
     values = {
       installed_applications = [
-        { application = "Traefik-v2-nodeport", category = "architecture", installed = true, version = "2.9.4" },
+        { application = "traefik2-nodeport", category = "architecture", installed = true, version = "2.9.4" },
         { application = "metrics-server", category = "architecture", installed = true, version = "(default)" },
       ]
     }

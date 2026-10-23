@@ -281,6 +281,7 @@ gh run watch</pre></div>
 git tag staging/first main
 git push origin staging/first
 gh run watch</pre></div>
+    <div class="warn"><b>A tag is never moved.</b> If a run fails before the deploy, fix the cause on <code>main</code> and push the next name (<code>staging/second</code>, and so on): the run checks out the tagged commit, so a rerun of a failed run never sees a fix. The first run on 22 October 2026 failed twice on the state bucket (the Bootstrap workflow's region and a checksum the store does not speak, both fixed on <code>main</code>); <code>staging/second</code> was the first deploy.</div>
     <div class="expect"><b>You should see</b> the run <b>Deploy staging</b> go through: the guard, CI (about 15 min), <b>Apply the staging infrastructure</b> (the first apply creates the cluster, the database and the certificates: 15 to 25 min), the four builds, <b>Deploy to staging</b>, <b>Smoke test staging</b> with every check PASS.</div>
     <div class="note"><b>What the first apply also did.</b> It wrote <code>KUBE_SERVER</code>, <code>KUBE_CA</code> and <code>KUBE_TOKEN</code> into the environment, so the deploy job that followed could sign in to the cluster. Check the environment's secret list: three more names.</div>
   </div>
