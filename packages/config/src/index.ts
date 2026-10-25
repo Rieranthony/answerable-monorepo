@@ -5,15 +5,10 @@ type Source = "deploy" | "cluster" | "chart" | "image" | "operator"
 type Defaults = { development?: string; test?: string }
 type Env = Record<string, string | undefined>
 
-/** What `read` needs of a field's schema: zod's `safeParse`, which every zod 4 schema has, whatever its minor version. */
-type Schema<Output> = {
-  safeParse(value: unknown): { success: true; data: Output } | { success: false; error: { issues: readonly { message: string }[] } }
-}
-
 /** One variable a service reads. */
 export type Field = {
   /** A zod schema of the raw string, with the coercions and transforms the service needs; it receives `undefined` when the variable is unset. */
-  schema: Schema<unknown>
+  schema: z.ZodType
   /** A credential. Production refuses it when its value is one of `defaults`, so a development default can be committed. */
   secret?: boolean
   /** The value in every profile when the variable is unset, as the loader's own default. */
@@ -38,7 +33,7 @@ export type FieldMeta = {
   optional: boolean
 }
 
-type Data<Fields extends Record<string, Field>> = { NODE_ENV: Profile } & { [Name in keyof Fields]: Fields[Name]["schema"] extends Schema<infer Output> ? Output : never }
+type Data<Fields extends Record<string, Field>> = { NODE_ENV: Profile } & { [Name in keyof Fields]: z.output<Fields[Name]["schema"]> }
 
 /** A service's configuration: its label, `read`, and every variable it reads, `NODE_ENV` first. */
 export type Config<Fields extends Record<string, Field>> = {

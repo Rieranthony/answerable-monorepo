@@ -124,7 +124,7 @@ export TOOLBOX_ADMIN_PATH=http%3A%2F%2Flocalhost%3A47400%2Fadmin
 
 ## Run it
 
-Put the machine client's id and secret in the root `.env`, with the rest of the [environment](/docs/admin#environment): `ADMIN_ID_ISSUER=http://localhost:47300`, `ADMIN_RESOURCE_URL=http://localhost:47520/mcp`, `ADMIN_DATABASE_URL` (the runtime login), `ADMIN_DATABASE_MIGRATION_URL` (the owner, for `db:migrate`), `ADMIN_ID_CLIENT_ID=admin-mcp`, `ADMIN_ID_CLIENT_SECRET`, `ADMIN_ID_ADMIN_RESOURCE=http://localhost:47300/api/admin` and `ADMIN_TOOLBOX_ADMIN_RESOURCE=http://localhost:47400/admin`. A Postgres volume made before the admin MCP existed has no database for it, and one made before its [runtime login](/docs/admin#database-roles) has no login: create them once.
+Put the machine client's id and secret in the root `.env`: `ADMIN_ID_CLIENT_ID=admin-mcp` and `ADMIN_ID_CLIENT_SECRET`. Every other variable of the [environment](/docs/admin#environment) has a local default. A Postgres volume made before the admin MCP existed has no database for it, and one made before its [runtime login](/docs/admin#database-roles) has no login: create them once.
 
 ```bash
 docker exec answerable-postgres-1 psql -U answerable -d postgres \
