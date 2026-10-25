@@ -332,11 +332,13 @@
     },
     "packages/mcp-postgres": {
       "name": "@answerable/mcp-postgres",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "dependencies": {
+        "@answerable/config": "workspace:*",
         "@answerable/mcp": "workspace:*",
         "drizzle-orm": "0.45.4",
         "pg": "8.23.1",
+        "zod": "4.6.7",
       },
       "devDependencies": {
         "@eslint/js": "9.39.5",

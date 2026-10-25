@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0
+
+A database for every MCP, in a shared database or one of its own ([design](../../docs/goals/mcp-cli/design.md#database)). Nothing breaks: the hubs' `migrate`, `configureRuntimeRole` and `assertRuntimeRole` are unchanged.
+
+- `provisionMcps` and `provisionOwnMcp` make each MCP's schema and roles; `migrateMcp` and `migrateMcps` apply its migrations as its owner role, with drizzle's journal in its schema, then its grants; `withoutSchemaCreation` removes drizzle-kit's schema line from a new migration.
+- `organisationIsolation(column)` is the row-level security policy that limits a table to the caller's organisation, and `mcpDatabase` sets that organisation, the MCP's role and its schema on every borrowed connection, destroying one whose reset fails.
+- `assertServingLogin` refuses a serving login that holds anything but its MCPs' runtime roles; `ensureLocalMcpDatabases` and `infra/postgres/init/006-create-mcps-databases.sql` make the local shared databases and logins.
+- `@answerable/mcp-postgres/testing`: `testMcpDatabase` serves an MCP's tests through its own schema in `answerable_mcps_test`; `mcpPostgresTestConfig` defines `MCP_POSTGRES_TEST_DATABASE_URL` and `MCPS_TEST_DATABASE_URL`.
+
 ## 0.7.0
 
 The package moves onto drizzle, the model Answerable ID uses: drizzle-orm over `pg` with drizzle-kit migrations, one model for every database. Breaking: `connect` returns a drizzle database over a `pg` pool, `migrate` takes a drizzle folder, the SQL-file migrator, its `migrations/` directory and `schema_migrations` are gone, and a database the file migrator built is adopted on the next `migrate`.

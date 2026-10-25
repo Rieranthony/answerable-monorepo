@@ -1,6 +1,30 @@
+import { AsyncLocalStorage } from "node:async_hooks"
+import { defineConfig } from "@answerable/config"
 import { DrizzleQueryError, sql } from "drizzle-orm"
+import type { NodePgDatabase } from "drizzle-orm/node-postgres"
+import { Client, Pool } from "pg"
+import { z } from "zod"
 import { connect, type Executor } from "./connect"
+import { ensureLocalMcpDatabases } from "./local"
+import { mcpDatabase } from "./mcp-database"
+import { migrateMcp } from "./migrate-mcp"
+import { assertMcpName, roleLock } from "./names"
+import { provisionMcps } from "./provision"
 import { configureRuntimeRole, type Grant } from "./runtime-role"
+
+/** The test databases this package's helpers reset: on their own, so that a process the tests start with `NODE_ENV=production` needs nothing else. */
+export const mcpPostgresTestConfig = defineConfig("MCP Postgres test databases", {
+  MCP_POSTGRES_TEST_DATABASE_URL: {
+    schema: z.url(),
+    fallback: "postgres://answerable:answerable@localhost:47432/answerable_mcp_postgres_test",
+    doc: "The disposable database @answerable/mcp-postgres's own tests reset, named answerable_mcp_postgres_test",
+  },
+  MCPS_TEST_DATABASE_URL: {
+    schema: z.url(),
+    fallback: "postgres://answerable:answerable@localhost:47432/answerable_mcps_test",
+    doc: "The shared MCP test database, answerable_mcps_test, as a superuser of the development Postgres: each MCP's tests reset only their own schema there",
+  },
+})
 
 /** A tagged template that runs a query on `db` and returns its rows: `const query = rowsOf(db); await query\`select …\``, for a suite's own reads. */
 export const rowsOf = (db: Executor) => async <T extends Record<string, unknown> = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]> =>
@@ -88,6 +112,59 @@ export function testDatabase(name: string, url = `postgres://answerable:answerab
           await asOwner(`drop database ${scratch} with (force)`)
         },
       }
+    },
+  }
+}
+
+/**
+ * An MCP's test database, served as production serves it: its schema `name` in `answerable_mcps_test` (`MCPS_TEST_DATABASE_URL`), dropped and
+ * recreated, provisioned with the `mcp_test` prefix and migrated from `folder`, then reached through `mcpDatabase` as a fresh serving login with
+ * a generated name. The local databases are created first when missing. `db` takes its organisation from `asOrganisation(id, fn)`, unless
+ * `organisation` replaces that getter; `close()` drops the login. It never drops a role an MCP has, so suites for different MCPs run at once.
+ */
+export async function testMcpDatabase<Schema extends Record<string, unknown>>({ name, schema, folder, organisation }: {
+  name: string
+  schema: Schema
+  folder: string
+  organisation?: () => string | undefined
+}): Promise<{ db: NodePgDatabase<Schema>; asOrganisation: <T>(id: string, fn: () => T) => T; close: () => Promise<void> }> {
+  assertMcpName(name)
+  const url = new URL(mcpPostgresTestConfig.read(process.env).MCPS_TEST_DATABASE_URL)
+  if (url.pathname !== "/answerable_mcps_test") throw new Error(`Refusing to reset an MCP's schema in ${url.pathname.slice(1) || "an unnamed database"}; expected answerable_mcps_test`)
+  const cluster = new URL(url)
+  cluster.pathname = "/postgres"
+  await ensureLocalMcpDatabases(cluster.href)
+  const login = `mcp_test_login_${crypto.randomUUID().replaceAll("-", "")}`
+  const password = crypto.randomUUID().replaceAll("-", "")
+  const asSuperuser = async (work: (client: Client) => Promise<void>) => {
+    const client = new Client({ connectionString: url.href })
+    await client.connect()
+    try {
+      await work(client)
+    } finally {
+      await client.end()
+    }
+  }
+  await asSuperuser(async client => {
+    // CREATE ROLE takes no parameters; the name and the password are generated here.
+    await client.query(`drop schema if exists "${name}" cascade; create role ${login} login password '${password}' noinherit`)
+    await provisionMcps(async (text, params) => (await client.query(text, params)).rows, {
+      mcps: [{ name, servedBy: ["toolbox"] }], prefix: "mcp_test", logins: { migrator: "answerable_mcps_migrator", toolbox: login, standalone: "answerable_mcps_standalone" },
+    })
+    await migrateMcp({ client, name, folder, mode: "shared", prefix: "mcp_test" })
+  })
+  const served = new URL(url)
+  served.username = login
+  served.password = password
+  const pool = new Pool({ connectionString: served.href, max: 4 })
+  const organisations = new AsyncLocalStorage<string>()
+  return {
+    db: mcpDatabase(pool, { name, prefix: "mcp_test", schema, mode: "shared", organisation: organisation ?? (() => organisations.getStore()) }),
+    asOrganisation: (id, fn) => organisations.run(id, fn),
+    async close() {
+      await pool.end()
+      // Under the role lock: dropping what the login was granted rewrites the database's privileges, which provisioning beside it rewrites too.
+      await asSuperuser(client => client.query(`begin; select pg_advisory_xact_lock(${roleLock}); drop owned by ${login}; drop role ${login}; commit`).then(() => undefined))
     },
   }
 }

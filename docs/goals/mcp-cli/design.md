@@ -271,10 +271,11 @@ The Toolbox, the admin MCP and ID keep the databases they have. The rest of this
 - **What a migration file may contain.** `migrateMcp` refuses, naming the file and line:
   - any statement that creates a schema, grants or revokes;
   - `ALTER DEFAULT PRIVILEGES`;
+  - `SET ROLE`, `RESET ROLE` or `SET SESSION AUTHORIZATION`, which would let a migration leave the owner role for the migrator, which may take every MCP's owner role;
   - a name qualified with another schema, `public` included.
 
   It refuses a changed applied file, as `migrate()` does today. The grants are the migration Job's job, not the MCP's.
-- **One migration Job, `mcps-migrate`,** migrates every MCP in turn, each `shared` MCP as its owner role through the migrator login, then applies its grants.
+- **One migration Job, `mcps-migrate`,** migrates every MCP in turn, each `shared` MCP as its owner role through the migrator login. That runs `set local role` inside the migration's one transaction, and the grants run as the owner before the commit. After `reset role` the migrator, whose membership is `INHERIT FALSE`, may not grant on the schema (M1, probed).
   - Probe: the first migration of 200 schemas took 7.1 s, and a pass with nothing pending is cheaper still.
   - One MCP's failure fails the release, as today's per-database Jobs do.
   - The Toolbox, the admin MCP and the standalone server keep a migration Job each for their own databases, each mounting only its own owner login.

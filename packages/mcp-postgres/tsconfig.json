@@ -12,5 +12,5 @@
     "resolveJsonModule": true,
     "types": ["bun"]
   },
-  "include": ["src/**/*.ts", "scripts/**/*.ts", "drizzle.config.ts"]
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "bench/**/*.ts", "drizzle.config.ts"]
 }

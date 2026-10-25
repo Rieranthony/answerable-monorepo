@@ -12,11 +12,12 @@ import { toolboxConfig } from "../mcps/toolbox/src/environment"
 import { toolboxMigrationConfig } from "../mcps/toolbox/scripts/env"
 import { toolboxTestDatabaseConfig } from "../mcps/toolbox/src/test/database"
 import { mcpConfig } from "../packages/mcp/src/environment"
+import { mcpPostgresTestConfig } from "../packages/mcp-postgres/src/testing"
 
 type Group = { name: string; reader: string; fields: FieldMeta[] }
 
 const defined = ({ label, fields }: { label: string; fields: FieldMeta[] }, reader: string): Group => ({ name: label, reader, fields })
-// A variable no definition reads: the web app's, a test helper's, the workflows' and the infrastructure tooling's.
+// A variable no definition reads: the web app's, the workflows' and the infrastructure tooling's.
 const variable = (name: string, doc: string, { secret = false, optional = true } = {}): FieldMeta => ({ name, secret, doc, optional })
 
 const groups: Group[] = [
@@ -31,11 +32,7 @@ const groups: Group[] = [
   defined(adminTestDatabaseConfig, "mcps/admin/src/test/database.ts, for the admin MCP's tests"),
   defined(mcpConfig, "packages/mcp/src/environment.ts, read by readMcpEnvironment for the e2e server (bun run mcp:dev) and a scaffolded one"),
   defined(opsConfig, "infra/ops/src/commands.ts, set by charts/answerable for the bootstrap, register and make-admin Jobs (infra/ops/README.md)"),
-  {
-    name: "MCP Postgres",
-    reader: "packages/mcp-postgres/src/test/database.ts, for the package's tests",
-    fields: [variable("MCP_POSTGRES_TEST_DATABASE_URL", "The disposable database @answerable/mcp-postgres's tests reset, named answerable_mcp_postgres_test")],
-  },
+  defined(mcpPostgresTestConfig, "packages/mcp-postgres/src/testing.ts, for the package's own tests and every MCP's (testMcpDatabase)"),
   {
     name: "web",
     reader: "apps/web, read from apps/web/.env.local by Next.js (apps/web/.env.example)",

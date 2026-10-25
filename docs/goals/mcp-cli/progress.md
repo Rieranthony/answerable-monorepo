@@ -98,3 +98,30 @@
   - `standalone-hub`'s Secret, deploy and start plumbing;
   - the README's branch lines;
   - `@answerable/id-admin`'s new dependency on `@answerable/mcp` named.
+
+## 2026-10-25: building, in pull request #13
+
+- **The owner's decisions:** "let's do everything in one PR"; Auto-fix is on for #13. Typed configuration's B1, zod 4.6.7 and B2 are already in the pull request.
+- **M1, the database model,** by Opus. Built in `@answerable/mcp-postgres` 0.8.0:
+  - `provisionMcps`, `provisionOwnMcp`, `migrateMcp` and `migrateMcps`;
+  - `withoutSchemaCreation`, `organisationIsolation` and `mcpDatabase`;
+  - `assertServingLogin` and `ensureLocalMcpDatabases`, with `infra/postgres/init/006`;
+  - `testMcpDatabase`;
+  - the role-switching scan test.
+- **M1's measurements** (throwaway Postgres 17.9, 3 runs):
+  - a query through `mcpDatabase`: 0.91 to 1.11 ms, against 0.46 to 0.60 ms plain;
+  - a burst of 1,000 queries over 200 schemas: 277 to 341 ms on at most 10 connections;
+  - `provisionMcps` at 200: about 1.0 s;
+  - first `migrateMcps` at 200: 3.1 to 3.9 s; with nothing pending: 1.5 to 2.0 s.
+- **What M1 corrected in the design.**
+  - Grants run as the owner role inside the migration's transaction, because the migrator may not grant after `reset role`.
+  - Migrations may not switch role.
+  - Test helpers drop logins under the role lock.
+- **The coordinator's gates on M1:**
+  - `mcp:test`: 713 pass, 0 fail, with `mcp-postgres` at 93 pass and 100% coverage;
+  - typecheck and lint forced, 19 of 19;
+  - web: 100;
+  - knip clean;
+  - frozen install unchanged.
+
+  The development Postgres holds exactly the 3 new logins and 2 new databases.
