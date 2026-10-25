@@ -4,25 +4,22 @@ Every brief in this folder starts by reading this page. It holds what every brie
 
 ## Who does what
 
-- **The agent** implements one brief in the worktree the coordinator names when dispatching it (`.claude/worktrees/mcp-cli-m<N>`, branch `goal/mcp-cli-m<N>`, cut from `origin/main`). It never commits, pushes, tags or deploys. M4, M5 and M6 are cut from the integration branch instead (below).
+- **The agent** implements one brief in the pull request's worktree, `.claude/worktrees/typed-config-b1`, on branch `claude/typed-config-b1` ([#13](https://github.com/Rieranthony/answerable-monorepo/pull/13)), one brief at a time. It never commits, pushes, tags or deploys.
 - **The coordinator** (the session that wrote the plan):
   - reviews the diff against [`../design.md`](../design.md) and [`../decisions.md`](../decisions.md);
   - runs the gates;
-  - commits on the brief's branch;
-  - rebases it on `origin/main` (on `claude/mcp-cli` for M4 to M6);
-  - pushes it to `main` (M4 to M6: to `claude/mcp-cli`, then to `main` together after M6);
+  - commits the brief on the branch;
+  - pushes it to the pull request, except M4 and M5, which are pushed with M6;
   - records the evidence in [`../progress.md`](../progress.md).
 - **The owner** pushes the `staging/<name>` and `production/<name>` tags. Nothing in this goal ships an environment.
-- **Where briefs land.**
-  - M1, M2, M3, M7, M8 and M9 each land on `main` on their own.
-  - M4, M5 and M6 are cut from, and land on, the integration branch `claude/mcp-cli`. That branch lands on `main` once M6's kind stack passes ([`../task_plan.md`](../task_plan.md), Landing).
+- **Where briefs land:** every brief is a commit in #13, and #13 merges after M9 ([`../task_plan.md`](../task_plan.md), Landing).
 
 ## Read first, every time
 
 1. `AGENTS.md` (repository rules, gates, ports, the worktree rules).
 2. [`../task_plan.md`](../task_plan.md), [`../design.md`](../design.md), [`../decisions.md`](../decisions.md) and [`../findings.md`](../findings.md).
 3. The brief itself, then the files it names.
-4. `docs/goals/typed-config/` as landed. This goal runs after typed configuration's B1 and B2 (D3). Every variable a brief adds goes into the service's `defineConfig` definition, with its development and test defaults, and the generated inventories are rewritten with `bun run env:inventory`. If `@answerable/config` is not on `main`, stop and report.
+4. `docs/goals/typed-config/` as landed. This goal runs after typed configuration's B1 and B2 (D3). Every variable a brief adds goes into the service's `defineConfig` definition, with its development and test defaults, and the generated inventories are rewritten with `bun run env:inventory`. `@answerable/config` is on the branch (typed configuration's B1 and B2, already committed in #13).
 
 ## Rules that bind every brief
 

@@ -60,9 +60,11 @@ The order is M1 to M9, one at a time. `mcp:test:e2e` and `infra:test` (M2, M4, M
 
 ## Landing
 
-- **M1, M2, M3, M7 and M8:** each lands on `main` on its own, because none changes what a tag ships.
-- **M4, M5 and M6 change the deployment together.** After M4, the Toolbox needs `TOOLBOX_MCPS_DATABASE_URL`. After M5, the standalone server needs its client and its Secrets. So they are built one after the other on an integration branch, `claude/mcp-cli`, and land on `main` together once M6's kind stack passes. Until then, `main` stays shippable for the civo-deploy work, and no tag is pushed from the branch.
-- **M9** lands last.
+**One pull request for everything** (owner, 2026-10-25: "let's do everything in one PR, it's all right!").
+- **Where it goes:** M1 to M9 go into [#13](https://github.com/Rieranthony/answerable-monorepo/pull/13), on branch `claude/typed-config-b1` after typed configuration's B1 and B2, one commit per brief.
+- **When it reaches `main`:** when the pull request merges, after M9. So `main` stays shippable for the civo-deploy work throughout.
+- **M4 and M5 stay local until M6.** After M4 the Toolbox needs `TOOLBOX_MCPS_DATABASE_URL`, and after M5 the standalone server needs its client and Secrets. CI's kind stack can't pass between them, so they are committed locally and pushed with M6. Every other brief is pushed when it is committed.
+- **Shipping** is one staging tag after the merge, then production. That also ships typed configuration's phase 6.
 
 ## Risks to test first
 
