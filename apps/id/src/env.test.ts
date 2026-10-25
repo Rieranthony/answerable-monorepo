@@ -1,11 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import {
-  EnvironmentValidationError,
-  loadEnvironment,
-  parseEnvironment,
-  environmentVariableNames,
-} from "./env.ts";
+import { ConfigError } from "@answerable/config";
+import { idConfig } from "./config.ts";
+import { loadEnvironment, parseEnvironment } from "./env.ts";
 
 const requiredEnvironment = {
   DATABASE_URL:
@@ -23,18 +20,45 @@ afterEach(() => {
   Object.assign(process.env, originalEnvironment);
 });
 
+const production = {
+  ...requiredEnvironment,
+  NODE_ENV: "production",
+  BETTER_AUTH_TRUSTED_ORIGINS: "https://auth.example.com",
+  TRUSTED_PROXY_CIDRS: "10.0.0.0/8, 2001:db8::/32",
+};
+
 describe("unit: environment", () => {
-  test("parses defaults", () => {
-    expect(parseEnvironment(requiredEnvironment)).toEqual({
-      nodeEnv: "development",
+  test("reads exactly the variables ID documents", () => {
+    expect(idConfig.fields.map((field) => field.name)).toEqual([
+      "NODE_ENV",
+      "PORT",
+      "DATABASE_URL",
+      "BETTER_AUTH_URL",
+      "BETTER_AUTH_SECRET",
+      "BETTER_AUTH_SECRETS",
+      "GOOGLE_CLIENT_ID",
+      "GOOGLE_CLIENT_SECRET",
+      "MICROSOFT_CLIENT_ID",
+      "MICROSOFT_CLIENT_SECRET",
+      "BETTER_AUTH_TRUSTED_ORIGINS",
+      "ROOT_ADMIN_SECRET",
+      "ROOT_ADMIN_BREAK_GLASS",
+      "TRUSTED_PROXY_CIDRS",
+      "DATABASE_POOL_MAX",
+    ]);
+  });
+
+  test("parses production's defaults", () => {
+    expect(parseEnvironment(production)).toEqual({
+      nodeEnv: "production",
       port: 47_300,
       databaseUrl: requiredEnvironment.DATABASE_URL,
       betterAuthUrl: requiredEnvironment.BETTER_AUTH_URL,
       betterAuthSecret: requiredEnvironment.BETTER_AUTH_SECRET,
       betterAuthSecrets: undefined,
-      trustedOrigins: [],
+      trustedOrigins: ["https://auth.example.com"],
       platformApplications: {},
-      trustedProxyCidrs: [],
+      trustedProxyCidrs: ["10.0.0.0/8", "2001:db8::/32"],
       operationalLogIntervalMs: 30_000,
       protocolSweepIntervalMs: 60_000,
       protocolSweepBatchSize: 1_000,
@@ -46,11 +70,29 @@ describe("unit: environment", () => {
       databaseIdleInTransactionTimeoutMs: 15_000,
       rootAdminSecret: undefined,
       rootAdminBreakGlass: false,
-      openApiEnabled: true,
+      openApiEnabled: false,
       platformOrganizationSlug: "answerable",
       platformOrganizationName: "Answerable",
       adminResourceIdentifier: "http://localhost:47300/api/admin",
     });
+  });
+
+  test("development and test start with nothing set, on the local database, origin and fixed development secrets", () => {
+    for (const NODE_ENV of [undefined, "development", "test"])
+      expect(parseEnvironment({ NODE_ENV })).toMatchObject({
+        nodeEnv: NODE_ENV ?? "development",
+        port: 47_300,
+        databaseUrl:
+          "postgres://answerable_id_runtime:answerable@localhost:47432/answerable_id",
+        betterAuthUrl: "http://localhost:47300",
+        betterAuthSecret:
+          "development-only-better-auth-secret-never-for-production",
+        rootAdminSecret:
+          "development-only-root-admin-secret-never-for-production",
+        trustedOrigins: [],
+        trustedProxyCidrs: [],
+        openApiEnabled: true,
+      });
   });
 
   test("normalises the ID URL and derives the admin resource from it", () => {
@@ -67,10 +109,30 @@ describe("unit: environment", () => {
       });
   });
 
-  test("names every missing required variable", () => {
-    expect(() => parseEnvironment({})).toThrow(
-      /DATABASE_URL.*BETTER_AUTH_URL.*BETTER_AUTH_SECRET/,
+  test("production names every missing required variable", () => {
+    expect(() => parseEnvironment({ NODE_ENV: "production" })).toThrow(
+      /^Invalid ID configuration: DATABASE_URL: .*; BETTER_AUTH_URL: .*; BETTER_AUTH_SECRET: /,
     );
+  });
+
+  test("production refuses a development default pasted as a secret", () => {
+    for (const [name, value] of [
+      [
+        "DATABASE_URL",
+        "postgres://answerable_id_runtime:answerable@localhost:47432/answerable_id",
+      ],
+      [
+        "BETTER_AUTH_SECRET",
+        "development-only-better-auth-secret-never-for-production",
+      ],
+      [
+        "ROOT_ADMIN_SECRET",
+        "development-only-root-admin-secret-never-for-production",
+      ],
+    ] as const)
+      expect(() => parseEnvironment({ ...production, [name]: value })).toThrow(
+        `Invalid ID configuration: ${name}: a development default`,
+      );
   });
 
   test("loads configuration from the process environment", () => {
@@ -87,13 +149,13 @@ test("validates root configuration", () => {
       ...requiredEnvironment,
       ROOT_ADMIN_SECRET: "x".repeat(31),
     }),
-  ).toThrow(EnvironmentValidationError);
+  ).toThrow(ConfigError);
   expect(() =>
     parseEnvironment({
-      ...requiredEnvironment,
+      ...production,
       ROOT_ADMIN_BREAK_GLASS: "true",
     }),
-  ).toThrow("ROOT_ADMIN_BREAK_GLASS requires ROOT_ADMIN_SECRET");
+  ).toThrow("ROOT_ADMIN_BREAK_GLASS: Requires ROOT_ADMIN_SECRET");
   expect(
     parseEnvironment({
       ...requiredEnvironment,
@@ -144,13 +206,7 @@ test("application secret rotation validates every retained version without leaki
   }
 });
 
-const production = {
-  ...requiredEnvironment,
-  NODE_ENV: "production",
-  BETTER_AUTH_TRUSTED_ORIGINS: "https://auth.example.com",
-  TRUSTED_PROXY_CIDRS: "10.0.0.0/8, 2001:db8::/32",
-};
-test("every environment requires an explicit, valid ID origin", () => {
+test("production requires an explicit, valid ID origin; development and test default to the local one", () => {
   expect(
     parseEnvironment({
       ...production,
@@ -163,11 +219,19 @@ test("every environment requires an explicit, valid ID origin", () => {
       parseEnvironment({ ...production, BETTER_AUTH_URL: value }),
     ).toThrow("BETTER_AUTH_URL");
   for (const nodeEnv of [undefined, "development", "test"]) {
+    for (const value of [undefined, ""])
+      expect(
+        parseEnvironment({
+          ...requiredEnvironment,
+          NODE_ENV: nodeEnv,
+          BETTER_AUTH_URL: value,
+        }).betterAuthUrl,
+      ).toBe("http://localhost:47300");
     expect(() =>
       parseEnvironment({
         ...requiredEnvironment,
         NODE_ENV: nodeEnv,
-        BETTER_AUTH_URL: undefined,
+        BETTER_AUTH_URL: "invalid",
       }),
     ).toThrow("BETTER_AUTH_URL");
   }
@@ -268,37 +332,6 @@ test("platform application pairs parse together and blank values are unset", () 
       }
     }
   }
-});
-
-test("default.env lists every variable with an empty value", async () => {
-  const assignments = (
-    await Bun.file(new URL("../../../default.env", import.meta.url)).text()
-  )
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line !== "" && !line.startsWith("#"));
-  const names = assignments.map((line) => line.split("=", 1)[0]!);
-  expect(
-    assignments
-      .filter((line) => !/^[A-Z][A-Z0-9_]*=$/.test(line))
-      .map((line) => line.split("=", 1)[0]),
-    "default.env holds names with empty values only",
-  ).toEqual([]);
-  expect(names.filter((name, index) => names.indexOf(name) !== index)).toEqual(
-    [],
-  );
-  // Read outside the service schema: migrations and the test database.
-  const tooling = [
-    "DATABASE_MIGRATION_URL",
-    "DATABASE_RUNTIME_ROLE",
-    "TEST_DATABASE_URL",
-  ];
-  expect(
-    [...environmentVariableNames, ...tooling].filter(
-      (name) => !names.includes(name),
-    ),
-    "Add the missing variables to default.env",
-  ).toEqual([]);
 });
 
 test("trusted origins trim whitespace and discard empty entries without a fallback", () => {

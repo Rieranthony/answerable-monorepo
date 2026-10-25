@@ -5,7 +5,7 @@
 > - **Rule:** the service is reachable only through the ingress proxies you list; the application never runs as the database owner; the three deployment secret families are independent and live outside Postgres; Google and Entra use platform applications by default.
 > - **Not here:** the design (`03-answerable-id.md`), the schema (`04-answerable-id-schema.md`), day-two operations (`../apps/id/OPERATIONS.md`), the release gate (`../reports/answerable-id-release-decision-plan.md`).
 
-Everything below is derived from the code on this branch: `apps/id/src/env.ts` (configuration), `apps/id/src/runtime.ts` (startup checks), `apps/id/src/db/runtime-role.ts` and `apps/id/scripts/migrate.ts` (database roles), `apps/id/src/app.ts` (ingress admission), `apps/id/src/auth.ts` (provider configuration), `apps/id/src/auth/platform-applications.ts` (platform credentials and default scopes). If the code and this page disagree, the code wins; fix the page.
+Everything below is derived from the code on this branch: `apps/id/src/config.ts` and `apps/id/src/env.ts` (configuration), `apps/id/src/runtime.ts` (startup checks), `apps/id/src/db/runtime-role.ts` and `apps/id/scripts/migrate.ts` (database roles), `apps/id/src/app.ts` (ingress admission), `apps/id/src/auth.ts` (provider configuration), `apps/id/src/auth/platform-applications.ts` (platform credentials and default scopes). If the code and this page disagree, the code wins; fix the page.
 
 ## What runs
 

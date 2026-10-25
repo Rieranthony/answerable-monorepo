@@ -9,6 +9,7 @@
     "lint": "eslint src --max-warnings 0"
   },
   "dependencies": {
+    "@answerable/config": "workspace:*",
     "@answerable/mcp-postgres": "workspace:*",
     "zod": "4.6.5"
   },

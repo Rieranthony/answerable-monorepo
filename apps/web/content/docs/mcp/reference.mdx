@@ -956,11 +956,11 @@ What a caller should do after a failure.
 ### parseEnvironment
 
 ```ts
-function parseEnvironment<Schema extends z.ZodObject>(label: string, schema: Schema, env: Record<string, string | undefined>, names: {
-  issuer: keyof z.output<Schema> & string
-  resource: keyof z.output<Schema> & string
+function parseEnvironment<Fields extends Record<string, Field>>(config: Config<Fields>, env: Record<string, string | undefined>, names: {
+  issuer: keyof Fields & string
+  resource: keyof Fields & string
 }): {
-  data: z.output<Schema>
+  data: ReturnType<Config<Fields>["read"]>
   auth: {
     issuer: string
     resource: string
@@ -968,18 +968,23 @@ function parseEnvironment<Schema extends z.ZodObject>(label: string, schema: Sch
 }
 ```
 
-Parse `env` with `schema`, a server's own variables, then check the ID issuer and the resource URL, read from the two variables `names` gives,
-as `createIdVerifier` checks them. Returns the parsed `data` and the `auth` option of `createMcpServer`; throws
-`Invalid <label> configuration: <VARIABLE>: <problem>`, naming each variable that is missing or invalid.
+Read `env` with `config`, a server's own variables from `defineConfig` (`@answerable/config`), then check the ID issuer and the resource URL,
+read from the two variables `names` gives, as `createIdVerifier` checks them. Returns the parsed `data` and the `auth` option of
+`createMcpServer`; throws `Invalid <label> configuration: <VARIABLE>: <problem>`, naming each variable that is missing or invalid.
 
 **Example**
 
 ```ts
+import { defineConfig, locally } from "@answerable/config"
 import { parseEnvironment } from "@answerable/mcp"
 import { z } from "zod"
 
-const schema = z.object({ ACME_ID_ISSUER: z.url(), ACME_RESOURCE_URL: z.url(), ACME_DATABASE_URL: z.url() })
-const { data, auth } = parseEnvironment("Acme", schema, process.env, { issuer: "ACME_ID_ISSUER", resource: "ACME_RESOURCE_URL" })
+const config = defineConfig("Acme", {
+  ACME_ID_ISSUER: { schema: z.url(), defaults: locally("http://localhost:47300"), doc: "The ID issuer" },
+  ACME_RESOURCE_URL: { schema: z.url(), defaults: locally("http://localhost:47510/mcp"), doc: "This server's URL" },
+  ACME_DATABASE_URL: { schema: z.url(), secret: true, doc: "The database" },
+})
+const { data, auth } = parseEnvironment(config, process.env, { issuer: "ACME_ID_ISSUER", resource: "ACME_RESOURCE_URL" })
 ```
 
 ### readMcpEnvironment
@@ -994,7 +999,7 @@ function readMcpEnvironment(env: Record<string, string | undefined>): {
 }
 ```
 
-Read `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` (default 47500) into the `auth` option of `createMcpServer` and a port; throws naming the variable that is missing or invalid.
+Read `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` (default 47500) into the `auth` option of `createMcpServer` and a port; throws naming the variable that is missing or invalid. Outside production, the issuer and the resource default to the local ID and `http://localhost:47500/mcp`.
 
 ### UserPrincipal
 

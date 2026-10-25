@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1
+
+No tool changes. The Toolbox reads its variables through `@answerable/config`, so a clone runs it with no `.env` but the machine client's ID and secret.
+
+- Outside production (`NODE_ENV` unset, `development` or `test`), every variable but `TOOLBOX_ID_CLIENT_ID` and `TOOLBOX_ID_CLIENT_SECRET` has a local default: the values `.env.example` held. Production requires what it required, refuses the local login as `TOOLBOX_DATABASE_URL`, and `NODE_ENV` must be one of the three.
+- `scripts/migrate.ts` reads `TOOLBOX_DATABASE_MIGRATION_URL` and `TOOLBOX_DATABASE_RUNTIME_ROLE` the same way, and the tests `TOOLBOX_TEST_DATABASE_URL`; a missing owner URL in production answers `Invalid Toolbox migration configuration: TOOLBOX_DATABASE_MIGRATION_URL: Set TOOLBOX_DATABASE_MIGRATION_URL…`.
+
 ## 0.4.0
 
 No tool changes. The Toolbox's storage moves onto drizzle, with `@answerable/mcp-postgres` 0.7.0: drizzle-orm over `pg`, the catalogue, the host clients and the search as drizzle queries, and drizzle-kit migrations in `drizzle/`, generated from `src/db/schema.ts` (the package's tables and the Toolbox's own). `db:migrate` adopts a database the file migrator built, without re-running DDL; a database migrated by another set of files refuses, naming it. `TOOLBOX_DATABASE_URL` and `TOOLBOX_DATABASE_MIGRATION_URL` are unchanged.

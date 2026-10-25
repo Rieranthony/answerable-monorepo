@@ -24,6 +24,28 @@ test("reads the database, ID, the resource, the bind address, the port and the m
   expect(readToolboxEnvironment({ ...complete, TOOLBOX_HOST: "::" })).toMatchObject({ hostname: "::" })
 })
 
+test("outside production, everything but the client pair defaults to the local services", () => {
+  for (const NODE_ENV of [undefined, "development", "test"])
+    expect(readToolboxEnvironment({ NODE_ENV, TOOLBOX_ID_CLIENT_ID: "toolbox-hub", TOOLBOX_ID_CLIENT_SECRET: "secret" })).toEqual({
+      databaseUrl: "postgres://answerable_toolbox_runtime:answerable@localhost:47432/answerable_toolbox",
+      auth: { issuer: "http://localhost:47300", resource: "http://localhost:47400/mcp" },
+      hostname: "127.0.0.1",
+      port: 47400,
+      id: { issuer: "http://localhost:47300", adminResource: "http://localhost:47300/api/admin", clientId: "toolbox-hub", clientSecret: "secret" },
+      otlpEndpoint: undefined,
+    })
+  expect(() => readToolboxEnvironment({})).toThrow("Invalid Toolbox configuration: TOOLBOX_ID_CLIENT_ID: ")
+})
+
+test("production requires every variable without a fallback, and refuses the local database login", () => {
+  const production = { ...complete, NODE_ENV: "production" }
+  expect(readToolboxEnvironment(production).port).toBe(47400)
+  for (const name of Object.keys(complete))
+    expect(() => readToolboxEnvironment({ ...production, [name]: undefined })).toThrow(`Invalid Toolbox configuration: ${name}: `)
+  expect(() => readToolboxEnvironment({ ...production, TOOLBOX_DATABASE_URL: "postgres://answerable_toolbox_runtime:answerable@localhost:47432/answerable_toolbox" }))
+    .toThrow("Invalid Toolbox configuration: TOOLBOX_DATABASE_URL: a development default")
+})
+
 test("names the variable that is missing or invalid", () => {
   expect(() => readToolboxEnvironment({ ...complete, TOOLBOX_ID_CLIENT_SECRET: undefined })).toThrow("Invalid Toolbox configuration: TOOLBOX_ID_CLIENT_SECRET: ")
   expect(() => readToolboxEnvironment({ ...complete, TOOLBOX_PORT: "0" })).toThrow("TOOLBOX_PORT")

@@ -150,7 +150,7 @@ Each row names the person (`actor_id`, their user id) and the host (`client_id`)
 
 ## Configuration
 
-`ADMIN_ID_ISSUER`, `ADMIN_RESOURCE_URL`, `ADMIN_PORT` (47520), `ADMIN_DATABASE_URL`, `ADMIN_TEST_DATABASE_URL`, `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET`, `ADMIN_ID_ADMIN_RESOURCE`, `ADMIN_TOOLBOX_ADMIN_RESOURCE` (optional) and `ADMIN_FRESH_SECONDS` (optional, 1,800): listed in `default.env`, with local values in `.env.example` and meanings on [`/docs/admin`](../apps/web/content/docs/admin/index.mdx#environment). `bun run admin:dev` serves it; the databases `answerable_admin` and `answerable_admin_test` come from `infra/postgres/init/004-create-mcp-databases.sql`. The acceptance serves it on 47606 with `answerable_admin_acceptance`; `bun packages/acceptance/scripts/admin-lane.ts` keeps ID, the admin MCP and the Toolbox up for Claude Code by hand.
+`ADMIN_ID_ISSUER`, `ADMIN_RESOURCE_URL`, `ADMIN_PORT` (47520), `ADMIN_DATABASE_URL`, `ADMIN_TEST_DATABASE_URL`, `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET`, `ADMIN_ID_ADMIN_RESOURCE`, `ADMIN_TOOLBOX_ADMIN_RESOURCE` (optional) and `ADMIN_FRESH_SECONDS` (optional, 1,800): listed in `default.env`, with local defaults in `mcps/admin/src/environment.ts` and meanings on [`/docs/admin`](../apps/web/content/docs/admin/index.mdx#environment). `bun run admin:dev` serves it; the databases `answerable_admin` and `answerable_admin_test` come from `infra/postgres/init/004-create-mcp-databases.sql`. The acceptance serves it on 47606 with `answerable_admin_acceptance`; `bun packages/acceptance/scripts/admin-lane.ts` keeps ID, the admin MCP and the Toolbox up for Claude Code by hand.
 
 ## Not yet
 

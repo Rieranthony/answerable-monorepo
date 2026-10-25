@@ -11,6 +11,7 @@
       "name": "@answerable/id",
       "version": "0.0.0",
       "dependencies": {
+        "@answerable/config": "workspace:*",
         "@better-auth/core": "1.7.2",
         "@better-auth/drizzle-adapter": "1.7.2",
         "@better-auth/oauth-provider": "1.7.2",
@@ -98,6 +99,7 @@
       "name": "@answerable/infra-ops",
       "version": "0.1.0",
       "dependencies": {
+        "@answerable/config": "workspace:*",
         "@answerable/mcp-postgres": "workspace:*",
         "zod": "4.6.5",
       },
@@ -122,8 +124,9 @@
     },
     "mcps/admin": {
       "name": "@answerable/mcp-admin",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
+        "@answerable/config": "workspace:*",
         "@answerable/id-admin": "workspace:*",
         "@answerable/mcp": "workspace:*",
         "@answerable/mcp-postgres": "workspace:*",
@@ -177,9 +180,10 @@
     },
     "mcps/toolbox": {
       "name": "@answerable/mcp-toolbox",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "dependencies": {
         "@answerable/auth": "workspace:*",
+        "@answerable/config": "workspace:*",
         "@answerable/id-admin": "workspace:*",
         "@answerable/mcp": "workspace:*",
         "@answerable/mcp-e2e": "workspace:*",
@@ -229,6 +233,20 @@
       "version": "0.6.0",
       "dependencies": {
         "jose": "6.2.12",
+        "zod": "4.6.5",
+      },
+      "devDependencies": {
+        "@eslint/js": "9.39.5",
+        "@types/bun": "1.3.1",
+        "eslint": "9.39.5",
+        "typescript": "5.9.3",
+        "typescript-eslint": "8.48.1",
+      },
+    },
+    "packages/config": {
+      "name": "@answerable/config",
+      "version": "0.1.0",
+      "dependencies": {
         "zod": "4.6.5",
       },
       "devDependencies": {
@@ -295,9 +313,10 @@
     },
     "packages/mcp": {
       "name": "@answerable/mcp",
-      "version": "0.9.0",
+      "version": "0.10.0",
       "dependencies": {
         "@answerable/auth": "workspace:*",
+        "@answerable/config": "workspace:*",
         "@modelcontextprotocol/client": "2.1.0",
         "@modelcontextprotocol/ext-apps": "2.0.0",
         "@modelcontextprotocol/server": "2.1.0",
@@ -366,6 +385,7 @@
       "name": "@answerable/scripts",
       "version": "0.0.0",
       "devDependencies": {
+        "@answerable/config": "workspace:*",
         "@eslint/js": "9.39.5",
         "@types/bun": "1.3.1",
         "eslint": "9.39.5",
@@ -380,6 +400,8 @@
     "@answerable/acceptance": ["@answerable/acceptance@workspace:packages/acceptance"],
 
     "@answerable/auth": ["@answerable/auth@workspace:packages/auth"],
+
+    "@answerable/config": ["@answerable/config@workspace:packages/config"],
 
     "@answerable/countries": ["@answerable/countries@workspace:packages/countries"],
 

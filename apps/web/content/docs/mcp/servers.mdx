@@ -78,7 +78,7 @@ Not scaffolded: an `exports` map, views and mutations; add them when you need th
 
 <ScaffoldFile file=".env.example" />
 
-`readMcpEnvironment(process.env)` reads these three variables and returns `{ auth, port }`. A server with variables of its own reads them with `parseEnvironment(label, schema, env, names)`, as the Toolbox and the admin MCP do: it parses `env` with a Zod schema, checks the issuer and resource URL in the two variables `names` gives, and throws `Invalid <label> configuration: <VARIABLE>: <problem>`.
+`readMcpEnvironment(process.env)` reads these three variables and returns `{ auth, port }`. Outside production (`NODE_ENV` unset, `development` or `test`), an unset issuer is `http://localhost:47300` and an unset resource `http://localhost:47500/mcp`, the e2e server's. A server with variables of its own lists them with `defineConfig` from `@answerable/config` and reads them with `parseEnvironment(config, env, names)`, as the Toolbox and the admin MCP do: it reads `env` with the definition, checks the issuer and resource URL in the two variables `names` gives, and throws `Invalid <label> configuration: <VARIABLE>: <problem>`.
 
 **Issuer.** The Answerable ID origin. The verifier reads ID's signing keys from the issuer's metadata; never take an issuer from a token.
 

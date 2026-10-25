@@ -11,7 +11,7 @@ const complete = {
 }
 
 test("reads ID, the resource, the database and the machine client, defaulting the bind address to 127.0.0.1, the port to 47520 and leaving the freshness window to createAdminMcp", () => {
-  expect(readAdminEnvironment(complete)).toEqual({
+  expect(readAdminEnvironment({ ...complete, NODE_ENV: "production" })).toEqual({
     auth: { issuer: "http://localhost:47300", resource: "http://localhost:47520/mcp" },
     hostname: "127.0.0.1",
     port: 47520,
@@ -26,10 +26,31 @@ test("reads ID, the resource, the database and the machine client, defaulting th
   expect(readAdminEnvironment({ ...complete, ADMIN_HOST: "::" })).toMatchObject({ hostname: "::" })
 })
 
+test("outside production, everything but the client pair defaults to the local services", () => {
+  for (const NODE_ENV of [undefined, "development", "test"])
+    expect(readAdminEnvironment({ NODE_ENV, ADMIN_ID_CLIENT_ID: "admin-mcp", ADMIN_ID_CLIENT_SECRET: "secret" })).toEqual({
+      auth: { issuer: "http://localhost:47300", resource: "http://localhost:47520/mcp" },
+      hostname: "127.0.0.1",
+      port: 47520,
+      databaseUrl: "postgres://answerable_admin_runtime:answerable@localhost:47432/answerable_admin",
+      id: { issuer: "http://localhost:47300", adminResource: "http://localhost:47300/api/admin", clientId: "admin-mcp", clientSecret: "secret" },
+      toolboxAdminResource: "http://localhost:47400/admin",
+      freshSeconds: undefined,
+    })
+  expect(() => readAdminEnvironment({})).toThrow("Invalid admin MCP configuration: ADMIN_ID_CLIENT_ID: ")
+})
+
+test("production requires every variable without a fallback, and refuses the local database login", () => {
+  const production = { ...complete, NODE_ENV: "production" }
+  expect(readAdminEnvironment(production)).toMatchObject({ port: 47520, toolboxAdminResource: undefined })
+  for (const name of Object.keys(complete))
+    expect(() => readAdminEnvironment({ ...production, [name]: undefined })).toThrow(`Invalid admin MCP configuration: ${name}: `)
+  expect(() => readAdminEnvironment({ ...production, ADMIN_DATABASE_URL: "postgres://answerable_admin_runtime:answerable@localhost:47432/answerable_admin" }))
+    .toThrow("Invalid admin MCP configuration: ADMIN_DATABASE_URL: a development default")
+})
+
 test("names the variable that is missing or invalid", () => {
-  for (const name of Object.keys(complete)) {
-    expect(() => readAdminEnvironment({ ...complete, [name]: undefined })).toThrow(`Invalid admin MCP configuration: ${name}: `)
-  }
+  expect(() => readAdminEnvironment({ ...complete, ADMIN_ID_CLIENT_SECRET: undefined })).toThrow("Invalid admin MCP configuration: ADMIN_ID_CLIENT_SECRET: ")
   expect(() => readAdminEnvironment({ ...complete, ADMIN_PORT: "0" })).toThrow("ADMIN_PORT")
   expect(() => readAdminEnvironment({ ...complete, ADMIN_HOST: "admin.example" })).toThrow("Invalid admin MCP configuration: ADMIN_HOST: ")
   expect(() => readAdminEnvironment({ ...complete, ADMIN_FRESH_SECONDS: "0" })).toThrow("ADMIN_FRESH_SECONDS")

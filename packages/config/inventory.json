@@ -1,0 +1,783 @@
+[
+  {
+    "name": "ID",
+    "reader": "apps/id/src/config.ts, read from the root .env by bun dev",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "PORT",
+        "secret": false,
+        "fallback": "47300",
+        "doc": "The port ID listens on",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "DATABASE_URL",
+        "secret": true,
+        "defaults": {
+          "development": "postgres://answerable_id_runtime:answerable@localhost:47432/answerable_id",
+          "test": "postgres://answerable_id_runtime:answerable@localhost:47432/answerable_id"
+        },
+        "doc": "ID's Postgres URL as its restricted runtime login, never the schema owner",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "BETTER_AUTH_URL",
+        "secret": false,
+        "defaults": {
+          "development": "http://localhost:47300",
+          "test": "http://localhost:47300"
+        },
+        "doc": "ID's origin: the issuer, the pages' origin and the base of the admin API's audience",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "BETTER_AUTH_SECRET",
+        "secret": true,
+        "defaults": {
+          "development": "development-only-better-auth-secret-never-for-production",
+          "test": "development-only-better-auth-secret-never-for-production"
+        },
+        "doc": "The application secret, at least 32 characters: signs cookies and encrypts what ID stores",
+        "source": "deploy",
+        "optional": false
+      },
+      {
+        "name": "BETTER_AUTH_SECRETS",
+        "secret": true,
+        "doc": "The rotation ring, version:secret pairs separated by commas: the first writes, every one decrypts",
+        "source": "deploy",
+        "optional": true
+      },
+      {
+        "name": "GOOGLE_CLIENT_ID",
+        "secret": false,
+        "doc": "The Google platform application's client ID; set it with GOOGLE_CLIENT_SECRET or leave both unset",
+        "source": "deploy",
+        "optional": true
+      },
+      {
+        "name": "GOOGLE_CLIENT_SECRET",
+        "secret": true,
+        "doc": "The Google platform application's client secret",
+        "source": "deploy",
+        "optional": true
+      },
+      {
+        "name": "MICROSOFT_CLIENT_ID",
+        "secret": false,
+        "doc": "The Entra platform application's client ID; set it with MICROSOFT_CLIENT_SECRET or leave both unset",
+        "source": "deploy",
+        "optional": true
+      },
+      {
+        "name": "MICROSOFT_CLIENT_SECRET",
+        "secret": true,
+        "doc": "The Entra platform application's client secret",
+        "source": "deploy",
+        "optional": true
+      },
+      {
+        "name": "BETTER_AUTH_TRUSTED_ORIGINS",
+        "secret": false,
+        "fallback": "",
+        "doc": "Origins trusted besides ID's own, separated by commas: browser origins and identity-provider endpoints; production requires them",
+        "source": "chart",
+        "optional": true
+      },
+      {
+        "name": "ROOT_ADMIN_SECRET",
+        "secret": true,
+        "defaults": {
+          "development": "development-only-root-admin-secret-never-for-production",
+          "test": "development-only-root-admin-secret-never-for-production"
+        },
+        "doc": "The root bearer, at least 32 characters, for the first run; it stops working once a person holds platform:write",
+        "source": "deploy",
+        "optional": true
+      },
+      {
+        "name": "ROOT_ADMIN_BREAK_GLASS",
+        "secret": false,
+        "fallback": "false",
+        "doc": "true keeps the root bearer working after a person holds platform:write; for break-glass only",
+        "source": "operator",
+        "optional": true
+      },
+      {
+        "name": "TRUSTED_PROXY_CIDRS",
+        "secret": false,
+        "doc": "The ingress proxies' networks, IPv4 or IPv6, separated by commas; production requires them",
+        "source": "cluster",
+        "optional": true
+      },
+      {
+        "name": "DATABASE_POOL_MAX",
+        "secret": false,
+        "fallback": "20",
+        "doc": "Connections per process; size it with docs/06's formula against the database's limit",
+        "source": "operator",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "ID migration",
+    "reader": "apps/id/scripts/env.ts, read by scripts/migrate.ts",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "DATABASE_MIGRATION_URL",
+        "secret": true,
+        "defaults": {
+          "development": "postgres://answerable:answerable@localhost:47432/answerable_id",
+          "test": "postgres://answerable:answerable@localhost:47432/answerable_id"
+        },
+        "doc": "ID's Postgres URL as the schema owner, for the migration only",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "DATABASE_RUNTIME_ROLE",
+        "secret": false,
+        "fallback": "answerable_id_runtime",
+        "doc": "The restricted role the migration provisions and ID serves as",
+        "source": "chart",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "ID test database",
+    "reader": "apps/id/src/__tests__/test-database.ts, for ID's tests",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "TEST_DATABASE_URL",
+        "secret": false,
+        "fallback": "postgres://answerable:answerable@localhost:47432/answerable_id_test",
+        "doc": "The disposable database ID's test suite resets, named answerable_id_test",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "Toolbox",
+    "reader": "mcps/toolbox/src/environment.ts, read from the root .env by bun run toolbox:dev",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "TOOLBOX_DATABASE_URL",
+        "secret": true,
+        "defaults": {
+          "development": "postgres://answerable_toolbox_runtime:answerable@localhost:47432/answerable_toolbox",
+          "test": "postgres://answerable_toolbox_runtime:answerable@localhost:47432/answerable_toolbox"
+        },
+        "doc": "The Toolbox's Postgres URL as its restricted runtime login, never the schema owner",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "TOOLBOX_ID_ISSUER",
+        "secret": false,
+        "defaults": {
+          "development": "http://localhost:47300",
+          "test": "http://localhost:47300"
+        },
+        "doc": "The Answerable ID issuer whose tokens the Toolbox accepts",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "TOOLBOX_RESOURCE_URL",
+        "secret": false,
+        "defaults": {
+          "development": "http://localhost:47400/mcp",
+          "test": "http://localhost:47400/mcp"
+        },
+        "doc": "The Toolbox's own URL, the audience of the tokens it accepts",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "TOOLBOX_HOST",
+        "secret": false,
+        "fallback": "127.0.0.1",
+        "doc": "The address to listen on: loopback unless a container or a proxy in front needs another",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "TOOLBOX_PORT",
+        "secret": false,
+        "fallback": "47400",
+        "doc": "The port the Toolbox listens on",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "TOOLBOX_ID_CLIENT_ID",
+        "secret": false,
+        "doc": "The Toolbox's machine client in ID (toolbox-hub); register it as apps/web/content/docs/toolbox/index.mdx shows",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "TOOLBOX_ID_CLIENT_SECRET",
+        "secret": true,
+        "doc": "The Toolbox machine client's secret",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "TOOLBOX_ID_ADMIN_RESOURCE",
+        "secret": false,
+        "defaults": {
+          "development": "http://localhost:47300/api/admin",
+          "test": "http://localhost:47300/api/admin"
+        },
+        "doc": "ID's admin API, the audience of the machine client's tokens",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "secret": false,
+        "doc": "Where to export spans over OTLP/HTTP, such as a local collector; unset, none are exported",
+        "source": "operator",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "Toolbox migration",
+    "reader": "mcps/toolbox/scripts/env.ts, read by scripts/migrate.ts",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "TOOLBOX_DATABASE_MIGRATION_URL",
+        "secret": true,
+        "defaults": {
+          "development": "postgres://answerable:answerable@localhost:47432/answerable_toolbox",
+          "test": "postgres://answerable:answerable@localhost:47432/answerable_toolbox"
+        },
+        "doc": "The Toolbox's Postgres URL as the schema owner, for the migration only",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "TOOLBOX_DATABASE_RUNTIME_ROLE",
+        "secret": false,
+        "fallback": "answerable_toolbox_runtime",
+        "doc": "The restricted role the migration provisions and the Toolbox serves as",
+        "source": "chart",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "Toolbox test database",
+    "reader": "mcps/toolbox/src/test/database.ts, for the Toolbox's tests",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "TOOLBOX_TEST_DATABASE_URL",
+        "secret": false,
+        "fallback": "postgres://answerable:answerable@localhost:47432/answerable_toolbox_test",
+        "doc": "The disposable database the Toolbox's tests reset, named answerable_toolbox_test",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "admin MCP",
+    "reader": "mcps/admin/src/environment.ts, read from the root .env by bun run admin:dev",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "ADMIN_ID_ISSUER",
+        "secret": false,
+        "defaults": {
+          "development": "http://localhost:47300",
+          "test": "http://localhost:47300"
+        },
+        "doc": "The Answerable ID issuer whose tokens the admin MCP accepts",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "ADMIN_RESOURCE_URL",
+        "secret": false,
+        "defaults": {
+          "development": "http://localhost:47520/mcp",
+          "test": "http://localhost:47520/mcp"
+        },
+        "doc": "The admin MCP's own URL, the audience of the tokens it accepts",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "ADMIN_HOST",
+        "secret": false,
+        "fallback": "127.0.0.1",
+        "doc": "The address to listen on: loopback unless a container or a proxy in front needs another",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "ADMIN_PORT",
+        "secret": false,
+        "fallback": "47520",
+        "doc": "The port the admin MCP listens on",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "ADMIN_DATABASE_URL",
+        "secret": true,
+        "defaults": {
+          "development": "postgres://answerable_admin_runtime:answerable@localhost:47432/answerable_admin",
+          "test": "postgres://answerable_admin_runtime:answerable@localhost:47432/answerable_admin"
+        },
+        "doc": "The admin MCP's Postgres URL as its restricted runtime login, never the schema owner",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "ADMIN_ID_CLIENT_ID",
+        "secret": false,
+        "doc": "The admin MCP's machine client of the platform organisation in ID (admin-mcp); register it as apps/web/content/docs/admin/index.mdx shows",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "ADMIN_ID_CLIENT_SECRET",
+        "secret": true,
+        "doc": "The admin MCP machine client's secret",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "ADMIN_ID_ADMIN_RESOURCE",
+        "secret": false,
+        "defaults": {
+          "development": "http://localhost:47300/api/admin",
+          "test": "http://localhost:47300/api/admin"
+        },
+        "doc": "ID's admin API, the audience of the machine client's tokens",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "ADMIN_TOOLBOX_ADMIN_RESOURCE",
+        "secret": false,
+        "defaults": {
+          "development": "http://localhost:47400/admin",
+          "test": "http://localhost:47400/admin"
+        },
+        "doc": "The Toolbox's admin API, for enabling the Toolbox for an organisation; unset, that is refused",
+        "source": "chart",
+        "optional": true
+      },
+      {
+        "name": "ADMIN_FRESH_SECONDS",
+        "secret": false,
+        "doc": "How recent an upstream sign-in a critical operation needs, in seconds; unset, 1,800",
+        "source": "operator",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "admin MCP migration",
+    "reader": "mcps/admin/scripts/env.ts, read by scripts/migrate.ts",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "ADMIN_DATABASE_MIGRATION_URL",
+        "secret": true,
+        "defaults": {
+          "development": "postgres://answerable:answerable@localhost:47432/answerable_admin",
+          "test": "postgres://answerable:answerable@localhost:47432/answerable_admin"
+        },
+        "doc": "The admin MCP's Postgres URL as the schema owner, for the migration only",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "ADMIN_DATABASE_RUNTIME_ROLE",
+        "secret": false,
+        "fallback": "answerable_admin_runtime",
+        "doc": "The restricted role the migration provisions and the admin MCP serves as",
+        "source": "chart",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "admin MCP test database",
+    "reader": "mcps/admin/src/test/database.ts, for the admin MCP's tests",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "ADMIN_TEST_DATABASE_URL",
+        "secret": false,
+        "fallback": "postgres://answerable:answerable@localhost:47432/answerable_admin_test",
+        "doc": "The disposable database the admin MCP's tests reset, named answerable_admin_test",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "MCP",
+    "reader": "packages/mcp/src/environment.ts, read by readMcpEnvironment for the e2e server (bun run mcp:dev) and a scaffolded one",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "MCP_ID_ISSUER",
+        "secret": false,
+        "defaults": {
+          "development": "http://localhost:47300",
+          "test": "http://localhost:47300"
+        },
+        "doc": "The Answerable ID issuer whose tokens the server accepts",
+        "optional": false
+      },
+      {
+        "name": "MCP_RESOURCE_URL",
+        "secret": false,
+        "defaults": {
+          "development": "http://localhost:47500/mcp",
+          "test": "http://localhost:47500/mcp"
+        },
+        "doc": "The server's own URL, the audience of the tokens it accepts",
+        "optional": false
+      },
+      {
+        "name": "MCP_PORT",
+        "secret": false,
+        "fallback": "47500",
+        "doc": "The port the server listens on; each MCP running at the same time needs its own",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "ops",
+    "reader": "infra/ops/src/commands.ts, set by charts/answerable for the bootstrap, register and make-admin Jobs (infra/ops/README.md)",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "OPS_NAMESPACE",
+        "secret": false,
+        "doc": "bootstrap and register: the namespace of the Secrets they write, read by src/kubernetes.ts; unset, the service account's",
+        "source": "chart",
+        "optional": true
+      },
+      {
+        "name": "OPS_DATABASE_ADMIN_URL",
+        "secret": true,
+        "doc": "bootstrap: the managed database's administrative login (CREATEDB and CREATEROLE), a URL with sslmode=verify-full",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "OPS_DATABASE_SSLROOTCERT",
+        "secret": false,
+        "fallback": "/etc/ssl/db/ca.pem",
+        "doc": "bootstrap: where the chart mounts the database's certificate authority, for the services' URLs",
+        "optional": true
+      },
+      {
+        "name": "OPS_ID_URL",
+        "secret": false,
+        "doc": "register and make-admin: ID's origin",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "OPS_ID_TOKEN",
+        "secret": true,
+        "doc": "register: a staff token, used over OPS_ID_ROOT_SECRET once ID's root secret is locked",
+        "source": "operator",
+        "optional": true
+      },
+      {
+        "name": "OPS_ID_ROOT_SECRET",
+        "secret": true,
+        "doc": "register and make-admin: ID's root secret, ROOT_ADMIN_SECRET",
+        "source": "deploy",
+        "optional": true
+      },
+      {
+        "name": "OPS_TOOLBOX_URL",
+        "secret": false,
+        "doc": "register: the Toolbox's origin",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "OPS_ADMIN_MCP_URL",
+        "secret": false,
+        "doc": "register: the admin MCP's origin",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "OPS_PLATFORM_SLUG",
+        "secret": false,
+        "fallback": "answerable",
+        "doc": "register and make-admin: the platform organisation's slug",
+        "optional": true
+      },
+      {
+        "name": "OPS_CLAUDE_CALLBACK_PORT",
+        "secret": false,
+        "fallback": "47700",
+        "doc": "register: the port of Claude Code's OAuth callback that the clients allow",
+        "source": "chart",
+        "optional": true
+      },
+      {
+        "name": "OPS_START_DEPLOYMENTS",
+        "secret": false,
+        "doc": "register: the Deployments to start once their client secrets exist, name=replicas separated by commas",
+        "source": "chart",
+        "optional": true
+      },
+      {
+        "name": "OPS_STAFF_DOMAIN",
+        "secret": false,
+        "doc": "register: the staff email domain to connect to the platform organisation, with OPS_ENTRA_TENANT",
+        "source": "chart",
+        "optional": true
+      },
+      {
+        "name": "OPS_ENTRA_TENANT",
+        "secret": false,
+        "doc": "register: the staff directory's Entra tenant ID, a GUID, with OPS_STAFF_DOMAIN",
+        "source": "chart",
+        "optional": true
+      },
+      {
+        "name": "OPS_ADMIN_EMAIL",
+        "secret": false,
+        "doc": "make-admin: the email of the staff member, signed in once, to make the first administrator",
+        "source": "chart",
+        "optional": false
+      }
+    ]
+  },
+  {
+    "name": "MCP Postgres",
+    "reader": "packages/mcp-postgres/src/test/database.ts, for the package's tests",
+    "fields": [
+      {
+        "name": "MCP_POSTGRES_TEST_DATABASE_URL",
+        "secret": false,
+        "doc": "The disposable database @answerable/mcp-postgres's tests reset, named answerable_mcp_postgres_test",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "web",
+    "reader": "apps/web, read from apps/web/.env.local by Next.js (apps/web/.env.example)",
+    "fields": [
+      {
+        "name": "GOOGLE_SHEETS_ID",
+        "secret": false,
+        "doc": "The waitlist's spreadsheet ID; locally, without it and the two below, a sign-up is logged instead; production needs all three",
+        "optional": true
+      },
+      {
+        "name": "GOOGLE_SERVICE_ACCOUNT_EMAIL",
+        "secret": false,
+        "doc": "The service account that writes the waitlist's sheet",
+        "optional": true
+      },
+      {
+        "name": "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY",
+        "secret": true,
+        "doc": "The service account's private key, on one line with \\n kept",
+        "optional": true
+      },
+      {
+        "name": "OAUTH_TEST_ISSUER",
+        "secret": false,
+        "doc": "The /oauth-test consumer's Answerable ID, in development only",
+        "optional": true
+      },
+      {
+        "name": "OAUTH_TEST_CLIENT_ID",
+        "secret": false,
+        "doc": "The /oauth-test consumer's client in ID",
+        "optional": true
+      },
+      {
+        "name": "OAUTH_TEST_CLIENT_SECRET",
+        "secret": true,
+        "doc": "The /oauth-test consumer's client secret",
+        "optional": true
+      },
+      {
+        "name": "OAUTH_TEST_REDIRECT_URI",
+        "secret": false,
+        "doc": "The /oauth-test consumer's callback, http://localhost:47100/api/oauth-test/callback",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "GitHub environment",
+    "reader": "read by the workflows, never from a .env file (infra/README.md)",
+    "fields": [
+      {
+        "name": "CIVO_TOKEN",
+        "secret": true,
+        "doc": "The environment's Civo account API key; the owner pastes it",
+        "optional": false
+      },
+      {
+        "name": "CLOUDFLARE_API_TOKEN",
+        "secret": true,
+        "doc": "A Cloudflare token scoped to the environment's zone only; the owner pastes it",
+        "optional": false
+      },
+      {
+        "name": "GH_SECRETS_TOKEN",
+        "secret": true,
+        "doc": "A token that writes this environment's secrets, for the bootstrap workflow and Terraform; the owner pastes it",
+        "optional": false
+      },
+      {
+        "name": "STATE_ACCESS_KEY_ID",
+        "secret": false,
+        "doc": "The Terraform state's object store key ID; the bootstrap workflow writes it",
+        "optional": false
+      },
+      {
+        "name": "STATE_SECRET_ACCESS_KEY",
+        "secret": true,
+        "doc": "The Terraform state's object store secret; the bootstrap workflow writes it",
+        "optional": false
+      },
+      {
+        "name": "KUBE_SERVER",
+        "secret": false,
+        "doc": "The cluster's API server, for the deploy step; Terraform writes it",
+        "optional": false
+      },
+      {
+        "name": "KUBE_CA",
+        "secret": false,
+        "doc": "The cluster's certificate authority, for the deploy step; Terraform writes it",
+        "optional": false
+      },
+      {
+        "name": "KUBE_TOKEN",
+        "secret": true,
+        "doc": "The deployer's token, for the deploy step; Terraform writes it",
+        "optional": false
+      }
+    ]
+  },
+  {
+    "name": "infra tooling",
+    "reader": "read by bun run infra:test and bun run infra:check",
+    "fields": [
+      {
+        "name": "INFRA_STACK_KEEP",
+        "secret": false,
+        "doc": "1 keeps the kind stack's cluster after bun run infra:test",
+        "optional": true
+      },
+      {
+        "name": "TF_PLUGIN_CACHE_DIR",
+        "secret": false,
+        "doc": "Moves infra:check's Terraform provider cache",
+        "optional": true
+      }
+    ]
+  }
+]

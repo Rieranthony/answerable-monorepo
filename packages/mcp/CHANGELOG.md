@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0
+
+Configuration through `@answerable/config`, with local defaults. Breaking for a server that calls `parseEnvironment`.
+
+- Breaking: `parseEnvironment(config, env, names)` takes a definition from `@answerable/config`'s `defineConfig` in place of a label and a zod schema. The messages are the same, `Invalid <label> configuration: <VARIABLE>: <problem>`, with the definition's label.
+- `readMcpEnvironment` reads its three variables through such a definition. Outside production (`NODE_ENV` unset, `development` or `test`), an unset `MCP_ID_ISSUER` is `http://localhost:47300` and an unset `MCP_RESOURCE_URL` is `http://localhost:47500/mcp`; production requires both, as before. `NODE_ENV` must be one of the three.
+
 ## 0.9.0
 
 What the V0 cleanup found in the kit: two exports for the servers, the intent id for `commit`, and three server gaps closed. Breaking: a replay of a commit needs its commit token.

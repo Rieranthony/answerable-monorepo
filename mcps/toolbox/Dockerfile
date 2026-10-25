@@ -31,6 +31,7 @@ LABEL org.opencontainers.image.title="Answerable Toolbox" \
 WORKDIR /app
 COPY --from=dependencies /app ./
 COPY packages/auth packages/auth
+COPY packages/config packages/config
 COPY packages/id-admin packages/id-admin
 COPY packages/mcp packages/mcp
 COPY packages/mcp-postgres packages/mcp-postgres

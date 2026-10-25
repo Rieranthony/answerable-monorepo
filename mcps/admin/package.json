@@ -1,6 +1,6 @@
 {
   "name": "@answerable/mcp-admin",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "exports": {
@@ -19,6 +19,7 @@
     "db:test:migrate": "bun scripts/migrate.ts --test"
   },
   "dependencies": {
+    "@answerable/config": "workspace:*",
     "@answerable/id-admin": "workspace:*",
     "@answerable/mcp": "workspace:*",
     "@answerable/mcp-postgres": "workspace:*",

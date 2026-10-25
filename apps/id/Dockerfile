@@ -16,6 +16,7 @@ FROM ${BUN_IMAGE} AS build
 WORKDIR /app
 COPY --from=manifests /src ./
 RUN --mount=type=cache,target=/root/.bun/install/cache,sharing=locked bun install --frozen-lockfile --filter @answerable/id
+COPY packages/config packages/config
 COPY packages/countries packages/countries
 COPY packages/ui packages/ui
 COPY apps/id apps/id

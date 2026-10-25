@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1
+
+No tool changes. The admin MCP reads its variables through `@answerable/config`, so a clone runs it with no `.env` but the machine client's ID and secret.
+
+- Outside production (`NODE_ENV` unset, `development` or `test`), every variable but `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` and `ADMIN_FRESH_SECONDS` has a local default, `ADMIN_TOOLBOX_ADMIN_RESOURCE` included (`http://localhost:47400/admin`). Production requires what it required, refuses the local login as `ADMIN_DATABASE_URL`, and `NODE_ENV` must be one of the three.
+- `scripts/migrate.ts` reads `ADMIN_DATABASE_MIGRATION_URL` and `ADMIN_DATABASE_RUNTIME_ROLE` the same way, and the tests `ADMIN_TEST_DATABASE_URL`; a missing owner URL in production answers `Invalid admin MCP migration configuration: ADMIN_DATABASE_MIGRATION_URL: Set ADMIN_DATABASE_MIGRATION_URL…`.
+
 ## 0.3.0
 
 No tool changes. The admin MCP's storage moves onto drizzle, with `@answerable/mcp-postgres` 0.7.0: drizzle-kit migrations in `drizzle/`, generated from `src/db/schema.ts` (the package's tables, its only ones). `db:migrate` adopts a database the file migrator built, without re-running DDL. `ADMIN_DATABASE_URL` and `ADMIN_DATABASE_MIGRATION_URL` are unchanged. The package exports `./migrate` for the acceptance.

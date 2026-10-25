@@ -6,9 +6,13 @@ test("parses only issuer, resource and port, with loopback HTTP allowed", () => 
   expect(readMcpEnvironment({ ...env, MCP_RECORDS_PATH: "ignored" })).toEqual({ auth: { issuer: env.MCP_ID_ISSUER, resource: env.MCP_RESOURCE_URL }, port: 47500 })
   expect(readMcpEnvironment({ ...env, MCP_PORT: "65535" }).port).toBe(65535)
 })
+test("outside production, the issuer and the resource default to the local ID and the e2e server", () => {
+  for (const NODE_ENV of [undefined, "development", "test"])
+    expect(readMcpEnvironment({ NODE_ENV })).toEqual({ auth: { issuer: "http://localhost:47300", resource: "http://localhost:47500/mcp" }, port: 47500 })
+})
 test("reports missing and invalid variable names", () => {
-  expect(() => readMcpEnvironment({})).toThrow("Invalid MCP configuration: MCP_ID_ISSUER:")
-  expect(() => readMcpEnvironment({})).toThrow("MCP_RESOURCE_URL")
+  expect(() => readMcpEnvironment({ NODE_ENV: "production" })).toThrow("Invalid MCP configuration: MCP_ID_ISSUER:")
+  expect(() => readMcpEnvironment({ NODE_ENV: "production" })).toThrow("MCP_RESOURCE_URL")
   for (const value of ["0", "65536", "abc", "1.5", ""]) expect(() => readMcpEnvironment({ ...env, MCP_PORT: value })).toThrow("MCP_PORT")
   expect(() => readMcpEnvironment({ ...env, MCP_ID_ISSUER: "http://evil.test" })).toThrow("Invalid MCP configuration: MCP_ID_ISSUER:")
   expect(() => readMcpEnvironment({ ...env, MCP_RESOURCE_URL: "https://mcp.test#fragment" })).toThrow("Invalid MCP configuration: MCP_RESOURCE_URL:")

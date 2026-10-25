@@ -1,8 +1,20 @@
+import { defineConfig } from "@answerable/config";
+import { z } from "zod";
+
 const testDatabaseName = "answerable_id_test";
 
-export const testDatabaseUrl =
-  process.env.TEST_DATABASE_URL ??
-  `postgres://answerable:answerable@localhost:47432/${testDatabaseName}`;
+/** The variable the tests read: on its own, so that a process a test starts with `NODE_ENV=production` needs nothing else. */
+export const idTestDatabaseConfig = defineConfig("ID test database", {
+  TEST_DATABASE_URL: {
+    schema: z.url(),
+    fallback: `postgres://answerable:answerable@localhost:47432/${testDatabaseName}`,
+    doc: "The disposable database ID's test suite resets, named answerable_id_test",
+  },
+});
+
+export const testDatabaseUrl = idTestDatabaseConfig.read(
+  process.env,
+).TEST_DATABASE_URL;
 
 /**
  * Every destructive test command calls this first. Data in the test database

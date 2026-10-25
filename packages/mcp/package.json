@@ -1,6 +1,6 @@
 {
   "name": "@answerable/mcp",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@answerable/auth": "workspace:*",
+    "@answerable/config": "workspace:*",
     "@modelcontextprotocol/client": "2.1.0",
     "@modelcontextprotocol/ext-apps": "2.0.0",
     "@modelcontextprotocol/server": "2.1.0",

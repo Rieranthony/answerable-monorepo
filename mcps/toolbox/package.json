@@ -1,6 +1,6 @@
 {
   "name": "@answerable/mcp-toolbox",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
   "exports": {
@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@answerable/auth": "workspace:*",
+    "@answerable/config": "workspace:*",
     "@answerable/id-admin": "workspace:*",
     "@answerable/mcp": "workspace:*",
     "@answerable/mcp-e2e": "workspace:*",
