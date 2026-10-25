@@ -20,13 +20,13 @@ The Toolbox serves as a restricted login and refuses to start as the owner, or a
 
 Register the Toolbox in ID, then enable an organisation with one call to the admin API: [Administer the Toolbox](../../apps/web/content/docs/toolbox/admin.mdx). To mount another provider: [Add tools to the Toolbox](../../apps/web/content/docs/toolbox/add-tools.mdx). The variables are listed in `default.env`. Changes: [CHANGELOG](CHANGELOG.md).
 
-It builds on two shared packages: `@answerable/id-admin` (`createIdAdmin`, the Toolbox's one machine client on ID's admin API, shared by the grants reader, the poller and the enable operation: reads with `platform:read`, the enable operation with `platform:read platform:write`; `found` makes ID's 404 an answer; the fake ID for tests) and `@answerable/mcp-postgres` (`connect`, `createEvidence`, `createPostgresIntentStore`, which records every step of an intent as evidence, the drizzle base schema and `migrate`).
+It builds on two shared packages: `@answerable/id-admin` (`createIdAdmin`, the Toolbox's one machine client on ID's admin API, shared by the grants reader, who is calling (`createIdProfiles`), the poller and the enable operation: reads with `platform:read`, the enable operation with `platform:read platform:write`; `found` makes ID's 404 an answer; the fake ID for tests) and `@answerable/mcp-postgres` (`connect`, `createEvidence`, `createPostgresIntentStore`, which records every step of an intent as evidence, the drizzle base schema and `migrate`).
 
 | File | Job |
 | --- | --- |
-| `src/toolbox.ts` | `createToolbox({ providers, auth, db, id, spans })`: the endpoint on `@answerable/mcp`, authority and the projection per request, evidence and a span per call, `RESULT_TOO_LARGE` above 100 KiB, `/health` |
+| `src/toolbox.ts` | `createToolbox({ mount, auth, db, id, spans })`: the endpoint on `@answerable/mcp`, each mounted provider with its own `db`, authority, who is calling and the projection per request, evidence and a span per call, `RESULT_TOO_LARGE` above 100 KiB, `/health` |
 | `src/grants.ts` | `createGrantsReader`: grant strings from the Toolbox targets of ID's member access view, cached 60 seconds, a client-limited one counted only through its client; an invalidation sends `tools/list_changed`. `allowedScopes(providers)`, the Toolbox resource's allowed scopes |
-| `src/poller.ts` | `startGrantsPoller`: reads ID's audit log every 15 seconds and invalidates the organisations and the users it names |
+| `src/poller.ts` | `startGrantsPoller`: reads ID's audit log every 15 seconds and invalidates the grants and the profiles of the organisations and the users it names |
 | `src/admin.ts` | The platform-tier admin API under `/admin/v1`: authentication (a machine client's token with `toolbox:admin`), routing, and the routes for providers, catalogue entries and host clients; `toolboxAdminResource` |
 | `src/admin-enable.ts` | The enable operation: what ID holds, what is missing, and the ID calls that make it |
 | `src/problem.ts` | `Problem`, the `{ error: { code, message } }` answer, and body parsing |

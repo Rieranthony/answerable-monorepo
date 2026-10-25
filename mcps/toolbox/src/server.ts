@@ -19,9 +19,9 @@ await assertRuntimeRole(db).catch(async (error: Error) => {
 const telemetry = createTracer(otlpEndpoint)
 const id = createIdAdmin(idConfig)
 //#region providers
-const toolbox = await createToolbox({ providers: [createE2eProvider({ records: createRecordStore(), viewHtml })], auth, db, id, spans: telemetry.tracer })
+const toolbox = await createToolbox({ mount: [{ provider: createE2eProvider({ records: createRecordStore(), viewHtml }) }], auth, db, id, spans: telemetry.tracer })
 //#endregion
-const poller = startGrantsPoller({ id, grants: toolbox.grants })
+const poller = startGrantsPoller({ id, grants: toolbox.grants, profiles: toolbox.profiles })
 const server = Bun.serve({ hostname, port, fetch: toolbox.fetch })
 console.log(`Toolbox serving ${auth.resource}`)
 let closing = false

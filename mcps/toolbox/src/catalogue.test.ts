@@ -5,6 +5,8 @@ import { z } from "zod"
 import { ingest, readCatalogue, writeCatalogue } from "./catalogue"
 import { serving } from "./test/database"
 
+const purpose = "A fixture provider for the Toolbox's tests: it serves the tools each test gives it."
+
 const login = await serving()
 const { db } = login
 const query = rowsOf(db)
@@ -27,7 +29,7 @@ function provider(id: string, { version = "2026-09-29", title = "Search tickets"
     name, description: "Read one more thing from the organisation's tickets, added in a later version of the provider.",
     input: z.object({}), output: z.object({}), async execute() { return {} },
   }))
-  return defineProvider({ id, version, tools: [search, close, ...added] })
+  return defineProvider({ id, description: purpose, version, tools: [search, close, ...added] })
 }
 const rows = (id: string) => query<{ identity: string; version: string; kind: string; risk: string | null; title: string | null; required: string[] }>`select identity, version, kind, risk, title, input -> 'required' as required from capabilities where provider_id = ${id} order by identity, version`
 

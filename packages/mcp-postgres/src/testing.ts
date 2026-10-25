@@ -1,5 +1,9 @@
+import { afterAll, describe } from "bun:test"
 import { AsyncLocalStorage } from "node:async_hooks"
+import { fileURLToPath } from "node:url"
 import { defineConfig } from "@answerable/config"
+import { callerOrganisation, type Provider } from "@answerable/mcp"
+import { assertProviderConformance as assertConformance, createTestMcp as createSdkTestMcp, type ConformanceFixture, type TestMcp } from "@answerable/mcp/testing"
 import { DrizzleQueryError, sql } from "drizzle-orm"
 import type { NodePgDatabase } from "drizzle-orm/node-postgres"
 import { Client, Pool } from "pg"
@@ -167,4 +171,50 @@ export async function testMcpDatabase<Schema extends Record<string, unknown>>({ 
       await asSuperuser(client => client.query(`begin; select pg_advisory_xact_lock(${roleLock}); drop owned by ${login}; drop role ${login}; commit`).then(() => undefined))
     },
   }
+}
+
+// A provider's test database, as testMcpDatabase makes it, with the organisation of the call the SDK is running.
+function providerDatabase(provider: Provider) {
+  if (!provider.database) throw new Error(`Provider ${provider.id} has no database; import createTestMcp and assertProviderConformance from @answerable/mcp/testing`)
+  const { schema, migrations } = provider.database
+  return testMcpDatabase({ name: provider.id, schema, folder: fileURLToPath(migrations), organisation: callerOrganisation })
+}
+
+/**
+ * `@answerable/mcp/testing`'s `createTestMcp`, for a provider with a `database`: it serves the provider with its `db`, made by `testMcpDatabase`
+ * from `provider.database` (schema `<id>` in `answerable_mcps_test`, reset and migrated), each call seeing only the rows of its caller's
+ * organisation, so `connect({ organizationId })` gives isolation by organisation. `close()` also drops the test login.
+ *
+ * @example
+ * ```ts
+ * import { createTestMcp } from "@answerable/mcp-postgres/testing"
+ * import { provider } from "./provider"
+ *
+ * const mcp = await createTestMcp(provider)
+ * const client = await mcp.connect({ organizationId: crypto.randomUUID() })
+ * await mcp.close()
+ * ```
+ */
+export async function createTestMcp(provider: Provider, options: Omit<NonNullable<Parameters<typeof createSdkTestMcp>[1]>, "db"> = {}): Promise<TestMcp> {
+  const database = await providerDatabase(provider)
+  const mcp = await createSdkTestMcp(provider, { ...options, db: database.db })
+  return {
+    ...mcp,
+    async close() {
+      await mcp.close()
+      await database.close()
+    },
+  }
+}
+
+/**
+ * `@answerable/mcp/testing`'s `assertProviderConformance`, for a provider with a `database`: the kit serves the provider with its `db`, made by
+ * `testMcpDatabase` from `provider.database` and dropped after the checks. Call it at the top level of a test file, as the SDK's.
+ */
+export function assertProviderConformance(provider: Provider, fixture: Omit<ConformanceFixture, "db">) {
+  describe(`${provider.id} database`, async () => {
+    const database = await providerDatabase(provider)
+    afterAll(() => database.close())
+    assertConformance(provider, { ...fixture, db: database.db })
+  })
 }

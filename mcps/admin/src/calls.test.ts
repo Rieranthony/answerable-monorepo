@@ -5,7 +5,12 @@ import { ToolError } from "@answerable/mcp"
 import { testPrincipal } from "@answerable/mcp/testing"
 import { createCalls } from "./calls"
 
-const context = Object.freeze({ principal: testPrincipal(), executionId: "exec-1", signal: new AbortController().signal })
+const principal = testPrincipal()
+const context = Object.freeze({
+  principal, executionId: "exec-1", signal: new AbortController().signal, client: { id: principal.clientId },
+  person: { id: principal.userId, membershipId: principal.membershipId, name: "Staff member", email: "staff@answerable.test", groups: [] },
+  organisation: { id: principal.organizationId, name: "Answerable", slug: "answerable" },
+})
 // ID's admin API answering each write with the next of `answers`: an answer, or an error to throw.
 function writing(answers: (Awaited<ReturnType<IdAdmin["manage"]>> | Error)[]) {
   const sent: unknown[] = []

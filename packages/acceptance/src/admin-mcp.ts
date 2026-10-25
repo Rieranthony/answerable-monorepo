@@ -79,9 +79,9 @@ export async function startAdminStack(id: Id, { adminHost, toolboxHost, fetch }:
   await configureRuntimeRole(toolboxDb.owner, toolboxDb.role, toolboxGrants)
   await assertRuntimeRole(toolboxDb.runtime)
   const hubIds = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...hub })
-  const providers = [createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html><title>Records</title>" })]
-  const toolbox = await createToolbox({ providers, auth: { issuer: manifest.idOrigin, resource: toolboxResource }, db: toolboxDb.runtime, id: hubIds, spans: createMemoryTracer().tracer })
-  const poller = startGrantsPoller({ id: hubIds, grants: toolbox.grants })
+  const mount = [{ provider: createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html><title>Records</title>" }) }]
+  const toolbox = await createToolbox({ mount, auth: { issuer: manifest.idOrigin, resource: toolboxResource }, db: toolboxDb.runtime, id: hubIds, spans: createMemoryTracer().tracer })
+  const poller = startGrantsPoller({ id: hubIds, grants: toolbox.grants, profiles: toolbox.profiles })
   onCleanup(() => poller.stop())
 
   return {

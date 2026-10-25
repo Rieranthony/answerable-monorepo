@@ -124,7 +124,7 @@
     },
     "mcps/admin": {
       "name": "@answerable/mcp-admin",
-      "version": "0.3.1",
+      "version": "0.4.0",
       "dependencies": {
         "@answerable/config": "workspace:*",
         "@answerable/id-admin": "workspace:*",
@@ -144,8 +144,9 @@
     },
     "mcps/e2e": {
       "name": "@answerable/mcp-e2e",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
+        "@answerable/id-admin": "workspace:*",
         "@answerable/mcp": "workspace:*",
         "@modelcontextprotocol/ext-apps": "2.0.0",
         "react": "19.2.4",
@@ -167,6 +168,7 @@
       "name": "@answerable/mcp-example",
       "version": "0.0.0",
       "dependencies": {
+        "@answerable/id-admin": "workspace:*",
         "@answerable/mcp": "workspace:*",
         "zod": "4.6.7",
       },
@@ -180,7 +182,7 @@
     },
     "mcps/toolbox": {
       "name": "@answerable/mcp-toolbox",
-      "version": "0.4.1",
+      "version": "0.5.0",
       "dependencies": {
         "@answerable/auth": "workspace:*",
         "@answerable/config": "workspace:*",
@@ -299,8 +301,9 @@
     },
     "packages/id-admin": {
       "name": "@answerable/id-admin",
-      "version": "0.5.2",
+      "version": "0.6.0",
       "dependencies": {
+        "@answerable/mcp": "workspace:*",
         "zod": "4.6.7",
       },
       "devDependencies": {
@@ -313,13 +316,14 @@
     },
     "packages/mcp": {
       "name": "@answerable/mcp",
-      "version": "0.10.0",
+      "version": "0.11.0",
       "dependencies": {
         "@answerable/auth": "workspace:*",
         "@answerable/config": "workspace:*",
         "@modelcontextprotocol/client": "2.1.0",
         "@modelcontextprotocol/ext-apps": "2.0.0",
         "@modelcontextprotocol/server": "2.1.0",
+        "drizzle-orm": "0.45.4",
         "zod": "4.6.7",
       },
       "devDependencies": {
@@ -332,7 +336,7 @@
     },
     "packages/mcp-postgres": {
       "name": "@answerable/mcp-postgres",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "dependencies": {
         "@answerable/config": "workspace:*",
         "@answerable/mcp": "workspace:*",

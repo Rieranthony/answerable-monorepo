@@ -48,7 +48,7 @@ Then pass the provider to `createToolbox` in `mcps/toolbox/src/server.ts`. Today
 
 <include lang="ts" meta='title="mcps/toolbox/src/server.ts"'>../../../../../mcps/toolbox/src/server.ts#providers</include>
 
-Import yours at the top of the file, as the line at the top of this page does, and add it to `providers`: `providers: [createE2eProvider(…), acme]`. Then:
+Import yours at the top of the file, as the line at the top of this page does, and add it to `mount`: `mount: [{ provider: createE2eProvider(…) }, { provider: acme }]`. A provider with a [database](/docs/mcp/tools#the-database) also needs its `db` there, `{ provider: acme, db }`: Not yet in the Toolbox's entry point, which has no MCP database to make it from. Then:
 
 ```sh
 bun install
@@ -145,7 +145,7 @@ The provider's code is the same; how hosts reach it changes.
 
 **A changed contract** needs a new version. A capability stored at the same version with another kind, risk, input or output refuses the boot, naming it. Give the tool a new `version`, or change the provider's, and regenerate its manifest. Titles and descriptions update in place.
 
-**Removing a provider** from `providers` stops serving its tools at the next boot. Entitlements in ID that name its grant strings stay, and cover nothing.
+**Removing a provider** from `mount` stops serving its tools at the next boot. Entitlements in ID that name its grant strings stay, and cover nothing.
 
 ## Not yet
 

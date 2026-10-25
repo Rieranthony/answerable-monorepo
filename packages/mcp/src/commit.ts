@@ -1,3 +1,4 @@
+import type { UserPrincipal } from "@answerable/auth"
 import { bounded } from "./call"
 import { commitToolName } from "./commit-tools"
 import type { ToolContext } from "./definitions"
@@ -73,7 +74,10 @@ type CommitRequest = {
   /** The commit tool called. */
   tool: string
   input: { intent_id: string; commit_token: string; preview_summary?: string }
-  context: ToolContext
+  /** The caller. */
+  principal: UserPrincipal
+  /** The context the mutation's `prepare` and `commit` run with: the caller's, with the database of the mutation's own provider. */
+  contextOf(mutation: Served<Mutation>): ToolContext
   store: IntentStore
   mutations: readonly Served<Mutation>[]
   /** Whether the caller may still use a mutation. */
@@ -86,8 +90,7 @@ const strictness: Record<PolicyClass, number> = { agent: 0, controlled: 1, human
 
 /** Commit an intent: check it can be committed by this caller through this tool, claim it, then apply it. */
 export async function commitIntent(request: CommitRequest): Promise<Receipt> {
-  const { id, tool, input, context, store, mutations, permitted, policyClass } = request
-  const { principal } = context
+  const { id, tool, input, principal, contextOf, store, mutations, permitted, policyClass } = request
   const intent = await store.get(input.intent_id)
   if (!intent) throw new ToolError("INTENT_NOT_FOUND", `No intent ${input.intent_id} exists; prepare the mutation again`)
   const { intent_id, principal: owner } = intent
@@ -118,5 +121,5 @@ export async function commitIntent(request: CommitRequest): Promise<Receipt> {
   }
   // Losing the claim to a concurrent commit means the status moved on: read it again.
   if (!(await store.transition(intent_id, "prepared", "committing"))) return commitIntent(request)
-  return apply(intent, mutation, context, store)
+  return apply(intent, mutation, contextOf(mutation), store)
 }

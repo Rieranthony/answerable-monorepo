@@ -532,6 +532,28 @@
         "fallback": "47500",
         "doc": "The port the server listens on; each MCP running at the same time needs its own",
         "optional": true
+      },
+      {
+        "name": "MCP_ID_CLIENT_ID",
+        "secret": false,
+        "doc": "A machine client in ID with platform:read, through which the server reads who is calling; a server whose profiles use ID needs it",
+        "optional": true
+      },
+      {
+        "name": "MCP_ID_CLIENT_SECRET",
+        "secret": true,
+        "doc": "That machine client's secret, set with MCP_ID_CLIENT_ID",
+        "optional": true
+      },
+      {
+        "name": "MCP_ID_ADMIN_RESOURCE",
+        "secret": false,
+        "defaults": {
+          "development": "http://localhost:47300/api/admin",
+          "test": "http://localhost:47300/api/admin"
+        },
+        "doc": "ID's admin API, the audience of the machine client's tokens; set with MCP_ID_CLIENT_ID",
+        "optional": true
       }
     ]
   },

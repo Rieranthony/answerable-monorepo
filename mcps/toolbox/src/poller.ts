@@ -1,4 +1,4 @@
-import { pages, type IdAdmin } from "@answerable/id-admin"
+import { pages, type IdAdmin, type IdProfiles } from "@answerable/id-admin"
 import { z } from "zod"
 import type { GrantsReader } from "./grants"
 
@@ -12,11 +12,12 @@ export const organisationActions = ["capability.", "entitlement.", "group_member
 export const userActions = ["user."]
 
 /**
- * Read ID's audit log of successes every `intervalMs` (15 seconds), newest first, back to the last event seen, and invalidate the grants of every
- * organisation a capability, entitlement, group, group member, member or organisation event names, and of every user a user event names,
- * in every organisation. The first poll only records the newest event. Polls run one at a time; a failed poll is logged and the next one catches up.
+ * Read ID's audit log of successes every `intervalMs` (15 seconds), newest first, back to the last event seen, and invalidate the grants and the
+ * profiles of every organisation a capability, entitlement, group, group member, member or organisation event names, and of every user a user
+ * event names, in every organisation. The first poll only records the newest event. Polls run one at a time; a failed poll is logged and the next
+ * one catches up.
  */
-export function startGrantsPoller({ id, grants, intervalMs = 15_000 }: { id: IdAdmin; grants: GrantsReader; intervalMs?: number }) {
+export function startGrantsPoller({ id, grants, profiles, intervalMs = 15_000 }: { id: IdAdmin; grants: GrantsReader; profiles: Pick<IdProfiles, "invalidate">; intervalMs?: number }) {
   let last: string | undefined
   let busy = false
   let running = Promise.resolve()
@@ -42,6 +43,7 @@ export function startGrantsPoller({ id, grants, intervalMs = 15_000 }: { id: IdA
       const users = new Set<string>()
       last = await read(organisations, users) ?? last ?? ""
       grants.invalidate(organisations, users)
+      profiles.invalidate(organisations, users)
     } catch (error) {
       console.error("[toolbox] reading ID's audit log failed", error)
     } finally {

@@ -14,6 +14,7 @@ const notesList = defineTool({
     cursor: z.string().optional().describe("next_cursor from the previous page; omit it for the first page"),
   }),
   output: z.object({ items: z.array(note), next_cursor: z.string().nullable(), has_more: z.boolean() }),
+  example: { limit: 5 },
   async execute(input, { principal }) {
     return notes.list(principal.organizationId, input)
   },
@@ -27,6 +28,7 @@ const notesAdd = defineMutation({
   description: "Prepare adding a note to your organisation. Changes nothing: returns a preview and a commit token; commit the intent with the tool its commit_tool names to add the note.",
   input: z.object({ text: z.string().trim().min(1).max(200).describe("The note, 1 to 200 characters") }),
   output: note,
+  example: { text: "Buy milk" },
   async prepare({ text }) {
     return {
       targets: [],
@@ -42,5 +44,10 @@ const notesAdd = defineMutation({
 //#endregion
 
 //#region provider
-export const provider = defineProvider({ id: "example", version: "2026-09-30", tools: [notesList, notesAdd] })
+export const provider = defineProvider({
+  id: "example",
+  description: "Your organisation's notes: list them a page at a time, and add one. The finished quickstart of the MCP docs.",
+  version: "2026-09-30",
+  tools: [notesList, notesAdd],
+})
 //#endregion

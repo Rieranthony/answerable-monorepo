@@ -28,7 +28,7 @@ async function setup({ toolbox: withToolbox = true } = {}) {
     toolbox: withToolbox ? createToolboxAdmin({ id: admin, resource: toolboxResource, fetch: toolbox.fetch }) : undefined,
   })
   const calls: ToolCall[] = []
-  const mcp = await createTestMcp(auth => createMcpServer({ provider, auth, intents, wrapCall: (call, run) => (calls.push(call), run()) }))
+  const mcp = await createTestMcp(serving => createMcpServer({ ...serving, provider, intents, wrapCall: (call, run) => (calls.push(call), run()) }))
   servers.push(mcp)
   const client = await mcp.connect()
   const call = (name: string, args: Record<string, unknown>) => client.callTool({ name, arguments: args })

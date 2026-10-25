@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0
+
+`createIdProfiles(id, { ttlMs, staleMs, now })` says who is calling, for `createMcpServer`'s `profiles`: the member and the organisation from ID's admin API, read in parallel and cached 60 seconds per member and per organisation, the last value served for up to an hour when ID does not answer, the groups in force now, and `PERMISSION_DENIED` for a member not in force. `invalidate(organisationIds, userIds)` takes an audit-log poller's events. The package depends on `@answerable/mcp` for `ToolError` and the profile's type.
+
 ## 0.5.2
 
 The fake ID follows ID's admin API:

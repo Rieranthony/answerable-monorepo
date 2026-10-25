@@ -11,9 +11,10 @@ export function createNotesProvider({ notes }: { notes: NoteCounter }) {
     description: "Count your organisation's notes. Use notes.list to read them.",
     input: z.object({}),
     output: z.object({ total: z.number().int() }),
+    example: {},
     async execute(_input, { principal }) {
       return { total: await notes.count(principal.organizationId) }
     },
   })
-  return defineProvider({ id: "example", version: "2026-09-30", tools: [notesTotal] })
+  return defineProvider({ id: "example", description: "Counts your organisation's notes, from a store the server or a test passes in.", version: "2026-09-30", tools: [notesTotal] })
 }

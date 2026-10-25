@@ -112,7 +112,7 @@ export async function createAdmin(db: Database, { freshSeconds }: { freshSeconds
     headers.set("Authorization", `Bearer ${await mcp.issuer.sign({ resource, claims: { ...claims, upstream_auth_time: signedIn.get(claims.membership_id) } })}`)
     return new Request(request, { headers })
   }
-  const mcp: TestMcp = await createTestMcp(auth => {
+  const mcp: TestMcp = await createTestMcp(({ auth }) => {
     const server = createAdminMcp({
       auth, db, id: createIdAdmin({ ...id.config, fetch: observed }), platform, freshSeconds, toolbox: { resource: toolboxResource, fetch: toolbox.fetch },
     })

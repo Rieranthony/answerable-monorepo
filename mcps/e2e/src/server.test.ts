@@ -9,7 +9,7 @@ test("the entry point serves the built view's MCP, answers /health and stops on 
   const { port } = probe
   probe.stop(true)
   const origin = `http://127.0.0.1:${port}`
-  const env = { ...process.env, MCP_ID_ISSUER: "http://localhost:47300", MCP_RESOURCE_URL: `${origin}/mcp`, MCP_PORT: String(port) }
+  const env = { ...process.env, MCP_ID_ISSUER: "http://localhost:47300", MCP_RESOURCE_URL: `${origin}/mcp`, MCP_PORT: String(port), MCP_ID_CLIENT_ID: "e2e-mcp", MCP_ID_CLIENT_SECRET: "e2e-secret" }
   const server = Bun.spawn([process.execPath, "src/server.ts"], { cwd: directory, env, stdout: "pipe", stderr: "inherit" })
   try {
     const started = new TextDecoder().decode((await server.stdout.getReader().read()).value)
@@ -22,3 +22,10 @@ test("the entry point serves the built view's MCP, answers /health and stops on 
     server.kill()
   }
 }, 30_000)
+
+test("without a machine client to read who is calling, the entry point refuses to start, naming the variables", async () => {
+  const env = { ...process.env, MCP_ID_ISSUER: "http://localhost:47300", MCP_RESOURCE_URL: "http://localhost:1/mcp", MCP_PORT: "1", MCP_ID_CLIENT_ID: undefined, MCP_ID_CLIENT_SECRET: undefined }
+  const server = Bun.spawn([process.execPath, "src/server.ts"], { cwd: directory, env, stdout: "pipe", stderr: "pipe" })
+  expect(await server.exited).toBe(1)
+  expect(await new Response(server.stderr).text()).toContain("The e2e MCP cannot start: set MCP_ID_CLIENT_ID and MCP_ID_CLIENT_SECRET, a machine client in ID with platform:read, to read who is calling")
+})

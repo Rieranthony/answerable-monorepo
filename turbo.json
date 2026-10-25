@@ -16,6 +16,7 @@
         "../../packages/config/inventory.json",
         "../../packages/config/src/**",
         "../../packages/mcp/src/**",
+        "../../packages/mcp-postgres/src/**",
         "../../mcps/*/src/**",
         "../../mcps/*/scripts/**",
         "../../mcps/*/manifest.json",

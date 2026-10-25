@@ -2,9 +2,33 @@ import type { UserPrincipal } from "@answerable/auth"
 import type { GetPromptResult } from "@modelcontextprotocol/server"
 import { z } from "zod"
 
-/** What every handler receives: the verified caller, this call's id (a UUIDv7, also the error envelope's `request_id`) and a signal that aborts on cancel or timeout. */
+/**
+ * What a server's `profiles` returns for a caller: who they are beyond the token's ids, read by the server for each request that runs a handler.
+ * The ids come from the token, so they are not here.
+ */
+export type Profile = {
+  /** The person's name and email, and the groups of their organisation they are in now, each with its id, slug and name. */
+  person: { name: string; email: string; groups: readonly { id: string; slug: string; name: string }[] }
+  /** The organisation's name and slug. */
+  organisation: { name: string; slug: string }
+}
+
+/**
+ * What every handler receives: who is calling (the person, their organisation and the AI app they use), the verified token, this call's id (a
+ * UUIDv7, also the error envelope's `request_id`) and a signal that aborts on cancel or timeout. A handler made with `withDatabase` also receives
+ * its MCP's `db`.
+ */
 export type ToolContext = Readonly<{
-  /** The verified caller: person, organisation, membership, client and scopes, from the access token. */
+  /**
+   * The person calling. `id` is the token's user (`principal.userId`) and `membershipId` its membership of the organisation (`principal.membershipId`);
+   * `name`, `email` and `groups`, the groups they are in now, come from the server's `profiles`, which reads them from Answerable ID.
+   */
+  person: Readonly<{ id: string; membershipId: string; name: string; email: string; groups: readonly Readonly<{ id: string; slug: string; name: string }>[] }>
+  /** The organisation the person signed in to: `id` from the token (`principal.organizationId`); `name` and `slug` from the server's `profiles`. */
+  organisation: Readonly<{ id: string; name: string; slug: string }>
+  /** The AI app the person uses, such as Claude Code: `id` is the token's OAuth client (`principal.clientId`). */
+  client: Readonly<{ id: string }>
+  /** The verified token: person, organisation, membership, client and scopes, for anything the fields above do not cover. */
   principal: UserPrincipal
   /** A UUIDv7 minted for this call: the error envelope's `request_id`, and the id the server log names. */
   executionId: string

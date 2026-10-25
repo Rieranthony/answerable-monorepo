@@ -12,6 +12,8 @@ import { serving } from "./test/database"
 import { createHub, e2e, names, resource, view, type Hub } from "./test/hub"
 import { createToolbox } from "./toolbox"
 
+const purpose = "A fixture provider for the Toolbox's tests: it serves the tools each test gives it."
+
 const login = await serving()
 const { db } = login
 const query = rowsOf(db)
@@ -21,7 +23,7 @@ const hubs: Hub[] = []
 afterEach(async () => { await Promise.all(hubs.splice(0).map(hub => hub.mcp.close())) })
 
 // Results of any size: {"text":"…"} is 11 bytes of JSON around its text.
-const bulk = defineProvider({ id: "bulk", version: "2026-09-29", tools: [
+const bulk = defineProvider({ id: "bulk", description: purpose, version: "2026-09-29", tools: [
   defineTool({
     name: "items.dump", description: "Return every item at once, which can exceed the Toolbox's result limit; a fixture.",
     input: z.object({ size: z.number().int() }), output: z.object({ text: z.string() }),
@@ -215,7 +217,7 @@ test("when ID cannot say what a member may use, a call answers UPSTREAM_UNAVAILA
 
 test("health answers ok only while the database answers", async () => {
   const own = connect(login.url, { max: 1 })
-  const toolbox = await createToolbox({ providers: [], auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(createFakeId().config), spans: createMemoryTracer().tracer })
+  const toolbox = await createToolbox({ mount: [], auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(createFakeId().config), spans: createMemoryTracer().tracer })
   expect(await (await toolbox.fetch(new Request("https://mcp.test/health"))).json()).toEqual({ status: "ok" })
   await own.$client.end()
   const down = await toolbox.fetch(new Request("https://mcp.test/health"))

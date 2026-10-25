@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0
+
+The server reads who is calling from ID, so it needs a `platform:read` machine client: `MCP_ID_CLIENT_ID` and `MCP_ID_CLIENT_SECRET`. Without them it refuses to start, naming them. The provider has a description, which the manifest carries, and every tool but `records.delete` carries its example.
+
 ## 0.1.1
 
 `bun run build` finds the view's entry file in a checkout whose path has a space or a non-ASCII character. No tool changes.

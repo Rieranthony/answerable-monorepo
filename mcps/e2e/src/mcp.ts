@@ -9,6 +9,7 @@ const identityGet = defineTool({
   input: z.object({}),
   output: z.object({ userId: z.uuid(), organizationId: z.uuid(), scopes: z.array(z.string()) }),
   scopes: ["e2e:identity"],
+  example: {},
   async execute(_input, { principal }) {
     return { userId: principal.userId, organizationId: principal.organizationId, scopes: [...principal.scopes] }
   },
@@ -40,6 +41,7 @@ export function createE2eProvider({ records, viewHtml }: { records: RecordStore;
     description: "List your organisation's test records, oldest first, 20 per page by default and at most 100. When has_more is true, pass next_cursor as cursor to read the next page.",
     input: pageInput,
     output: recordsPage,
+    example: { limit: 5 },
     async execute(input, { principal }) {
       return records.list(principal, input)
     },
@@ -48,7 +50,7 @@ export function createE2eProvider({ records, viewHtml }: { records: RecordStore;
   const recordsShow = defineTool({
     name: "records.show", title: "Test records",
     description: "Open your organisation's test records in an interactive view, 20 per page by default, where you can also create and delete them. When has_more is true, pass next_cursor as cursor to show the next page.",
-    input: pageInput, output: recordsView,
+    input: pageInput, output: recordsView, example: {},
     view: defineView({ name: "records", html: viewHtml }),
     async execute(input, { principal }) {
       return { ...records.list(principal, input), canWrite: principal.scopes.includes("e2e:write") }
@@ -60,6 +62,7 @@ export function createE2eProvider({ records, viewHtml }: { records: RecordStore;
     description: "Prepare creating a test record in your organisation. Changes nothing: returns a preview and a commit token; commit the intent with the tool its commit_tool names to create the record.",
     input: z.object({ title: recordSchema.shape.title.describe("The record's title, 1 to 200 characters") }),
     output: recordSchema,
+    example: { title: "Example" },
     async prepare({ title }) {
       return { targets: [], preview: { summary: `Create record “${title}”`, changes: [{ path: "records[]", from: null, to: { title } }] }, plan: { title } }
     },
@@ -92,6 +95,7 @@ export function createE2eProvider({ records, viewHtml }: { records: RecordStore;
 
   return defineProvider({
     id: "e2e", version: "2026-09-29",
+    description: "The reference MCP: your organisation's test records, to list, show in an interactive view, create and delete, with a prompt and a guide.",
     tools: [identityGet, recordsList, recordsShow, recordsCreate, recordsDelete],
     prompts: [fixtureWalkthrough], resources: [fixtureGuide],
   })

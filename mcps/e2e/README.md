@@ -38,12 +38,10 @@ Rewrites `manifest.json`, the provider's contract. The conformance kit's `manife
 ## Run it
 
 ```sh
-bun run --filter @answerable/mcp-e2e build
-MCP_ID_ISSUER=http://localhost:47300 MCP_RESOURCE_URL=http://localhost:47500/mcp \
-  bun run --filter @answerable/mcp-e2e start
+bun run mcp:dev
 ```
 
-Register the resource and a client in ID first: [Connect Claude Code](../../apps/web/content/docs/mcp/claude-code.mdx).
+It builds the view and serves `http://localhost:47500/mcp` with the root `.env`. The server reads who is calling from ID through a machine client with `platform:read`, `MCP_ID_CLIENT_ID` and `MCP_ID_CLIENT_SECRET`, and refuses to start without them. Register the resource, a client and the machine client in ID first: [Connect Claude Code](../../apps/web/content/docs/mcp/claude-code.mdx#register-the-server).
 
 ## Tests
 
@@ -54,4 +52,4 @@ bun run mcp:check @answerable/mcp-e2e
 
 `bunfig.toml` gates 100% line and function coverage of `src`. The journeys against real ID (`bun run mcp:test:e2e`) are in `packages/acceptance`. Changes: [CHANGELOG](CHANGELOG.md).
 
-`src/conformance.test.ts` runs the conformance kit on the provider: the standard's read, mutate and provider checks, with one example input per tool and `touch` as `moveTarget`. [Test an MCP](../../apps/web/content/docs/mcp/testing.mdx) explains each check. `src/mcp.test.ts` checks every tool in-process with `createTestMcp`: pagination, both mutations prepared and committed, a stale delete after `touch`, another organisation's record, a replay, and fully entitled, partial and read-only callers; copy it when you write an MCP. `src/server.test.ts` builds the view and starts `src/server.ts`, as `bun run mcp:dev` does. `src/apps.test.ts` renders the real view in Chromium through the official MCP Apps host bridge (`src/testing/host.ts`): it creates a record, shows the summary before deleting it, and hides writes from a reader; the view never receives a token.
+`src/conformance.test.ts` runs the conformance kit on the provider: the standard's read, mutate and provider checks, with each tool's own `example`, a fresh record for `records.delete`, and `touch` as `moveTarget`. [Test an MCP](../../apps/web/content/docs/mcp/testing.mdx) explains each check. `src/mcp.test.ts` checks every tool in-process with `createTestMcp`: pagination, both mutations prepared and committed, a stale delete after `touch`, another organisation's record, a replay, and fully entitled, partial and read-only callers; copy it when you write an MCP. `src/server.test.ts` builds the view and starts `src/server.ts`, as `bun run mcp:dev` does, and checks that it refuses to start without the machine client. `src/apps.test.ts` renders the real view in Chromium through the official MCP Apps host bridge (`src/testing/host.ts`): it creates a record, shows the summary before deleting it, and hides writes from a reader; the view never receives a token.

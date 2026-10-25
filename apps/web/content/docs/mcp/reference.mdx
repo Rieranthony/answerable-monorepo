@@ -184,10 +184,11 @@ it for 30 seconds, for that caller alone.
 
 ```ts
 import { createMcpServer, readMcpEnvironment } from "@answerable/mcp"
+import { createIdAdmin, createIdProfiles } from "@answerable/id-admin"
 import { provider } from "./provider"
 
-const { auth, port } = readMcpEnvironment(process.env)
-const server = createMcpServer({ provider, auth })
+const { auth, port, id } = readMcpEnvironment(process.env)
+const server = createMcpServer({ provider, auth, profiles: createIdProfiles(createIdAdmin(id!)) })
 Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
 ```
 
@@ -199,16 +200,28 @@ type McpServerConfig = {
   provider: Provider
   /** The Answerable ID issuer to trust and this server's resource URL, the token audience: `readMcpEnvironment(process.env).auth`. */
   auth: IdVerifierConfig
+  /**
+   * Who is calling, beyond the token's ids: the person's name, email and groups, and the organisation's name and slug, which every handler
+   * receives in its context. `createIdProfiles(id)` from `@answerable/id-admin` reads them from Answerable ID. Called once for each request that
+   * runs a handler (`tools/call`, `prompts/get`, `resources/read`), before the handler, and never for a list. A `ToolError` it throws answers the
+   * call with that error; any other failure answers `UPSTREAM_UNAVAILABLE`, logged as `[mcp] reading who is calling failed`.
+   */
+  profiles: (principal: UserPrincipal) => Promise<Profile>
+  /**
+   * The database `provider`'s handlers receive as `context.db`: `mcpDatabase` over `provider.database.schema`, from `@answerable/mcp-postgres`,
+   * made once for the process. Required when the provider has a `database`.
+   */
+  db?: unknown
   /** Where intents live. Default: a memory store for this server. */
   intents?: IntentStore
   /** The policy class of a mutation for one caller, decided for each request. Default: `riskClass[mutation.risk]`. */
   policyClass?: (mutation: Served<Mutation>, principal: UserPrincipal) => PolicyClass | Promise<PolicyClass>
   /**
-   * Providers served beside `provider` at the same endpoint, as a hub mounts them. Their tools are named `<provider id>_<wire name>` after
-   * `provider`'s own, their mutations commit through `provider`'s commit tools, and their views keep their URIs. Their prompts and resources
-   * are not served, and `scopes_supported` lists only `provider`'s scopes. Default: none.
+   * Providers served beside `provider` at the same endpoint, as a hub mounts them, each with its own `db`. Their tools are named
+   * `<provider id>_<wire name>` after `provider`'s own, their mutations commit through `provider`'s commit tools with their own `db`, and their views
+   * keep their URIs. Their prompts and resources are not served, and `scopes_supported` lists only `provider`'s scopes. Default: none.
    */
-  mount?: readonly Provider[]
+  mount?: readonly Mount[]
   /**
    * Which tools a caller sees and may call, decided in place of the scope rule for each request that lists or calls tools or reads views; other
    * requests, such as `initialize`, see no tools. `called` is true when the request calls that tool, so a hub can record the refusal.
@@ -232,7 +245,7 @@ type McpServerConfig = {
 }
 ```
 
-What `createMcpServer` takes: the provider, the ID issuer and resource to trust, and optional overrides.
+What `createMcpServer` takes: the provider, the ID issuer and resource to trust, who is calling, and optional overrides.
 
 ### McpServerHandle
 
@@ -246,16 +259,28 @@ type McpServerHandle = {
    */
   toolsChanged(): void
   /**
-   * Run a tool this server serves exactly as its direct call runs it, for the caller in `context`: parse `args` (answering `INVALID_INPUT`), run
-   * the handler within its timeout and check the output; for a mutation, prepare it and record the intent its prepare tool would. Returns the
-   * structured content. It is for a hub's own tools, such as one that runs a capability by identity: it does not decide whether the caller may
-   * use the tool, and it runs inside the calling tool's `wrapCall`, not one of its own.
+   * Run a tool this server serves exactly as its direct call runs it, for the caller in `context`, with the `db` of the tool's own provider: parse
+   * `args` (answering `INVALID_INPUT`), run the handler within its timeout and check the output; for a mutation, prepare it and record the intent
+   * its prepare tool would. Returns the structured content. It is for a hub's own tools, such as one that runs a capability by identity: it does not
+   * decide whether the caller may use the tool, and it runs inside the calling tool's `wrapCall`, not one of its own.
    */
   call(tool: Served<Tool | Mutation>, args: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>>
 }
 ```
 
 What `createMcpServer` returns.
+
+### Mount
+
+```ts
+type Mount = Readonly<{
+  provider: Provider
+  /** The provider's database, as for `createMcpServer`'s `db`: required when the provider has a `database`. */
+  db?: unknown
+}>
+```
+
+A provider a hub serves beside its own, with the database its handlers receive as `context.db`.
 
 ### ToolCall
 
@@ -284,12 +309,7 @@ One call of a tool, a mutation's prepare tool or a commit tool, as `wrapCall` re
 ### defineTool
 
 ```ts
-function defineTool<Input extends z.ZodObject, Output extends z.ZodObject>(tool: Omit<Tool<Input, Output>, "kind" | "timeoutMs" | "errors"> & {
-  /** Default 25,000; at most 55,000. The call is aborted and answers `TIMEOUT` after it. */
-  timeoutMs?: number
-  /** The custom `<PROVIDER>_<CODE>` codes the handler throws. Default: none; standard codes need no declaration. */
-  errors?: readonly string[]
-}): Tool<Input, Output>
+function defineTool<Input extends z.ZodObject, Output extends z.ZodObject, Context extends ToolContext = ToolContext>(tool: ToolDefinition<Input, Output, Context>): Tool<Input, Output, Context>
 ```
 
 Define a read tool from five fields: `name`, `description`, `input`, `output` and `execute`; everything else has a default.
@@ -321,7 +341,7 @@ type Deprecation = Readonly<{
   replacement?: string
 }>
 
-type Tool<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObject = z.ZodObject> = Readonly<{
+type Tool<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObject = z.ZodObject, Context extends ToolContext = ToolContext> = Readonly<{
   kind: "read"
   /** `<domain>.<operation>`, for example `records.list`; the wire name is `records_list`. */
   name: string
@@ -351,26 +371,33 @@ type Tool<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObject = 
   timeoutMs: number
   /** The custom `<PROVIDER>_<CODE>` codes the handler throws. Default: none; standard codes need no declaration, and an undeclared custom code answers `INTERNAL`. */
   errors: readonly string[]
+  /** One valid input, checked against `input` when the module loads. The conformance kit calls the tool with it, unless the fixture's `examples` give another. */
+  example?: z.input<Input>
   /** Do the work: receives the parsed input and the caller, returns an object that matches `output`, and throws `ToolError` for an expected failure. */
-  execute(input: z.output<Input>, context: ToolContext): Promise<z.input<Output>>
+  execute(input: z.output<Input>, context: Context): Promise<z.input<Output>>
 }>
 ```
 
-A read tool: frozen data made by `defineTool`. Only `name`, `description`, `input`, `output` and `execute` are required.
+A read tool: frozen data made by `defineTool`. Only `name`, `description`, `input`, `output` and `execute` are required. `Context` is what
+`execute` receives: `ToolContext`, with the MCP's `db` for a tool made with `withDatabase`.
+
+### ToolDefinition
+
+```ts
+type ToolDefinition<Input extends z.ZodObject, Output extends z.ZodObject, Context extends ToolContext> = Omit<Tool<Input, Output, Context>, "kind" | "timeoutMs" | "errors"> & {
+  /** Default 25,000; at most 55,000. The call is aborted and answers `TIMEOUT` after it. */
+  timeoutMs?: number
+  /** The custom `<PROVIDER>_<CODE>` codes the handler throws. Default: none; standard codes need no declaration. */
+  errors?: readonly string[]
+}
+```
+
+What `defineTool` takes: a tool's fields, with `timeoutMs` and `errors` optional.
 
 ### defineMutation
 
 ```ts
-function defineMutation<Input extends z.ZodObject, Output extends z.ZodObject, Data = unknown>(mutation: Omit<Mutation<Input, Output, Data>, "kind" | "timeoutMs" | "errors" | "risk" | "effects"> & {
-  /** Default 25,000; at most 55,000. Bounds `prepare` in the prepare tool, and `prepare` plus `commit` in a commit tool. */
-  timeoutMs?: number
-  /** The custom `<PROVIDER>_<CODE>` codes `prepare` and `commit` throw. Default: none; standard codes need no declaration. */
-  errors?: readonly string[]
-  /** How much harm it can do: `low`, `normal` or `high`. Sets the default policy class. Default: `normal`. */
-  risk?: Risk
-  /** The side effects a preview may name, from `notification`, `external_call`, `money_movement`, `cascade_delete`, `permission_change` and `publication`. Default: none. */
-  effects?: readonly Effect[]
-}): Mutation<Input, Output, Data>
+function defineMutation<Input extends z.ZodObject, Output extends z.ZodObject, Data = unknown, Context extends ToolContext = ToolContext>(mutation: MutationDefinition<Input, Output, Data, Context>): Mutation<Input, Output, Data, Context>
 ```
 
 Define a mutation from a read tool's fields with `prepare` and `commit` in place of `execute`; `risk`, `effects` and `expiresInMs` are optional.
@@ -416,7 +443,7 @@ The policy class each risk gives a mutation unless `createMcpServer`'s `policyCl
 ### Mutation
 
 ```ts
-type Mutation<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObject = z.ZodObject, Data = unknown> = Readonly<Omit<Tool<Input, Output>, "kind" | "output" | "scopes" | "view" | "execute"> & {
+type Mutation<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObject = z.ZodObject, Data = unknown, Context extends ToolContext = ToolContext> = Readonly<Omit<Tool<Input, Output, Context>, "kind" | "output" | "scopes" | "view" | "execute"> & {
   kind: "mutate"
   /**
    * A Zod object: the schema of the receipt's `results`; undeclared fields are dropped.
@@ -432,7 +459,7 @@ type Mutation<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObjec
   /** Shortens the expiry of the mutation's intents; at most the expiry its risk gives. */
   expiresInMs?: number
   /** Resolve the targets and describe the change. It must not change anything. */
-  prepare(input: z.output<Input>, context: ToolContext): Promise<{
+  prepare(input: z.output<Input>, context: Context): Promise<{
     targets: Target[]
     preview: Pick<Preview, "summary"> & Partial<Preview>
     plan?: Data
@@ -443,7 +470,7 @@ type Mutation<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObjec
    */
   commit(plan: Plan<Data> & {
     intent_id: string
-  }, context: ToolContext): Promise<{
+  }, context: Context): Promise<{
     results: z.input<Output>
     applied_changes: Change[]
     effects_performed: Effect[]
@@ -451,7 +478,25 @@ type Mutation<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObjec
 }>
 ```
 
-A mutation: frozen data made by `defineMutation`. A read tool's fields with `prepare` and `commit` in place of `execute`.
+A mutation: frozen data made by `defineMutation`. A read tool's fields with `prepare` and `commit` in place of `execute`. `Context` is what they
+receive: `ToolContext`, with the MCP's `db` for a mutation made with `withDatabase`.
+
+### MutationDefinition
+
+```ts
+type MutationDefinition<Input extends z.ZodObject, Output extends z.ZodObject, Data, Context extends ToolContext> = Omit<Mutation<Input, Output, Data, Context>, "kind" | "timeoutMs" | "errors" | "risk" | "effects"> & {
+  /** Default 25,000; at most 55,000. Bounds `prepare` in the prepare tool, and `prepare` plus `commit` in a commit tool. */
+  timeoutMs?: number
+  /** The custom `<PROVIDER>_<CODE>` codes `prepare` and `commit` throw. Default: none; standard codes need no declaration. */
+  errors?: readonly string[]
+  /** How much harm it can do: `low`, `normal` or `high`. Sets the default policy class. Default: `normal`. */
+  risk?: Risk
+  /** The side effects a preview may name, from `notification`, `external_call`, `money_movement`, `cascade_delete`, `permission_change` and `publication`. Default: none. */
+  effects?: readonly Effect[]
+}
+```
+
+What `defineMutation` takes: a mutation's fields, with `timeoutMs`, `errors`, `risk` and `effects` optional.
 
 ### Plan
 
@@ -543,6 +588,110 @@ type Effect = (typeof vocabulary)[number]
 ```
 
 A side effect beyond the change itself, named in a preview and in a receipt: `notification`, `external_call`, `money_movement`, `cascade_delete`, `permission_change` or `publication`.
+
+### withDatabase
+
+```ts
+function withDatabase<Schema extends Record<string, unknown>>({ schema }: {
+  schema: Schema
+}): {
+  /** `defineTool`, whose `execute` receives the MCP's `db`. */
+  defineTool: <Input extends z.ZodObject, Output extends z.ZodObject>(tool: ToolDefinition<Input, Output, DatabaseContext<Schema>>) => Tool<Input, Output, DatabaseContext<Schema>>
+  /** `defineMutation`, whose `prepare` and `commit` receive the MCP's `db`. */
+  defineMutation: <Input extends z.ZodObject, Output extends z.ZodObject, Data = unknown>(mutation: MutationDefinition<Input, Output, Data, DatabaseContext<Schema>>) => Mutation<Input, Output, Data, DatabaseContext<Schema>>
+}
+```
+
+`defineTool` and `defineMutation` for an MCP with a database: every handler's context also has `db`, the MCP's drizzle database typed by
+`schema`, with `db.query.<table>` for relational reads. The server that serves the provider supplies `db`, and `defineProvider` refuses these
+definitions unless its `database.schema` is this `schema`. An MCP calls it once, in `src/mcp.ts`, and its tools import the two from there.
+
+**Example**
+
+```ts
+import { withDatabase } from "@answerable/mcp"
+import * as schema from "./db/schema"
+
+export const { defineTool, defineMutation } = withDatabase({ schema })
+```
+
+### DatabaseContext
+
+```ts
+type DatabaseContext<Schema extends Record<string, unknown>> = ToolContext & Readonly<{
+  /**
+   * This MCP's drizzle database, typed by its schema, with `db.query.<table>` for relational reads. The server makes it once for the process and
+   * shares it with every call; a query borrows a connection only while it runs, inside the caller's organisation.
+   */
+  db: NodePgDatabase<Schema>
+}>
+```
+
+What a handler made with `withDatabase` receives: every field of `ToolContext`, and `db`.
+
+### checkDescription
+
+```ts
+function checkDescription(description: string): string | undefined
+```
+
+Check a description, a provider's, a tool's or a mutation's: 40 to 1,000 characters. Returns what is wrong, to follow the word "description",
+or `undefined`.
+
+**Example**
+
+```ts
+checkDescription("Gets notes.") // "is 11 characters; write 40 to 1,000 saying what it does, when to use it and its limits"
+```
+
+### checkProviderId
+
+```ts
+function checkProviderId(id: string): string | undefined
+```
+
+Check a provider id, which is also an MCP's name: a lowercase letter, then up to 11 lowercase letters or digits. Returns what is wrong, to follow
+the subject, or `undefined`.
+
+**Example**
+
+```ts
+checkProviderId("Acme") // '"Acme" must be a lowercase letter then up to 11 lowercase letters or digits, for example acme'
+```
+
+### checkToolName
+
+```ts
+function checkToolName(name: string): string | undefined
+```
+
+Check a tool's or a mutation's name: `<domain>.<operation>`, each part a lowercase letter, then up to 15 lowercase letters or digits. Returns what
+is wrong, to follow the subject, or `undefined`.
+
+**Example**
+
+```ts
+checkToolName("notes") // '"notes" must be <domain>.<operation>, each part a lowercase letter then up to 15 lowercase letters or digits, for example records.list'
+```
+
+### callerOrganisation
+
+```ts
+const callerOrganisation: () => string | undefined
+```
+
+The organisation of the caller whose call is running now, or `undefined` outside a call. The server runs every `execute`, `prepare`, `commit`,
+prompt and resource handler inside its call, so a database reached from one sees the caller's organisation. It is the getter `mcpDatabase`'s
+`organisation` option takes, in `@answerable/mcp-postgres`.
+
+**Example**
+
+```ts
+import { callerOrganisation } from "@answerable/mcp"
+import { mcpDatabase } from "@answerable/mcp-postgres"
+
+const db = mcpDatabase(pool, { name: "acme", schema, mode: "shared", organisation: callerOrganisation })
+```
 
 ### createMemoryIntentStore
 
@@ -656,8 +805,12 @@ The immutable record of a committed intent. A repeat of the commit returns it wi
 function defineProvider(provider: {
   /** A lowercase letter, then up to 11 lowercase letters or digits, for example `acme`. It prefixes identities, scopes, commit tools and custom error codes. */
   id: string
+  /** What the MCP is for, in a sentence or two: 40 to 1,000 characters. The manifest and the Toolbox's catalogue carry it. */
+  description: string
   /** A date, `YYYY-MM-DD`: the default version of every definition. Change it when the provider's contract changes. */
   version: string
+  /** The MCP's database: its drizzle `schema` module and its `migrations` folder. The server that serves the provider then needs its `db`. Default: none. */
+  database?: ProviderDatabase
   /** Read tools from `defineTool` and mutations from `defineMutation`. */
   tools: readonly (Tool | Mutation)[]
   /** Prompts from `definePrompt`. Default: none. */
@@ -667,9 +820,10 @@ function defineProvider(provider: {
 }): Provider
 ```
 
-Define a provider: a named, dated set of tools, mutations, prompts and resources, served alone or mounted in a hub.
-It fills in each definition's identity, version and scopes, and refuses duplicates, conflicting views, a deprecation
-whose replacement is not a current tool, and a declared error that does not start with the provider's id in capitals.
+Define a provider: a named, dated set of tools, mutations, prompts and resources, served alone or mounted in a hub, with what it is for and,
+when it has one, its database. It fills in each definition's identity, version and scopes, and refuses a bad id, a description outside 40 to
+1,000 characters, duplicates, conflicting views, a deprecation whose replacement is not a current tool, and a declared error that does not
+start with the provider's id in capitals.
 
 **Example**
 
@@ -677,7 +831,12 @@ whose replacement is not a current tool, and a declared error that does not star
 import { defineProvider } from "@answerable/mcp"
 import { identityGet } from "./tools"
 
-export const provider = defineProvider({ id: "example", version: "2026-09-29", tools: [identityGet] })
+export const provider = defineProvider({
+  id: "example",
+  description: "Tells you who you are to Answerable ID: your user and the organisation you signed in to.",
+  version: "2026-09-29",
+  tools: [identityGet],
+})
 ```
 
 ### Provider
@@ -690,6 +849,10 @@ type Scoped = Readonly<{
 type Provider = Readonly<{
   id: string
   version: string
+  /** What the MCP is for, in a sentence or two. */
+  description: string
+  /** The MCP's database; absent when it has none. */
+  database?: ProviderDatabase
   /** Read tools (`kind: "read"`) and mutations (`kind: "mutate"`), in definition order. */
   tools: readonly Served<Tool | Mutation>[]
   prompts: readonly (Prompt & Scoped)[]
@@ -698,6 +861,19 @@ type Provider = Readonly<{
 ```
 
 A validated, frozen provider: its definitions with identity, version and scopes filled in.
+
+### ProviderDatabase
+
+```ts
+type ProviderDatabase = Readonly<{
+  /** The MCP's drizzle schema module, `import * as schema from "./db/schema"`: its `pgSchema("<id>")` tables. */
+  schema: Record<string, unknown>
+  /** The folder drizzle-kit writes its migrations to, as a URL: `new URL("../drizzle", import.meta.url)`. */
+  migrations: URL
+}>
+```
+
+An MCP's database, as its provider declares it: the drizzle schema module its tables are in, and the folder of its migrations.
 
 ### Served
 
@@ -740,6 +916,31 @@ function defineView(input: {
 ```
 
 Define an MCP Apps view from HTML that `buildView` built; its URI is `ui://<name>/index.html`.
+
+### Profile
+
+```ts
+type Profile = {
+  /** The person's name and email, and the groups of their organisation they are in now, each with its id, slug and name. */
+  person: {
+    name: string
+    email: string
+    groups: readonly {
+      id: string
+      slug: string
+      name: string
+    }[]
+  }
+  /** The organisation's name and slug. */
+  organisation: {
+    name: string
+    slug: string
+  }
+}
+```
+
+What a server's `profiles` returns for a caller: who they are beyond the token's ids, read by the server for each request that runs a handler.
+The ids come from the token, so they are not here.
 
 ### Prompt
 
@@ -788,7 +989,32 @@ An MCP Apps view: bundled HTML served as a `ui://` resource for one or more tool
 
 ```ts
 type ToolContext = Readonly<{
-  /** The verified caller: person, organisation, membership, client and scopes, from the access token. */
+  /**
+   * The person calling. `id` is the token's user (`principal.userId`) and `membershipId` its membership of the organisation (`principal.membershipId`);
+   * `name`, `email` and `groups`, the groups they are in now, come from the server's `profiles`, which reads them from Answerable ID.
+   */
+  person: Readonly<{
+    id: string
+    membershipId: string
+    name: string
+    email: string
+    groups: readonly Readonly<{
+      id: string
+      slug: string
+      name: string
+    }>[]
+  }>
+  /** The organisation the person signed in to: `id` from the token (`principal.organizationId`); `name` and `slug` from the server's `profiles`. */
+  organisation: Readonly<{
+    id: string
+    name: string
+    slug: string
+  }>
+  /** The AI app the person uses, such as Claude Code: `id` is the token's OAuth client (`principal.clientId`). */
+  client: Readonly<{
+    id: string
+  }>
+  /** The verified token: person, organisation, membership, client and scopes, for anything the fields above do not cover. */
   principal: UserPrincipal
   /** A UUIDv7 minted for this call: the error envelope's `request_id`, and the id the server log names. */
   executionId: string
@@ -797,7 +1023,9 @@ type ToolContext = Readonly<{
 }>
 ```
 
-What every handler receives: the verified caller, this call's id (a UUIDv7, also the error envelope's `request_id`) and a signal that aborts on cancel or timeout.
+What every handler receives: who is calling (the person, their organisation and the AI app they use), the verified token, this call's id (a
+UUIDv7, also the error envelope's `request_id`) and a signal that aborts on cancel or timeout. A handler made with `withDatabase` also receives
+its MCP's `db`.
 
 ### manifest
 
@@ -805,7 +1033,7 @@ What every handler receives: the verified caller, this call's id (a UUIDv7, also
 function manifest(provider: Provider): Manifest
 ```
 
-Serialise a provider's contract as JSON: commit the result next to the source, and let the conformance kit's `manifest_matches_snapshot` fail when it drifts.
+Serialise a provider's contract as JSON, its description included: commit the result next to the source, and let the conformance kit's `manifest_matches_snapshot` fail when it drifts.
 
 ### Manifest
 
@@ -839,6 +1067,8 @@ type Definition = {
 type Manifest = {
   id: string
   version: string
+  /** What the MCP is for: the provider's description. */
+  description: string
   tools: ((Definition & {
     kind: "read"
   }) | (Definition & {
@@ -996,10 +1226,19 @@ function readMcpEnvironment(env: Record<string, string | undefined>): {
     resource: string
   }
   port: number
+  id: {
+    issuer: string
+    adminResource: string
+    clientId: string
+    clientSecret: string
+  } | undefined
 }
 ```
 
-Read `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` (default 47500) into the `auth` option of `createMcpServer` and a port; throws naming the variable that is missing or invalid. Outside production, the issuer and the resource default to the local ID and `http://localhost:47500/mcp`.
+Read `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` (default 47500) into the `auth` option of `createMcpServer` and a port, and, when
+`MCP_ID_CLIENT_ID` is set, the machine client `createIdAdmin` takes as `id`, from it, `MCP_ID_CLIENT_SECRET` and `MCP_ID_ADMIN_RESOURCE`. A server
+whose profiles use ID refuses to start without `id`. Throws naming the variable that is missing or invalid. Outside production, the issuer and the
+resource default to the local ID and `http://localhost:47500/mcp`, and the admin resource to the local ID's.
 
 ### UserPrincipal
 
@@ -1053,16 +1292,23 @@ Serve a provider in-process and run the conformance kit against it.
 ### createTestMcp
 
 ```ts
-function createTestMcp(served: Provider | ((auth: IdVerifierConfig) => {
+function createTestMcp(served: Provider | ((serving: TestServing) => {
   fetch(request: Request): Promise<Response>
 } | Promise<{
   fetch(request: Request): Promise<Response>
-}>)): Promise<TestMcp>
+}>), options?: {
+  /** The provider's database, which its handlers receive as `context.db`. */
+  db?: unknown
+  /** Who each caller is. Default: the test person of the test organisation. */
+  profiles?: McpServerConfig["profiles"]
+}): Promise<TestMcp>
 ```
 
-Serve a provider in-process at `https://mcp.test/mcp`, with a local ID issuer and the official MCP client: no port, no network.
-In place of a provider, pass a function that builds a server from the local issuer's `auth`: a server with `createMcpServer` options such as
-`intents` or `policyClass`, or a hub.
+Serve a provider in-process at `https://mcp.test/mcp`, with a local ID issuer and the official MCP client: no port, no network. Every caller is
+the test person, `Test Person` (`person@example.test`, in no group), of the test organisation, `Test Organisation` (`test`); `profiles` replaces
+them, and `connect({ person, organisation })` changes them for one membership. A provider with a `database` needs its `db`: an MCP with a
+database imports `createTestMcp` from `@answerable/mcp-postgres/testing`, which makes it. In place of a provider, pass a function that builds a
+server from the local issuer's `auth` and the test `profiles`: a server with `createMcpServer` options such as `intents` or `policyClass`, or a hub.
 
 **Example**
 
@@ -1071,7 +1317,7 @@ import { createTestMcp } from "@answerable/mcp/testing"
 import { provider } from "./provider"
 
 const mcp = await createTestMcp(provider)
-const client = await mcp.connect({ scopes: ["example:read"] })
+const client = await mcp.connect({ scopes: ["example:read"], person: { name: "Ada Lovelace" } })
 const result = await client.callTool({ name: "identity_get", arguments: {} })
 await mcp.close()
 ```
@@ -1102,7 +1348,11 @@ type TestMcp = {
   readonly issuer: TestIssuer
   /** Send an HTTP request with the URL's Host header by default. */
   fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>
-  /** Connect a client, defaulting to all advertised scopes and a fresh person, membership and organisation. Pin `userId`, `organizationId` and `membershipId` to connect as the same principal twice. */
+  /**
+   * Connect a client, defaulting to all advertised scopes and a fresh person, membership and organisation. Pin `userId`, `organizationId` and
+   * `membershipId` to connect as the same principal twice. `person` and `organisation` replace fields of the profile the server reads for this
+   * membership: the test person and organisation, unless `createTestMcp` was given `profiles`.
+   */
   connect(options?: {
     scopes?: readonly string[]
     organizationId?: string
@@ -1110,6 +1360,8 @@ type TestMcp = {
     membershipId?: string
     clientId?: string
     protocol?: "2025" | "2026-07-28"
+    person?: Partial<Profile["person"]>
+    organisation?: Partial<Profile["organisation"]>
   }): Promise<Client>
   /** Close every client, including clients whose connection failed. */
   close(): Promise<void>
@@ -1117,6 +1369,14 @@ type TestMcp = {
 ```
 
 An in-process MCP and its authenticated protocol clients.
+
+### TestServing
+
+```ts
+type TestServing = Pick<McpServerConfig, "auth" | "profiles">
+```
+
+What a test's own server is built from: the local issuer's `auth` and the test `profiles`, ready to spread into `createMcpServer`'s options.
 
 ### errorOf
 
@@ -1153,9 +1413,12 @@ test dependencies such as in-memory stores. The provider is served in-process wi
 and the definition to change. Each mutation is prepared once while the checks are registered: the two checks that need a target are
 registered as skipped, with the reason, for a mutation that prepares none.
 
+Each definition is called with its own `example`, unless the fixture's `examples` give another input. A provider with a `database` needs its
+`db`: an MCP with a database imports `assertProviderConformance` from `@answerable/mcp-postgres/testing`, which makes it.
+
 **Parameters**
 
-- `fixture`: What the kit cannot derive: the committed manifest, one valid input per tool and how to move a target.
+- `fixture`: What the kit cannot derive: the committed manifest, the inputs no definition's `example` can hold, how to move a target and the database.
 
 **Example**
 
@@ -1165,7 +1428,7 @@ import { createE2eProvider } from "./mcp"
 
 assertProviderConformance(createE2eProvider({ records, viewHtml: "<title>Records</title>" }), {
   manifest: new URL("../manifest.json", import.meta.url),
-  examples: { "records.list": { limit: 5 }, "records.create": { title: "Example" } },
+  examples: { "records.delete": principal => ({ id: records.create(principal, "Doomed").id }) },
   moveTarget: (target, principal) => records.touch(principal, target.resource_id),
 })
 ```
@@ -1176,10 +1439,15 @@ assertProviderConformance(createE2eProvider({ records, viewHtml: "<title>Records
 type ConformanceFixture = {
   /** The committed manifest, as a path or a URL such as `new URL("../manifest.json", import.meta.url)`. */
   manifest: string | URL
-  /** One valid input for every tool and mutation, by name. A function may set up state first and returns the input. */
-  examples: Record<string, Record<string, unknown> | ((principal: UserPrincipal) => Record<string, unknown> | Promise<Record<string, unknown>>)>
+  /**
+   * Inputs that replace a tool's or mutation's own `example`, by name: for an input no definition can hold, such as the id of a record a function
+   * first creates. A function may set up state first and returns the input. Default: none, so every definition's `example` is used.
+   */
+  examples?: Record<string, Record<string, unknown> | ((principal: UserPrincipal) => Record<string, unknown> | Promise<Record<string, unknown>>)>
   /** Change a target outside the MCP, as another writer would, so that its version moves; it may return a promise. Needed only by a mutation that prepares targets. */
   moveTarget?(target: Target, principal: UserPrincipal): unknown
+  /** The provider's database, which its handlers receive as `context.db`; `@answerable/mcp-postgres/testing`'s `assertProviderConformance` makes it. */
+  db?: unknown
 }
 ```
 

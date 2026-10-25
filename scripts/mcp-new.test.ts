@@ -44,10 +44,10 @@ test("package.json is private, runs its scripts and pins what mcps/e2e pins", as
     private: true,
     type: "module",
     scripts: { dev: "bun --hot src/server.ts", start: "bun src/server.ts", test: "bun test", typecheck: "tsc --noEmit", lint: "eslint src --max-warnings 0" },
-    dependencies: { "@answerable/mcp": "workspace:*", zod: e2e.dependencies.zod },
+    dependencies: { "@answerable/id-admin": "workspace:*", "@answerable/mcp": "workspace:*", zod: e2e.dependencies.zod },
     devDependencies: Object.fromEntries(dev.map(name => [name, e2e.devDependencies[name]])),
   }
-  expect(e2e.dependencies["@answerable/mcp"]).toBe("workspace:*")
+  expect([e2e.dependencies["@answerable/id-admin"], e2e.dependencies["@answerable/mcp"]]).toEqual(["workspace:*", "workspace:*"])
   expect(Object.values(expected.devDependencies).every(Boolean)).toBe(true)
   expect(await read("package.json")).toBe(`${JSON.stringify(expected, null, 2)}\n`)
 })
@@ -58,12 +58,15 @@ test("tsconfig.json, eslint.config.mjs and bunfig.toml, with its 100% coverage g
   expect(await read("bunfig.toml")).toContain("coverageThreshold = { lines = 1, functions = 1 }")
 })
 
-test(".env.example names the three variables with a port to change", async () => {
+test(".env.example names the three variables with a port to change, and the machine client to set", async () => {
   await scaffold("acme", { root, date })
-  expect(await read(".env.example")).toBe(`# Copy to .env (git-ignored) to change a value; an MCP running beside another needs its own port.
+  expect(await read(".env.example")).toBe(`# Copy to .env (git-ignored) and set the machine client; an MCP running beside another needs its own port.
 MCP_ID_ISSUER=http://localhost:47300
 MCP_RESOURCE_URL=http://localhost:47510/mcp
 MCP_PORT=47510
+# A machine client in ID with platform:read, through which the server reads who is calling; ID issues both.
+# MCP_ID_CLIENT_ID=
+# MCP_ID_CLIENT_SECRET=
 `)
 })
 
@@ -71,7 +74,8 @@ test("the README runs and tests the server, and points at the guides for the res
   await scaffold("acme", { root, date })
   const readme = await read("README.md")
   for (const line of [
-    "bun --env-file=mcps/acme/.env.example run --filter @answerable/mcp-acme dev",
+    "cp mcps/acme/.env.example mcps/acme/.env",
+    "bun --env-file=mcps/acme/.env run --filter @answerable/mcp-acme dev",
     "UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-acme test",
     "bun run mcp:check @answerable/mcp-acme",
   ]) expect(readme).toContain(line)
@@ -100,13 +104,15 @@ test("a 12-character name works: the first test run writes the manifest, dated t
   })
 }, 30_000)
 
-test("the new server starts from its .env.example and answers /health", async () => {
+test("the new server starts from its .env.example with a machine client set, and answers /health", async () => {
   const cwd = await scaffoldLinked("acme")
   const probe = Bun.serve({ port: 0, fetch: () => new Response() })
   const { port } = probe
   probe.stop(true)
   const envFile = join(cwd, ".env")
-  await Bun.write(envFile, (await Bun.file(join(cwd, ".env.example")).text()).replaceAll("47510", String(port)))
+  // The server reads who is calling from ID on a call, not at start, so a client that ID never issued serves /health.
+  const client = "MCP_ID_CLIENT_ID=acme-mcp\nMCP_ID_CLIENT_SECRET=not-a-real-secret\n"
+  await Bun.write(envFile, `${(await Bun.file(join(cwd, ".env.example")).text()).replaceAll("47510", String(port))}${client}`)
   const server = Bun.spawn([process.execPath, `--env-file=${envFile}`, "src/server.ts"], { cwd, stdout: "pipe", stderr: "inherit" })
   try {
     expect(new TextDecoder().decode((await server.stdout.getReader().read()).value)).toContain(`acme MCP serving http://localhost:${port}/mcp`)

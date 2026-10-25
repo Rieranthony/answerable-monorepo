@@ -59,7 +59,7 @@ Replace `mcps/acme/src/provider.ts` with this file. Keep your own `id`, `acme`, 
 
 <include lang="ts" meta='title="src/provider.ts"'>../../../../../mcps/example/src/provider.ts</include>
 
-**The read tool, `notes.list`.** Five fields make a tool:
+**The read tool, `notes.list`.** Five fields make a tool, and a sixth gives an example:
 
 | Field | What it is |
 | --- | --- |
@@ -67,7 +67,8 @@ Replace `mcps/acme/src/provider.ts` with this file. Keep your own `id`, `acme`, 
 | `description` | What the model reads to choose a tool: what it does, when to use it and its limits. 40 to 1,000 characters |
 | `input` | A Zod object: the arguments. Unknown fields are refused |
 | `output` | A Zod object: the result. The server checks it before it leaves |
-| `execute` | The function. It receives the checked input and the caller, `principal`, from the verified token |
+| `execute` | The function. It receives the checked input and the caller: `person`, `organisation` and the AI app they use, from the verified token and from Answerable ID |
+| `example` | One valid input, checked when the file loads. The conformance kit calls the tool with it |
 
 A list returns a page at a time, with `limit`, `cursor`, `next_cursor` and `has_more`: the standard's [pagination](/docs/mcp/tools#pagination) rule, which the conformance kit checks. Every other field: [Read tools](/docs/mcp/tools).
 
@@ -78,7 +79,7 @@ A list returns a page at a time, with `limit`, `cursor`, `next_cursor` and `has_
 
 `risk: "low"` lets the agent commit on its own. The default, `normal`, makes the host show the person the summary first. [Mutations](/docs/mcp/mutations) explains the rest.
 
-**The provider** groups the tools under the server's id and a date, its version.
+**The provider** groups the tools under the server's id, a description of what it is for, and a date, its version.
 
 </Step>
 <Step>
@@ -89,8 +90,8 @@ Replace `mcps/acme/src/provider.test.ts` with this file:
 
 <include lang="ts" meta='title="src/provider.test.ts"'>../../../../../mcps/example/src/provider.test.ts</include>
 
-- `assertProviderConformance` registers one test per check of the standard, for every tool. It needs one valid input per tool, by name.
-- `createTestMcp` serves the provider inside the test with a local ID issuer and the official MCP client: no port, no network. `connect()` signs in as a fresh person in a fresh organisation.
+- `assertProviderConformance` registers one test per check of the standard, for every tool, calling each with its `example`.
+- `createTestMcp` serves the provider inside the test with a local ID issuer and the official MCP client: no port, no network. `connect()` signs in as the test person of the test organisation, with fresh ids each time.
 - The mutation is called as a host would: prepare, then the commit tool the intent names.
 
 The tools changed, so write the manifest again, then check:
@@ -107,12 +108,15 @@ bun run mcp:check @answerable/mcp-acme
 
 ### Run it
 
+The server reads who is calling from Answerable ID, through a machine client with `platform:read`. Register one in your local ID as [Connect Claude Code](/docs/mcp/claude-code#register-the-servers-machine-client) does for the e2e server, with your own client id, then:
+
 ```sh
-bun --env-file=mcps/acme/.env.example run --filter @answerable/mcp-acme dev
+cp mcps/acme/.env.example mcps/acme/.env
+bun --env-file=mcps/acme/.env run --filter @answerable/mcp-acme dev
 curl http://localhost:47510/health
 ```
 
-The second command answers `{"status":"ok"}`. The MCP endpoint is `http://localhost:47510/mcp`. Without a token it answers `401`, and points at its metadata:
+Set `MCP_ID_CLIENT_ID` and `MCP_ID_CLIENT_SECRET` in `mcps/acme/.env` between the first two commands. The last answers `{"status":"ok"}`. The MCP endpoint is `http://localhost:47510/mcp`. Without a token it answers `401`, and points at its metadata:
 
 ```sh
 curl -i -X POST http://localhost:47510/mcp
@@ -133,7 +137,7 @@ curl http://localhost:47510/.well-known/oauth-protected-resource/mcp
 {"resource":"http://localhost:47510/mcp","authorization_servers":["http://localhost:47300"],"scopes_supported":["acme:read","acme:write"],"bearer_methods_supported":["header"],"resource_name":"acme"}
 ```
 
-`.env.example` holds the three settings: Answerable ID's address, the server's own URL and its port. [Configure](/docs/mcp/servers#configure) explains them.
+`.env` holds the settings: Answerable ID's address, the server's own URL, its port and the machine client. [Configure](/docs/mcp/servers#configure) explains them.
 
 </Step>
 <Step>
@@ -158,7 +162,7 @@ In Claude Code, run `/mcp`, choose `acme`, then **Authenticate**, and sign in wi
 | --- | --- |
 | `src/notes.ts` | Keeps the data, per organisation |
 | `src/provider.ts` | The tools and the provider |
-| `src/server.ts` | Serves the provider over HTTP, with sign-in through Answerable ID |
+| `src/server.ts` | Serves the provider over HTTP, with sign-in through Answerable ID, and reads who is calling from it |
 | `src/provider.test.ts` | The conformance kit and your own tests, in-process |
 | `manifest.json` | The contract, regenerated with `UPDATE_MANIFEST=1` and reviewed with every change |
 
@@ -177,6 +181,7 @@ In Claude Code, run `/mcp`, choose `acme`, then **Authenticate**, and sign in wi
 | `…/manifest.json is out of date; regenerate it with UPDATE_MANIFEST=1…` | The tools changed since the manifest was written | Run `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-acme test`, review the diff, commit |
 | A conformance test fails, such as `list_paginates` | A tool breaks a rule of the standard | [Test an MCP](/docs/mcp/testing#errors) says what to change for each message |
 | `Tool name "…" must be <domain>.<operation>…` when the module loads | A definition breaks a rule | [When a definition is refused](/docs/mcp/errors#when-a-definition-is-refused) |
-| `Invalid MCP configuration: MCP_ID_ISSUER: …` at start | A setting is missing | Start it with `--env-file=mcps/acme/.env.example`, or set the variable |
+| `Invalid MCP configuration: MCP_ID_ISSUER: …` at start | A setting is missing | Start it with `--env-file=mcps/acme/.env`, or set the variable |
+| `The acme MCP cannot start: set MCP_ID_CLIENT_ID and MCP_ID_CLIENT_SECRET…` | The machine client is not set | Register it and set both in `mcps/acme/.env` |
 | `Failed to start server. Is port 47510 in use?` | Another server holds the port | Stop it, or set another `MCP_PORT` and `MCP_RESOURCE_URL` |
 | `401` after signing in | The resource URL in ID differs from `MCP_RESOURCE_URL` | Register the exact URL: `localhost` and `127.0.0.1` are different resources |

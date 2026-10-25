@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0
+
+Every capability is told who is calling, and runs with its own provider's database. Breaking for the entry point and the acceptance: `createToolbox` takes `mount` and `startGrantsPoller` takes `profiles`.
+
+- Breaking: `createToolbox({ mount })` takes `{ provider, db? }` entries in place of `providers`. A capability, called directly or through `toolbox_execute` and `toolbox_prepare`, and its commit run with its own provider's `db`.
+- Who is calling comes from ID through the Toolbox's machine client with `createIdProfiles`, cached 60 seconds; `createToolbox` returns it as `profiles`, and `startGrantsPoller({ id, grants, profiles })` drops it on the same audit events as the grants.
+- The Toolbox's own tools carry their examples, and the manifest its description.
+
 ## 0.4.1
 
 No tool changes. The Toolbox reads its variables through `@answerable/config`, so a clone runs it with no `.env` but the machine client's ID and secret.

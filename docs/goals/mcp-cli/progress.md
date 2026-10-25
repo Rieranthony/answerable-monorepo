@@ -125,3 +125,20 @@
   - frozen install unchanged.
 
   The development Postgres holds exactly the 3 new logins and 2 new databases.
+- **M2, the SDK context,** by Opus.
+  - **What it built:**
+    - `checkProviderId`, `checkToolName` and `checkDescription` exported;
+    - `description` and `database` on providers, and `example` on tools;
+    - `person`, `organisation` and `client` in every handler's context, from a required `profiles`;
+    - `db` per provider through `withDatabase({ schema })`, with the call scope `callerOrganisation()`;
+    - `createIdProfiles` in `@answerable/id-admin`;
+    - both `createTestMcp`s and `assertProviderConformance` in `@answerable/mcp-postgres/testing`.
+  - **Moved onto it:** the Toolbox (`mount`), the admin MCP, e2e, the example and the acceptance.
+  - **The agent's acceptance run:** 57 pass in 127 s.
+  - **The coordinator's change:** a member or organisation ID answers 404 for is refused with `PERMISSION_DENIED` and never served from a cached value (test added; servers, errors and README docs updated).
+  - **Gates:**
+    - `mcp:test`: 746 pass, 0 fail;
+    - typecheck, lint and build forced: 19, 19 and 3 of 3;
+    - web: 100;
+    - knip clean;
+    - frozen install unchanged.

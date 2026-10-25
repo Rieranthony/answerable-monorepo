@@ -62,9 +62,12 @@ export const outcome = z.object({ applied_changes: z.array(change), effects_perf
 /** What `commit` receives besides the intent's id: the targets and preview `prepare` returned, and the author's own `plan` data, stored as JSON. */
 export type Plan<Data = unknown> = { targets: Target[]; preview: Preview; plan: Data }
 
-/** A mutation: frozen data made by `defineMutation`. A read tool's fields with `prepare` and `commit` in place of `execute`. */
-export type Mutation<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObject = z.ZodObject, Data = unknown> = Readonly<
-  Omit<Tool<Input, Output>, "kind" | "output" | "scopes" | "view" | "execute"> & {
+/**
+ * A mutation: frozen data made by `defineMutation`. A read tool's fields with `prepare` and `commit` in place of `execute`. `Context` is what they
+ * receive: `ToolContext`, with the MCP's `db` for a mutation made with `withDatabase`.
+ */
+export type Mutation<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObject = z.ZodObject, Data = unknown, Context extends ToolContext = ToolContext> = Readonly<
+  Omit<Tool<Input, Output, Context>, "kind" | "output" | "scopes" | "view" | "execute"> & {
     kind: "mutate"
     /**
      * A Zod object: the schema of the receipt's `results`; undeclared fields are dropped.
@@ -80,14 +83,27 @@ export type Mutation<Input extends z.ZodObject = z.ZodObject, Output extends z.Z
     /** Shortens the expiry of the mutation's intents; at most the expiry its risk gives. */
     expiresInMs?: number
     /** Resolve the targets and describe the change. It must not change anything. */
-    prepare(input: z.output<Input>, context: ToolContext): Promise<{ targets: Target[]; preview: Pick<Preview, "summary"> & Partial<Preview>; plan?: Data }>
+    prepare(input: z.output<Input>, context: Context): Promise<{ targets: Target[]; preview: Pick<Preview, "summary"> & Partial<Preview>; plan?: Data }>
     /**
      * Apply exactly the prepared plan; `results` is checked against `output`. The plan comes with the intent's `intent_id`, the same on every attempt
      * to commit the intent: send it upstream as the idempotency key where the API takes one.
      */
-    commit(plan: Plan<Data> & { intent_id: string }, context: ToolContext): Promise<{ results: z.input<Output>; applied_changes: Change[]; effects_performed: Effect[] }>
+    commit(plan: Plan<Data> & { intent_id: string }, context: Context): Promise<{ results: z.input<Output>; applied_changes: Change[]; effects_performed: Effect[] }>
   }
 >
+
+/** What `defineMutation` takes: a mutation's fields, with `timeoutMs`, `errors`, `risk` and `effects` optional. */
+export type MutationDefinition<Input extends z.ZodObject, Output extends z.ZodObject, Data, Context extends ToolContext> =
+  Omit<Mutation<Input, Output, Data, Context>, "kind" | "timeoutMs" | "errors" | "risk" | "effects"> & {
+    /** Default 25,000; at most 55,000. Bounds `prepare` in the prepare tool, and `prepare` plus `commit` in a commit tool. */
+    timeoutMs?: number
+    /** The custom `<PROVIDER>_<CODE>` codes `prepare` and `commit` throw. Default: none; standard codes need no declaration. */
+    errors?: readonly string[]
+    /** How much harm it can do: `low`, `normal` or `high`. Sets the default policy class. Default: `normal`. */
+    risk?: Risk
+    /** The side effects a preview may name, from `notification`, `external_call`, `money_movement`, `cascade_delete`, `permission_change` and `publication`. Default: none. */
+    effects?: readonly Effect[]
+  }
 
 /**
  * Define a mutation from a read tool's fields with `prepare` and `commit` in place of `execute`; `risk`, `effects` and `expiresInMs` are optional.
@@ -121,18 +137,9 @@ export type Mutation<Input extends z.ZodObject = z.ZodObject, Output extends z.Z
  * })
  * ```
  */
-export function defineMutation<Input extends z.ZodObject, Output extends z.ZodObject, Data = unknown>(
-  mutation: Omit<Mutation<Input, Output, Data>, "kind" | "timeoutMs" | "errors" | "risk" | "effects"> & {
-    /** Default 25,000; at most 55,000. Bounds `prepare` in the prepare tool, and `prepare` plus `commit` in a commit tool. */
-    timeoutMs?: number
-    /** The custom `<PROVIDER>_<CODE>` codes `prepare` and `commit` throw. Default: none; standard codes need no declaration. */
-    errors?: readonly string[]
-    /** How much harm it can do: `low`, `normal` or `high`. Sets the default policy class. Default: `normal`. */
-    risk?: Risk
-    /** The side effects a preview may name, from `notification`, `external_call`, `money_movement`, `cascade_delete`, `permission_change` and `publication`. Default: none. */
-    effects?: readonly Effect[]
-  },
-): Mutation<Input, Output, Data> {
+export function defineMutation<Input extends z.ZodObject, Output extends z.ZodObject, Data = unknown, Context extends ToolContext = ToolContext>(
+  mutation: MutationDefinition<Input, Output, Data, Context>,
+): Mutation<Input, Output, Data, Context> {
   const checked = checkShared("Mutation", mutation)
   const label = `Mutation ${mutation.name}`
   const risk = mutation.risk ?? "normal"

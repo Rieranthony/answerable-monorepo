@@ -43,7 +43,7 @@ export function createToolboxProvider(hub: Hub) {
     title: "Who am I",
     description: "Read who you are to the Toolbox: your user, organisation, membership and host client, the grant strings your organisation gave you, and each capability you may use with its kind and policy class. Call it when a tool you expect is missing.",
     scopes: ["toolbox"],
-    input: z.object({}),
+    input: z.object({}), example: {},
     output: z.object({
       user_id: z.uuid(),
       organisation_id: z.uuid(),
@@ -69,6 +69,7 @@ export function createToolboxProvider(hub: Hub) {
       limit: z.number().int().min(1).max(20).default(10).describe("Results per page, 1 to 20; default 10"),
       cursor: z.string().regex(/^\d{1,9}$/).optional().describe("next_cursor from the previous page"),
     }),
+    example: { query: "records" },
     output: z.object({
       items: z.array(z.object({ identity: z.string(), title: z.string().nullable(), description: z.string().describe("The first sentence of its description"), kind, policy_class: policyClass })),
       next_cursor: z.string().nullable(),
@@ -91,6 +92,7 @@ export function createToolboxProvider(hub: Hub) {
     description: "Describe up to 5 capabilities you may use, by identity: the full description, kind, policy class, and the JSON Schemas of the arguments that toolbox_execute or toolbox_prepare takes and of the result. An identity you may not use answers NOT_FOUND.",
     scopes: ["toolbox"],
     input: z.object({ identities: z.array(identity).min(1).max(5).describe("1 to 5 identities, such as those toolbox_search returns") }),
+    example: { identities: ["e2e/records.list"] },
     output: z.object({
       capabilities: z.array(z.object({
         identity: z.string(), kind, policy_class: policyClass, description: z.string(),
@@ -115,7 +117,7 @@ export function createToolboxProvider(hub: Hub) {
     name: "toolbox.execute", title: "Run a capability",
     description: "Run a read capability you may use, by identity, with its arguments as toolbox_describe gives them; returns the capability's own result. A mutation answers INVALID_INPUT: prepare it with toolbox_prepare. An identity you may not use answers NOT_FOUND; arguments that fail its schema answer INVALID_INPUT naming the fields.",
     scopes: ["toolbox"], timeoutMs: 55_000,
-    input: z.object({ identity, arguments: args }),
+    input: z.object({ identity, arguments: args }), example: { identity: "e2e/records.list" },
     output: z.looseObject({}).describe("The capability's result"),
     async execute({ identity: name, arguments: input }, context) {
       const tool = await usable(name, context)
@@ -128,6 +130,7 @@ export function createToolboxProvider(hub: Hub) {
     description: "Prepare a mutation you may use, by identity, with its arguments as toolbox_describe gives them. Changes nothing: returns the intent, with its preview, commit token and commit_tool: toolbox_commit, or toolbox_commit_confirmed once the person has seen the preview's summary. With validate_only true it records nothing. A read answers INVALID_INPUT: run it with toolbox_execute.",
     scopes: ["toolbox"], timeoutMs: 55_000,
     input: z.object({ identity, arguments: args, validate_only: z.boolean().default(false).describe("Return the preview without recording an intent or issuing a commit token; default false") }),
+    example: { identity: "e2e/records.create", arguments: { title: "Conformance" } },
     output: z.looseObject({}).describe("The intent, as the mutation's own prepare tool returns it"),
     async execute({ identity: name, arguments: input, validate_only }, context) {
       const tool = await usable(name, context)
@@ -135,5 +138,8 @@ export function createToolboxProvider(hub: Hub) {
       return hub.run(tool, { ...input, validate_only }, context)
     },
   })
-  return defineProvider({ id: "toolbox", version: "2026-09-29", tools: [whoami, search, describe, execute, prepare] })
+  return defineProvider({
+    id: "toolbox", version: "2026-09-29", tools: [whoami, search, describe, execute, prepare],
+    description: "The Toolbox's own tools: who you are to it, and finding, describing, running and preparing the capabilities your organisation granted you.",
+  })
 }

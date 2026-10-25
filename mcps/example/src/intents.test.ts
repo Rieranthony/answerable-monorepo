@@ -9,7 +9,7 @@ type Intent = { intent_id: string; commit_token: string; commit_tool: string; po
 test("an intent committed after it expires answers INTENT_EXPIRED", async () => {
   let clock = Date.now()
   const intents = createMemoryIntentStore({ now: () => clock })
-  const mcp = await createTestMcp(auth => createMcpServer({ provider, auth, intents }))
+  const mcp = await createTestMcp(serving => createMcpServer({ ...serving, provider, intents }))
   try {
     const client = await mcp.connect()
     const prepared = await client.callTool({ name: "notes_add", arguments: { text: "Later" } })
@@ -26,7 +26,7 @@ test("an intent committed after it expires answers INTENT_EXPIRED", async () => 
 //#region policy-class
 test("with policyClass, people confirm even low-risk mutations", async () => {
   const policyClass = ({ risk }: { risk: "low" | "normal" | "high" }) => (risk === "low" ? "controlled" : riskClass[risk])
-  const mcp = await createTestMcp(auth => createMcpServer({ provider, auth, policyClass }))
+  const mcp = await createTestMcp(serving => createMcpServer({ ...serving, provider, policyClass }))
   try {
     const client = await mcp.connect()
     const prepared = await client.callTool({ name: "notes_add", arguments: { text: "Checked" } })
@@ -39,7 +39,7 @@ test("with policyClass, people confirm even low-risk mutations", async () => {
 
 //#region confirmed
 test("a controlled intent commits only with its preview's summary, word for word", async () => {
-  const mcp = await createTestMcp(auth => createMcpServer({ provider, auth, policyClass: () => "controlled" }))
+  const mcp = await createTestMcp(serving => createMcpServer({ ...serving, provider, policyClass: () => "controlled" }))
   try {
     const client = await mcp.connect()
     const prepared = await client.callTool({ name: "notes_add", arguments: { text: "Confirmed" } })

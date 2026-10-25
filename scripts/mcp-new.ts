@@ -18,7 +18,7 @@ export async function scaffold(name: string, { root = repo, date = new Date().to
     private: true,
     type: "module",
     scripts: { dev: "bun --hot src/server.ts", start: "bun src/server.ts", test: "bun test", typecheck: "tsc --noEmit", lint: "eslint src --max-warnings 0" },
-    dependencies: pick(pins.dependencies, ["@answerable/mcp", "zod"]),
+    dependencies: pick(pins.dependencies, ["@answerable/id-admin", "@answerable/mcp", "zod"]),
     devDependencies: pick(pins.devDependencies, ["@eslint/js", "@types/bun", "eslint", "typescript", "typescript-eslint"]),
   }
   const files: Record<string, string> = {

@@ -9,11 +9,14 @@ function setup(intervalMs = 60_000) {
   // What each poll invalidated: the organisations and the users, sorted.
   const invalidated: { organisations: string[]; users: string[] }[] = []
   const grants: GrantsReader = { read: async () => [], invalidate: (organisations, users = []) => { invalidated.push({ organisations: [...organisations].sort(), users: [...users].sort() }) } }
-  return { id, invalidated, start: () => startGrantsPoller({ id: createIdAdmin(id.config), grants, intervalMs }) }
+  // The profiles must be dropped on the same events as the grants.
+  const dropped: typeof invalidated = []
+  const profiles = { invalidate: (organisations: Iterable<string>, users: Iterable<string> = []) => { dropped.push({ organisations: [...organisations].sort(), users: [...users].sort() }) } }
+  return { id, invalidated, dropped, start: () => startGrantsPoller({ id: createIdAdmin(id.config), grants, profiles, intervalMs }) }
 }
 
-test("the first poll only records the newest event; later polls invalidate the organisations, and the users in every organisation, whose grants may have changed", async () => {
-  const { id, invalidated, start } = setup()
+test("the first poll only records the newest event; later polls invalidate the grants and profiles of the organisations, and the users in every organisation, that may have changed", async () => {
+  const { id, invalidated, dropped, start } = setup()
   const [alpha, beta, gamma, delta] = Array.from({ length: 4 }, () => crypto.randomUUID()).sort()
   const [ada, grace, alan] = Array.from({ length: 3 }, () => crypto.randomUUID()).sort()
   const none = { organisations: [], users: [] }
@@ -36,6 +39,7 @@ test("the first poll only records the newest event; later polls invalidate the o
   expect(id.requests.filter(request => request.includes("/audit-events")).at(-1)).toBe("GET /api/admin/v1/audit-events?outcome=success&limit=200")
   await poller.poll()
   expect(invalidated.at(-1)).toEqual(none)
+  expect(dropped).toEqual(invalidated)
   poller.stop()
 })
 

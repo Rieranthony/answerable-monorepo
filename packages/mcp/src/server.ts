@@ -8,12 +8,13 @@ import { z } from "zod"
 import { advertised, answer, bounded, parseArguments } from "./call"
 import { commitIntent } from "./commit"
 import { commitToolName, commitTools, receipt } from "./commit-tools"
-import { permits, type ToolContext, type View } from "./definitions"
+import { permits, type Profile, type ToolContext, type View } from "./definitions"
 import { ToolError } from "./errors"
 import { createMemoryIntentStore, type IntentStore } from "./intents"
 import { preparePlan, riskClass, type Mutation, type PolicyClass } from "./mutation"
 import { intentView, recordIntent } from "./prepare"
 import type { Provider, Served } from "./provider"
+import { inCall } from "./scope"
 import { readAnnotations, wireDescription, wireName, type Tool } from "./tool"
 
 /** One call of a tool, a mutation's prepare tool or a commit tool, as `wrapCall` receives it. */
@@ -31,22 +32,41 @@ export type ToolCall = Readonly<{
   meta: Readonly<Record<string, unknown>>
 }>
 
-/** What `createMcpServer` takes: the provider, the ID issuer and resource to trust, and optional overrides. */
+/** A provider a hub serves beside its own, with the database its handlers receive as `context.db`. */
+export type Mount = Readonly<{
+  provider: Provider
+  /** The provider's database, as for `createMcpServer`'s `db`: required when the provider has a `database`. */
+  db?: unknown
+}>
+
+/** What `createMcpServer` takes: the provider, the ID issuer and resource to trust, who is calling, and optional overrides. */
 export type McpServerConfig = {
   /** The provider it serves, from `defineProvider`: its tools, prompts and resources, named after it. */
   provider: Provider
   /** The Answerable ID issuer to trust and this server's resource URL, the token audience: `readMcpEnvironment(process.env).auth`. */
   auth: IdVerifierConfig
+  /**
+   * Who is calling, beyond the token's ids: the person's name, email and groups, and the organisation's name and slug, which every handler
+   * receives in its context. `createIdProfiles(id)` from `@answerable/id-admin` reads them from Answerable ID. Called once for each request that
+   * runs a handler (`tools/call`, `prompts/get`, `resources/read`), before the handler, and never for a list. A `ToolError` it throws answers the
+   * call with that error; any other failure answers `UPSTREAM_UNAVAILABLE`, logged as `[mcp] reading who is calling failed`.
+   */
+  profiles: (principal: UserPrincipal) => Promise<Profile>
+  /**
+   * The database `provider`'s handlers receive as `context.db`: `mcpDatabase` over `provider.database.schema`, from `@answerable/mcp-postgres`,
+   * made once for the process. Required when the provider has a `database`.
+   */
+  db?: unknown
   /** Where intents live. Default: a memory store for this server. */
   intents?: IntentStore
   /** The policy class of a mutation for one caller, decided for each request. Default: `riskClass[mutation.risk]`. */
   policyClass?: (mutation: Served<Mutation>, principal: UserPrincipal) => PolicyClass | Promise<PolicyClass>
   /**
-   * Providers served beside `provider` at the same endpoint, as a hub mounts them. Their tools are named `<provider id>_<wire name>` after
-   * `provider`'s own, their mutations commit through `provider`'s commit tools, and their views keep their URIs. Their prompts and resources
-   * are not served, and `scopes_supported` lists only `provider`'s scopes. Default: none.
+   * Providers served beside `provider` at the same endpoint, as a hub mounts them, each with its own `db`. Their tools are named
+   * `<provider id>_<wire name>` after `provider`'s own, their mutations commit through `provider`'s commit tools with their own `db`, and their views
+   * keep their URIs. Their prompts and resources are not served, and `scopes_supported` lists only `provider`'s scopes. Default: none.
    */
-  mount?: readonly Provider[]
+  mount?: readonly Mount[]
   /**
    * Which tools a caller sees and may call, decided in place of the scope rule for each request that lists or calls tools or reads views; other
    * requests, such as `initialize`, see no tools. `called` is true when the request calls that tool, so a hub can record the refusal.
@@ -79,10 +99,10 @@ export type McpServerHandle = {
    */
   toolsChanged(): void
   /**
-   * Run a tool this server serves exactly as its direct call runs it, for the caller in `context`: parse `args` (answering `INVALID_INPUT`), run
-   * the handler within its timeout and check the output; for a mutation, prepare it and record the intent its prepare tool would. Returns the
-   * structured content. It is for a hub's own tools, such as one that runs a capability by identity: it does not decide whether the caller may
-   * use the tool, and it runs inside the calling tool's `wrapCall`, not one of its own.
+   * Run a tool this server serves exactly as its direct call runs it, for the caller in `context`, with the `db` of the tool's own provider: parse
+   * `args` (answering `INVALID_INPUT`), run the handler within its timeout and check the output; for a mutation, prepare it and record the intent
+   * its prepare tool would. Returns the structured content. It is for a hub's own tools, such as one that runs a capability by identity: it does not
+   * decide whether the caller may use the tool, and it runs inside the calling tool's `wrapCall`, not one of its own.
    */
   call(tool: Served<Tool | Mutation>, args: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>>
 }
@@ -148,17 +168,40 @@ function wireNames(provider: Provider, mount: readonly Provider[]) {
  * @example
  * ```ts
  * import { createMcpServer, readMcpEnvironment } from "@answerable/mcp"
+ * import { createIdAdmin, createIdProfiles } from "@answerable/id-admin"
  * import { provider } from "./provider"
  *
- * const { auth, port } = readMcpEnvironment(process.env)
- * const server = createMcpServer({ provider, auth })
+ * const { auth, port, id } = readMcpEnvironment(process.env)
+ * const server = createMcpServer({ provider, auth, profiles: createIdProfiles(createIdAdmin(id!)) })
  * Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
  * ```
  */
 export function createMcpServer(config: McpServerConfig): McpServerHandle {
-  const { provider, auth, mount = [], allow, project } = config
+  const { provider, auth, profiles, mount = [], allow, project } = config
   const { intents = createMemoryIntentStore(), policyClass = (mutation: Served<Mutation>) => riskClass[mutation.risk], wrapCall = (_call, run) => run() } = config
-  const names = wireNames(provider, mount)
+  const entries = [{ provider, db: config.db }, ...mount]
+  for (const { provider: { id, database }, db } of entries) {
+    if (database && db === undefined) throw new Error(`Provider ${id} has a database, so its server needs its db: mcpDatabase over provider.database.schema, from @answerable/mcp-postgres`)
+  }
+  // The database each definition's handler receives: its own provider's.
+  const databases = new Map<object, unknown>(entries.flatMap(({ provider: { tools, prompts, resources }, db }) => [...tools, ...prompts, ...resources].map(definition => [definition, db] as const)))
+  function scoped(definition: object, context: ToolContext): ToolContext {
+    const db = databases.get(definition)
+    const caller: Record<string, unknown> = { ...context }
+    delete caller.db
+    return Object.freeze(db === undefined ? caller : { ...caller, db }) as ToolContext
+  }
+  // Who is calling, from `profiles`: a ToolError passes, anything else is ID or the network failing.
+  async function profileOf(principal: UserPrincipal) {
+    try {
+      return await profiles(principal)
+    } catch (error) {
+      if (error instanceof ToolError) throw error
+      console.error("[mcp] reading who is calling failed", error)
+      throw new ToolError("UPSTREAM_UNAVAILABLE", "Who you are could not be read; try again shortly")
+    }
+  }
+  const names = wireNames(provider, mount.map(entry => entry.provider))
   const served = [...names.keys()]
   const views = new Set<View>(served.flatMap(tool => tool.kind === "read" && tool.view ? [tool.view] : []))
   const mutations = served.filter(tool => tool.kind === "mutate")
@@ -223,8 +266,21 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
     const called = request.method === "tools/call" ? request.name : undefined
     // Capabilities follow the definitions, not the caller's scopes, so every caller sees the same server.
     const server = new McpServer({ name: provider.id, version: provider.version }, { capabilities, cacheHints })
+    // Who is calling, read once per request, and only when a handler runs.
+    let profile: Promise<Profile> | undefined
     // The SDK's request signal also aborts when the HTTP request does.
-    const context = (signal: AbortSignal): ToolContext => Object.freeze({ principal, executionId: Bun.randomUUIDv7(), signal })
+    async function context(signal: AbortSignal, executionId = Bun.randomUUIDv7()): Promise<ToolContext> {
+      const { person, organisation } = await (profile ??= profileOf(principal))
+      return Object.freeze({
+        principal, executionId, signal,
+        person: Object.freeze({
+          id: principal.userId, membershipId: principal.membershipId, name: person.name, email: person.email,
+          groups: Object.freeze(person.groups.map(({ id, slug, name }) => Object.freeze({ id, slug, name }))),
+        }),
+        organisation: Object.freeze({ id: principal.organizationId, name: organisation.name, slug: organisation.slug }),
+        client: Object.freeze({ id: principal.clientId }),
+      })
+    }
     let permitted: Served<Tool | Mutation>[]
     let tools: Served<Tool | Mutation>[]
     try {
@@ -239,14 +295,14 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
       }
       return server
     }
-    // One call: a fresh context, then `run` inside wrapCall. A failure is logged under the tool's name, or a commit tool's wire name.
+    // One call: inside wrapCall, who is calling, then `run`. A failure is logged under the tool's name, or a commit tool's wire name.
     type Run = (args: Record<string, unknown>, call: ToolContext) => Promise<Record<string, unknown>>
     type Extra = { mcpReq: { id: string | number; signal: AbortSignal; _meta?: Record<string, unknown> } }
     const handle = (tool: ToolCall["tool"], name: string, run: Run) => (args: Record<string, unknown>, { mcpReq }: Extra) => {
-      const call = context(mcpReq.signal)
-      return answer(tool.kind === "commit" ? name : tool.name, call.executionId, () => wrapCall(Object.freeze({
-        tool, name, principal, executionId: call.executionId, requestId: mcpReq.id, meta: mcpReq._meta ?? {},
-      }), () => run(args, call)))
+      const executionId = Bun.randomUUIDv7()
+      return answer(tool.kind === "commit" ? name : tool.name, executionId, () => wrapCall(Object.freeze({
+        tool, name, principal, executionId, requestId: mcpReq.id, meta: mcpReq._meta ?? {},
+      }), async () => run(args, await context(mcpReq.signal, executionId))))
     }
     const registeredViews = new Set<View>()
     for (const tool of tools) {
@@ -260,7 +316,7 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
         title: tool.title, description: wireDescription(tool), annotations: readAnnotations,
         inputSchema: advertised(read ? tool.input : prepareInputs.get(tool)!), outputSchema: read ? tool.output : intentView,
         _meta: { "com.answerable/capability": capability, ...(read && tool.view ? { ui: { resourceUri: tool.view.uri } } : {}) },
-      }, handle(tool, name, (args, call) => perform(tool, args, call)))
+      }, handle(tool, name, (args, call) => perform(tool, args, scoped(tool, call))))
       if (read && tool.view) registeredViews.add(tool.view)
     }
     // A caller who can use no mutation gets the unknown-tool error from the commit tools too.
@@ -268,14 +324,15 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
       registerAppTool(server, commit.name, {
         description: commit.description, inputSchema: advertised(commit.input), outputSchema: receipt, annotations: commit.annotations, _meta: commit.meta,
       }, handle(commit.call, commit.name, async (args, call) => commitIntent({
-        id: provider.id, tool: commit.name, input: await parseArguments(commit.input, args), context: call, store: intents, mutations,
-        permitted: mutation => permitted.includes(mutation), policyClass: mutation => policyClass(mutation, principal),
+        id: provider.id, tool: commit.name, input: await parseArguments(commit.input, args), principal, contextOf: mutation => scoped(mutation, call),
+        store: intents, mutations, permitted: mutation => permitted.includes(mutation), policyClass: mutation => policyClass(mutation, principal),
       })))
     }
     for (const prompt of provider.prompts.filter(definition => permits(principal, definition))) {
       server.registerPrompt(prompt.name, { description: prompt.description, argsSchema: prompt.input }, async (input, sdkContext) => {
         try {
-          return await prompt.execute(input, context(sdkContext.mcpReq.signal))
+          const call = scoped(prompt, await context(sdkContext.mcpReq.signal))
+          return await inCall(principal.organizationId, () => prompt.execute(input, call))
         } catch (error) {
           console.error(`[mcp] prompt ${prompt.name} failed`, error)
           throw new ProtocolError(INTERNAL_ERROR, "Content could not be read")
@@ -285,7 +342,8 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
     for (const resource of provider.resources.filter(definition => permits(principal, definition))) {
       server.registerResource(resource.name, resource.uri, { description: resource.description, mimeType: resource.mimeType }, async (_uri, sdkContext) => {
         try {
-          return { contents: [{ uri: resource.uri, mimeType: resource.mimeType, text: await resource.read(context(sdkContext.mcpReq.signal)) }] }
+          const call = scoped(resource, await context(sdkContext.mcpReq.signal))
+          return { contents: [{ uri: resource.uri, mimeType: resource.mimeType, text: await inCall(principal.organizationId, () => resource.read(call)) }] }
         } catch (error) {
           console.error(`[mcp] resource ${resource.name} failed`, error)
           throw new ProtocolError(INTERNAL_ERROR, "Content could not be read")
@@ -324,7 +382,7 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
     toolsChanged: () => handler.notify.toolsChanged(),
     async call(tool, args, context) {
       if (!names.has(tool)) throw new Error(`${tool.identity} is not served by this server; mount its provider`)
-      return perform(tool, args, context)
+      return perform(tool, args, scoped(tool, context))
     },
   }
 }

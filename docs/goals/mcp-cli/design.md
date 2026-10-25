@@ -125,11 +125,11 @@ A tool is a plain export. It reaches its database and the caller through the con
 
 ```ts
 // src/mcp.ts: written by bun mcp new; regenerated, never edited
-import { mcp } from "@answerable/mcp"
+import { withDatabase } from "@answerable/mcp"
 import * as schema from "./db/schema"
 
 /** This MCP's definitions: every handler's context.db is typed by src/db/schema.ts. */
-export const { defineTool, defineMutation } = mcp({ schema })
+export const { defineTool, defineMutation } = withDatabase({ schema })
 ```
 
 ```ts

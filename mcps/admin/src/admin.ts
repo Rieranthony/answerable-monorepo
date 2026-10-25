@@ -1,4 +1,4 @@
-import type { IdAdmin } from "@answerable/id-admin"
+import { createIdProfiles, type IdAdmin } from "@answerable/id-admin"
 import { createMcpServer, errorCodeOf, ToolError, type IdVerifierConfig, type UserPrincipal } from "@answerable/mcp"
 import { createEvidence, createPostgresIntentStore, type Database, type EvidenceEvent } from "@answerable/mcp-postgres"
 import { sql } from "drizzle-orm"
@@ -23,7 +23,7 @@ export type AdminMcpConfig = {
 
 /**
  * The admin MCP: the provider served to members of the platform organisation alone, each tool only to a role at or above its minimum, the role
- * read from ID once per request. Every mutation is controlled class: the host shows the preview and commits with its summary. Intents live in
+ * read from ID once per request, and who is calling read from ID through a 60-second cache. Every mutation is controlled class: the host shows the preview and commits with its summary. Intents live in
  * Postgres. Every call that runs, every refusal of a tool and every intent transition is evidence on the platform organisation's chain; a call
  * refused because ID did not answer is not, since the SDK answers it before `wrapCall`. `GET /health` answers from the database.
  */
@@ -38,7 +38,7 @@ export function createAdminMcp({ auth, db, id, platform, freshSeconds = 1800, to
     capability_identity: tool.identity, capability_version: tool.version, ...fields,
   })
   const server = createMcpServer({
-    provider, auth,
+    provider, auth, profiles: createIdProfiles(id),
     intents: createPostgresIntentStore(db, evidence),
     policyClass: () => "controlled",
     async allow(principal, tool, called) {

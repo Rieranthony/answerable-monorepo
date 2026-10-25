@@ -2,6 +2,7 @@ import type { CallToolResult, StandardSchemaWithJSON } from "@modelcontextprotoc
 import { z } from "zod"
 import type { ToolContext } from "./definitions"
 import { ToolError, errorCodes, type Retry } from "./errors"
+import { inCall } from "./scope"
 
 // tools/list advertises the real schema, but the SDK's own validation would answer a plain-text error,
 // so it accepts every argument and the handler validates, answering INVALID_INPUT.
@@ -9,15 +10,20 @@ export function advertised(input: z.ZodObject): StandardSchemaWithJSON<Record<st
   return { "~standard": { version: 1, vendor: "zod", jsonSchema: input["~standard"].jsonSchema, validate: value => ({ value: value as Record<string, unknown> }) } }
 }
 
+/** One field violation per issue of a failed parse, `{ field: "a.b", message }`, and all of them as one message: `a.b: …; c: …`. */
+export function violationsOf(error: z.ZodError) {
+  const field = (path: readonly PropertyKey[]) => path.map(String).join(".")
+  const violations = error.issues.flatMap(issue => issue.code === "unrecognized_keys"
+    ? issue.keys.map(key => ({ field: field([...issue.path, key]), message: "Unknown field" }))
+    : [{ field: field(issue.path), message: issue.message }])
+  return { violations, message: violations.map(violation => violation.field ? `${violation.field}: ${violation.message}` : violation.message).join("; ") }
+}
+
 /** Parse tool arguments, answering `INVALID_INPUT` with one field violation per issue. */
 export async function parseArguments<Schema extends z.ZodObject>(schema: Schema, args: unknown): Promise<z.output<Schema>> {
   const result = await schema.safeParseAsync(args)
   if (result.success) return result.data
-  const field = (path: readonly PropertyKey[]) => path.map(String).join(".")
-  const violations = result.error.issues.flatMap(issue => issue.code === "unrecognized_keys"
-    ? issue.keys.map(key => ({ field: field([...issue.path, key]), message: "Unknown field" }))
-    : [{ field: field(issue.path), message: issue.message }])
-  const message = violations.map(violation => violation.field ? `${violation.field}: ${violation.message}` : violation.message).join("; ")
+  const { violations, message } = violationsOf(result.error)
   throw new ToolError("INVALID_INPUT", message, { details: { field_violations: violations } })
 }
 
@@ -25,14 +31,16 @@ export async function parseArguments<Schema extends z.ZodObject>(schema: Schema,
 const declared = new WeakSet<ToolError>()
 
 /**
- * Run a definition's handler `body` with a context whose signal also aborts after `timeoutMs`; past it, answer `TIMEOUT` without waiting for `body`.
- * A custom code the definition does not declare is the author's bug: it becomes a plain error, which answers `INTERNAL` and is logged.
+ * Run a definition's handler `body` inside the caller's call, with a context whose signal also aborts after `timeoutMs`; past it, answer `TIMEOUT`
+ * without waiting for `body`. A custom code the definition does not declare is the author's bug: it becomes a plain error, which answers `INTERNAL`
+ * and is logged.
  */
 export async function bounded<T>({ name, timeoutMs, errors }: { name: string; timeoutMs: number; errors: readonly string[] }, context: ToolContext, body: (context: ToolContext) => Promise<T>): Promise<T> {
   const deadline = AbortSignal.timeout(timeoutMs)
   const timedOut = new Promise<never>((_, reject) => deadline.addEventListener("abort", reject, { once: true }))
   try {
-    return await Promise.race([body(Object.freeze({ ...context, signal: AbortSignal.any([context.signal, deadline]) })), timedOut])
+    const signal = AbortSignal.any([context.signal, deadline])
+    return await Promise.race([inCall(context.organisation.id, () => body(Object.freeze({ ...context, signal }))), timedOut])
   } catch (error) {
     if (deadline.aborted) throw new ToolError("TIMEOUT", `The tool did not finish within ${timeoutMs} ms`)
     if (error instanceof ToolError && !declared.has(error)) {

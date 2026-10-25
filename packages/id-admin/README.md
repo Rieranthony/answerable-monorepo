@@ -1,6 +1,6 @@
 # Answerable ID admin client
 
-A server's machine client on Answerable ID's admin API: `createIdAdmin`, `IdError`, `found`, `pages`, and a fake ID for tests. Used by the Toolbox; the admin MCP is its second consumer. Private to the monorepo; no npm release.
+A server's machine client on Answerable ID's admin API: `createIdAdmin`, `IdError`, `found`, `pages`, `createIdProfiles`, and a fake ID for tests. Used by the Toolbox, the admin MCP and the e2e server. Private to the monorepo; no npm release.
 
 ```ts
 import { createIdAdmin, found, pages } from "@answerable/id-admin"
@@ -34,6 +34,8 @@ const { etag, operationId, replayed } = await id.manage("PATCH", `/organizations
 - **Correlation.** `requestId` is sent as `x-request-id` when given. `manage` also returns ID's `Operation-Id` (`null` where ID sends none, as on reads), which joins a receipt to ID's audit log.
 - **Lists.** `pages(path, get)` yields every page of one of ID's lists: `get` reads `path` with `limit=200` and, from the second page on, `cursor` set to the last page's `nextCursor`. Break out of the loop to stop reading.
 - **Errors.** A status outside 2xx, a refused token request or no answer at all throws `IdError` with the `status` (0 when ID did not answer) and ID's problem `code`. A refusal of the client credentials names the client id and the capability to check.
+
+**Who is calling.** `createIdProfiles(id, { ttlMs?, staleMs?, now? })` is `createMcpServer`'s `profiles`: `createMcpServer({ provider, auth, profiles: createIdProfiles(id) })`. For a caller it reads the member (`/organizations/{org}/members/{membershipId}`) and the organisation in parallel, with `platform:read`, and keeps each for `ttlMs` (60 seconds), per member and per organisation; concurrent calls share one read. When ID does not answer, the last value is served for up to `staleMs` (an hour) after it expired; with none, the call rejects and the server answers `UPSTREAM_UNAVAILABLE`. `groups` are those in force now; a member not in force (`effective: false`), or one ID no longer knows (404), is refused with `PERMISSION_DENIED`, never from an old value. `profiles.invalidate(organisationIds, userIds)` drops an organisation and its members, and a user in every organisation, for an audit-log poller. It depends on `@answerable/mcp` for `ToolError` and the `Profile` type.
 
 `@answerable/id-admin/testing` exports `createFakeId(options?)`: ID's token endpoint and the admin routes the Toolbox and the admin MCP call, in memory, answering the shapes of `apps/id/openapi.admin.json`. `fake.config` goes to `createIdAdmin`; `fake.received` lists every admin request with the `x-request-id`, `Idempotency-Key`, `If-Match` and `If-None-Match` it carried, 401s included.
 

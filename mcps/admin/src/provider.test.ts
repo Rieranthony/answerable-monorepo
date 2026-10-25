@@ -50,8 +50,7 @@ function staffer(joined: boolean) {
 assertProviderConformance(world.provider, {
   manifest: new URL("../manifest.json", import.meta.url),
   examples: {
-    "admin.whoami": {},
-    "organisations.list": { q: "newco" },
+    // The ids ID makes for this test's world, and records each mutation acts on: inputs no definition can hold.
     "organisations.get": { organizationId: newco.id },
     "members.list": { organizationId: newco.id },
     "members.get": { organizationId: newco.id, memberId: world.ada.id },
@@ -59,7 +58,6 @@ assertProviderConformance(world.provider, {
     "access.list": { organizationId: newco.id },
     "audit.list": { organizationId: newco.id },
     "sso.test": { organizationId: newco.id },
-    "staff.list": {},
     "organisations.create": () => ({ slug: `created-${unique()}`, name: "Created" }),
     "organisations.update": () => ({ organizationId: organisation(), name: "Renamed" }),
     "organisations.disable": () => ({ organizationId: organisation() }),

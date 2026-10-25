@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.11.0
+
+Every handler is told who is calling, and an MCP with a database gets it typed in its context ([D17, D18](../../docs/goals/mcp-cli/decisions.md)). Breaking: `createMcpServer` needs `profiles`, `defineProvider` a `description`, and `mount` takes entries.
+
+- Breaking: `ToolContext` gains `person` (`id`, `membershipId`, `name`, `email`, `groups`), `organisation` (`id`, `name`, `slug`) and `client` (`id`). The ids are the token's; the rest comes from `createMcpServer`'s new, required `profiles(principal)`, called once for each request that runs a handler, before it, and never for a list. A `ToolError` it throws answers the call; any other failure answers `UPSTREAM_UNAVAILABLE`, logged as `[mcp] reading who is calling failed`, and no handler runs.
+- Breaking: `defineProvider` takes `description`, 40 to 1,000 characters, and the manifest carries it. Every committed manifest changes.
+- `defineProvider` takes `database: { schema, migrations }`. The server then needs `db`, which `createMcpServer({ db })` and a `mount` entry take, and refuses to start without it, or with one for a provider that has none. `withDatabase({ schema })` returns `defineTool` and `defineMutation` whose handlers receive `db`, typed `NodePgDatabase<typeof schema>`; `defineProvider` refuses them unless its `database.schema` is that schema. `DatabaseContext`, `ToolDefinition` and `MutationDefinition` name the types.
+- Breaking: `mount` takes `{ provider, db? }` entries. A mounted tool runs with its own provider's `db`, called directly, through `call`, or committed through the hub's commit tools.
+- The server runs every `execute`, `prepare`, `commit`, prompt and resource handler inside its call, and `callerOrganisation()` gives the caller's organisation there: the getter `mcpDatabase`'s `organisation` option takes.
+- `defineTool` and `defineMutation` take `example`, one valid input, checked against `input` when the module loads. The conformance kit uses it; the fixture's `examples` is optional and overrides it, and a definition with neither fails, saying to add an `example`.
+- `checkProviderId`, `checkToolName` and `checkDescription` are the rules `defineProvider`, `defineTool` and `defineMutation` use, exported so that a CLI says the same.
+- `@answerable/mcp/testing`: every caller is the test person (`Test Person`, `person@example.test`) of the test organisation (`Test Organisation`, `test`); `connect({ person, organisation })` changes them for one membership, and `createTestMcp(provider, { profiles, db })` takes a resolver and a database. A function in place of a provider receives `{ auth, profiles }`, to spread into `createMcpServer`. `assertProviderConformance` takes `db` in its fixture.
+- `readMcpEnvironment` also returns `id`, the machine client `createIdAdmin` takes, when `MCP_ID_CLIENT_ID` is set, with `MCP_ID_CLIENT_SECRET` and `MCP_ID_ADMIN_RESOURCE` (locally `http://localhost:47300/api/admin`).
+- `drizzle-orm` 0.45.4 is a dependency, for the database's type.
+
 ## 0.10.0
 
 Configuration through `@answerable/config`, with local defaults. Breaking for a server that calls `parseEnvironment`.

@@ -71,7 +71,10 @@ const groups: Group[] = [
 ]
 
 // What a developer supplies because another system issues it: the platform applications and the machine clients the local ID registers.
-const issuedElsewhere = ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "TOOLBOX_ID_CLIENT_ID", "TOOLBOX_ID_CLIENT_SECRET", "ADMIN_ID_CLIENT_ID", "ADMIN_ID_CLIENT_SECRET"]
+const issuedElsewhere = [
+  "MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "TOOLBOX_ID_CLIENT_ID", "TOOLBOX_ID_CLIENT_SECRET",
+  "ADMIN_ID_CLIENT_ID", "ADMIN_ID_CLIENT_SECRET", "MCP_ID_CLIENT_ID", "MCP_ID_CLIENT_SECRET",
+]
 
 const lines = (fields: FieldMeta[]) => fields.flatMap(({ name, doc }) => [`# ${doc}`, `${name}=`])
 

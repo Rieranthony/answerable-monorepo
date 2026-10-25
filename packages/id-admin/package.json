@@ -1,6 +1,6 @@
 {
   "name": "@answerable/id-admin",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,6 +13,7 @@
     "lint": "eslint src --max-warnings 0"
   },
   "dependencies": {
+    "@answerable/mcp": "workspace:*",
     "zod": "4.6.7"
   },
   "devDependencies": {

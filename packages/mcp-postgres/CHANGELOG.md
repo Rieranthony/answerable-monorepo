@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.0
+
+`@answerable/mcp-postgres/testing` exports `createTestMcp` and `assertProviderConformance` for a provider with a `database`: `@answerable/mcp/testing`'s, given the provider's `db`, which `testMcpDatabase` makes from `provider.database` with the SDK's `callerOrganisation` as its organisation, so each connection sees only its organisation's rows. A test checks that the MCP name rule agrees with the SDK's `checkProviderId`.
+
 ## 0.8.0
 
 A database for every MCP, in a shared database or one of its own ([design](../../docs/goals/mcp-cli/design.md#database)). Nothing breaks: the hubs' `migrate`, `configureRuntimeRole` and `assertRuntimeRole` are unchanged.

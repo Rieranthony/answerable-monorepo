@@ -1,6 +1,6 @@
 ---
 title: Read tools
-description: "Define a read tool with @answerable/mcp: its fields, names, descriptions, the caller, pagination, errors, deprecation, and what hosts receive."
+description: "Define a read tool with @answerable/mcp: its fields, its example, names, descriptions, the caller and the database it receives, pagination, errors, deprecation, and what hosts receive."
 ---
 
 <include lang="ts" meta='title="mcps/example/src/provider.ts"'>../../../../../mcps/example/src/provider.ts#list</include>
@@ -12,6 +12,8 @@ A read tool answers a question and changes nothing. Define it with `defineTool`:
 <AutoTypeTable path="../../packages/mcp/src/tool.ts" name="ToolFields" type="Parameters<typeof defineTool>[0]" />
 
 **Field descriptions.** Describe each input field with `.describe()`: the text reaches the model in the tool's `inputSchema`. Recommended, not enforced.
+
+**Example.** `example` is one valid input, such as `{ limit: 5 }` for `notes.list` above. `defineTool` checks it against `input` when the module loads and refuses one that does not fit, naming the field. [The conformance kit](/docs/mcp/testing#the-fixture) calls the tool with it, so every tool should have one; a tool without one fails conformance.
 
 ## Names and identity
 
@@ -39,15 +41,42 @@ The description is what a model reads to choose a tool. Write operational docume
 
 ## The caller
 
-`execute(input, context)` receives the parsed input and a frozen context:
+<include lang="ts" meta='title="mcps/example/src/docs/caller.ts"'>../../../../../mcps/example/src/docs/caller.ts</include>
+
+`execute(input, context)` receives the parsed input and a frozen context: who is calling, the verified token, this call's id and its cancel signal. Prompts and resources receive the same context.
 
 <AutoTypeTable path="../../packages/mcp/src/definitions.ts" name="ToolContext" />
 
-`principal` is the verified caller:
+**Where it comes from.**
+
+| Field | Source |
+| --- | --- |
+| `person.id`, `person.membershipId`, `organisation.id`, `client.id` | The access token, verified offline against ID's published keys |
+| `person.name`, `person.email`, `person.groups`, `organisation.name`, `organisation.slug` | The server's [`profiles`](/docs/mcp/servers#who-is-calling), which reads them from Answerable ID's admin API before the handler runs, cached 60 seconds per member and per organisation |
+| `executionId`, `signal` | The server, for this call |
+
+`person.groups` holds the groups the person is in now, each `{ id, slug, name }`. When ID cannot be read, the call answers `UPSTREAM_UNAVAILABLE` and the handler does not run; see [What the server answers](#tool-errors). In tests, the caller is a test person you can change: [Test an MCP](/docs/mcp/testing#who-is-calling).
+
+`principal` is the verified token, for anything the fields above do not cover:
 
 <AutoTypeTable path="../../packages/auth/src/index.ts" name="UserPrincipal" />
 
-**Constrain every query by `principal.organizationId`.** Another organisation's data must be not found, never forbidden. Join on `userId`, never on an email address. Prompts and resources receive the same context. [How Answerable ID works](/docs/id) explains where these values come from.
+**Constrain every query by `organisation.id`.** Another organisation's data must be not found, never forbidden. Join on `person.id`, never on an email address. A table in an MCP's [database](#the-database) is limited to the caller's organisation by Postgres as well. [How Answerable ID works](/docs/id) explains the token.
+
+### The database
+
+<include lang="ts" meta='title="packages/mcp-postgres/src/test/fixtures/mpgfixa-provider.ts"'>../../../../../packages/mcp-postgres/src/test/fixtures/mpgfixa-provider.ts</include>
+
+An MCP with a database defines its tools with the `defineTool` and `defineMutation` that `withDatabase({ schema })` returns, given its drizzle schema module. Their handlers also receive:
+
+<AutoTypeTable path="../../packages/mcp/src/database.ts" name="DatabaseFields" type="Pick<DatabaseContext<Record<string, unknown>>, 'db'>" />
+
+- **The provider declares it.** `defineProvider` takes `database: { schema, migrations }`, and refuses a tool made with `withDatabase` unless that is the same schema. See [Providers and servers](/docs/mcp/servers#the-provider).
+- **The server supplies it.** The process that serves the provider passes its `db` to `createMcpServer` or a hub's `mount`, made with `mcpDatabase` from `@answerable/mcp-postgres`; a test gets one from [`@answerable/mcp-postgres/testing`](/docs/mcp/testing#an-mcp-with-a-database).
+- **Each call is its caller's.** The server runs every handler inside its call, and `callerOrganisation()` gives that call's organisation. `mcpDatabase` sets it on each connection a query borrows, so a table with the `organisationIsolation` policy, as the fixture's tables have, returns and accepts only that organisation's rows.
+- **A plain `defineTool` has no `db`.** Its context type has none, so `context.db` fails the typecheck.
+
+The fixture above is `@answerable/mcp-postgres`'s, with its tests. A command that writes an MCP's `src/mcp.ts`, `src/db/schema.ts` and first migration: Not yet.
 
 ## Pagination
 
@@ -96,6 +125,8 @@ A custom code must start with the provider's id in capitals: `defineProvider` re
 
 | Case | Answer |
 | --- | --- |
+| Who is calling cannot be read: the server's `profiles` fails | `UPSTREAM_UNAVAILABLE`, `Who you are could not be read; try again shortly`, and `[mcp] reading who is calling failed` in the server log; `execute` does not run |
+| `profiles` throws a `ToolError`, such as `PERMISSION_DENIED` for a member whose membership is not in force | That error; `execute` does not run |
 | The input fails `input` | `INVALID_INPUT`, one field violation per issue (`{ field: "a.b", message }`); `execute` does not run |
 | `execute` runs past `timeoutMs` | `TIMEOUT`; `context.signal` aborts and the answer does not wait for `execute` |
 | Any other exception, an undeclared custom code, or an output that fails `output` | `INTERNAL` with the message `The tool could not complete`, and `[mcp] tool <name> failed` with the execution id in the server log |
@@ -104,7 +135,7 @@ A custom code must start with the provider's id in capitals: `defineProvider` re
 
 <include lang="ts" meta='title="mcps/example/src/docs/dependencies.ts"'>../../../../../mcps/example/src/docs/dependencies.ts</include>
 
-Pass a database or an API client by closure: define the tools inside a function that receives them, and return the provider. The server passes the real one; a test passes a stand-in. `mcps/e2e/src/mcp.ts` builds its provider this way.
+Pass an API client or any other dependency by closure: define the tools inside a function that receives them, and return the provider. The server passes the real one; a test passes a stand-in. `mcps/e2e/src/mcp.ts` builds its provider this way. The MCP's own database is the one exception: the platform supplies it in the context, as [the database](#the-database) shows.
 
 **Composition.** A tool is plain data, so ordinary code composes it: collect tools from several modules into one array, wrap `execute` to audit every call, or call `execute` directly in a unit test.
 

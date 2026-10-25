@@ -5,6 +5,8 @@ import { ingest } from "./catalogue"
 import { search } from "./search"
 import { serving } from "./test/database"
 
+const purpose = "A fixture provider for the Toolbox's tests: it serves the tools each test gives it."
+
 const login = await serving()
 const { db } = login
 const id = `s${crypto.randomUUID().slice(0, 8)}`
@@ -12,7 +14,7 @@ const tool = (name: string, description: string, fields: { title?: string; input
   name, description, title: fields.title, input: fields.input ?? z.object({}), output: z.object({}), async execute() { return {} },
 })
 // Each word sits in one field: "invoices" in an identity and in another tool's description, "quarterly" in a title, "customer" in an argument name.
-const provider = (version: string) => defineProvider({ id, version, tools: [
+const provider = (version: string) => defineProvider({ id, description: purpose, version, tools: [
   tool("invoices.list", "List the organisation's bills, newest first, 20 per page."),
   tool("payments.list", "List the payments made against invoices, oldest first."),
   tool("reports.get", "Read one report by its id, with every figure it holds.", { title: "Quarterly summaries" }),

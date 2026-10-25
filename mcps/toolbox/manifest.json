@@ -1,6 +1,7 @@
 {
   "id": "toolbox",
   "version": "2026-09-29",
+  "description": "The Toolbox's own tools: who you are to it, and finding, describing, running and preparing the capabilities your organisation granted you.",
   "tools": [
     {
       "identity": "toolbox/toolbox.describe",

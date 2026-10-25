@@ -13,13 +13,4 @@ assertProviderConformance(createToolboxProvider({
   search: async () => ["e2e/records.list"],
   run: async ran => ({ ran: ran.identity }),
   refused: () => {},
-}), {
-  manifest: new URL("../manifest.json", import.meta.url),
-  examples: {
-    "toolbox.whoami": {},
-    "toolbox.search": { query: "records" },
-    "toolbox.describe": { identities: ["e2e/records.list"] },
-    "toolbox.execute": { identity: "e2e/records.list" },
-    "toolbox.prepare": { identity: "e2e/records.create", arguments: { title: "Conformance" } },
-  },
-})
+}), { manifest: new URL("../manifest.json", import.meta.url) })

@@ -5,10 +5,7 @@ import { provider } from "./provider"
 type Intent = { intent_id: string; commit_token: string; commit_tool: string }
 
 //#region conformance
-assertProviderConformance(provider, {
-  manifest: new URL("../manifest.json", import.meta.url),
-  examples: { "notes.list": { limit: 5 }, "notes.add": { text: "Buy milk" } },
-})
+assertProviderConformance(provider, { manifest: new URL("../manifest.json", import.meta.url) })
 //#endregion
 
 //#region add-then-list

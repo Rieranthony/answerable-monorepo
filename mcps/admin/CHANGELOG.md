@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.0
+
+No tool changes. Every tool is told who is calling, read from ID through the admin MCP's machine client with `createIdProfiles` and cached 60 seconds, so a call to ID that fails before a handler runs answers `UPSTREAM_UNAVAILABLE`. The provider has a description, which the manifest carries, and `admin.whoami`, `organisations.list` and `staff.list` carry their examples.
+
 ## 0.3.1
 
 No tool changes. The admin MCP reads its variables through `@answerable/config`, so a clone runs it with no `.env` but the machine client's ID and secret.

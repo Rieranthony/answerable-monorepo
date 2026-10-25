@@ -8,6 +8,8 @@ import { mutateChecks, providerChecks, readChecks, targetChecks } from "./confor
 import { createKit, type ConformanceFixture, type Kit, type Subject } from "./kit"
 import { assertProviderConformance } from "./testing"
 
+const purpose = "A fixture provider for the conformance kit tests: it serves the definitions each test gives it."
+
 const directory = mkdtempSync(join(tmpdir(), "answerable-conformance-"))
 let snapshots = 0
 function snapshot(contents: unknown) {
@@ -38,23 +40,23 @@ function demo(fault: Fault = () => ({})) {
   }
   const whoami = defineTool({
     name: "notes.whoami", description: "Read the organisation you signed in to. A fixture for the conformance tests.",
-    input: z.object({}), output: z.object({ organizationId: z.string() }),
+    input: z.object({}), output: z.object({ organizationId: z.string() }), example: {},
     async execute(_input, { principal }) { return { organizationId: principal.organizationId } },
   })
   const list = defineTool({
     name: "notes.list", description: "List the notes, oldest first, 20 per page. When has_more is true, pass next_cursor as cursor.",
-    input: z.object({ limit: z.number().int().min(1).max(50).default(20), cursor: z.string().optional() }),
+    input: z.object({ limit: z.number().int().min(1).max(50).default(20), cursor: z.string().optional() }), example: { limit: 5 },
     output: z.object({ items: z.array(note), next_cursor: z.string().nullable(), has_more: z.boolean() }),
     async execute({ limit }) { return { items: [...notes.values()].slice(0, limit), next_cursor: null, has_more: notes.size > limit } },
   })
   const count = defineTool({
     name: "notes.count", description: "Count the notes. Use notes.list to read them, 20 per page.",
-    input: z.object({}), output: z.object({ count: z.number().int(), counted_at: z.iso.datetime().nullable(), amount: z.object({ value: z.number(), unit: z.string() }).optional() }),
+    input: z.object({}), example: {}, output: z.object({ count: z.number().int(), counted_at: z.iso.datetime().nullable(), amount: z.object({ value: z.number(), unit: z.string() }).optional() }),
     async execute() { return { count: notes.size, counted_at: null } },
   })
   const create = defineMutation({
     name: "notes.create", risk: "low", description: "Prepare adding a note. Changes nothing: returns a preview and a commit token; commit the intent with demo_commit.",
-    input: z.object({ title: z.string().min(1).max(50) }), output: z.object({ id: z.string() }),
+    input: z.object({ title: z.string().min(1).max(50) }), output: z.object({ id: z.string() }), example: { title: "Example" },
     async prepare({ title }) { return { targets: [], preview: { summary: `Add the note “${title}”`, changes: [{ path: "notes[]", to: { title } }] }, plan: { title } } },
     async commit({ plan, preview }) { return { results: { id: add(plan.title).id }, applied_changes: preview.changes, effects_performed: [] } },
   })
@@ -74,7 +76,7 @@ function demo(fault: Fault = () => ({})) {
   // High risk is human class, which cannot commit yet: the kit runs it as controlled.
   const wipe = defineMutation({
     name: "notes.wipe", risk: "high", effects: ["cascade_delete"], description: "Prepare deleting every note. Changes nothing: returns a preview; the intent needs a person's approval.",
-    input: z.object({}), output: z.object({ deleted: z.number().int() }),
+    input: z.object({}), output: z.object({ deleted: z.number().int() }), example: {},
     async prepare() { return { targets: [], preview: { summary: "Delete every note", effects: ["cascade_delete"] } } },
     async commit() {
       const deleted = notes.size
@@ -84,15 +86,11 @@ function demo(fault: Fault = () => ({})) {
   })
   const faults = fault(notes)
   const tools = [whoami, list, count, create, rename, wipe].map(tool => ({ ...tool, ...faults[tool.name]?.(tool as unknown as Original) }))
-  const provider = defineProvider({ id: "demo", version: "2026-09-29", tools: tools as never })
+  const provider = defineProvider({ id: "demo", description: purpose, version: "2026-09-29", tools: tools as never })
   const fixture: ConformanceFixture = {
     manifest: snapshot(manifest(provider)),
-    examples: {
-      "notes.whoami": {}, "notes.list": { limit: 5 }, "notes.count": {},
-      "notes.create": { title: "Example" },
-      "notes.rename": () => ({ id: add("Before").id, title: "After" }),
-      "notes.wipe": {},
-    },
+    // A rename needs a note to rename: an input no definition can hold.
+    examples: { "notes.rename": () => ({ id: add("Before").id, title: "After" }) },
     moveTarget: target => { notes.get(target.resource_id)!.version++ },
   }
   return { notes, provider, fixture }
@@ -100,7 +98,7 @@ function demo(fault: Fault = () => ({})) {
 
 // The kit's own registration, on a provider with one read and one mutation that prepares no targets, whose two target checks are skipped.
 const tiny = demo()
-const tinyProvider = defineProvider({ id: "tiny", version: "2026-09-29", tools: tiny.provider.tools.filter(tool => tool.name === "notes.list" || tool.name === "notes.create") as never })
+const tinyProvider = defineProvider({ id: "tiny", description: purpose, version: "2026-09-29", tools: tiny.provider.tools.filter(tool => tool.name === "notes.list" || tool.name === "notes.create") as never })
 assertProviderConformance(tinyProvider, { ...tiny.fixture, manifest: snapshot(manifest(tinyProvider)) })
 
 const good = demo()
@@ -177,7 +175,7 @@ test("the good provider fails no check, and each wrong provider fails the check 
   ])
 })
 
-test("the kit signs in as one caller and hands fixture functions that principal", async () => {
+test("the kit signs in as one caller, uses each definition's example, and a fixture's input wins and receives that principal", async () => {
   const kit = await kitFor(good)
   const { organizationId, userId, membershipId, clientId, scopes } = kit.principal
   expect((await kit.call("notes_whoami", {})).structuredContent).toEqual({ organizationId })
@@ -192,8 +190,8 @@ test("the kit signs in as one caller and hands fixture functions that principal"
 test("output_schema_declared: timestamps as date-time strings, quantities as value and unit", () => {
   const output = (shape: z.ZodRawShape, kind: "read" | "mutate" = "read") => {
     const wrong = kind === "read"
-      ? defineProvider({ id: "demo", version: "2026-09-29", tools: [defineTool({ name: "notes.get", description: "Read a note. A fixture for the schema lint.", input: z.object({}), output: z.object(shape), async execute() { return {} as never } })] })
-      : defineProvider({ id: "demo", version: "2026-09-29", tools: [defineMutation({ name: "notes.set", description: "Prepare a note. A fixture for the schema lint; commit the intent.", input: z.object({}), output: z.object(shape), async prepare() { return { targets: [], preview: { summary: "x" } } }, async commit() { return { results: {} as never, applied_changes: [], effects_performed: [] } } })] })
+      ? defineProvider({ id: "demo", description: purpose, version: "2026-09-29", tools: [defineTool({ name: "notes.get", description: "Read a note. A fixture for the schema lint.", input: z.object({}), output: z.object(shape), async execute() { return {} as never } })] })
+      : defineProvider({ id: "demo", description: purpose, version: "2026-09-29", tools: [defineMutation({ name: "notes.set", description: "Prepare a note. A fixture for the schema lint; commit the intent.", input: z.object({}), output: z.object(shape), async prepare() { return { targets: [], preview: { summary: "x" } } }, async commit() { return { results: {} as never, applied_changes: [], effects_performed: [] } } })] })
     return () => readChecks.output_schema_declared(subject(wrong))
   }
   expect(output({ created_at: z.string() })).toThrow('demo/notes.get: output property "created_at" is named like a timestamp, so it must be a string with format date-time, for example z.iso.datetime()')
@@ -210,7 +208,7 @@ test("output_schema_declared: timestamps as date-time strings, quantities as val
 
 test("list_paginates: an items array comes with limit, cursor, next_cursor and has_more", () => {
   const items = defineTool({ name: "notes.all", description: "Read every note at once. A fixture for the pagination check.", input: z.object({}), output: z.object({ items: z.array(z.string()) }), async execute() { return { items: [] } } })
-  expect(() => readChecks.list_paginates(subject(defineProvider({ id: "demo", version: "2026-09-29", tools: [items] })))).toThrow(
+  expect(() => readChecks.list_paginates(subject(defineProvider({ id: "demo", description: purpose, version: "2026-09-29", tools: [items] })))).toThrow(
     "demo/notes.all: returns an items array but does not declare input limit, input cursor, output next_cursor, output has_more; a list takes limit and cursor and returns items, next_cursor and has_more, so it never truncates silently",
   )
   const paged = defineTool({
@@ -218,7 +216,7 @@ test("list_paginates: an items array comes with limit, cursor, next_cursor and h
     input: z.object({ limit: z.number().default(20), cursor: z.string().optional() }), output: z.object({ items: z.array(z.string()), next_cursor: z.string().nullable() }),
     async execute() { return { items: [], next_cursor: null } },
   })
-  expect(() => readChecks.list_paginates(subject(defineProvider({ id: "demo", version: "2026-09-29", tools: [paged] })))).toThrow("does not declare output has_more;")
+  expect(() => readChecks.list_paginates(subject(defineProvider({ id: "demo", description: purpose, version: "2026-09-29", tools: [paged] })))).toThrow("does not declare output has_more;")
 })
 
 test("read_has_no_side_effect: a read returns the same twice and records no intent; a failing example names the tool and its code", async () => {
@@ -229,7 +227,10 @@ test("read_has_no_side_effect: a read returns the same twice and records no inte
   const recording: Kit = { ...kit, async call(name, args) { kit.stored.push({ intent_id: "i1" } as Intent); return kit.call(name, args) } }
   await expect(readChecks.read_has_no_side_effect(recording)).rejects.toThrow("demo/notes.whoami recorded an intent; only a mutation's prepare tool does that")
   kit.stored.length = 0
-  await expect(readChecks.read_has_no_side_effect({ ...kit, fixture: { ...good.fixture, examples: {} } })).rejects.toThrow("fixture.examples has no entry for notes.whoami; add one valid input for it")
+  const plain = { ...kit, provider: defineProvider({ id: "demo", description: purpose, version: "2026-09-29", tools: [defineTool({ ...good.provider.tools[0] as Tool, example: undefined })] }) }
+  for (const fixture of [good.fixture, { ...good.fixture, examples: undefined }]) {
+    await expect(readChecks.read_has_no_side_effect({ ...plain, fixture })).rejects.toThrow("demo/notes.whoami has no example; add example, one valid input, to its definition")
+  }
   await expect(readChecks.read_has_no_side_effect({ ...kit, fixture: { ...good.fixture, examples: { ...good.fixture.examples, "notes.list": { limit: 0 } } } })).rejects.toThrow(
     "notes_list answered INVALID_INPUT: limit: Too small: expected number to be >=1",
   )
@@ -271,8 +272,8 @@ test("commit_rejects_stale: a moved target answers INTENT_STALE; without moveTar
 
 test("descriptions_operational: a mutation's description says it prepares an intent", () => {
   const silent = defineMutation({ ...mutation(good.provider, "notes.create"), name: "notes.add", description: "Add a note to the list of notes, right now." })
-  expect(() => providerChecks.descriptions_operational(subject(defineProvider({ id: "demo", version: "2026-09-29", tools: [silent] })))).toThrow(
+  expect(() => providerChecks.descriptions_operational(subject(defineProvider({ id: "demo", description: purpose, version: "2026-09-29", tools: [silent] })))).toThrow(
     'demo/notes.add: a mutation\'s description must say that it prepares an intent; use the word "prepare" or "intent"',
   )
-  providerChecks.descriptions_operational(subject(defineProvider({ id: "demo", version: "2026-09-29", tools: [defineMutation({ ...silent, description: "Change the notes in this list, with the INTENT it returns." })] })))
+  providerChecks.descriptions_operational(subject(defineProvider({ id: "demo", description: purpose, version: "2026-09-29", tools: [defineMutation({ ...silent, description: "Change the notes in this list, with the INTENT it returns." })] })))
 })

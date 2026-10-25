@@ -11,6 +11,7 @@
     "lint": "eslint src --max-warnings 0"
   },
   "dependencies": {
+    "@answerable/id-admin": "workspace:*",
     "@answerable/mcp": "workspace:*",
     "zod": "4.6.7"
   },

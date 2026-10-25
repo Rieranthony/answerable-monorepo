@@ -1,5 +1,6 @@
 // Real Answerable ID, a real browser and the official MCP OAuth client against the e2e MCP.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { createIdAdmin, createIdProfiles } from "@answerable/id-admin"
 import { createMcpServer } from "@answerable/mcp"
 import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
 import { createRecordStore } from "@answerable/mcp-e2e/records"
@@ -15,6 +16,7 @@ import {
   refreshRefused,
   refusal,
   registerClient,
+  registerMachine,
   registerResource,
   serve,
   serveCallback,
@@ -71,9 +73,14 @@ beforeAll(async () => {
     const { organizationId } = manifest.tenants.find(({ slug }) => slug === tenant.slug)!
     await grantOrganisation(admin, organizationId, { clientId, resource, scopes, entitledScopes: tenant.scopes })
   }
+  // The e2e server reads who is calling from ID through its own platform:read machine client, in the platform organisation.
+  const organisations = z.object({ items: z.array(z.object({ id: z.uuid(), slug: z.string() })) }).parse(await admin("GET", "/organizations?q=answerable"))
+  const platform = organisations.items.find(organisation => organisation.slug === "answerable")!
+  const machine = await registerMachine(admin, platform.id, "e2e-mcp", { [manifest.adminResource]: ["platform:read"] })
+  const profiles = createIdProfiles(createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...machine }))
   const provider = createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html><title>Records</title>" })
-  serve(47_602, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource } }).fetch)
-  serve(47_605, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource: otherResource } }).fetch)
+  serve(47_602, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource }, profiles }).fetch)
+  serve(47_605, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource: otherResource }, profiles }).fetch)
   serveCallback(callback)
   browser = await launchBrowser()
 })

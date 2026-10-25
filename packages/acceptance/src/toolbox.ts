@@ -53,8 +53,8 @@ export async function startToolboxStack(id: Id, { hosts, database, fetch }: { ho
   const providers = [createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html><title>Records</title>" })]
   const { tracer, spans } = createMemoryTracer()
   const machine = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...hub, fetch })
-  const toolbox = await createToolbox({ providers, auth: { issuer: manifest.idOrigin, resource: toolboxResource }, db: runtime, id: machine, spans: tracer })
-  const poller = startGrantsPoller({ id: machine, grants: toolbox.grants })
+  const toolbox = await createToolbox({ mount: providers.map(provider => ({ provider })), auth: { issuer: manifest.idOrigin, resource: toolboxResource }, db: runtime, id: machine, spans: tracer })
+  const poller = startGrantsPoller({ id: machine, grants: toolbox.grants, profiles: toolbox.profiles })
   onCleanup(() => poller.stop())
 
   return {

@@ -1,11 +1,11 @@
 ---
 title: Test an MCP
-description: "Test a provider in-process with createTestMcp and check it against the Answerable MCP standard with the conformance kit, the manifest snapshot and bun run mcp:check."
+description: "Test a provider in-process with createTestMcp, as a test person or one you choose and with its database, and check it against the Answerable MCP standard with the conformance kit, each tool's example, the manifest snapshot and bun run mcp:check."
 ---
 
 <include lang="ts" meta='title="mcps/e2e/src/conformance.test.ts"'>../../../../../mcps/e2e/src/conformance.test.ts</include>
 
-This is the e2e server's; `mcps/example/src/provider.test.ts` has a smaller one. Put it in a test file of the provider's workspace and run `bun run test`. It registers one test per check from [the standard's checklists](#the-checks), so a failing test names the check and the tool to change. Call it at the top level of a test file, once for each provider.
+This is the e2e server's; `mcps/example/src/provider.test.ts` has a smaller one. Put it in a test file of the provider's workspace and run `bun run test`. It registers one test per check from [the standard's checklists](#the-checks), so a failing test names the check and the tool to change. Call it at the top level of a test file, once for each provider. The kit calls each tool with its own [`example`](/docs/mcp/tools#fields); `examples` gives only what no definition can hold, here the id of a record that a function first creates.
 
 ## Serve a provider in-process
 
@@ -23,10 +23,13 @@ The MCP's URL is `https://mcp.test/mcp`.
 | `connect({ organizationId, userId, membershipId })` | Random UUIDs |
 | `connect({ clientId })` | `test-client` |
 | `connect({ protocol })` | The client's default; `"2026-07-28"` pins the new revision |
+| `connect({ person, organisation })` | The test person of the test organisation; the fields given replace theirs for that membership |
+| `createTestMcp(provider, { profiles })` | Who each caller is; default: the test person of the test organisation |
+| `createTestMcp(provider, { db })` | The provider's database; an MCP with a database uses [its own `createTestMcp`](#an-mcp-with-a-database) |
 
 Pin `userId`, `organizationId` and `membershipId` to connect as the same principal twice, for example to replay a commit from a second connection. `mcp.fetch` sends a raw HTTP request, for example to check a `401`. `mcp.issuer.sign` makes an unusual token, such as an expired one. `mcp.close()` closes every client.
 
-**Server options.** In place of a provider, pass a function that builds the server from the local issuer's `auth`. To move time, give the server a store whose clock you control; the store decides every expiry:
+**Server options.** In place of a provider, pass a function that builds the server from the local issuer's `auth` and the test `profiles`, both in the object it receives, which spreads into `createMcpServer`'s options. To move time, give the server a store whose clock you control; the store decides every expiry:
 
 <include lang="ts" meta='title="mcps/example/src/intents.test.ts"'>../../../../../mcps/example/src/intents.test.ts#expiry</include>
 
@@ -34,7 +37,23 @@ Pin `userId`, `organizationId` and `membershipId` to connect as the same princip
 
 <include lang="ts" meta='title="mcps/example/src/errors.test.ts"'>../../../../../mcps/example/src/errors.test.ts#refusal</include>
 
-**A caller without a server.** `testPrincipal(overrides?)` returns a verified caller for code that takes a principal, such as a store: fresh ids, the client `test-client`, no scopes and a directory sign-in now (`upstreamAuthTime`), each replaced by `overrides`. `records.create(testPrincipal({ organizationId }), "Title")` seeds a record for a connection with that `organizationId`.
+### Who is calling
+
+<include lang="ts" meta='title="mcps/example/src/docs/caller.test.ts"'>../../../../../mcps/example/src/docs/caller.test.ts#person</include>
+
+Every caller is the test person, `Test Person` (`person@example.test`, in no group), of the test organisation, `Test Organisation` (slug `test`); the ids are the token's. `connect({ person, organisation })` replaces the fields it gives for that connection's membership, and `createTestMcp(provider, { profiles })` replaces the resolver, for example with one that throws to test `UPSTREAM_UNAVAILABLE`. [The caller](/docs/mcp/tools#the-caller) says what each field is.
+
+### An MCP with a database
+
+<include lang="ts" meta='title="packages/mcp-postgres/src/test-mcp.test.ts"'>../../../../../packages/mcp-postgres/src/test-mcp.test.ts#isolation</include>
+
+A provider with a `database` imports `createTestMcp` and `assertProviderConformance` from `@answerable/mcp-postgres/testing`. They take the provider and the options or fixture the SDK's take, without `db`: they make the provider's `db` with `testMcpDatabase`, as production makes it: schema `<id>` in `answerable_mcps_test` on the development Postgres, dropped, provisioned and migrated from `database.migrations`, then reached as a fresh serving login with the caller's organisation, so `connect({ organizationId })` sees only that organisation's rows. `close()`, and the end of the conformance checks, drop the login. The suite needs the development Postgres on port 47432.
+
+<include lang="ts" meta='title="packages/mcp-postgres/src/test-mcp.test.ts"'>../../../../../packages/mcp-postgres/src/test-mcp.test.ts#conformance</include>
+
+### A caller without a server
+
+`testPrincipal(overrides?)` returns a verified caller for code that takes a principal, such as a store: fresh ids, the client `test-client`, no scopes and a directory sign-in now (`upstreamAuthTime`), each replaced by `overrides`. `records.create(testPrincipal({ organizationId }), "Title")` seeds a record for a connection with that `organizationId`.
 
 `mcps/example/src/*.test.ts` and `mcps/e2e/src/mcp.test.ts` are working examples. Reference: [`createTestMcp`](/docs/mcp/reference#createtestmcp), [`errorOf`](/docs/mcp/reference#errorof), [`testPrincipal`](/docs/mcp/reference#testprincipal).
 
@@ -43,7 +62,8 @@ Pin `userId`, `organizationId` and `membershipId` to connect as the same princip
 <AutoTypeTable path="../../packages/mcp/src/kit.ts" name="ConformanceFixture" />
 
 - **`manifest`**: `manifest_matches_snapshot` compares the file with `manifest(provider)`.
-- **`examples`**: `read_has_no_side_effect` and the mutate checks call each definition with its example. A function runs each time the kit needs an input, so a delete gets a fresh record every time.
+- **`examples`**: `read_has_no_side_effect` and the mutate checks call each definition with its own `example`, unless `examples` gives another input under its name. Use it for an input no definition can hold, such as an id the test makes: a function runs each time the kit needs an input, so a delete gets a fresh record every time. A definition with neither fails, saying to add an `example`.
+- **`db`**: the provider's database; `@answerable/mcp-postgres/testing`'s `assertProviderConformance` gives it.
 - **`moveTarget`**: `commit_rejects_stale` moves a target, then commits. Needed only when a mutation prepares targets; the check fails without it.
 
 While it registers the checks, the kit prepares each mutation once with its example, to see whether it prepares targets. An example that fails stops the test file with the kit's message, such as `notes_add answered INVALID_INPUT: …`.
@@ -131,14 +151,14 @@ A failed check names the check in its test and the tool or mutation in its messa
 
 | Message begins | Meaning | What to change |
 | --- | --- | --- |
-| `fixture.examples has no entry for …` | A tool or mutation has no example | Add a valid input for it under its name |
+| `… has no example; add example, one valid input, to its definition` | A tool or mutation has no `example`, and `examples` gives none for it | Add `example` to its definition, or an input under its name in `examples` |
 | `… output property "…" is named like a timestamp…` | A `*_at` property is not a `date-time` string | Use `z.iso.datetime()` |
 | `… output property "…" is named like a quantity…` | `amount`, `area` or `duration` is not `{ value, unit }` | Use `z.object({ value: z.number(), unit: z.string() })` |
 | `… returns an items array but does not declare …` | A list lacks part of the pagination contract | Add `limit`, `cursor`, `next_cursor` and `has_more`; see [pagination](/docs/mcp/tools#pagination) |
 | `… returned different results for the same input twice…` | A read changed state, or returned something that varies | Remove the side effect, or the varying field |
 | `… recorded an intent; only a mutation's prepare tool does that` | A read created an intent | Make it a mutation |
 | `… is out of date; regenerate it with UPDATE_MANIFEST=1…` | The manifest differs from the code | Run the command in the message, review the diff and commit |
-| `… answered INVALID_INPUT: …`, `… answered NOT_FOUND: …` in any check | An example does not fit the tool, or names something the provider does not hold | Fix the example, or have its function create what it names first |
+| `… answered INVALID_INPUT: …`, `… answered NOT_FOUND: …` in any check | An example does not fit the tool, or names something the provider does not hold | Fix the example, or give an input under its name in `examples` whose function creates what it names first |
 | `…: preparing changed what the reads return…` | `prepare` changed state | Move the change into `commit` |
 | `…: the preview names no change and no effect…`, `…: the preview summary is blank` | The preview only echoes the arguments | Say what will change, from what, to what |
 | `…: target … has no version…` | A target has an empty version value | Set `version.value` from the source's etag, version, timestamp or serial |
@@ -147,3 +167,5 @@ A failed check names the check in its test and the tool or mutation in its messa
 | `… prepared no targets this time, though it did when the kit registered its checks…` | The example's prepare returns targets only sometimes | Make its example prepare the same targets every time |
 | `… answered INTERNAL: …` in any check | A handler threw something unexpected | Read the server log for the `request_id`; if it threw a custom code, add it to `errors` |
 | `… a mutation's description must say that it prepares an intent…` | A mutation's description breaks R14 | Name `prepare` or `intent` in it |
+| `Provider … has a database, so its server needs its db…` | A provider with a `database` was served by `@answerable/mcp/testing` | Import `createTestMcp` and `assertProviderConformance` from `@answerable/mcp-postgres/testing` |
+| `Provider … has no database; import createTestMcp and assertProviderConformance from @answerable/mcp/testing` | `@answerable/mcp-postgres/testing` was given a provider without one | Import them from `@answerable/mcp/testing` |

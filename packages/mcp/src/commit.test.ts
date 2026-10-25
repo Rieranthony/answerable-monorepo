@@ -3,6 +3,8 @@ import { z } from "zod"
 import { createMcpServer, createMemoryIntentStore, defineMutation, defineProvider, defineTool, manifest, ToolError, type IntentStore, type McpServerConfig, type Mutation, type PolicyClass, type Tool } from "./index"
 import { createTestMcp, errorOf, type TestMcp } from "./testing"
 
+const purpose = "A fixture provider for the prepared-mutation tests: it serves the definitions each test gives it."
+
 const uuidV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const commitToken = /^act_[A-Za-z0-9_-]{43}$/
 const about = (text: string) => `${text}. A fixture for the prepared-mutation tests.`
@@ -89,8 +91,8 @@ async function serve(options: Options = {}) {
   let clock = start
   const intents = options.intents ?? createMemoryIntentStore({ now: () => clock })
   const tools = options.tools?.(lib) ?? [lib.list, lib.rename, lib.remove, lib.publish, lib.purge]
-  const provider = defineProvider({ id: "test", version: options.version ?? "2026-09-29", tools })
-  const mcp = await createTestMcp(auth => createMcpServer({ provider, auth, intents, policyClass: options.policyClass }))
+  const provider = defineProvider({ id: "test", description: purpose, version: options.version ?? "2026-09-29", tools })
+  const mcp = await createTestMcp(serving => createMcpServer({ ...serving, provider, intents, policyClass: options.policyClass }))
   mcps.push(mcp)
   const person = { userId: crypto.randomUUID(), organizationId: crypto.randomUUID(), membershipId: crypto.randomUUID(), clientId: "test-client" }
   type Connect = Parameters<TestMcp["connect"]>[0]

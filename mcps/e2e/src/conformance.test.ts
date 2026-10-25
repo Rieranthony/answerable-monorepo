@@ -6,12 +6,7 @@ const records = createRecordStore()
 
 assertProviderConformance(createE2eProvider({ records, viewHtml: "<!doctype html><title>Records</title>" }), {
   manifest: new URL("../manifest.json", import.meta.url),
-  examples: {
-    "identity.get": {},
-    "records.list": { limit: 5 },
-    "records.show": {},
-    "records.create": { title: "Example" },
-    "records.delete": principal => ({ id: records.create(principal, "Doomed").id }),
-  },
+  // A delete needs a record to delete: an input no definition can hold.
+  examples: { "records.delete": principal => ({ id: records.create(principal, "Doomed").id }) },
   moveTarget: (target, principal) => records.touch(principal, target.resource_id),
 })

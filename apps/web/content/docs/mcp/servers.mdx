@@ -1,6 +1,6 @@
 ---
 title: Providers and servers
-description: "Group tools in a provider and serve it with createMcpServer: the workspace, configuration, what the server answers, change notices, hubs, the manifest, prompts, resources and views."
+description: "Group tools in a provider and serve it with createMcpServer: its description and database, who is calling, the workspace, configuration, what the server answers, change notices, hubs, the manifest, prompts, resources and views."
 ---
 
 <ScaffoldFile file="src/server.ts" />
@@ -15,11 +15,15 @@ A **provider** is a named, dated set of tools, prompts and resources. A **server
 
 <AutoTypeTable path="../../packages/mcp/src/provider.ts" name="ProviderFields" type="Parameters<typeof defineProvider>[0]" />
 
+**Description.** What the MCP is for, in a sentence or two: 40 to 1,000 characters, the rule a tool's description follows. The [manifest](#manifest) carries it.
+
+**Database.** `database: { schema, migrations }` names the MCP's drizzle schema module and its migrations folder. The server that serves the provider then needs its `db`, and tools made with `withDatabase` receive it: see [the database](/docs/mcp/tools#the-database). `defineProvider` refuses a tool made with `withDatabase` when the provider declares no database, or another schema.
+
 **Scopes.** Each read tool needs `<id>:read` and each mutation `<id>:write`, unless its definition sets `scopes`. A person's token carries the scopes their organisation entitles them to, and they see only the tools those scopes cover. Through [the Toolbox](/docs/toolbox), grant strings take the place of scopes.
 
 ## The server
 
-`createMcpServer` takes the provider and the ID settings, and returns a web-standard `fetch` handler that `Bun.serve` serves.
+`createMcpServer` takes the provider, the ID settings and who is calling, and returns a web-standard `fetch` handler that `Bun.serve` serves.
 
 <AutoTypeTable path="../../packages/mcp/src/server.ts" name="McpServerConfig" />
 
@@ -35,6 +39,19 @@ It returns:
 
 **Cache hint.** `tools/list` tells `2026-07-28` hosts they may keep the list for 30 seconds, for that caller alone (`ttlMs: 30000`, `cacheScope: "private"`): a token's scopes never change during its life.
 
+### Who is calling
+
+<include lang="ts" meta='title="mcps/e2e/src/server.ts"'>../../../../../mcps/e2e/src/server.ts#profiles</include>
+
+The token carries only ids. `profiles` gives the rest every handler receives: the person's name, email and groups, and the organisation's name and slug ([the caller](/docs/mcp/tools#the-caller)). It is required: a server that cannot say who is calling does not start.
+
+- **When it runs.** Once for each request that runs a handler (`tools/call`, `prompts/get`, `resources/read` of a resource), before the handler, and never for a list or a view.
+- **`createIdProfiles(id, { ttlMs, staleMs })`**, from `@answerable/id-admin`, reads the member and the organisation from ID's admin API in parallel, with the server's machine client and `platform:read`. It keeps each for `ttlMs` (60 seconds), per member and per organisation. `invalidate(organisationIds, userIds)` drops them sooner: the Toolbox's audit-log poller calls it on the same events as its grants.
+- **When ID does not answer.** The last value is served for up to `staleMs` (an hour) after it expired. With none, the call answers `UPSTREAM_UNAVAILABLE` and the handler does not run.
+- **Who is refused.** A member whose membership is not in force (ID's `effective: false`), or whom ID no longer knows, gets `PERMISSION_DENIED`, whatever an earlier read cached. A group membership counts while its `validFrom` is past and its `validUntil` unset or future.
+
+The Toolbox, the admin MCP and the e2e server use `createIdProfiles`; the e2e server's machine client is `MCP_ID_CLIENT_ID` ([Configure](#configure)). Tests use a [test person](/docs/mcp/testing#who-is-calling).
+
 ### Changes
 
 ```ts
@@ -47,9 +64,11 @@ Every server advertises `tools.listChanged: true`. `toolsChanged()` sends `notif
 
 ### Hubs
 
-`mount`, `allow`, `project` and `wrapCall`, off by default, serve several providers at one endpoint, as [the Toolbox](/docs/toolbox) does. The table above says what each does.
+`mount`, `allow`, `project` and `wrapCall`, off by default, serve several providers at one endpoint, as [the Toolbox](/docs/toolbox) does. The table above says what each does. `mount` takes `{ provider, db? }` entries, `db` as for the server's own provider, and the hub takes `profiles` once for all of them.
 
-**`call(tool, args, context)`** runs a tool the server serves exactly as its direct call runs it, for the caller in `context`: the arguments are checked (`INVALID_INPUT` names the tool's own fields), the handler runs within its own timeout, the output is checked, and a mutation is prepared and its intent recorded, with the commit tool of its class. The codes the tool declares pass through the calling tool unchanged. It is for a hub's own tools, such as the Toolbox's `toolbox_execute`: it does not decide whether the caller may use the tool, and it runs inside the calling tool's `wrapCall`.
+**Each handler gets its own provider's database.** A mounted tool, called directly or through `call`, receives its provider's `db`, never the hub's; so do a mounted mutation's `prepare` and `commit` when the hub's commit tool commits its intent.
+
+**`call(tool, args, context)`** runs a tool the server serves exactly as its direct call runs it, for the caller in `context`: the arguments are checked (`INVALID_INPUT` names the tool's own fields), the handler runs within its own timeout with its provider's `db`, the output is checked, and a mutation is prepared and its intent recorded, with the commit tool of its class. The codes the tool declares pass through the calling tool unchanged. It is for a hub's own tools, such as the Toolbox's `toolbox_execute`: it does not decide whether the caller may use the tool, and it runs inside the calling tool's `wrapCall`.
 
 ## Create a workspace
 
@@ -64,12 +83,12 @@ Run these from the repository root. `mcp:new <name>` writes `mcps/<name>`, refus
 
 | File | Holds |
 | --- | --- |
-| `package.json` | The workspace `@answerable/mcp-<name>`, with the dependency versions of `mcps/e2e` |
+| `package.json` | The workspace `@answerable/mcp-<name>`, depending on `@answerable/mcp`, `@answerable/id-admin` and `zod` at the versions of `mcps/e2e` |
 | `tsconfig.json`, `eslint.config.mjs`, `bunfig.toml` | Copies of `mcps/e2e`'s: the compiler and lint settings, and the gate of 100% line and function coverage over `src` |
-| `src/provider.ts` | One five-field read tool, `<name>.status`, and `defineProvider` |
-| `src/server.ts` | `readMcpEnvironment` and `createMcpServer` |
+| `src/provider.ts` | One read tool, `<name>.status`, with its example, and `defineProvider` with a description to replace |
+| `src/server.ts` | `readMcpEnvironment`, `createMcpServer` and `createIdProfiles`; it refuses to start without the machine client |
 | `src/provider.test.ts` | The conformance kit and one `createTestMcp` test |
-| `.env.example` | `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` (`47510`; each MCP running at the same time needs its own) |
+| `.env.example` | `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` (`47510`; each MCP running at the same time needs its own), and the machine client's two variables to set |
 | `README.md` | How to run and test it, with links to these guides |
 
 Not scaffolded: an `exports` map, views and mutations; add them when you need them. An `exports` map is what [the Toolbox](/docs/toolbox/add-tools) needs to mount the provider. `bun run mcp:test` runs every server under `mcps/`.
@@ -78,7 +97,9 @@ Not scaffolded: an `exports` map, views and mutations; add them when you need th
 
 <ScaffoldFile file=".env.example" />
 
-`readMcpEnvironment(process.env)` reads these three variables and returns `{ auth, port }`. Outside production (`NODE_ENV` unset, `development` or `test`), an unset issuer is `http://localhost:47300` and an unset resource `http://localhost:47500/mcp`, the e2e server's. A server with variables of its own lists them with `defineConfig` from `@answerable/config` and reads them with `parseEnvironment(config, env, names)`, as the Toolbox and the admin MCP do: it reads `env` with the definition, checks the issuer and resource URL in the two variables `names` gives, and throws `Invalid <label> configuration: <VARIABLE>: <problem>`.
+`readMcpEnvironment(process.env)` reads these variables and returns `{ auth, port, id }`. Outside production (`NODE_ENV` unset, `development` or `test`), an unset issuer is `http://localhost:47300` and an unset resource `http://localhost:47500/mcp`, the e2e server's.
+
+**The machine client.** `id` is what `createIdAdmin` takes, set when `MCP_ID_CLIENT_ID` is: the client, `MCP_ID_CLIENT_SECRET` and `MCP_ID_ADMIN_RESOURCE`, ID's admin API (locally `http://localhost:47300/api/admin`). The server reads who is calling through it, so it needs `platform:read` on ID's admin API; register it as [Connect Claude Code](/docs/mcp/claude-code#register-the-server) does for the e2e server. A server whose profiles use ID, as the scaffold's and the e2e server's do, refuses to start without it. The secret without the client, or the client without its secret, is refused. A server with variables of its own lists them with `defineConfig` from `@answerable/config` and reads them with `parseEnvironment(config, env, names)`, as the Toolbox and the admin MCP do: it reads `env` with the definition, checks the issuer and resource URL in the two variables `names` gives, and throws `Invalid <label> configuration: <VARIABLE>: <problem>`.
 
 **Issuer.** The Answerable ID origin. The verifier reads ID's signing keys from the issuer's metadata; never take an issuer from a token.
 
@@ -94,7 +115,7 @@ Register the resource, a client and its access in ID before the first sign-in; s
 
 ## Manifest
 
-`manifest(provider)` returns the provider's contract as plain JSON: `id`, `version`, every tool (sorted by identity) with its identity, wire name, version, kind, title, description, deprecation, scopes, declared `errors`, annotations and the JSON Schema of its input and output, then the prompts and resources. It carries no code.
+`manifest(provider)` returns the provider's contract as plain JSON: `id`, `version`, `description`, every tool (sorted by identity) with its identity, wire name, version, kind, title, description, deprecation, scopes, declared `errors`, annotations and the JSON Schema of its input and output, then the prompts and resources. It carries no code.
 
 <ManifestEntry workspace="example" identity="example/notes.add" />
 

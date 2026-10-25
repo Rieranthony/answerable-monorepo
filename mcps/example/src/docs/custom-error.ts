@@ -10,6 +10,7 @@ export const notesCount = defineTool({
   description: "Count your organisation's notes that contain a word. Use notes.list to read them.",
   input: z.object({ word: z.string().min(1).max(100).describe("The word to look for") }),
   output: z.object({ count: z.number().int() }),
+  example: { word: "milk" },
   errors: ["EXAMPLE_INDEX_BUILDING"],
   async execute({ word }, { principal }) {
     if (!index.ready) {

@@ -32,8 +32,8 @@ type Event = Record<"kind" | "outcome" | "capability_identity", string> & Record
 let browser: Awaited<ReturnType<typeof launchBrowser>>
 const sessions = new Map<string, { organizationId: string; oauth: OAuthSession }>()
 let meta: OAuthSession
-// What the Toolbox asked ID, for the evidence report: each access-view read with its latency, token requests and audit-log polls.
-const asked = { access: [] as number[], tokens: 0, polls: 0 }
+// What the Toolbox asked ID, for the evidence report: each access-view read with its latency, token requests, audit-log polls and the reads of who is calling.
+const asked = { access: [] as number[], tokens: 0, polls: 0, profiles: 0 }
 let reads = 0
 
 async function counted(input: string | URL | Request, init?: RequestInit) {
@@ -43,6 +43,7 @@ async function counted(input: string | URL | Request, init?: RequestInit) {
   if (pathname.endsWith("/access")) asked.access.push(performance.now() - started)
   else if (pathname.endsWith("/token")) asked.tokens++
   else if (pathname.endsWith("/audit-events")) asked.polls++
+  else if (/\/organizations\/[^/]+(\/members\/[^/]+)?$/.test(pathname)) asked.profiles++
   return response
 }
 // The Toolbox's admin API as staff.
@@ -280,9 +281,9 @@ test("the grant cache answered most reads; what the Toolbox asked ID is logged f
   const [chains] = await query<{ events: number; organisations: number }>`select count(*)::int as events, count(distinct organisation_id)::int as organisations from evidence_events`
   step(`grants: ${reads} reads, ${latencies.length} access-view calls to ID, hit rate ${((1 - latencies.length / reads) * 100).toFixed(1)}%`)
   step(`access view latency: median ${latencies[Math.floor(latencies.length / 2)]!.toFixed(1)} ms, max ${latencies.at(-1)!.toFixed(1)} ms`)
-  step(`other ID calls: ${asked.tokens} token requests, ${asked.polls} audit-log reads; evidence: ${chains!.events} events in ${chains!.organisations} chains`)
+  step(`other ID calls: ${asked.tokens} token requests, ${asked.polls} audit-log reads, ${asked.profiles} member and organisation reads; evidence: ${chains!.events} events in ${chains!.organisations} chains`)
   expect(latencies.length).toBeLessThan(reads)
-  // One machine client: a platform:read token for the grants reader and the poller, and a platform:read platform:write token for the enable calls.
+  // One machine client: a platform:read token for the grants reader, the profiles and the poller, and a platform:read platform:write token for the enable calls.
   expect(asked.tokens).toBe(2)
 })
 

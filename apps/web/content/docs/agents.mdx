@@ -17,8 +17,8 @@ In the Answerable monorepo, build an MCP server named <name> that <what it does>
 Read first: AGENTS.md, then https://www.answerable.org/docs/mcp/quickstart.md, https://www.answerable.org/docs/mcp/tools.md and https://www.answerable.org/docs/mcp/mutations.md. mcps/example is a finished server to copy from.
 
 1. Run `bun run mcp:new <name>`, then `bun install`.
-2. Keep the data behind a store whose every read and write takes the organisation id, and pass principal.organizationId.
-3. Define reads with defineTool and changes with defineMutation: prepare returns a preview and changes nothing, commit applies exactly that. Each description says what the tool does, when to use it and its limits. A list takes limit and cursor and returns items, next_cursor and has_more.
+2. Keep the data behind a store whose every read and write takes the organisation id, and pass the context's organisation.id.
+3. Define reads with defineTool and changes with defineMutation: prepare returns a preview and changes nothing, commit applies exactly that. Each description says what the tool does, when to use it and its limits, and each tool has an example, one valid input. A list takes limit and cursor and returns items, next_cursor and has_more. Give defineProvider a description of what the server is for.
 4. Throw ToolError for expected failures, and list any custom code in the definition's errors.
 5. Test with assertProviderConformance and createTestMcp. Commit a mutation with the tool its intent's commit_tool names.
 6. Run `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-<name> test`, then `bun run mcp:check @answerable/mcp-<name>`, until it passes with 100% coverage.
@@ -37,7 +37,7 @@ Read first: AGENTS.md and https://www.answerable.org/docs/toolbox/add-tools.md.
 
 1. Check that `bun run mcp:check @answerable/mcp-<name>` passes.
 2. Add "exports": { "./provider": "./src/provider.ts" } to mcps/<name>/package.json.
-3. Add "@answerable/mcp-<name>": "workspace:*" to the dependencies of mcps/toolbox/package.json, import the provider in mcps/toolbox/src/server.ts and add it to the providers passed to createToolbox.
+3. Add "@answerable/mcp-<name>": "workspace:*" to the dependencies of mcps/toolbox/package.json, import the provider in mcps/toolbox/src/server.ts and add { provider } to the mount passed to createToolbox.
 4. Run `bun install`, then `bun run mcp:check @answerable/mcp-toolbox`. Its suite needs the development PostgreSQL on port 47432; never run `bun run env:up` from a worktree.
 5. Write out, for staff, the enable call and the entitlement from the guide, filled in with the provider id.
 
