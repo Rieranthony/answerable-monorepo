@@ -74,6 +74,8 @@ type CommitRequest = {
   /** The commit tool called. */
   tool: string
   input: { intent_id: string; commit_token: string; preview_summary?: string }
+  /** The intent `input.intent_id` names, as the store answered when the call began; `undefined` when it has none. */
+  intent: Intent | undefined
   /** The caller. */
   principal: UserPrincipal
   /** The context the mutation's `prepare` and `commit` run with: the caller's, with the database of the mutation's own provider. */
@@ -90,8 +92,7 @@ const strictness: Record<PolicyClass, number> = { agent: 0, controlled: 1, human
 
 /** Commit an intent: check it can be committed by this caller through this tool, claim it, then apply it. */
 export async function commitIntent(request: CommitRequest): Promise<Receipt> {
-  const { id, tool, input, principal, contextOf, store, mutations, permitted, policyClass } = request
-  const intent = await store.get(input.intent_id)
+  const { id, tool, input, intent, principal, contextOf, store, mutations, permitted, policyClass } = request
   if (!intent) throw new ToolError("INTENT_NOT_FOUND", `No intent ${input.intent_id} exists; prepare the mutation again`)
   const { intent_id, principal: owner } = intent
   if (owner.user_id !== principal.userId || owner.membership_id !== principal.membershipId || owner.client_id !== principal.clientId) {
@@ -120,6 +121,6 @@ export async function commitIntent(request: CommitRequest): Promise<Receipt> {
     throw approvalRequired(intent.policy_class, needed, `preview_summary differs from the summary of intent ${intent_id}; show the person the preview and pass its summary word for word`)
   }
   // Losing the claim to a concurrent commit means the status moved on: read it again.
-  if (!(await store.transition(intent_id, "prepared", "committing"))) return commitIntent(request)
+  if (!(await store.transition(intent_id, "prepared", "committing"))) return commitIntent({ ...request, intent: await store.get(intent_id) })
   return apply(intent, mutation, contextOf(mutation), store)
 }

@@ -152,8 +152,7 @@ function register<Args extends unknown[]>(checks: Record<string, (kit: Kit, ...a
 }
 
 /**
- * Register one test per conformance check for a provider: call it at the top level of a test file, with the provider built on
- * test dependencies such as in-memory stores. The provider is served in-process with its own intent store, so a failing test names the check
+ * Register one test per conformance check for a provider: call it at the top level of a test file. The provider is served in-process with its own intent store, so a failing test names the check
  * and the definition to change. Each mutation is prepared once while the checks are registered: the two checks that need a target are
  * registered as skipped, with the reason, for a mutation that prepares none.
  *
@@ -164,12 +163,12 @@ function register<Args extends unknown[]>(checks: Record<string, (kit: Kit, ...a
  * @example
  * ```ts
  * import { assertProviderConformance } from "@answerable/mcp/testing"
- * import { createE2eProvider } from "./mcp"
+ * import { provider, tickets } from "./provider"
  *
- * assertProviderConformance(createE2eProvider({ records, viewHtml: "<title>Records</title>" }), {
+ * assertProviderConformance(provider, {
  *   manifest: new URL("../manifest.json", import.meta.url),
- *   examples: { "records.delete": principal => ({ id: records.create(principal, "Doomed").id }) },
- *   moveTarget: (target, principal) => records.touch(principal, target.resource_id),
+ *   examples: { "tickets.close": principal => ({ id: tickets.open(principal.organizationId, "Leak").id }) },
+ *   moveTarget: target => tickets.touch(target.resource_id),
  * })
  * ```
  */

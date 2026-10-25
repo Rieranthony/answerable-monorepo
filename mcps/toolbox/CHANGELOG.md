@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0
+
+The Toolbox mounts every MCP whose `mcp.json` says `toolbox` or `both`, from `src/mounted.generated.ts`, which `bun mcp` writes, with each MCP's database; e2e and example today. Breaking for the entry point and the acceptance: it needs `TOOLBOX_MCPS_DATABASE_URL`, and `./poller` and `./spans` moved to `@answerable/mcp-platform`.
+
+- Each mounted MCP's `db` is made once at boot by `@answerable/mcp-platform`'s `mcpDatabases`: one pool to `answerable_mcps` as the serving login `answerable_mcps_toolbox` (`TOOLBOX_MCPS_DATABASE_URL`), checked before listening, and one per own MCP (`TOOLBOX_MCP_<NAME>_DATABASE_URL`, named by the generated list). `TOOLBOX_MCPS_ROLE_PREFIX` is `mcp`; a test names its own.
+- Evidence, spans, the per-request authority read and `/health` are `@answerable/mcp-platform`'s. A refusal because ID did not answer with the caller's grants is a `capability.denied` row, `authority_unavailable`; a commit call's row names the caller's intent it applied, failed or not. `GET /health` answers `{ status, databases, providers }`.
+- `startAuditPoller` invalidates the grants and the profiles from one audit-log reader.
+- Boot ingest is one read and one write per provider, with the same contract checks and the same rule for a new capability: 200 providers of 5 tools in 0.46 to 0.61 s on a first boot and 0.41 to 0.52 s on an unchanged one (`bench/ingest.ts`), against 1.32 to 1.49 s and 1.16 to 1.33 s with a read and a write per tool.
+- `toolbox:dev` no longer builds the e2e view: e2e bundles it when imported.
+
 ## 0.5.0
 
 Every capability is told who is calling, and runs with its own provider's database. Breaking for the entry point and the acceptance: `createToolbox` takes `mount` and `startGrantsPoller` takes `profiles`.

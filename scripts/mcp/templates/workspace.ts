@@ -66,10 +66,10 @@ coveragePathIgnorePatterns = ["../**"]
 
 const docs = "../../apps/web/content/docs"
 
-// Where it runs, in words true today: the Toolbox and the standalone server do not read mcp.json yet.
+// Where it runs: the Toolbox and the standalone server serve it from the lists bun mcp generates from mcp.json.
 const placements = (name: string) => ({
-  toolbox: `in the Toolbox, where hosts call its tools \`${name}_<domain>_<operation>\` at the Toolbox's one URL. Mounting it from \`mcp.json\`: Not yet; [Add tools to the Toolbox](${docs}/toolbox/add-tools.mdx) mounts a provider by hand`,
-  standalone: `on its own URL, \`/${name}/mcp\` on the standalone server. The standalone server: Not yet`,
+  toolbox: `in the Toolbox, which mounts it from \`mcps/toolbox/src/mounted.generated.ts\`; hosts call its tools \`${name}_<domain>_<operation>\` at the Toolbox's one URL, \`http://localhost:47400/mcp\` locally (\`bun run toolbox:dev\`)`,
+  standalone: `on its own URL, \`/${name}/mcp\` on the standalone server, which serves it from \`mcps/standalone/src/served.generated.ts\`: \`http://localhost:47510/${name}/mcp\` locally (\`bun run standalone:dev\`)`,
 })
 
 /** `README.md`: what the MCP is, where it runs, its database, its commands, and the guides. */

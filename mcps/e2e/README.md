@@ -1,17 +1,17 @@
 # E2E MCP
 
-The reference MCP server, and the proof that Answerable ID signs people into MCP servers. Development and test only.
+The reference MCP, and the proof that Answerable ID signs people into MCP servers. Laid out as `bun mcp new` lays an MCP out, with its records in Postgres, and served both ways (`"serve": "both"` in `mcp.json`): mounted in the Toolbox, and on its own URL by the standalone server. Development and test only.
 
 ```sh
 (cd packages/acceptance && bun x playwright install chromium)
 bun run mcp:test:e2e
 ```
 
-The acceptance lives in [`packages/acceptance`](../../packages/acceptance/README.md): it provisions a real ID through its admin API, serves this MCP in process, and signs three organisations in with the official MCP SDK's OAuth client and a real browser. [What it proves](../../apps/web/content/docs/mcp/local-testing.mdx#what-the-e2e-journeys-prove). It imports `createE2eProvider` and `createRecordStore` through this package's `exports`, `@answerable/mcp-e2e/mcp` and `@answerable/mcp-e2e/records`, and serves the provider with `createMcpServer`. `@answerable/mcp-e2e/view` is the built view's HTML, read once, which this server and the Toolbox pass as `viewHtml`; importing it before `bun run --filter @answerable/mcp-e2e build` throws.
+The acceptance lives in [`packages/acceptance`](../../packages/acceptance/README.md): it provisions a real ID through its admin API, serves this MCP at its path on the standalone server and in the Toolbox, and signs organisations in with the official MCP SDK's OAuth client and a real browser. [What it proves](../../apps/web/content/docs/mcp/local-testing.mdx#what-the-e2e-journeys-prove).
 
 ## Tools
 
-The provider is `e2e`, version `2026-09-29` (`src/mcp.ts`).
+The provider is `e2e`, version `2026-09-29` (`src/provider.ts`), one file per tool in `src/tools`.
 
 | Wire name | Identity | Scope | Behaviour |
 | --- | --- | --- | --- |
@@ -23,9 +23,7 @@ The provider is `e2e`, version `2026-09-29` (`src/mcp.ts`).
 | `e2e_commit` | `e2e/commit` | any mutation's | Commits an agent-class intent; returns the receipt |
 | `e2e_commit_confirmed` | `e2e/commit_confirmed` | any mutation's | Commits a controlled-class intent with `preview_summary`; destructive, and asks hosts to confirm with the person |
 
-Records carry a `version` starting at 1. The record store's `touch(principal, id)` moves it, as another writer would, which is how tests make a prepared delete stale. `createE2eProvider({ records, viewHtml })` returns the provider; give `createMcpServer` an intent store with a controlled clock to move expiry.
-
-The prompt `fixture_walkthrough` and the resource `fixture://guide` need `e2e:read`. Records and intents live in memory, per organisation, until the process stops. Errors: `INVALID_INPUT` (bad arguments, or a cursor this list did not issue: list again without one), `NOT_FOUND` (no such record in your organisation), the commit codes in [MCP errors](../../apps/web/content/docs/mcp/errors.mdx) and `INTERNAL` (unexpected; see the server log).
+The prompt `fixture_walkthrough` and the resource `fixture://guide` need `e2e:read` (`src/guide.ts`). Records live in schema `e2e` (`src/db/schema.ts`), each organisation's limited to it by Postgres; a record's `version` starts at 1. Through the Toolbox the tools are `e2e_records_list` and so on. Errors: `INVALID_INPUT` (bad arguments, or a cursor this list did not issue: list again without one), `NOT_FOUND` (no such record in your organisation), the commit codes in [MCP errors](../../apps/web/content/docs/mcp/errors.mdx) and `INTERNAL` (unexpected; see the server log). `src/view.ts` bundles the view from `src/views/records.tsx` when it is first imported, in about 50 ms, so nothing builds it beforehand.
 
 ## Manifest
 
@@ -33,15 +31,17 @@ The prompt `fixture_walkthrough` and the resource `fixture://guide` need `e2e:re
 UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-e2e test
 ```
 
-Rewrites `manifest.json`, the provider's contract. The conformance kit's `manifest_matches_snapshot` fails, naming this command, whenever the file and the definitions differ; run it and commit the file with the change.
+Rewrites `manifest.json`, the provider's contract. The conformance kit's `manifest_matches_snapshot` fails, naming this command, whenever the file and the definitions differ; run it and commit the file with the change. Moving onto Postgres left it byte for byte the same.
 
 ## Run it
 
 ```sh
-bun run mcp:dev
+bun mcp db e2e migrate
+bun run standalone:dev   # http://localhost:47510/e2e/mcp
+bun run toolbox:dev      # http://localhost:47400/mcp, as e2e_*
 ```
 
-It builds the view and serves `http://localhost:47500/mcp` with the root `.env`. The server reads who is calling from ID through a machine client with `platform:read`, `MCP_ID_CLIENT_ID` and `MCP_ID_CLIENT_SECRET`, and refuses to start without them. Register the resource, a client and the machine client in ID first: [Connect Claude Code](../../apps/web/content/docs/mcp/claude-code.mdx#register-the-server).
+Register the resource, a client and the servers' machine clients in ID first: [Connect Claude Code](../../apps/web/content/docs/mcp/claude-code.mdx#the-e2e-server).
 
 ## Tests
 
@@ -50,6 +50,4 @@ bun run mcp:test
 bun run mcp:check @answerable/mcp-e2e
 ```
 
-`bunfig.toml` gates 100% line and function coverage of `src`. The journeys against real ID (`bun run mcp:test:e2e`) are in `packages/acceptance`. Changes: [CHANGELOG](CHANGELOG.md).
-
-`src/conformance.test.ts` runs the conformance kit on the provider: the standard's read, mutate and provider checks, with each tool's own `example`, a fresh record for `records.delete`, and `touch` as `moveTarget`. [Test an MCP](../../apps/web/content/docs/mcp/testing.mdx) explains each check. `src/mcp.test.ts` checks every tool in-process with `createTestMcp`: pagination, both mutations prepared and committed, a stale delete after `touch`, another organisation's record, a replay, and fully entitled, partial and read-only callers; copy it when you write an MCP. `src/server.test.ts` builds the view and starts `src/server.ts`, as `bun run mcp:dev` does, and checks that it refuses to start without the machine client. `src/apps.test.ts` renders the real view in Chromium through the official MCP Apps host bridge (`src/testing/host.ts`): it creates a record, shows the summary before deleting it, and hides writes from a reader; the view never receives a token.
+The tests serve the provider with `createTestMcp` from `@answerable/mcp-postgres/testing`, over schema `e2e` of `answerable_mcps_test` on the development Postgres. `bunfig.toml` gates 100% line and function coverage of `src`. `src/provider.test.ts` runs the conformance kit, with a fresh record made in the caller's organisation for `records.delete` and a version bump as `moveTarget`, and checks the tools an entitled caller sees. The tests in `src/tools` check pagination and cursors, a create in the caller's organisation alone, and a delete's stale target and another organisation's record. `src/apps.test.ts` renders the real view in Chromium through the official MCP Apps host bridge (`src/testing/host.ts`): it creates a record, shows the summary before deleting it, and hides writes from a reader; the view never receives a token. That its records agree between the Toolbox and the standalone server, and survive a restart, is `mcps/standalone/src/both.test.ts` and the MCP journeys. Changes: [CHANGELOG](CHANGELOG.md).

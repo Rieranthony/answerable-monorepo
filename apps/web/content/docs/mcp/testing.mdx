@@ -3,9 +3,9 @@ title: Test an MCP
 description: "Test a provider in-process with createTestMcp, as a test person or one you choose and with its database, and check it against the Answerable MCP standard with the conformance kit, each tool's example, the manifest snapshot and bun run mcp:check."
 ---
 
-<include lang="ts" meta='title="mcps/e2e/src/conformance.test.ts"'>../../../../../mcps/e2e/src/conformance.test.ts</include>
+<include lang="ts" meta='title="mcps/e2e/src/provider.test.ts"'>../../../../../mcps/e2e/src/provider.test.ts#conformance</include>
 
-This is the e2e server's; `mcps/example/src/provider.test.ts` has a smaller one. Put it in a test file of the provider's workspace and run `bun run test`. It registers one test per check from [the standard's checklists](#the-checks), so a failing test names the check and the tool to change. Call it at the top level of a test file, once for each provider. The kit calls each tool with its own [`example`](/docs/mcp/tools#fields); `examples` gives only what no definition can hold, here the id of a record that a function first creates.
+This is the e2e MCP's; `mcps/example/src/provider.test.ts` has a smaller one. Put it in a test file of the provider's workspace and run `bun run test`. It registers one test per check from [the standard's checklists](#the-checks), so a failing test names the check and the tool to change. Call it at the top level of a test file, once for each provider. The kit calls each tool with its own [`example`](/docs/mcp/tools#fields); `examples` gives only what no definition can hold, here the id of a record that a function first creates in the MCP's test database, which it receives with `asOrganisation`, as `moveTarget` does.
 
 ## Serve a provider in-process
 
@@ -57,9 +57,9 @@ A provider with a `database` imports `createTestMcp` and `assertProviderConforma
 
 ### A caller without a server
 
-`testPrincipal(overrides?)` returns a verified caller for code that takes a principal, such as a store: fresh ids, the client `test-client`, no scopes and a directory sign-in now (`upstreamAuthTime`), each replaced by `overrides`. `records.create(testPrincipal({ organizationId }), "Title")` seeds a record for a connection with that `organizationId`.
+`testPrincipal(overrides?)` returns a verified caller for code that takes a principal, such as a hub's `wrapCall`: fresh ids, the client `test-client`, no scopes and a directory sign-in now (`upstreamAuthTime`), each replaced by `overrides`.
 
-`mcps/example/src/*.test.ts` and `mcps/e2e/src/mcp.test.ts` are working examples. Reference: [`createTestMcp`](/docs/mcp/reference#createtestmcp), [`errorOf`](/docs/mcp/reference#errorof), [`testPrincipal`](/docs/mcp/reference#testprincipal).
+`mcps/example/src/**/*.test.ts` and `mcps/e2e/src/**/*.test.ts` are working examples. Reference: [`createTestMcp`](/docs/mcp/reference#createtestmcp), [`errorOf`](/docs/mcp/reference#errorof), [`testPrincipal`](/docs/mcp/reference#testprincipal).
 
 ## The fixture
 
@@ -67,7 +67,7 @@ A provider with a `database` imports `createTestMcp` and `assertProviderConforma
 
 - **`manifest`**: `manifest_matches_snapshot` compares the file with `manifest(provider)`.
 - **`examples`**: `read_has_no_side_effect` and the mutate checks call each definition with its own `example`, unless `examples` gives another input under its name. Use it for an input no definition can hold, such as an id the test makes: a function runs each time the kit needs an input, so a delete gets a fresh record every time. A definition with neither fails, saying to add an `example`.
-- **`db`**: the provider's database; `@answerable/mcp-postgres/testing`'s `assertProviderConformance` gives it.
+- **`db`**: the provider's database; `@answerable/mcp-postgres/testing`'s `assertProviderConformance` gives it, and hands its `examples` functions and `moveTarget` the test database as their last argument, `{ db, asOrganisation }`, to make or change the row an input or a target names.
 - **`moveTarget`**: `commit_rejects_stale` moves a target, then commits. Needed only when a mutation prepares targets; the check fails without it.
 
 While it registers the checks, the kit prepares each mutation once with its example, to see whether it prepares targets. An example that fails stops the test file with the kit's message, such as `notes_add answered INVALID_INPUT: …`.

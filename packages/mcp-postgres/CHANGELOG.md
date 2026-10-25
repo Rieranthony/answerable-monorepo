@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.0
+
+- `assertProviderConformance` from `@answerable/mcp-postgres/testing` hands its fixture's `examples` functions and `moveTarget` the provider's test database, `{ db, asOrganisation }`, as their last argument (`DatabaseFixture`), so a mutation with targets makes and moves its rows.
+- `ensureLocalMcpDatabases` also runs `infra/postgres/init/007-create-standalone-databases.sql`: the standalone server's `answerable_standalone`, `answerable_standalone_test` and their logins, `answerable_standalone_owner` and `answerable_standalone_runtime`.
+
 ## 0.9.0
 
 `@answerable/mcp-postgres/testing` exports `createTestMcp` and `assertProviderConformance` for a provider with a `database`: `@answerable/mcp/testing`'s, given the provider's `db`, which `testMcpDatabase` makes from `provider.database` with the SDK's `callerOrganisation` as its organisation, so each connection sees only its organisation's rows. A test checks that the MCP name rule agrees with the SDK's `checkProviderId`.

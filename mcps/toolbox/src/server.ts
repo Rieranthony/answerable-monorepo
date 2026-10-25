@@ -1,27 +1,24 @@
 import { createIdAdmin } from "@answerable/id-admin"
-import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
-import { createRecordStore } from "@answerable/mcp-e2e/records"
-import { viewHtml } from "@answerable/mcp-e2e/view"
+import { createTracer, mcpDatabases, startAuditPoller } from "@answerable/mcp-platform"
 import { assertRuntimeRole, connect } from "@answerable/mcp-postgres"
 import { readToolboxEnvironment } from "./environment"
-import { startGrantsPoller } from "./poller"
-import { createTracer } from "./spans"
+import { mounted } from "./mounted.generated"
 import { createToolbox } from "./toolbox"
 
-const { databaseUrl, auth, hostname, port, id: idConfig, otlpEndpoint } = readToolboxEnvironment(process.env)
+const { databaseUrl, mcps: databases, auth, hostname, port, id: idConfig, otlpEndpoint } = readToolboxEnvironment(process.env)
 const db = connect(databaseUrl)
-// Serve as the restricted runtime login only: the owner could drop the evidence triggers. Checked before the boot's ingest writes anything.
-await assertRuntimeRole(db).catch(async (error: Error) => {
-  await db.$client.end()
+const mcps = mcpDatabases(mounted, databases)
+// Serve as the restricted logins only, both checked before the boot's ingest writes anything: the owner could drop the evidence triggers, and a
+// serving login with more than the mounted MCPs' runtime roles could reach another schema.
+await Promise.all([assertRuntimeRole(db), mcps.assert()]).catch(async (error: Error) => {
+  await Promise.all([db.$client.end(), mcps.close()])
   console.error(`The Toolbox cannot start: ${error.message}`)
   process.exit(1)
 })
-const telemetry = createTracer(otlpEndpoint)
+const telemetry = createTracer("answerable-toolbox", otlpEndpoint)
 const id = createIdAdmin(idConfig)
-//#region providers
-const toolbox = await createToolbox({ mount: [{ provider: createE2eProvider({ records: createRecordStore(), viewHtml }) }], auth, db, id, spans: telemetry.tracer })
-//#endregion
-const poller = startGrantsPoller({ id, grants: toolbox.grants, profiles: toolbox.profiles })
+const toolbox = await createToolbox({ mount: mcps.mount, pools: mcps.pools, auth, db, id, spans: telemetry.tracer })
+const poller = startAuditPoller({ id, caches: [toolbox.grants, toolbox.profiles] })
 const server = Bun.serve({ hostname, port, fetch: toolbox.fetch })
 console.log(`Toolbox serving ${auth.resource}`)
 let closing = false
@@ -31,7 +28,7 @@ async function close() {
   poller.stop()
   await server.stop()
   await telemetry.shutdown()
-  await db.$client.end()
+  await Promise.all([db.$client.end(), mcps.close()])
 }
 process.on("SIGINT", close)
 process.on("SIGTERM", close)

@@ -1,6 +1,6 @@
 {
   "name": "@answerable/mcp",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -17,9 +17,9 @@
   "dependencies": {
     "@answerable/auth": "workspace:*",
     "@answerable/config": "workspace:*",
-    "@modelcontextprotocol/client": "2.1.0",
-    "@modelcontextprotocol/ext-apps": "2.0.0",
-    "@modelcontextprotocol/server": "2.1.0",
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/ext-apps": "2.0.3",
+    "@modelcontextprotocol/server": "2.4.0",
     "drizzle-orm": "0.45.4",
     "zod": "4.6.7"
   },

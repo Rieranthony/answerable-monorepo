@@ -160,3 +160,25 @@
     - web: 100;
     - knip clean;
     - frozen install unchanged.
+- **M4, the runtime,** by Opus.
+  - **The SDK bump:** `@modelcontextprotocol/server` and `client` 2.1.0 → 2.4.0 first. The acceptance on the bump alone passed 57 of 57 in 131 s.
+  - **What it built:**
+    - `@answerable/mcp-platform`: evidence for every call and refusal, closing `Q-SDK-ALLOW-EVIDENCE`; spans on OpenTelemetry 3.0; health; the audit poller; databases per declared MCP;
+    - the Toolbox mounting from `mounted.generated.ts`, with batched ingest and profiles;
+    - `mcps/standalone`;
+    - the admin MCP on the platform;
+    - e2e on Postgres as `both`, with a byte-identical manifest;
+    - the acceptance with the `mcps` journeys.
+  - **Removed:** `readMcpEnvironment`.
+  - **Measured:**
+    - ingest at 200 × 5: 0.41 to 0.61 s, against 1.2 to 1.5 s before;
+    - a Toolbox tool call: median 4.9 ms with a cached profile, 30.1 ms read from ID;
+    - standalone server start: about 0.2 s.
+  - **Gates:**
+    - `mcp:test`: 867 pass, 0 fail, 14 suites at 100%;
+    - typecheck and lint forced: 21 of 21;
+    - build: 2 of 2;
+    - web: 100;
+    - knip clean;
+    - frozen install unchanged;
+    - the agent's final acceptance: 62 pass in 139 s.

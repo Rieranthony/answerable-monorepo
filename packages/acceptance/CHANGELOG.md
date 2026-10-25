@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+
+The journeys run the MCPs as the deployment serves them: the Toolbox mounting its generated list and the standalone server serving e2e at its path, both over the shared MCP database `answerable_mcps_acceptance` (`src/mcps.ts`), with e2e's records in Postgres.
+
+- `startToolboxStack` and `startAdminStack` mount the Toolbox's generated list with each MCP's database, check its serving login, and run `@answerable/mcp-platform`'s audit-log poller.
+- `startStandaloneStack(id)` (`src/standalone.ts`) registers the standalone server's machine client, `standalone-hub`, makes `answerable_standalone_acceptance`, and `start(origin)` builds a server on fresh pools; the e2e journeys reach e2e at `http://127.0.0.1:47602/e2e/mcp`, and a second server at `47605` refuses its token.
+- `src/journeys/mcps.journeys.test.ts`: a person's name and their organisation's, from real ID, reach `example_status` through the Toolbox; two organisations see only their own e2e records at the path and in the Toolbox alike; and the records survive the standalone server's restart.
+- The Toolbox journeys enable `e2e` alone, now that the Toolbox mounts `example` too; the J6 and A5 journeys check that each commit call's evidence names its intent.
+
 ## 0.6.1
 
 `createDatabase` returns drizzle databases from `@answerable/mcp-postgres` 0.7.0's `connect`, and the stacks migrate each server's database with its own `migrate`; the journeys read what the servers wrote through `rowsOf`.

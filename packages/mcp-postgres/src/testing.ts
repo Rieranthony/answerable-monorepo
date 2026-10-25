@@ -2,7 +2,7 @@ import { afterAll, describe } from "bun:test"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { fileURLToPath } from "node:url"
 import { defineConfig } from "@answerable/config"
-import { callerOrganisation, type Provider } from "@answerable/mcp"
+import { callerOrganisation, type Provider, type Target, type UserPrincipal } from "@answerable/mcp"
 import { assertProviderConformance as assertConformance, createTestMcp as createSdkTestMcp, type ConformanceFixture, type TestMcp, type TestServing } from "@answerable/mcp/testing"
 import { DrizzleQueryError, sql } from "drizzle-orm"
 import type { NodePgDatabase } from "drizzle-orm/node-postgres"
@@ -230,14 +230,30 @@ export async function createTestMcp(provider: Provider, { server, ...options }: 
   }
 }
 
+/** What the functions of a database fixture also receive: the provider's test database, and `asOrganisation` to seed or change its rows as one. */
+export type FixtureDatabase = Pick<DatabaseTestMcp, "db" | "asOrganisation">
+
+/** The SDK's `ConformanceFixture` for a provider with a `database`: its `examples` functions and `moveTarget` also receive the test database. */
+export type DatabaseFixture = Omit<ConformanceFixture, "db" | "examples" | "moveTarget"> & {
+  /** As the SDK's, and a function also receives the test database, to create the row an input names. */
+  examples?: Record<string, Record<string, unknown> | ((principal: UserPrincipal, database: FixtureDatabase) => Record<string, unknown> | Promise<Record<string, unknown>>)>
+  /** As the SDK's, with the test database to change the target's row in. */
+  moveTarget?(target: Target, principal: UserPrincipal, database: FixtureDatabase): unknown
+}
+
 /**
  * `@answerable/mcp/testing`'s `assertProviderConformance`, for a provider with a `database`: the kit serves the provider with its `db`, made by
- * `testMcpDatabase` from `provider.database` and dropped after the checks. Call it at the top level of a test file, as the SDK's.
+ * `testMcpDatabase` from `provider.database` and dropped after the checks, and hands that database to the fixture's functions. Call it at the
+ * top level of a test file, as the SDK's.
  */
-export function assertProviderConformance(provider: Provider, fixture: Omit<ConformanceFixture, "db">) {
+export function assertProviderConformance(provider: Provider, { examples, moveTarget, ...fixture }: DatabaseFixture) {
   describe(`${provider.id} database`, async () => {
     const database = await providerDatabase(provider)
     afterAll(() => database.close())
-    assertConformance(provider, { ...fixture, db: database.db })
+    const given = Object.entries(examples ?? {}).map(([name, input]) => [name, typeof input === "function" ? (principal: UserPrincipal) => input(principal, database) : input])
+    assertConformance(provider, {
+      ...fixture, db: database.db, examples: Object.fromEntries(given),
+      ...(moveTarget ? { moveTarget: (target: Target, principal: UserPrincipal) => moveTarget(target, principal, database) } : {}),
+    })
   })
 }

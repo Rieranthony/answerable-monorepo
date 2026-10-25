@@ -1,5 +1,6 @@
 import { found, type IdAdmin } from "@answerable/id-admin"
 import { ToolError, type UserPrincipal } from "@answerable/mcp"
+import { perRequest } from "@answerable/mcp-platform"
 import { z } from "zod"
 
 /** The staff roles, lowest first: `team` reads, `admin` also makes ordinary changes, `owner` also runs the critical operations. */
@@ -25,9 +26,7 @@ const accessView = z.object({ targets: z.array(z.object({ kind: z.string(), id: 
  * answer, every request that needs the role fails with `UPSTREAM_UNAVAILABLE`.
  */
 export function createRoles({ id, platform, resource }: { id: IdAdmin; platform: string; resource: string }) {
-  // The SDK verifies the token into a new principal object for every request.
-  const read = new WeakMap<UserPrincipal, Promise<Role | null>>()
-  async function fetchRole({ membershipId }: UserPrincipal) {
+  const read = perRequest(async ({ membershipId }: UserPrincipal) => {
     try {
       const view = await found(id.get(`/organizations/${platform}/members/${membershipId}/access`))
       const targets = view === undefined ? [] : accessView.parse(view).targets
@@ -36,17 +35,9 @@ export function createRoles({ id, platform, resource }: { id: IdAdmin; platform:
       console.error("[admin] reading the role failed", error)
       throw new ToolError("UPSTREAM_UNAVAILABLE", "Answerable ID did not answer with your role; try again shortly")
     }
-  }
+  })
   /** The caller's role, or null. A caller of another organisation has none, and ID is not asked. */
-  function role(principal: UserPrincipal) {
-    if (principal.organizationId !== platform) return Promise.resolve(null)
-    let held = read.get(principal)
-    if (!held) {
-      held = fetchRole(principal)
-      read.set(principal, held)
-    }
-    return held
-  }
+  const role = (principal: UserPrincipal) => (principal.organizationId === platform ? read(principal) : Promise.resolve(null))
   /**
    * Why the caller may not use a tool that needs `scopes` and the role `minimum` (null: any member of the platform organisation), or undefined
    * when they may. A member of the platform organisation always has their role read, so that a request fails when ID does not answer.

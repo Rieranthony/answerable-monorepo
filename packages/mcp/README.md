@@ -4,7 +4,7 @@ Define read tools and prepared mutations, group them in a provider, and serve th
 
 ```ts
 import { createIdAdmin, createIdProfiles } from "@answerable/id-admin"
-import { createMcpServer, defineProvider, defineTool, readMcpEnvironment } from "@answerable/mcp"
+import { createMcpServer, defineProvider, defineTool } from "@answerable/mcp"
 import { z } from "zod"
 
 const identityGet = defineTool({
@@ -20,9 +20,10 @@ const identityGet = defineTool({
 
 export const provider = defineProvider({ id: "example", description: "Tells you who you are to Answerable ID, and your organisation.", version: "2026-09-29", tools: [identityGet] })
 
-const { auth, port, id } = readMcpEnvironment(process.env) // MCP_ID_ISSUER, MCP_RESOURCE_URL, MCP_PORT, and the machine client MCP_ID_CLIENT_ID, MCP_ID_CLIENT_SECRET
-const server = createMcpServer({ provider, auth, profiles: createIdProfiles(createIdAdmin(id!)) })
-Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
+// The Toolbox and the standalone server serve an MCP as its mcp.json says. Served by hand, with a machine client that reads who is calling:
+const id = createIdAdmin({ issuer: "http://localhost:47300", adminResource: "http://localhost:47300/api/admin", clientId: "my-server", clientSecret: process.env.MY_SERVER_ID_CLIENT_SECRET! })
+const server = createMcpServer({ provider, auth: { issuer: "http://localhost:47300", resource: "http://localhost:47510/example/mcp" }, profiles: createIdProfiles(id) })
+Bun.serve({ hostname: "127.0.0.1", port: 47510, fetch: server.fetch })
 ```
 
 A read tool is five fields and an example; everything else has a default. A mutation replaces `execute` with `prepare` and `commit`. Every handler receives who is calling, `person`, `organisation` and `client`, which `profiles` reads from Answerable ID; an MCP with a database defines its tools with `withDatabase({ schema })`, and they receive its typed `db` too. `bun mcp new <name>` makes an MCP that uses them, with its database.

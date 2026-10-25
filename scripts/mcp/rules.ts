@@ -6,8 +6,11 @@ import { importedBindings, toolBinding, toolPath, wireName } from "./templates"
 
 import type { Problem } from "./io"
 
-/** Names no MCP may take: the platform's own services, hosts and schemas. `e2e` and `example` are taken by their directories. */
-const reservedNames = ["toolbox", "admin", "id", "mcp", "mcps", "standalone", "api", "www", "test", "ops", "public", "drizzle"]
+/**
+ * Names no MCP may take: the platform's own services, hosts and schemas, and the names whose workspace, `@answerable/mcp-<name>`, would be one of
+ * the platform's packages (`platform`, `postgres`). `e2e` and `example` are taken by their directories.
+ */
+const reservedNames = ["toolbox", "admin", "id", "mcp", "mcps", "standalone", "api", "www", "test", "ops", "public", "drizzle", "platform", "postgres"]
 
 /** The values of `--serve` and `--database`, the default first where there is one. */
 export const choices = { serve: ["toolbox", "standalone", "both"], database: ["shared", "own"] } as const

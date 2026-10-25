@@ -1,11 +1,11 @@
 ---
 title: Providers and servers
-description: "Group tools in a provider and serve it with createMcpServer: its description and database, who is calling, the workspace, configuration, what the server answers, change notices, hubs, the manifest, prompts, resources and views."
+description: "Group tools in a provider and serve it with createMcpServer: its description and database, who is calling, the workspace, where it runs, the standalone server and its configuration, what the server answers, change notices, hubs, the manifest, prompts, resources and views."
 ---
 
-<include lang="ts" meta='title="mcps/e2e/src/server.ts"'>../../../../../mcps/e2e/src/server.ts</include>
+<include lang="ts" meta='title="mcps/standalone/src/standalone.ts"'>../../../../../mcps/standalone/src/standalone.ts#servers</include>
 
-A **provider** is a named, dated set of tools, prompts and resources. A **server** serves one provider over HTTP: it signs callers in through Answerable ID, lists what their token allows and runs their calls. `mcps/e2e` has both; an MCP made by [`bun mcp new`](#make-an-mcp) has a provider, which a hub serves.
+A **provider** is a named, dated set of tools, prompts and resources. A **server** serves one provider over HTTP: it signs callers in through Answerable ID, lists what their token allows and runs their calls. An MCP made by [`bun mcp new`](#make-an-mcp) has a provider, and its `mcp.json` says where it runs: [the Toolbox](/docs/toolbox) mounts it, [the standalone server](#the-standalone-server) serves it with `createMcpServer` on a path of its own, as above, or both do. `mcps/e2e` runs both ways.
 
 ## The provider
 
@@ -41,16 +41,16 @@ It returns:
 
 ### Who is calling
 
-<include lang="ts" meta='title="mcps/e2e/src/server.ts"'>../../../../../mcps/e2e/src/server.ts#profiles</include>
+<include lang="ts" meta='title="mcps/standalone/src/standalone.ts"'>../../../../../mcps/standalone/src/standalone.ts#profiles</include>
 
 The token carries only ids. `profiles` gives the rest every handler receives: the person's name, email and groups, and the organisation's name and slug ([the caller](/docs/mcp/tools#the-caller)). It is required: a server that cannot say who is calling does not start.
 
 - **When it runs.** Once for each request that runs a handler (`tools/call`, `prompts/get`, `resources/read` of a resource), before the handler, and never for a list or a view.
-- **`createIdProfiles(id, { ttlMs, staleMs })`**, from `@answerable/id-admin`, reads the member and the organisation from ID's admin API in parallel, with the server's machine client and `platform:read`. It keeps each for `ttlMs` (60 seconds), per member and per organisation. `invalidate(organisationIds, userIds)` drops them sooner: the Toolbox's audit-log poller calls it on the same events as its grants.
+- **`createIdProfiles(id, { ttlMs, staleMs })`**, from `@answerable/id-admin`, reads the member and the organisation from ID's admin API in parallel, with the server's machine client and `platform:read`. It keeps each for `ttlMs` (60 seconds), per member and per organisation. `invalidate(organisationIds, userIds)` drops them sooner: the audit-log poller of `@answerable/mcp-platform` calls it on the events that change a member or an organisation, in the Toolbox with its grants.
 - **When ID does not answer.** The last value is served for up to `staleMs` (an hour) after it expired. With none, the call answers `UPSTREAM_UNAVAILABLE` and the handler does not run.
 - **Who is refused.** A member whose membership is not in force (ID's `effective: false`), or whom ID no longer knows, gets `PERMISSION_DENIED`, whatever an earlier read cached. A group membership counts while its `validFrom` is past and its `validUntil` unset or future.
 
-The Toolbox, the admin MCP and the e2e server use `createIdProfiles`; the e2e server's machine client is `MCP_ID_CLIENT_ID` ([Configure](#configure)). Tests use a [test person](/docs/mcp/testing#who-is-calling).
+The Toolbox, the standalone server and the admin MCP use `createIdProfiles`, each through its own machine client; the standalone server's is `STANDALONE_ID_CLIENT_ID` ([Configure](#configure)). Tests use a [test person](/docs/mcp/testing#who-is-calling).
 
 ### Changes
 
@@ -90,27 +90,43 @@ Run it from the repository root. It refuses a name that is not a [provider id](#
 | `src/provider.test.ts` | The conformance kit |
 | `README.md` | What it is, where it runs, its commands and the guides |
 
-It writes no server: the Toolbox serves an MCP, and mounting one from `mcp.json` is Not yet. `bun run mcp:test` runs every MCP under `mcps/`.
+It writes no server. `bun mcp` generates the list each server reads: `mcps/toolbox/src/mounted.generated.ts`, every MCP whose `serve` is `toolbox` or `both`, which the Toolbox mounts, and `mcps/standalone/src/served.generated.ts`, every one whose `serve` is `standalone` or `both`, which the standalone server serves; and each server's dependencies on those workspaces. Never edit them by hand: change `serve` in `mcp.json` and run `bun mcp check <name>`. `bun run mcp:test` runs every MCP under `mcps/`.
+
+## The standalone server
+
+```sh
+bun mcp db e2e migrate
+bun run standalone:dev
+```
+
+`mcps/standalone` is one process that serves every MCP whose `serve` is `standalone` or `both`, each at its own path: `http://localhost:47510/e2e/mcp` locally. Each has its own `createMcpServer`, whose resource is that URL, so a token for one MCP is refused by another (`401`). A request goes to the MCP its path names, `/<name>/…`, or `/.well-known/oauth-protected-resource/<name>/mcp` for its metadata; `GET /health` answers at the root, and any other path `404`.
+
+- **Its database.** `answerable_standalone` holds the intents and the evidence of every MCP it serves, migrated by `bun --filter @answerable/mcp-standalone db:migrate` as its owner; the server serves as the restricted runtime login, and refuses to start as anything more.
+- **The MCPs' databases.** One pool to the shared database `answerable_mcps`, as its serving login `answerable_mcps_standalone`, which takes each served MCP's runtime role, and one pool per MCP whose database is its own. Before it listens, it refuses a serving login that holds more than the served MCPs' runtime roles, or misses one, naming it.
+- **Who is calling.** Through its own `platform:read` machine client, cached and dropped by the audit-log poller.
+- **Evidence.** Every call and every refusal, a refusal because ID did not answer included, is a row on the caller's organisation's chain, with a span (`@answerable/mcp-platform`). A tool whose scopes the token lacks is refused, and the refusal recorded.
+- **Stopping.** `SIGTERM` stops the poller and the listener and closes every pool.
+- **Starting.** Serving e2e and example, it printed its serving line 202 to 204 ms after the process began, in three local runs: Bun's start, the imports, the view's bundle, both databases' checks and the listener.
 
 ## Configure
 
-<Configuration group="MCP" />
+<Configuration group={["standalone server", "standalone server migration", "standalone server test database"]} />
 
-`readMcpEnvironment(process.env)` reads these variables and returns `{ auth, port, id }`. Outside production (`NODE_ENV` unset, `development` or `test`), an unset issuer is `http://localhost:47300` and an unset resource `http://localhost:47500/mcp`, the e2e server's.
+Outside production (`NODE_ENV` unset, `development` or `test`), every variable but the machine client's id and secret has the local default above, so `bun run standalone:dev` needs only `STANDALONE_ID_CLIENT_ID` and `STANDALONE_ID_CLIENT_SECRET` in the root `.env`: a machine client with `platform:read`, registered as [Connect Claude Code](/docs/mcp/claude-code#register-the-servers-machine-client) shows. An MCP whose database is its own adds a variable, `STANDALONE_MCP_<NAME>_DATABASE_URL`, which the generated list names.
 
-**The machine client.** `id` is what `createIdAdmin` takes, set when `MCP_ID_CLIENT_ID` is: the client, `MCP_ID_CLIENT_SECRET` and `MCP_ID_ADMIN_RESOURCE`, ID's admin API (locally `http://localhost:47300/api/admin`). The server reads who is calling through it, so it needs `platform:read` on ID's admin API; register it as [Connect Claude Code](/docs/mcp/claude-code#register-the-server) does for the e2e server. A server whose profiles use ID, as the e2e server's do, refuses to start without it. The secret without the client, or the client without its secret, is refused. A server with variables of its own lists them with `defineConfig` from `@answerable/config` and reads them with `parseEnvironment(config, env, names)`, as the Toolbox and the admin MCP do: it reads `env` with the definition, checks the issuer and resource URL in the two variables `names` gives, and throws `Invalid <label> configuration: <VARIABLE>: <problem>`.
+**A server of your own.** A server with variables of its own lists them with `defineConfig` from `@answerable/config` and reads them with `parseEnvironment(config, env, names)`, as the Toolbox, the standalone server and the admin MCP do: it reads `env` with the definition, checks the issuer and resource URL in the two variables `names` gives, and throws `Invalid <label> configuration: <VARIABLE>: <problem>`.
 
 **Issuer.** The Answerable ID origin. The verifier reads ID's signing keys from the issuer's metadata; never take an issuer from a token.
 
-**Resource.** The MCP's canonical URL, exactly as registered in ID. It is the token audience, and its path is the MCP endpoint.
+**Resource.** The MCP's canonical URL, exactly as registered in ID: on the standalone server, `STANDALONE_ORIGIN` and the MCP's path. It is the token audience, and its path is the MCP endpoint.
 
 **HTTP.** Both URLs must use HTTPS, except on `localhost`, `127.0.0.1` or `[::1]`.
 
-Register the resource, a client and its access in ID before the first sign-in; see [Connect Claude Code](/docs/mcp/claude-code#register-the-server). Each MCP running at the same time needs its own port.
+Register each MCP's resource, a client and its access in ID before the first sign-in; see [Connect Claude Code](/docs/mcp/claude-code#register-the-server).
 
 ## Health
 
-`GET /health` returns `{ "status": "ok" }` without authentication, whatever the `Host` header, so load balancers and container probes can call it by address.
+`createMcpServer` answers `GET /health` with `{ "status": "ok" }` without authentication, whatever the `Host` header, so load balancers and container probes can call it by address. The Toolbox, the standalone server and the admin MCP answer it themselves: `200` with `{ "status": "ok", "databases": { … }, "providers": […] }` while every database they use answers `select 1`, else `503` with `"status": "unavailable"` and the database that did not answer. `providers` lists the MCPs they serve.
 
 ## Manifest
 
@@ -130,17 +146,17 @@ Run it in the provider's workspace. [Test an MCP](/docs/mcp/testing#the-manifest
 
 ## Prompts and resources
 
-<include lang="ts" meta='title="mcps/e2e/src/mcp.ts"'>../../../../../mcps/e2e/src/mcp.ts#prompt</include>
+<include lang="ts" meta='title="mcps/e2e/src/guide.ts"'>../../../../../mcps/e2e/src/guide.ts#prompt</include>
 
-<include lang="ts" meta='title="mcps/e2e/src/mcp.ts"'>../../../../../mcps/e2e/src/mcp.ts#resource</include>
+<include lang="ts" meta='title="mcps/e2e/src/guide.ts"'>../../../../../mcps/e2e/src/guide.ts#resource</include>
 
 `definePrompt` takes `name`, `description`, a Zod `input` and `execute(input, context)`, which returns an MCP prompt result. `defineResource` takes `name`, a fixed `uri`, `description`, `mimeType` and `read(context)`, which returns text. Both take optional `scopes`, defaulting to `<provider id>:read`, and follow the same visibility rule as tools. Names are lowercase letters, digits and underscores. Reading a prompt or resource must not change data; a failure answers the protocol error `Content could not be read`. Pass them to `defineProvider` as `prompts` and `resources`.
 
 ## Views
 
-<include lang="ts" meta='title="mcps/e2e/scripts/build.ts"'>../../../../../mcps/e2e/scripts/build.ts</include>
+<include lang="ts" meta='title="mcps/e2e/src/view.ts"'>../../../../../mcps/e2e/src/view.ts</include>
 
-A view is an interactive page a host shows with a tool's result (MCP Apps). Build each view before starting the server, pass the HTML to `defineView({ name, html })`, and set the view on a tool. The server registers it as a `ui://` resource with the MCP Apps MIME type. Browser code imports `useApp` from `@modelcontextprotocol/ext-apps/react` or `App` from `@modelcontextprotocol/ext-apps`. A view calls tools through the host, with the same scope and organisation checks; it never receives a token. `mcps/e2e` (`records.show`) is the working example.
+A view is an interactive page a host shows with a tool's result (MCP Apps). Bundle it with `buildView`, as `mcps/e2e` does when its view module is first imported (about 50 ms), pass the HTML to `defineView({ name, html })`, and set the view on a tool. The server registers it as a `ui://` resource with the MCP Apps MIME type. Browser code imports `useApp` from `@modelcontextprotocol/ext-apps/react` or `App` from `@modelcontextprotocol/ext-apps`. A view calls tools through the host, with the same scope and organisation checks; it never receives a token. `mcps/e2e` (`records.show`) is the working example.
 
 ## Limits
 

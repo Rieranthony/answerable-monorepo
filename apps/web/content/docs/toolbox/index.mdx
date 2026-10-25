@@ -199,15 +199,15 @@ Every call of a tool, a prepare tool or a commit tool appends one event to its o
 
 | Kind | When | Outcome |
 | --- | --- | --- |
-| `capability.completed` | The call ran | `success`, with `data.result_bytes`, or `failure` with `error_code`, such as `RESULT_TOO_LARGE`. A prepare's row names its `intent_id`; a commit's its `intent_id` and `receipt_id` |
-| `capability.denied` | A call named a capability that exists but the caller may not use, by its tool or through `toolbox_execute` or `toolbox_prepare` | `denied`, with `reason` `not granted` or `no toolbox scope` |
+| `capability.completed` | The call ran | `success`, with `data.result_bytes`, or `failure` with `error_code`, such as `RESULT_TOO_LARGE`. A prepare's row names its `intent_id`; a commit's the `intent_id` of the caller's intent it names, failed or not, and its `receipt_id` when it committed |
+| `capability.denied` | A call named a capability that exists but the caller may not use, by its tool or through `toolbox_execute` or `toolbox_prepare`; or ID did not answer with the caller's grants | `denied`, with `reason` `not granted`, `no toolbox scope`, or `authority_unavailable` with `error_code` `UPSTREAM_UNAVAILABLE` |
 | `intent.prepared` | An intent was recorded; `data.policy_class` is its class and its preview is the [payload](#payloads) | `success` |
 | `intent.approval_requested` | A human-class intent was recorded | `success` |
 | `intent.committed`, `receipt.issued` | A commit ended `committed`; both name the `receipt_id` | `success` |
 | `intent.stale` | A commit found a target moved | `success` |
 | `intent.expired` | A commit or a read found the intent past `expires_at`: once per intent | `success` |
 
-Intent events carry the intent's organisation, person, host client, capability and `intent_id`. A commit that fails is its call's `capability.completed` failure. A call of `toolbox_execute` or `toolbox_prepare` is recorded as the capability it ran or refused; one that names no capability the Toolbox serves is recorded as the meta tool's own. A call to a name that does not exist records nothing. The table accepts no other kind.
+Intent events carry the intent's organisation, person, host client, capability and `intent_id`. A commit that fails is its call's `capability.completed` failure. The evidence, spans and `/health` are `@answerable/mcp-platform`'s, which the standalone server and the admin MCP share. A call of `toolbox_execute` or `toolbox_prepare` is recorded as the capability it ran or refused; one that names no capability the Toolbox serves is recorded as the meta tool's own. A call to a name that does not exist records nothing. The table accepts no other kind.
 
 **What a row holds.** The organisation, actor, host client, capability identity and version, execution id, JSON-RPC id, trace and span ids, outcome and bounded `data` (at most 4 KiB). Inputs, results and secrets are never recorded.
 
@@ -259,10 +259,11 @@ A W3C `traceparent` in the request's `_meta` becomes the span's parent. Set `OTE
 
 ```bash
 bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate
+bun mcp db e2e migrate && bun mcp db example migrate
 bun run toolbox:dev
 ```
 
-`db:migrate` prints `Migrated answerable_toolbox; provisioned answerable_toolbox_runtime`. Then [enable your organisation](/docs/toolbox/admin#enable-an-organisation), [entitle its members](/docs/toolbox/admin#grant-strings-for-people) and connect Claude Code with the line at the top of this page.
+`db:migrate` prints `Migrated answerable_toolbox; provisioned answerable_toolbox_runtime`. `bun mcp db <name> migrate` makes each mounted MCP's schema and roles in the shared database `answerable_mcps` and migrates it; run it for every MCP the Toolbox mounts, `mcps/toolbox/src/mounted.generated.ts`, and again after a migration changes. The Toolbox reaches them as the serving login `answerable_mcps_toolbox` (`TOOLBOX_MCPS_DATABASE_URL`) and refuses to start when that login misses a mounted MCP's runtime role, naming it. Then [enable your organisation](/docs/toolbox/admin#enable-an-organisation), [entitle its members](/docs/toolbox/admin#grant-strings-for-people) and connect Claude Code with the line at the top of this page.
 
 ### Database roles
 
@@ -284,7 +285,7 @@ Read from the root `.env` by `bun run toolbox:dev`; every variable is listed in 
 
 <Configuration group={["Toolbox", "Toolbox migration", "Toolbox test database"]} />
 
-The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, such as `http://localhost:47400/admin`; it has no variable. `GET /health` answers `{ "status": "ok" }` while the database answers `select 1`, and `503` with `{ "status": "unavailable" }` otherwise, whatever the `Host` header.
+The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, such as `http://localhost:47400/admin`; it has no variable. An MCP whose database is its own adds a variable, `TOOLBOX_MCP_<NAME>_DATABASE_URL`, which the generated list names. `GET /health` answers `200` with `{ "status": "ok", "databases": { "toolbox": "ok", "mcps": "ok" }, "providers": ["e2e", "example"] }` while every database answers `select 1`, and `503` with `"status": "unavailable"` and the database that did not answer otherwise, whatever the `Host` header; `providers` lists the mounted MCPs.
 
 ## Limits
 
@@ -292,7 +293,8 @@ The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, s
 | --- | --- |
 | Result size | A read's result above 100 KiB of JSON (102,400 bytes) answers [`RESULT_TOO_LARGE`](/docs/mcp/errors#codes) with `details.bytes` and `details.limit`, directly or through `toolbox_execute`. Prepare and commit results are not limited |
 | Grant freshness | At most 60 seconds, usually one 15-second poll; a `2026-07-28` host that keeps `tools/list` for its 30 seconds lists a change up to 30 seconds later, while every call is checked against current grants |
-| Providers | Mounted in process; each provider id once. Their prompts and resources are not served through the Toolbox; their views are |
+| Providers | Mounted in process from the generated list, every MCP whose `serve` is `toolbox` or `both`; each provider id once. Their prompts and resources are not served through the Toolbox; their views are |
+| Boot ingest | One read and one write per provider, in one transaction: 200 providers of 5 tools took 0.46 to 0.61 s on a first boot and 0.41 to 0.52 s on an unchanged one, in three local runs of `bun bench/ingest.ts` (1.32 to 1.49 s and 1.16 to 1.33 s with a read and a write per tool, as before) |
 | Scope checks inside a provider | A Toolbox token carries only `toolbox`, so a handler that reads `principal.scopes` sees no provider scopes: the e2e view's `canWrite` is false through the Toolbox, and its create and delete buttons stay hidden |
 | Search | Up to 20 capabilities a page; the query up to 200 characters. In the acceptance, `toolbox_search` answered in a median of 7.5 to 10.6 ms and a maximum of 11.5 to 20.7 ms, over 20 calls in each of three runs |
 | Describe | Up to 5 identities a call |
@@ -308,7 +310,7 @@ The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, s
 | You see | Meaning | What to do |
 | --- | --- | --- |
 | `Tool <name> not found` | No such tool, or you may not use it: no grant string covers it, its provider is not enabled for your organisation, the organisation disabled it, or the token lacks `toolbox` | Call `toolbox_whoami` to see your grants; ask an administrator for an entitlement |
-| Tool result `UPSTREAM_UNAVAILABLE` | ID did not answer with your access and none is cached | Retry after `retry.after_ms`; check ID and the `TOOLBOX_ID_*` settings |
+| Tool result `UPSTREAM_UNAVAILABLE` | ID did not answer with your access and none is cached; the refusal is a `capability.denied` row, `authority_unavailable` | Retry after `retry.after_ms`; check ID and the `TOOLBOX_ID_*` settings |
 | `tools/list` fails with an internal error | The same, for a list | Retry; the server log shows `[toolbox] reading access failed` |
 | Tool result `RESULT_TOO_LARGE` | A read answered more than 100 KiB of JSON | Call it again with a smaller `limit`, a `cursor` or narrower filters |
 | `tools/list` holds only `toolbox_whoami`, the meta tools and the commit tools | The host client is set to `meta`, or to `auto` and the caller has more granted tools than its `direct_limit` | Find capabilities with `toolbox_search`; to list them directly, set the host client to `direct` or raise its limit ([host clients](/docs/toolbox/admin#host-clients)) |
@@ -323,7 +325,7 @@ The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, s
 | `401 invalid_token` | The token is for another resource, or expired | Sign in for the Toolbox's exact URL |
 | `Invalid Toolbox configuration: <VARIABLE>: …` at start | A variable is missing or invalid | Set it as in [Environment](#environment) |
 | `Capability <identity> version <date> changed its input without a new version…` at start | A provider changed a contract without a new version | Give the tool a new version in its definition or its provider |
-| `Missing the e2e records view…` at start | The view is not built | Run `bun run --filter @answerable/mcp-e2e build` |
+| `The Toolbox cannot start: Database role answerable_mcps_toolbox may not serve MCPs: is not a member of mcp_<name>…` | A mounted MCP's schema and roles are not made in the shared database | Locally, `bun mcp db <name> migrate` for each MCP the message names |
 | `The Toolbox cannot start: Database role <role> is not a restricted runtime role: …` | `TOOLBOX_DATABASE_URL` is the owner, a superuser, or a login with more than the Toolbox needs; the message names each problem | Point `TOOLBOX_DATABASE_URL` at the runtime login, then run `db:migrate`, which takes back extra privileges |
 | `password authentication failed for user "answerable_toolbox_runtime"` | The runtime login does not exist, or has another password: `db:migrate` creates a missing role without a login or password | Run `005-create-mcp-runtime-roles.sql` once, as in [Database roles](#database-roles) |
 | Log `permission denied for table <table>` | The runtime role lacks a grant: the database was migrated by an older version | Run `db:migrate` |

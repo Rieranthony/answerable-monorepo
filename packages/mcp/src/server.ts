@@ -10,7 +10,7 @@ import { commitIntent } from "./commit"
 import { commitToolName, commitTools, receipt } from "./commit-tools"
 import { permits, type Profile, type ToolContext, type View } from "./definitions"
 import { ToolError } from "./errors"
-import { createMemoryIntentStore, type IntentStore } from "./intents"
+import { createMemoryIntentStore, type Intent, type IntentStore } from "./intents"
 import { preparePlan, riskClass, type Mutation, type PolicyClass } from "./mutation"
 import { intentView, recordIntent } from "./prepare"
 import type { Provider, Served } from "./provider"
@@ -30,6 +30,11 @@ export type ToolCall = Readonly<{
   requestId: string | number
   /** The request's `_meta`, such as a W3C `traceparent`. Untrusted, like every argument. */
   meta: Readonly<Record<string, unknown>>
+  /**
+   * For a commit tool, the intent the call names, read before `wrapCall` runs, when it exists and is the caller's own: its id and the identity and
+   * version of the mutation it prepared, so that a hub records which intent a commit applied, even when the commit fails. Absent otherwise.
+   */
+  intent?: Readonly<{ id: string; identity: string; version: string }>
 }>
 
 /** A provider a hub serves beside its own, with the database its handlers receive as `context.db`. */
@@ -43,7 +48,7 @@ export type Mount = Readonly<{
 export type McpServerConfig = {
   /** The provider it serves, from `defineProvider`: its tools, prompts and resources, named after it. */
   provider: Provider
-  /** The Answerable ID issuer to trust and this server's resource URL, the token audience: `readMcpEnvironment(process.env).auth`. */
+  /** The Answerable ID issuer to trust and this server's resource URL, the token audience: `parseEnvironment(config, process.env, names).auth`. */
   auth: IdVerifierConfig
   /**
    * Who is calling, beyond the token's ids: the person's name, email and groups, and the organisation's name and slug, which every handler
@@ -72,7 +77,8 @@ export type McpServerConfig = {
    * requests, such as `initialize`, see no tools. `called` is true when the request calls that tool, so a hub can record the refusal.
    * A `ToolError` it throws answers a call with that error whatever tool the call names (a name no tool could have, outside lowercase letters,
    * digits and underscores, stays unknown); a list fails. Anything else it throws fails the request with HTTP 500, logged as `[mcp] request failed`.
-   * Default: the token carries every scope of the tool.
+   * The request is answered only once every decision has settled, so a hub's refusal evidence is written first. Default: the token carries every
+   * scope of the tool.
    */
   allow?: (principal: UserPrincipal, tool: Served<Tool | Mutation>, called: boolean) => boolean | Promise<boolean>
   /**
@@ -107,6 +113,7 @@ export type McpServerHandle = {
   call(tool: Served<Tool | Mutation>, args: Record<string, unknown>, context: ToolContext): Promise<Record<string, unknown>>
 }
 
+const intentId = z.uuid()
 const validateOnly = z.boolean().default(false).describe("Return the preview without recording an intent or issuing a commit token; default false")
 const message = z.object({ method: z.string(), params: z.object({ name: z.string().optional() }).optional() })
 type Peeked = { method?: string; name?: string; batch?: true }
@@ -167,13 +174,13 @@ function wireNames(provider: Provider, mount: readonly Provider[]) {
  *
  * @example
  * ```ts
- * import { createMcpServer, readMcpEnvironment } from "@answerable/mcp"
+ * import { createMcpServer } from "@answerable/mcp"
  * import { createIdAdmin, createIdProfiles } from "@answerable/id-admin"
  * import { provider } from "./provider"
  *
- * const { auth, port, id } = readMcpEnvironment(process.env)
- * const server = createMcpServer({ provider, auth, profiles: createIdProfiles(createIdAdmin(id!)) })
- * Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
+ * const auth = { issuer: "http://localhost:47300", resource: "http://localhost:47510/acme/mcp" }
+ * const server = createMcpServer({ provider, auth, profiles: createIdProfiles(createIdAdmin(machineClient)) })
+ * Bun.serve({ hostname: "127.0.0.1", port: 47510, fetch: server.fetch })
  * ```
  */
 export function createMcpServer(config: McpServerConfig): McpServerHandle {
@@ -237,8 +244,10 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
   async function usable(principal: UserPrincipal, { method, name }: Peeked) {
     if (!allow) return served.filter(tool => permits(principal, tool))
     if (method !== undefined && !decided.has(method)) return []
-    const decisions = await Promise.all(served.map(tool => allow(principal, tool, method === "tools/call" && names.get(tool) === name)))
-    return served.filter((_, index) => decisions[index])
+    const decisions = await Promise.allSettled(served.map(tool => allow(principal, tool, method === "tools/call" && names.get(tool) === name)))
+    const failure = decisions.find(decision => decision.status === "rejected")
+    if (failure) throw failure.reason
+    return served.filter((_, index) => (decisions[index] as PromiseFulfilledResult<boolean>).value)
   }
   async function projected(principal: UserPrincipal, tools: Served<Tool | Mutation>[]) {
     if (!project || !tools.length) return tools
@@ -295,14 +304,20 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
       }
       return server
     }
-    // One call: inside wrapCall, who is calling, then `run`. A failure is logged under the tool's name, or a commit tool's wire name.
-    type Run = (args: Record<string, unknown>, call: ToolContext) => Promise<Record<string, unknown>>
+    // One call: inside wrapCall, who is calling, then `run`. A failure is logged under the tool's name, or a commit tool's wire name. A commit
+    // first reads the intent it names, so that wrapCall learns which mutation it applies.
+    type Run = (args: Record<string, unknown>, call: ToolContext, intent: Intent | undefined) => Promise<Record<string, unknown>>
     type Extra = { mcpReq: { id: string | number; signal: AbortSignal; _meta?: Record<string, unknown> } }
     const handle = (tool: ToolCall["tool"], name: string, run: Run) => (args: Record<string, unknown>, { mcpReq }: Extra) => {
       const executionId = Bun.randomUUIDv7()
-      return answer(tool.kind === "commit" ? name : tool.name, executionId, () => wrapCall(Object.freeze({
-        tool, name, principal, executionId, requestId: mcpReq.id, meta: mcpReq._meta ?? {},
-      }), async () => run(args, await context(mcpReq.signal, executionId))))
+      return answer(tool.kind === "commit" ? name : tool.name, executionId, async () => {
+        const intent = tool.kind === "commit" && intentId.safeParse(args.intent_id).success ? await intents.get(args.intent_id as string) : undefined
+        const own = intent && intent.principal.user_id === principal.userId && intent.principal.membership_id === principal.membershipId && intent.principal.client_id === principal.clientId
+        return wrapCall(Object.freeze({
+          tool, name, principal, executionId, requestId: mcpReq.id, meta: mcpReq._meta ?? {},
+          ...(own ? { intent: Object.freeze({ id: intent.intent_id, identity: intent.capability_identity, version: intent.capability_version }) } : {}),
+        }), async () => run(args, await context(mcpReq.signal, executionId), intent))
+      })
     }
     const registeredViews = new Set<View>()
     for (const tool of tools) {
@@ -323,8 +338,8 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
     for (const commit of permitted.some(tool => tool.kind === "mutate") ? commits : []) {
       registerAppTool(server, commit.name, {
         description: commit.description, inputSchema: advertised(commit.input), outputSchema: receipt, annotations: commit.annotations, _meta: commit.meta,
-      }, handle(commit.call, commit.name, async (args, call) => commitIntent({
-        id: provider.id, tool: commit.name, input: await parseArguments(commit.input, args), principal, contextOf: mutation => scoped(mutation, call),
+      }, handle(commit.call, commit.name, async (args, call, intent) => commitIntent({
+        id: provider.id, tool: commit.name, input: await parseArguments(commit.input, args), intent, principal, contextOf: mutation => scoped(mutation, call),
         store: intents, mutations, permitted: mutation => permitted.includes(mutation), policyClass: mutation => policyClass(mutation, principal),
       })))
     }

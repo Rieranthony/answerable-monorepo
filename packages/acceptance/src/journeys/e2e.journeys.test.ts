@@ -1,9 +1,5 @@
-// Real Answerable ID, a real browser and the official MCP OAuth client against the e2e MCP.
+// Real Answerable ID, a real browser and the official MCP OAuth client against the e2e MCP, at its path on the standalone server.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { createIdAdmin, createIdProfiles } from "@answerable/id-admin"
-import { createMcpServer } from "@answerable/mcp"
-import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
-import { createRecordStore } from "@answerable/mcp-e2e/records"
 import type { Client } from "@modelcontextprotocol/client"
 import { decodeJwt } from "jose"
 import { z } from "zod"
@@ -16,7 +12,6 @@ import {
   refreshRefused,
   refusal,
   registerClient,
-  registerMachine,
   registerResource,
   serve,
   serveCallback,
@@ -27,9 +22,13 @@ import {
   type Id,
   type OAuthSession,
 } from "../index"
+import { startStandaloneStack } from "../standalone"
 
-const resource = "http://127.0.0.1:47602/mcp"
-const otherResource = "http://127.0.0.1:47605/mcp"
+// The standalone server serves e2e at its path; a second one, at another origin, serves it as another resource.
+const origin = "http://127.0.0.1:47602"
+const resource = `${origin}/e2e/mcp`
+const otherOrigin = "http://127.0.0.1:47605"
+const otherResource = `${otherOrigin}/e2e/mcp`
 const callback = "http://127.0.0.1:47603/callback"
 const clientId = "mcp-e2e-browser"
 const scopes = ["e2e:identity", "e2e:read", "e2e:write"]
@@ -73,14 +72,10 @@ beforeAll(async () => {
     const { organizationId } = manifest.tenants.find(({ slug }) => slug === tenant.slug)!
     await grantOrganisation(admin, organizationId, { clientId, resource, scopes, entitledScopes: tenant.scopes })
   }
-  // The e2e server reads who is calling from ID through its own platform:read machine client, in the platform organisation.
-  const organisations = z.object({ items: z.array(z.object({ id: z.uuid(), slug: z.string() })) }).parse(await admin("GET", "/organizations?q=answerable"))
-  const platform = organisations.items.find(organisation => organisation.slug === "answerable")!
-  const machine = await registerMachine(admin, platform.id, "e2e-mcp", { [manifest.adminResource]: ["platform:read"] })
-  const profiles = createIdProfiles(createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...machine }))
-  const provider = createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html><title>Records</title>" })
-  serve(47_602, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource }, profiles }).fetch)
-  serve(47_605, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource: otherResource }, profiles }).fetch)
+  // The standalone server reads who is calling from ID through its own platform:read machine client, in the platform organisation.
+  const { start } = await startStandaloneStack(id)
+  serve(47_602, start(origin).fetch)
+  serve(47_605, start(otherOrigin).fetch)
   serveCallback(callback)
   browser = await launchBrowser()
 })

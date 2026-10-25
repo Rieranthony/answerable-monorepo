@@ -251,7 +251,7 @@ Read from the root `.env` by `bun run admin:dev`; every variable is listed in `d
 
 <Configuration group={["admin MCP", "admin MCP migration", "admin MCP test database"]} />
 
-`GET /health` answers `{ "status": "ok" }` while the database answers `select 1`, and `503` with `{ "status": "unavailable" }` otherwise, whatever the `Host` header.
+`GET /health` answers `200` with `{ "status": "ok", "databases": { "admin": "ok" }, "providers": ["admin"] }` while the database answers `select 1`, and `503` with `"status": "unavailable"` otherwise, whatever the `Host` header.
 
 ## Limits
 

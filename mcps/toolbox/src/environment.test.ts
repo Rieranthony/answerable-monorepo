@@ -3,6 +3,7 @@ import { readToolboxEnvironment } from "./environment"
 
 const complete = {
   TOOLBOX_DATABASE_URL: "postgres://answerable:answerable@localhost:47432/answerable_toolbox",
+  TOOLBOX_MCPS_DATABASE_URL: "postgres://toolbox:secret@localhost:47432/answerable_mcps",
   TOOLBOX_ID_ISSUER: "http://localhost:47300",
   TOOLBOX_RESOURCE_URL: "http://localhost:47400/mcp",
   TOOLBOX_ID_CLIENT_ID: "toolbox-hub",
@@ -10,9 +11,10 @@ const complete = {
   TOOLBOX_ID_ADMIN_RESOURCE: "http://localhost:47300/api/admin",
 }
 
-test("reads the database, ID, the resource, the bind address, the port and the machine client, defaulting to 127.0.0.1 and 47400", () => {
+test("reads the databases, ID, the resource, the bind address, the port and the machine client, defaulting to 127.0.0.1, 47400 and the role prefix mcp", () => {
   expect(readToolboxEnvironment(complete)).toEqual({
     databaseUrl: complete.TOOLBOX_DATABASE_URL,
+    mcps: { shared: complete.TOOLBOX_MCPS_DATABASE_URL, own: {}, prefix: "mcp" },
     auth: { issuer: "http://localhost:47300", resource: "http://localhost:47400/mcp" },
     hostname: "127.0.0.1",
     port: 47400,
@@ -22,12 +24,15 @@ test("reads the database, ID, the resource, the bind address, the port and the m
   expect(readToolboxEnvironment({ ...complete, TOOLBOX_PORT: "47401", OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318" })).toMatchObject({ port: 47401, otlpEndpoint: "http://localhost:4318" })
   expect(readToolboxEnvironment({ ...complete, TOOLBOX_HOST: "0.0.0.0" })).toMatchObject({ hostname: "0.0.0.0" })
   expect(readToolboxEnvironment({ ...complete, TOOLBOX_HOST: "::" })).toMatchObject({ hostname: "::" })
+  expect(readToolboxEnvironment({ ...complete, TOOLBOX_MCPS_ROLE_PREFIX: "mcp_tbx" }).mcps.prefix).toBe("mcp_tbx")
+  expect(() => readToolboxEnvironment({ ...complete, TOOLBOX_MCPS_ROLE_PREFIX: "MCP" })).toThrow("Invalid Toolbox configuration: TOOLBOX_MCPS_ROLE_PREFIX: ")
 })
 
 test("outside production, everything but the client pair defaults to the local services", () => {
   for (const NODE_ENV of [undefined, "development", "test"])
     expect(readToolboxEnvironment({ NODE_ENV, TOOLBOX_ID_CLIENT_ID: "toolbox-hub", TOOLBOX_ID_CLIENT_SECRET: "secret" })).toEqual({
       databaseUrl: "postgres://answerable_toolbox_runtime:answerable@localhost:47432/answerable_toolbox",
+      mcps: { shared: "postgres://answerable_mcps_toolbox:answerable@localhost:47432/answerable_mcps", own: {}, prefix: "mcp" },
       auth: { issuer: "http://localhost:47300", resource: "http://localhost:47400/mcp" },
       hostname: "127.0.0.1",
       port: 47400,

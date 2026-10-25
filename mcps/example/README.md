@@ -4,7 +4,7 @@ Your organisation's notes: list them a page at a time, and add one. The finished
 
 Made with `bun mcp new` and `bun mcp add tool`, as [Build your first MCP](../../apps/web/content/docs/mcp/quickstart.mdx) does. The docs include its files, so every snippet in the guides is code this workspace typechecks, lints and tests; `src/docs/` holds the snippets no tool serves.
 
-- **Where it runs** (`"serve": "toolbox"` in `mcp.json`): in the Toolbox, where hosts call its tools `example_<domain>_<operation>` at the Toolbox's one URL. Mounting it from `mcp.json`: Not yet; [Add tools to the Toolbox](../../apps/web/content/docs/toolbox/add-tools.mdx) mounts a provider by hand.
+- **Where it runs** (`"serve": "toolbox"` in `mcp.json`): in the Toolbox, which mounts it from `mcps/toolbox/src/mounted.generated.ts`; hosts call its tools `example_<domain>_<operation>` at the Toolbox's one URL, `http://localhost:47400/mcp` locally (`bun run toolbox:dev`).
 - **Its tables** (`"database": "shared"`): in schema `example` of the shared database `answerable_mcps`, each limited to the caller's organisation by Postgres. Its tests use schema `example` of `answerable_mcps_test`.
 - **Its tools:** one file each in `src/tools`, with its test, listed in `src/provider.ts`. `manifest.json` is their contract.
 

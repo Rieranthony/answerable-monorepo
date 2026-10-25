@@ -3,7 +3,7 @@ import { createToolboxProvider } from "./meta"
 import { e2e } from "./test/hub"
 
 // The Toolbox's own tools against a hub that grants the e2e records list and create, and runs nothing.
-const provider = e2e()
+const provider = e2e.provider
 const tool = (name: string) => provider.tools.find(item => item.name === name)!
 const caller = { grants: ["e2e/records"], capabilities: [{ tool: tool("records.list"), policy_class: null }, { tool: tool("records.create"), policy_class: "agent" as const }] }
 

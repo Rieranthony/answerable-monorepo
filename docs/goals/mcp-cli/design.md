@@ -66,7 +66,7 @@ In this order, each with its rule and the default an Enter takes:
    - The rule: a lowercase letter, then up to 11 lowercase letters or digits.
    - Refused when it is:
      - taken by any `mcps/*/mcp.json`;
-     - reserved: `toolbox`, `admin`, `id`, `mcp`, `mcps`, `standalone`, `api`, `www`, `test`, `ops`, `public`, `drizzle`. `e2e` and `example` aren't reserved; they are taken by their directories;
+     - reserved: `toolbox`, `admin`, `id`, `mcp`, `mcps`, `standalone`, `api`, `www`, `test`, `ops`, `public`, `drizzle`, `platform`, `postgres`. `e2e` and `example` aren't reserved; they are taken by their directories;
      - retired, listed in `mcps/retired.json`.
    - It is the provider id, so it prefixes every tool (`acme_notes_list` in the Toolbox) and names its database schema.
 2. **Description.**

@@ -2,19 +2,17 @@
 import { createIdAdmin } from "@answerable/id-admin"
 import { createFakeId } from "@answerable/id-admin/testing"
 import { defineMutation, defineProvider, defineTool, type Mount, type Provider } from "@answerable/mcp"
-import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
+import { createMemoryTracer } from "@answerable/mcp-platform"
 import type { Database } from "@answerable/mcp-postgres"
-import { createRecordStore } from "@answerable/mcp-e2e/records"
 import { createTestMcp } from "@answerable/mcp/testing"
 import { z } from "zod"
 import { writeCatalogue } from "../catalogue"
-import { createMemoryTracer } from "../spans"
 import { createToolbox } from "../toolbox"
+import { e2e } from "./mcps"
 
 export const resource = "https://mcp.test/mcp"
 export const adminResource = "https://mcp.test/admin"
-export const view = "<!doctype html><title>Records</title>"
-export const e2e = () => createE2eProvider({ records: createRecordStore(), viewHtml: view })
+export { e2e }
 
 /** A provider with a read (`records.list`, titled) and a mutation (`records.create`), and `extra` more reads, for the admin API's tests. */
 export function records(id: string, { version = "2026-09-29", extra = [] as string[] } = {}) {
@@ -37,7 +35,7 @@ export const providerId = () => `a${crypto.randomUUID().slice(0, 8)}`
  * The Toolbox mounting `providers`, a provider alone or with its `db`, over the test database and a fake ID. `member` makes a person of a fresh
  * organisation in the fake ID, with the access view that grants them `grants`, the providers enabled in the catalogue, and a `connect` as them.
  */
-export async function createHub(db: Database, providers: readonly (Provider | Mount)[] = [e2e()], { secret, pageSize }: { secret?: string; pageSize?: number } = {}) {
+export async function createHub(db: Database, providers: readonly (Provider | Mount)[] = [e2e], { secret, pageSize }: { secret?: string; pageSize?: number } = {}) {
   const id = createFakeId({ pageSize })
   const { tracer, spans } = createMemoryTracer()
   const mount = providers.map(entry => ("provider" in entry ? entry : { provider: entry }))

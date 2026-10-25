@@ -1,15 +1,15 @@
 ---
 title: Add tools to the Toolbox
-description: "Mount a provider built with the MCP kit in the Toolbox, enable it for an organisation and grant it to people, so their hosts list its tools."
+description: "Mount an MCP in the Toolbox with serve in its mcp.json, enable it for an organisation and grant it to people, so their hosts list its tools."
 ---
 
-```ts
-import { provider as acme } from "@answerable/mcp-acme/provider"
+```json title="mcps/acme/mcp.json"
+{ "name": "acme", "serve": "toolbox", "database": "shared" }
 ```
 
-The Toolbox serves tools from **providers** mounted inside it. To add tools, build a provider with [the MCP kit](/docs/mcp), mount it in `mcps/toolbox`, then let organisations use it: staff enable it in an organisation's catalogue, and the organisation grants its capabilities to people. The steps below were run end to end against real Answerable ID with `mcps/example` in place of `acme`.
+The Toolbox serves tools from **MCPs** mounted inside it: every MCP whose `mcp.json` says `"serve": "toolbox"` or `"both"`. To add tools, make an MCP with [the MCP kit](/docs/mcp), let the Toolbox mount it, then let organisations use it: staff enable it in an organisation's catalogue, and the organisation grants its capabilities to people. The steps below were run end to end against real Answerable ID with `mcps/example` in place of `acme`.
 
-**Before you start.** A provider that passes `bun run mcp:check`, such as the one [Build your first MCP](/docs/mcp/quickstart) ends with, and the Toolbox [running locally](/docs/toolbox#run-it-locally) with its registrations in ID. Handing this to a coding agent? Use the [prompt](/docs/agents#add-tools-to-the-toolbox).
+**Before you start.** An MCP that passes `bun mcp check`, such as the one [Build your first MCP](/docs/mcp/quickstart) ends with, and the Toolbox [running locally](/docs/toolbox#run-it-locally) with its registrations in ID. Handing this to a coding agent? Use the [prompt](/docs/agents#add-tools-to-the-toolbox).
 
 <Steps>
 <Step>
@@ -21,41 +21,31 @@ Through the Toolbox each tool is named `<provider id>_<wire name>`, such as `acm
 </Step>
 <Step>
 
-### Export the provider
+### Say where it runs
 
-The Toolbox imports the provider from its workspace, so the workspace needs an `exports` map. In `mcps/acme/package.json`:
+`bun mcp new acme --serve toolbox` writes `"serve": "toolbox"` in `mcps/acme/mcp.json`, as at the top of this page; `both` also serves it on its own URL. For an MCP that runs elsewhere, change `serve` there, then:
 
-```json title="mcps/acme/package.json"
-"exports": {
-  "./provider": "./src/provider.ts"
-},
+```sh
+bun mcp check acme
+bun install
 ```
 
-`bun mcp new` writes it, so `mcps/example` has it.
+`check` rewrites the Toolbox's generated list and its dependencies, as `bun mcp new` does; commit both with the MCP. Never edit them by hand.
+
+<include lang="ts" meta='title="mcps/toolbox/src/mounted.generated.ts"'>../../../../../mcps/toolbox/src/mounted.generated.ts</include>
+
+The Toolbox mounts each MCP of the list with its database: its schema in the shared database `answerable_mcps`, which the Toolbox reaches as its serving login, `answerable_mcps_toolbox`, taking the MCP's runtime role for each query, or the MCP's own database, from the variable the list names.
 
 </Step>
 <Step>
 
-### Mount it
-
-Add the workspace to the Toolbox's dependencies in `mcps/toolbox/package.json`:
-
-```json title="mcps/toolbox/package.json"
-"@answerable/mcp-acme": "workspace:*",
-```
-
-Then pass the provider to `createToolbox` in `mcps/toolbox/src/server.ts`. Today it mounts the e2e provider alone:
-
-<include lang="ts" meta='title="mcps/toolbox/src/server.ts"'>../../../../../mcps/toolbox/src/server.ts#providers</include>
-
-Import yours at the top of the file, as the line at the top of this page does, and add it to `mount`: `mount: [{ provider: createE2eProvider(…) }, { provider: acme }]`. A provider with a [database](/docs/mcp/tools#the-database) also needs its `db` there, `{ provider: acme, db }`: Not yet in the Toolbox's entry point, which has no MCP database to make it from. Then:
+### Make its schema locally
 
 ```sh
-bun install
-bun run mcp:check @answerable/mcp-toolbox
+bun mcp db acme migrate
 ```
 
-The Toolbox's suite needs the development PostgreSQL on port `47432`.
+It makes the MCP's schema and roles in your local `answerable_mcps` and migrates it, and gives the Toolbox's serving login its runtime role. `bun mcp new` ran it once; run it again after `bun mcp db acme generate` writes a migration. In staging and production the deployment does it.
 
 </Step>
 <Step>
@@ -66,7 +56,7 @@ The Toolbox's suite needs the development PostgreSQL on port `47432`.
 bun run toolbox:dev
 ```
 
-At boot the Toolbox reads every provider's manifest into its catalogue. Staff see the new provider and its capabilities in the admin API:
+At boot the Toolbox checks that its serving login holds the runtime role of every mounted MCP, then reads every provider's manifest into its catalogue. `GET /health` lists the mounted MCPs in `providers`. Staff see the new provider and its capabilities in the admin API:
 
 ```sh
 curl "$TOOLBOX/admin/v1/providers" -H "Authorization: Bearer $TOOLBOX_TOKEN"
@@ -145,17 +135,19 @@ The provider's code is the same; how hosts reach it changes.
 
 **A changed contract** needs a new version. A capability stored at the same version with another kind, risk, input or output refuses the boot, naming it. Give the tool a new `version`, or change the provider's, and regenerate its manifest. Titles and descriptions update in place.
 
-**Removing a provider** from `mount` stops serving its tools at the next boot. Entitlements in ID that name its grant strings stay, and cover nothing.
+**Taking an MCP out of the Toolbox,** by changing its `serve` to `standalone`, stops serving its tools there at the next boot. Entitlements in ID that name its grant strings stay, and cover nothing. Removing an MCP for good puts its name in `mcps/retired.json`: `bun mcp retire` is Not yet.
 
 ## Not yet
 
-Remote providers: the Toolbox mounts providers in its own process, so adding one is a code change and a restart. Administration by an organisation's own administrators: staff enable providers and write entitlements. See [the Toolbox's limits](/docs/toolbox#limits).
+Remote providers: the Toolbox mounts MCPs in its own process, so adding one is a change to `mcp.json`, a deployment and a restart. Administration by an organisation's own administrators: staff enable providers and write entitlements. See [the Toolbox's limits](/docs/toolbox#limits).
 
 ## Errors
 
 | You see | Meaning | What to do |
 | --- | --- | --- |
-| `Cannot find module '@answerable/mcp-acme/provider'` | The workspace has no `exports` entry, or the Toolbox does not depend on it | Add both, then `bun install` |
+| `Cannot find module '@answerable/mcp-acme/provider'` | The Toolbox's dependencies were rewritten and not installed, or the workspace has no `exports` entry | `bun install`; `bun mcp new` writes the `exports` entry |
+| `The Toolbox cannot start: Database role answerable_mcps_toolbox may not serve MCPs: is not a member of mcp_acme…` | The MCP's schema and roles are not made in the shared database, or the serving login was not given its runtime role | Locally, `bun mcp db acme migrate` |
+| `mounted.generated.ts` or the Toolbox's `package.json` is stale in `bun mcp check` | `mcp.json` changed without the generated files | `bun mcp check acme` rewrites them: commit them |
 | `Provider … is mounted twice…` at start | Two providers share an id, or a provider is the Toolbox's own | Rename the provider's id |
 | `Capability <identity> version <date> changed its input without a new version…` at start | A contract changed under an old version | Give the tool or the provider a new version |
 | `422 unknown_provider` from the enable call | The Toolbox does not mount that provider | Mount it and restart; `GET /providers` lists what is mounted |

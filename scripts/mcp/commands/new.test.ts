@@ -22,6 +22,7 @@ const full = (name: string) => [name, "--description", description, "--serve", "
 test.each([
   [["Acme", "--description", description, "--serve", "toolbox"], "invalid-name", 'MCP name "Acme" must be a lowercase letter then up to 11 lowercase letters or digits, for example acme'],
   [full("toolbox"), "name-reserved", "toolbox is reserved; choose another name"],
+  [full("platform"), "name-reserved", "platform is reserved; choose another name"],
   [full("standalone"), "name-reserved", "standalone is reserved; choose another name; to serve your MCP on its own URL, pass --serve standalone"],
   [full("gone"), "name-retired", "gone is retired (mcps/retired.json): a removed MCP's name is never used again; choose another name"],
   [full("taken"), "name-taken", "taken is taken by mcps/taken; choose another name"],

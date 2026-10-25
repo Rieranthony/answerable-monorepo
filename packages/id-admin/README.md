@@ -1,6 +1,6 @@
 # Answerable ID admin client
 
-A server's machine client on Answerable ID's admin API: `createIdAdmin`, `IdError`, `found`, `pages`, `createIdProfiles`, and a fake ID for tests. Used by the Toolbox, the admin MCP and the e2e server. Private to the monorepo; no npm release.
+A server's machine client on Answerable ID's admin API: `createIdAdmin`, `IdError`, `found`, `pages`, `createIdProfiles`, and a fake ID for tests. Used by the Toolbox, the standalone server and the admin MCP. Private to the monorepo; no npm release.
 
 ```ts
 import { createIdAdmin, found, pages } from "@answerable/id-admin"

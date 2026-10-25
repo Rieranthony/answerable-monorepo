@@ -103,7 +103,7 @@ test("toolbox_search never returns a capability the caller may not use", async (
 test("toolbox_describe gives up to five capabilities' descriptions and manifest schemas; one the caller may not use is NOT_FOUND, as an unknown one is", async () => {
   const { member } = await hub()
   const clientId = await metaClient()
-  const contract = new Map(manifest(e2e()).tools.map(entry => [entry.identity, entry]))
+  const contract = new Map(manifest(e2e.provider).tools.map(entry => [entry.identity, entry]))
   const beta = await (await member(["e2e/records"])).connect(undefined, clientId)
   const described = await call(beta, "toolbox_describe", { identities: ["e2e/records.list", "e2e/records.delete"] })
   expect(described).toEqual({ capabilities: ["e2e/records.list", "e2e/records.delete"].map(identity => {
@@ -185,7 +185,7 @@ test("toolbox_execute and toolbox_prepare run a capability with its own provider
     async commit(_plan, context) { keep("commit", context); return { results: {}, applied_changes: [], effects_performed: [] } },
   })
   const notes = defineProvider({ id: "notes", description: purpose, version: "2026-09-29", database: { schema: {}, migrations: new URL("../drizzle", import.meta.url) }, tools: [read, add] })
-  const { member } = await hub([e2e(), { provider: notes, db: "notes-db" }])
+  const { member } = await hub([e2e, { provider: notes, db: "notes-db" }])
   const client = await (await member(["notes"])).connect(undefined, await metaClient())
   await call(client, "toolbox_execute", { identity: "notes/notes.list" })
   const intent = await call(client, "toolbox_prepare", { identity: "notes/notes.add" }) as { intent_id: string; commit_token: string; commit_tool: string; preview: { summary: string } }

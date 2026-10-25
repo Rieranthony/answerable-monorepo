@@ -9,6 +9,6 @@ export { defineProvider, type Provider, type ProviderDatabase, type Served } fro
 export { definePrompt, defineResource, defineView, type Profile, type Prompt, type Resource, type View, type ToolContext } from "./definitions"
 export { manifest, type Manifest } from "./manifest"
 export { ToolError, errorCodeOf, errorCodes, type ErrorCode, type Retry } from "./errors"
-export { parseEnvironment, readMcpEnvironment } from "./environment"
+export { parseEnvironment } from "./environment"
 /** The verified caller (`UserPrincipal`) and the ID issuer and resource a server trusts (`IdVerifierConfig`), from `@answerable/auth`. */
 export type { UserPrincipal, IdVerifierConfig } from "@answerable/auth"

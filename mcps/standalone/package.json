@@ -1,0 +1,45 @@
+{
+  "name": "@answerable/mcp-standalone",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./migrate": "./src/db/migrate.ts",
+    "./served": "./src/served.generated.ts",
+    "./standalone": "./src/standalone.ts"
+  },
+  "scripts": {
+    "dev": "bun --hot src/server.ts",
+    "start": "bun src/server.ts",
+    "test": "bun run db:test:migrate && bun test",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src scripts drizzle.config.ts --max-warnings 0",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate": "bun scripts/migrate.ts",
+    "db:test:migrate": "bun scripts/migrate.ts --test"
+  },
+  "dependencies": {
+    "@answerable/config": "workspace:*",
+    "@answerable/id-admin": "workspace:*",
+    "@answerable/mcp": "workspace:*",
+    "@answerable/mcp-e2e": "workspace:*",
+    "@answerable/mcp-platform": "workspace:*",
+    "@answerable/mcp-postgres": "workspace:*",
+    "drizzle-orm": "0.45.4",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@answerable/auth": "workspace:*",
+    "@answerable/mcp-example": "workspace:*",
+    "@answerable/mcp-toolbox": "workspace:*",
+    "@eslint/js": "9.39.5",
+    "@modelcontextprotocol/client": "2.4.0",
+    "@types/bun": "1.3.1",
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "0.31.11",
+    "eslint": "9.39.5",
+    "pg": "8.23.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.48.1"
+  }
+}

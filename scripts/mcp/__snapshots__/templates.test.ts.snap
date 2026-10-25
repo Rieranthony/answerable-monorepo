@@ -99,7 +99,7 @@ exports[`every file of a new MCP, for a fixed name and date, with the status too
 
 Notes for construction projects: list, read and add notes on a project.
 
-- **Where it runs** (\`"serve": "toolbox"\` in \`mcp.json\`): in the Toolbox, where hosts call its tools \`acme_<domain>_<operation>\` at the Toolbox's one URL. Mounting it from \`mcp.json\`: Not yet; [Add tools to the Toolbox](../../apps/web/content/docs/toolbox/add-tools.mdx) mounts a provider by hand.
+- **Where it runs** (\`"serve": "toolbox"\` in \`mcp.json\`): in the Toolbox, which mounts it from \`mcps/toolbox/src/mounted.generated.ts\`; hosts call its tools \`acme_<domain>_<operation>\` at the Toolbox's one URL, \`http://localhost:47400/mcp\` locally (\`bun run toolbox:dev\`).
 - **Its tables** (\`"database": "shared"\`): in schema \`acme\` of the shared database \`answerable_mcps\`, each limited to the caller's organisation by Postgres. Its tests use schema \`acme\` of \`answerable_mcps_test\`.
 - **Its tools:** one file each in \`src/tools\`, with its test, listed in \`src/provider.ts\`. \`manifest.json\` is their contract.
 
@@ -378,7 +378,7 @@ exports[`a new MCP whose first tool is a read has its domain's table; a mutation
 
 Notes for construction projects: list, read and add notes on a project.
 
-- **Where it runs** (\`"serve": "both"\` in \`mcp.json\`): both in the Toolbox, where hosts call its tools \`acme_<domain>_<operation>\` at the Toolbox's one URL. Mounting it from \`mcp.json\`: Not yet; [Add tools to the Toolbox](../../apps/web/content/docs/toolbox/add-tools.mdx) mounts a provider by hand; and on its own URL, \`/acme/mcp\` on the standalone server. The standalone server: Not yet.
+- **Where it runs** (\`"serve": "both"\` in \`mcp.json\`): both in the Toolbox, which mounts it from \`mcps/toolbox/src/mounted.generated.ts\`; hosts call its tools \`acme_<domain>_<operation>\` at the Toolbox's one URL, \`http://localhost:47400/mcp\` locally (\`bun run toolbox:dev\`); and on its own URL, \`/acme/mcp\` on the standalone server, which serves it from \`mcps/standalone/src/served.generated.ts\`: \`http://localhost:47510/acme/mcp\` locally (\`bun run standalone:dev\`).
 - **Its tables** (\`"database": "own"\`): in schema \`acme\` of its own database, \`answerable_mcp_acme\`, each limited to the caller's organisation by Postgres. Its tests use schema \`acme\` of \`answerable_mcps_test\`.
 - **Its tools:** one file each in \`src/tools\`, with its test, listed in \`src/provider.ts\`. \`manifest.json\` is their contract.
 

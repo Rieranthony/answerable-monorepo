@@ -113,8 +113,11 @@ async function make(io: Io, root: string, answers: Parameters<typeof mcpFiles>[0
   say(io, options.json, database === "shared"
     ? `Database: schema ${name} in answerable_mcps (shared). Pass --database own for a database of its own.`
     : `Database: schema ${name} in answerable_mcp_${name}, a database of its own (own).`)
+  // Every generated file a step rewrote, for the commit the last line suggests.
+  const rewritten = new Set<string>()
   const listed = async () => {
     const stale = await generate(root, { write: true })
+    for (const path of stale) rewritten.add(path)
     return stale.length ? `rewrote ${stale.join(", ")}` : "charts/answerable/mcps.json current"
   }
   // Making the MCP again does every step, so a failed write is finished by removing what it wrote and running the command again.
@@ -154,6 +157,6 @@ async function make(io: Io, root: string, answers: Parameters<typeof mcpFiles>[0
   return runSteps(io, options.json, steps, () => [
     `bun mcp add tool ${name} <domain.operation> --description "<what it does, when to use it, its limits>"`,
     ...(options.noCheck ? [`bun mcp check ${name}`] : []),
-    `git add mcps/${name} charts/answerable/mcps.json bun.lock`,
+    `git add mcps/${name} ${[...rewritten].join(" ") || "charts/answerable/mcps.json"} bun.lock`,
   ])
 }

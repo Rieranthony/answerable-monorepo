@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "dev": "bun run env:up && turbo run dev --filter='./apps/*'",
-    "mcp:dev": "bun --env-file=.env run --filter @answerable/mcp-e2e dev",
+    "standalone:dev": "bun --env-file=.env run --filter @answerable/mcp-standalone dev",
     "toolbox:dev": "bun --env-file=.env run --filter @answerable/mcp-toolbox dev",
     "admin:dev": "bun --env-file=.env run --filter @answerable/mcp-admin dev",
     "mcp": "bun scripts/mcp/cli.ts",

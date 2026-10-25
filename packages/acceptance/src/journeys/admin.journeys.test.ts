@@ -446,7 +446,15 @@ describe("A5 idempotency", () => {
     expect(created).toHaveLength(1)
     expect(created[0]).toMatchObject({ operationId: winner.results.operationId })
     await audited(staffClient, winner)
-    expect((await chain()).filter(row => row.intent_id === intent.intent_id).map(row => row.kind)).toEqual(["intent.prepared", "intent.committed", "receipt.issued"])
+    const named = (await chain()).filter(row => row.intent_id === intent.intent_id)
+    expect(named.filter(row => !row.kind.startsWith("capability.")).map(row => row.kind)).toEqual(["intent.prepared", "intent.committed", "receipt.issued"])
+    // Each call that touched the intent names it too: its prepare, the two commits at once and the replay, the winner's and the replay's with the receipt.
+    const calls = named.filter(row => row.kind === "capability.completed")
+    expect(calls.map(({ capability_identity, outcome, error_code, upstream }) => [capability_identity, outcome, error_code, upstream]).toSorted()).toEqual([
+      ["admin/commit_confirmed", "failure", "COMMIT_IN_PROGRESS", "id"], ["admin/commit_confirmed", "success", null, "id"], ["admin/commit_confirmed", "success", null, "id"],
+      ["admin/organisations.create", "success", null, "id"],
+    ])
+    expect(calls.filter(row => row.outcome === "success" && row.capability_identity === "admin/commit_confirmed").map(row => row.receipt_id)).toEqual([winner.receipt_id, winner.receipt_id])
   })
 })
 

@@ -60,8 +60,10 @@
       "outputs": ["coverage/**"]
     },
     "@answerable/mcp-e2e#test": {
-      "cache": false,
-      "dependsOn": ["^build"]
+      "cache": false
+    },
+    "@answerable/mcp-platform#test": {
+      "cache": false
     },
     "@answerable/mcp#test": {
       "cache": false,
@@ -91,10 +93,15 @@
     "@answerable/mcp-postgres#test": {
       "cache": false
     },
-    "@answerable/mcp-e2e#dev": {
+    "@answerable/mcp-standalone#test": {
+      "cache": false,
+      "dependsOn": ["^build"],
+      "passThroughEnv": ["STANDALONE_*"]
+    },
+    "@answerable/mcp-standalone#dev": {
       "cache": false,
       "persistent": true,
-      "env": ["MCP_ID_ISSUER", "MCP_RESOURCE_URL", "MCP_PORT"]
+      "passThroughEnv": ["STANDALONE_*", "OTEL_EXPORTER_OTLP_ENDPOINT"]
     },
     "@answerable/mcp-toolbox#test": {
       "cache": false,

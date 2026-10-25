@@ -6,8 +6,6 @@
 apps/web/*
 !apps/web/package.json
 apps/community-mcp
-mcps/example/*
-!mcps/example/package.json
 packages/acceptance/*
 !packages/acceptance/package.json
 scripts/*

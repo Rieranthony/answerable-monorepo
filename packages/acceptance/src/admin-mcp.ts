@@ -4,18 +4,17 @@ import { createIdAdmin, type IdConfig } from "@answerable/id-admin"
 import { createAdminMcp } from "@answerable/mcp-admin/admin"
 import { migrate as migrateAdmin } from "@answerable/mcp-admin/migrate"
 import { readPlatform } from "@answerable/mcp-admin/platform"
-import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
-import { createRecordStore } from "@answerable/mcp-e2e/records"
+import { createMemoryTracer, mcpDatabases, startAuditPoller } from "@answerable/mcp-platform"
 import { assertRuntimeRole, configureRuntimeRole, runtimeGrants } from "@answerable/mcp-postgres"
 import { toolboxAdminResource } from "@answerable/mcp-toolbox/admin"
 import { migrate as migrateToolbox, runtimeGrants as toolboxGrants } from "@answerable/mcp-toolbox/migrate"
-import { startGrantsPoller } from "@answerable/mcp-toolbox/poller"
-import { createMemoryTracer } from "@answerable/mcp-toolbox/spans"
+import { mounted } from "@answerable/mcp-toolbox/mounted"
 import { createToolbox } from "@answerable/mcp-toolbox/toolbox"
 import { z } from "zod"
 import { grantOrganisation, linkClient, registerClient, registerMachine, registerResource } from "./admin"
 import { onCleanup } from "./cleanup"
 import { createDatabase, type Id } from "./id"
+import { mcpsDatabase } from "./mcps"
 import { step } from "./step"
 import { toolboxResource, type HostClient } from "./toolbox"
 
@@ -28,7 +27,8 @@ const staffRoles = ["team", "admin", "owner"] as const
 /**
  * Register the admin MCP and the Toolbox in a started ID, in the order the setup page shows them, and start both servers' machinery: the
  * admin MCP and the Toolbox each get a database on the acceptance's PostgreSQL (`answerable_admin_acceptance`, `answerable_toolbox_acceptance`),
- * migrated as the owner, and each serves as its runtime login, as `db:migrate` and the entry points do; the Toolbox gets its grants poller.
+ * migrated as the owner, and each serves as its runtime login, as `db:migrate` and the entry points do; the Toolbox mounts the MCPs of its
+ * generated list from the shared MCP database, and its audit-log poller drops its grants and profiles.
  * The caller serves the two handlers on ports 47606 and 47604.
  *
  * Registered in ID: the Toolbox's resource and its admin resource, `toolboxHost` as its host client and the Toolbox's machine client; the admin MCP's
@@ -73,15 +73,17 @@ export async function startAdminStack(id: Id, { adminHost, toolboxHost, fetch }:
   await configureRuntimeRole(adminDb.owner, adminDb.role, runtimeGrants)
   await assertRuntimeRole(adminDb.runtime)
 
-  step("Starting the Toolbox with the e2e provider")
+  step(`Starting the Toolbox mounting ${mounted.map(({ provider }) => provider.id).join(" and ")}`)
   const toolboxDb = await createDatabase("answerable_toolbox_acceptance")
   await migrateToolbox(toolboxDb.owner)
   await configureRuntimeRole(toolboxDb.owner, toolboxDb.role, toolboxGrants)
   await assertRuntimeRole(toolboxDb.runtime)
+  const mcps = mcpDatabases(mounted, { shared: (await mcpsDatabase()).toolbox, own: {} })
+  onCleanup(() => mcps.close())
+  await mcps.assert()
   const hubIds = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...hub })
-  const mount = [{ provider: createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html><title>Records</title>" }) }]
-  const toolbox = await createToolbox({ mount, auth: { issuer: manifest.idOrigin, resource: toolboxResource }, db: toolboxDb.runtime, id: hubIds, spans: createMemoryTracer().tracer })
-  const poller = startGrantsPoller({ id: hubIds, grants: toolbox.grants, profiles: toolbox.profiles })
+  const toolbox = await createToolbox({ mount: mcps.mount, pools: mcps.pools, auth: { issuer: manifest.idOrigin, resource: toolboxResource }, db: toolboxDb.runtime, id: hubIds, spans: createMemoryTracer().tracer })
+  const poller = startAuditPoller({ id: hubIds, caches: [toolbox.grants, toolbox.profiles] })
   onCleanup(() => poller.stop())
 
   return {

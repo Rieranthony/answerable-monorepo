@@ -241,6 +241,42 @@ test("wrapCall runs around every tool, prepare and commit call, sees what it ans
   expect(new Set(calls.map(call => call.executionId)).size).toBe(calls.length)
 })
 
+test("wrapCall learns the intent a commit names before it runs: the caller's own, with its mutation, whether the commit succeeds or fails", async () => {
+  const calls: ToolCall[] = []
+  const { person } = await hub({ wrapCall: (call, run) => (calls.push(call), run()) })
+  const writer = person(everything)
+  const client = await writer.connect()
+  const prepare = async () => (await client.callTool({ name: "alpha_notes_create", arguments: { text: "a" } })).structuredContent as { intent_id: string; commit_token: string; preview: { summary: string } }
+  const commit = (intent: { intent_id: string; commit_token: string; preview: { summary: string } }, token = intent.commit_token, caller = client) =>
+    caller.callTool({ name: "hub_commit_confirmed", arguments: { intent_id: intent.intent_id, commit_token: token, preview_summary: intent.preview.summary } })
+  const intent = await prepare()
+  expect(errorOf(await commit(intent, "act_wrong")).code).toBe("COMMIT_TOKEN_INVALID")
+  expect((await commit(intent)).structuredContent).toMatchObject({ intent_id: intent.intent_id, status: "committed" })
+  const named = { id: intent.intent_id, identity: "alpha/notes.create", version: "2026-09-29" }
+  expect(calls.slice(-2).map(call => call.intent)).toEqual([named, named])
+  expect(Object.isFrozen(calls.at(-1)!.intent)).toBe(true)
+  // Another person's intent, an unknown one and an id that is no UUID name no intent; nor does a call that is not a commit.
+  const other = await person(everything).connect()
+  expect(errorOf(await commit(await prepare(), undefined, other)).code).toBe("PRINCIPAL_MISMATCH")
+  expect(errorOf(await commit({ ...intent, intent_id: Bun.randomUUIDv7() })).code).toBe("INTENT_NOT_FOUND")
+  expect(errorOf(await commit({ ...intent, intent_id: "not-a-uuid" })).code).toBe("INVALID_INPUT")
+  expect(calls.slice(-3).map(call => "intent" in call)).toEqual([false, false, false])
+  expect(calls.filter(call => call.tool.kind !== "commit").some(call => "intent" in call)).toBe(false)
+})
+
+test("a refusal is answered only once every decision of allow has settled, so what it records is written first", async () => {
+  const settled: string[] = []
+  const { person } = await hub({ allow: async (_principal, tool, called) => {
+    if (called) throw new ToolError("UPSTREAM_UNAVAILABLE", "Answerable ID did not answer")
+    await Bun.sleep(20)
+    settled.push(tool.identity)
+    return true
+  } })
+  const client = await person([]).connect()
+  expect(errorOf(await client.callTool({ name: "alpha_notes_list", arguments: {} })).code).toBe("UPSTREAM_UNAVAILABLE")
+  expect(settled.toSorted()).toEqual(["alpha/notes.create", "beta/notes.create", "beta/notes.list", "hub/hub.whoami"])
+})
+
 test("policyClass may answer asynchronously", async () => {
   const { person } = await hub({ policyClass: async () => "agent" as const })
   const client = await person(["alpha/notes.create"]).connect()

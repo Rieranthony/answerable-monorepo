@@ -1,27 +1,27 @@
 import { expect, test } from "bun:test"
-import { readMcpEnvironment } from "./index"
+import { defineConfig, locally } from "@answerable/config"
+import { z } from "zod"
+import { parseEnvironment } from "./index"
 
-const env = { MCP_ID_ISSUER: "http://localhost:47300", MCP_RESOURCE_URL: "http://127.0.0.1:47500/mcp" }
-const client = { MCP_ID_CLIENT_ID: "e2e-mcp", MCP_ID_CLIENT_SECRET: "e2e-secret" }
-test("parses only issuer, resource and port, with loopback HTTP allowed", () => {
-  expect(readMcpEnvironment({ ...env, MCP_RECORDS_PATH: "ignored" })).toEqual({ auth: { issuer: env.MCP_ID_ISSUER, resource: env.MCP_RESOURCE_URL }, port: 47500, id: undefined })
-  expect(readMcpEnvironment({ ...env, MCP_PORT: "65535" }).port).toBe(65535)
+const config = defineConfig("Acme", {
+  ACME_ID_ISSUER: { schema: z.url(), defaults: locally("http://localhost:47300"), doc: "The ID issuer" },
+  ACME_RESOURCE_URL: { schema: z.url(), defaults: locally("http://localhost:47510/acme/mcp"), doc: "This server's URL" },
+  ACME_PORT: { schema: z.coerce.number().int().min(1).max(65535), fallback: "47510", doc: "The port" },
 })
-test("outside production, the issuer and the resource default to the local ID and the e2e server", () => {
-  for (const NODE_ENV of [undefined, "development", "test"])
-    expect(readMcpEnvironment({ NODE_ENV })).toEqual({ auth: { issuer: "http://localhost:47300", resource: "http://localhost:47500/mcp" }, port: 47500, id: undefined })
+const names = { issuer: "ACME_ID_ISSUER", resource: "ACME_RESOURCE_URL" } as const
+
+test("parses a server's own variables and gives createMcpServer's auth, with loopback HTTP allowed", () => {
+  const env = { ACME_ID_ISSUER: "http://127.0.0.1:47300", ACME_RESOURCE_URL: "http://127.0.0.1:47510/acme/mcp", ACME_PORT: "65535" }
+  expect(parseEnvironment(config, env, names)).toEqual({
+    data: { NODE_ENV: "development", ...env, ACME_PORT: 65535 },
+    auth: { issuer: env.ACME_ID_ISSUER, resource: env.ACME_RESOURCE_URL },
+  })
+  expect(parseEnvironment(config, { NODE_ENV: "test" }, names).auth).toEqual({ issuer: "http://localhost:47300", resource: "http://localhost:47510/acme/mcp" })
 })
-test("a machine client gives the id createIdAdmin takes, with the local admin resource outside production", () => {
-  expect(readMcpEnvironment({ ...env, ...client }).id).toEqual({ issuer: env.MCP_ID_ISSUER, adminResource: "http://localhost:47300/api/admin", clientId: "e2e-mcp", clientSecret: "e2e-secret" })
-  const production = { ...env, ...client, NODE_ENV: "production", MCP_ID_ADMIN_RESOURCE: "https://id.test/api/admin" }
-  expect(readMcpEnvironment(production).id).toMatchObject({ adminResource: "https://id.test/api/admin" })
-})
-test("reports missing and invalid variable names", () => {
-  expect(() => readMcpEnvironment({ NODE_ENV: "production" })).toThrow("Invalid MCP configuration: MCP_ID_ISSUER:")
-  expect(() => readMcpEnvironment({ NODE_ENV: "production" })).toThrow("MCP_RESOURCE_URL")
-  for (const value of ["0", "65536", "abc", "1.5", ""]) expect(() => readMcpEnvironment({ ...env, MCP_PORT: value })).toThrow("MCP_PORT")
-  expect(() => readMcpEnvironment({ ...env, MCP_ID_ISSUER: "http://evil.test" })).toThrow("Invalid MCP configuration: MCP_ID_ISSUER:")
-  expect(() => readMcpEnvironment({ ...env, MCP_RESOURCE_URL: "https://mcp.test#fragment" })).toThrow("Invalid MCP configuration: MCP_RESOURCE_URL:")
-  expect(() => readMcpEnvironment({ ...env, MCP_ID_CLIENT_ID: "e2e-mcp" })).toThrow("Invalid MCP configuration: MCP_ID_CLIENT_SECRET: set it with MCP_ID_CLIENT_ID")
-  expect(() => readMcpEnvironment({ ...env, ...client, NODE_ENV: "production" })).toThrow("Invalid MCP configuration: MCP_ID_ADMIN_RESOURCE: set it with MCP_ID_CLIENT_ID")
+
+test("names each variable that is missing or invalid, the issuer and the resource as the verifier checks them", () => {
+  expect(() => parseEnvironment(config, { NODE_ENV: "production" }, names)).toThrow("Invalid Acme configuration: ACME_ID_ISSUER:")
+  expect(() => parseEnvironment(config, { NODE_ENV: "production" }, names)).toThrow("ACME_RESOURCE_URL")
+  expect(() => parseEnvironment(config, { ACME_ID_ISSUER: "http://evil.test" }, names)).toThrow("Invalid Acme configuration: ACME_ID_ISSUER:")
+  expect(() => parseEnvironment(config, { ACME_RESOURCE_URL: "https://mcp.test#fragment" }, names)).toThrow("Invalid Acme configuration: ACME_RESOURCE_URL:")
 })

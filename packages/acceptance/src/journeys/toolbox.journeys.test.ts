@@ -64,7 +64,7 @@ beforeAll(async () => {
   // The resource allows only `toolbox` and `offline_access`: enabling an organisation widens it to the providers' grant strings.
   stack = await startToolboxStack(id, { hosts: [{ clientId, redirectUri: callback }, { clientId: metaClientId, redirectUri: callback }], database: "answerable_toolbox_acceptance", fetch: counted })
   db = stack.db
-  const { toolbox, providers } = stack
+  const { toolbox } = stack
   const read = toolbox.grants.read
   toolbox.grants.read = principal => {
     reads++
@@ -77,7 +77,8 @@ beforeAll(async () => {
   for (const { slug, grants } of tenants) {
     const { organizationId } = tenant(slug)
     const hostClientIds = slug === "toolbox-alpha" ? [clientId, metaClientId] : [clientId]
-    const enabled = await toolboxAdminCall("POST", `/organisations/${organizationId}/enable`, { hostClientIds, providers: providers.map(provider => provider.id) })
+    // The Toolbox mounts example too; these journeys enable e2e alone.
+    const enabled = await toolboxAdminCall("POST", `/organisations/${organizationId}/enable`, { hostClientIds, providers: ["e2e"] })
     if (enabled.status !== 200) throw new Error(`Enabling ${slug} answered ${enabled.status}: ${JSON.stringify(enabled.body)}`)
     if (grants.length) await admin("POST", `/organizations/${organizationId}/entitlements`, { resource, scopes: grants })
   }
@@ -179,8 +180,12 @@ describe("J6 human class", () => {
       expect(refused.details).toEqual({ approval: { class: "human", commit_tool: "toolbox_commit_confirmed", status: "pending" } })
     }
     expect(await query`select status from intents where intent_id = ${intent.intent_id}`).toEqual([{ status: "awaiting_approval" }])
-    const kinds = await query`select kind from evidence_events where intent_id = ${intent.intent_id} order by seq`
-    expect(kinds.map(row => row.kind)).toEqual(["intent.prepared", "intent.approval_requested", "capability.completed"])
+    const kinds = await query`select kind, capability_identity, error_code from evidence_events where intent_id = ${intent.intent_id} order by seq`
+    // The prepare call's row, then each refused commit's, which names the intent it could not apply.
+    expect(kinds.map(row => [row.kind, row.capability_identity, row.error_code])).toEqual([
+      ["intent.prepared", "e2e/records.delete", null], ["intent.approval_requested", "e2e/records.delete", null], ["capability.completed", "e2e/records.delete", null],
+      ["capability.completed", "toolbox/commit", "APPROVAL_REQUIRED"], ["capability.completed", "toolbox/commit_confirmed", "APPROVAL_REQUIRED"],
+    ])
     step("toolbox-beta: the intent waits as awaiting_approval; the approval page is Not yet")
   })
 })
@@ -297,12 +302,12 @@ describe("administration", () => {
     expect(refused.status).toBe(401)
     expect(await refused.json()).toMatchObject({ error: { code: "unauthorized" } })
     const listed = await toolboxAdminCall("GET", "/providers")
-    expect(listed).toMatchObject({ status: 200, body: { items: [{ id: "e2e", capabilities: expect.arrayContaining([{ identity: "e2e/records.show", version: "2026-09-29", kind: "read", risk: null, title: "Test records" }]) }] } })
+    expect(listed).toMatchObject({ status: 200, body: { items: expect.arrayContaining([expect.objectContaining({ id: "e2e", capabilities: expect.arrayContaining([{ identity: "e2e/records.show", version: "2026-09-29", kind: "read", risk: null, title: "Test records" }]) })]) } })
   })
 
   test("the enable calls left the Toolbox resource allowing the providers' grant strings and linked to the host client; a repeat reports everything as existing and changes nothing in ID", async () => {
     const resourcePath = `/resources/${encodeURIComponent(resource)}`
-    expect(await held(resourcePath)).toMatchObject({ allowedScopes: allowedScopes(stack.providers), clients: expect.arrayContaining([clientId, metaClientId]) })
+    expect(await held(resourcePath)).toMatchObject({ allowedScopes: allowedScopes(stack.providers.filter(provider => provider.id === "e2e")), clients: expect.arrayContaining([clientId, metaClientId]) })
     const state = async () => ({ resource: await held(resourcePath), capabilities: await held(`/organizations/${alpha()}/capabilities`), entitlements: await held(`/organizations/${alpha()}/entitlements`) })
     const before = await state()
     step("toolbox-alpha: calling the enable operation a second time")

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+No tool changes. Evidence, who is calling and `/health` come from `@answerable/mcp-platform`, which the Toolbox and the standalone server share.
+
+- A call refused because ID did not answer with the role is a `capability.denied` row, reason `authority_unavailable`, with `UPSTREAM_UNAVAILABLE`; before, it left none.
+- A commit call's row names the intent it applied, failed or not, and its receipt, and its `upstream` is the intent's capability's: `toolbox` for `toolbox.enable`. A success row carries `data.result_bytes`.
+- `GET /health` answers `{ status, databases: { admin }, providers: ["admin"] }`.
+- The entry point runs the audit-log poller over who is calling, so a change in ID reaches the 60-second cache sooner; the role is still read once per request.
+
 ## 0.4.0
 
 No tool changes. Every tool is told who is calling, read from ID through the admin MCP's machine client with `createIdProfiles` and cached 60 seconds, so a call to ID that fails before a handler runs answers `UPSTREAM_UNAVAILABLE`. The provider has a description, which the manifest carries, and `admin.whoami`, `organisations.list` and `staff.list` carry their examples.

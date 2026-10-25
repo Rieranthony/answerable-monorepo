@@ -1,17 +1,16 @@
 // The Toolbox as the Toolbox journeys and the host lane register and start it, so that what the lane offers by hand is what the journeys prove.
 import { createIdAdmin, type IdConfig } from "@answerable/id-admin"
-import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
-import { createRecordStore } from "@answerable/mcp-e2e/records"
+import { createMemoryTracer, mcpDatabases, startAuditPoller } from "@answerable/mcp-platform"
 import { assertRuntimeRole, configureRuntimeRole } from "@answerable/mcp-postgres"
 import { toolboxAdminResource } from "@answerable/mcp-toolbox/admin"
 import { migrate, runtimeGrants } from "@answerable/mcp-toolbox/migrate"
-import { startGrantsPoller } from "@answerable/mcp-toolbox/poller"
-import { createMemoryTracer } from "@answerable/mcp-toolbox/spans"
+import { mounted } from "@answerable/mcp-toolbox/mounted"
 import { createToolbox } from "@answerable/mcp-toolbox/toolbox"
 import { z } from "zod"
 import { registerClient, registerMachine, registerResource } from "./admin"
 import { onCleanup } from "./cleanup"
 import { createDatabase, type Id } from "./id"
+import { mcpsDatabase } from "./mcps"
 import { step } from "./step"
 
 /** The Toolbox's URL, which is the audience of its tokens; it is served on port 47604. */
@@ -22,11 +21,13 @@ const toolboxAdmin = toolboxAdminResource(toolboxResource)
 export type HostClient = { clientId: string; redirectUri: string }
 
 /**
- * Register the Toolbox in a started ID and start it with the e2e provider. Registered in ID: the Toolbox's resource (60-second tokens, allowing only
- * `toolbox` and `offline_access` until an enable call widens it) and its admin resource, each of `hosts` as a public host client, and in the platform
- * organisation the Toolbox's machine client `toolbox-hub` and a staff client `toolbox-staff` with `toolbox:admin`. The Toolbox gets the database
- * `database` on the acceptance's PostgreSQL, migrated as the owner, and serves as its runtime login, as `db:migrate` and the entry point do; it gets
- * its grants poller too. `fetch` is the HTTP client of its machine client. No organisation is enabled yet. The caller serves `toolbox.fetch` on port 47604.
+ * Register the Toolbox in a started ID and start it mounting every MCP of its generated list. Registered in ID: the Toolbox's resource (60-second
+ * tokens, allowing only `toolbox` and `offline_access` until an enable call widens it) and its admin resource, each of `hosts` as a public host
+ * client, and in the platform organisation the Toolbox's machine client `toolbox-hub` and a staff client `toolbox-staff` with `toolbox:admin`. The
+ * Toolbox gets the database `database` on the acceptance's PostgreSQL, migrated as the owner, and serves as its runtime login, as `db:migrate` and
+ * the entry point do; the mounted MCPs' tables are in the shared MCP database (`mcpsDatabase`), reached as its serving login, which is checked
+ * first; and the audit-log poller drops its grants and profiles. `fetch` is the HTTP client of its machine client. No organisation is enabled yet.
+ * The caller serves `toolbox.fetch` on port 47604.
  */
 export async function startToolboxStack(id: Id, { hosts, database, fetch }: { hosts: readonly HostClient[]; database: string; fetch?: IdConfig["fetch"] }) {
   const { admin, manifest } = id
@@ -45,22 +46,24 @@ export async function startToolboxStack(id: Id, { hosts, database, fetch }: { ho
   // first, kept for the admin calls; nothing is sent with it yet.
   await staff.withToken(toolboxAdmin, "toolbox:admin", async () => new Response())
 
-  step(`Creating and migrating ${database}, and starting the Toolbox with the e2e provider as its runtime login`)
+  step(`Creating and migrating ${database}, and starting the Toolbox mounting ${mounted.map(({ provider }) => provider.id).join(" and ")} as its runtime logins`)
   const { owner, runtime, role } = await createDatabase(database)
   await migrate(owner)
   await configureRuntimeRole(owner, role, runtimeGrants)
   await assertRuntimeRole(runtime)
-  const providers = [createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html><title>Records</title>" })]
+  const mcps = mcpDatabases(mounted, { shared: (await mcpsDatabase()).toolbox, own: {} })
+  onCleanup(() => mcps.close())
+  await mcps.assert()
   const { tracer, spans } = createMemoryTracer()
   const machine = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...hub, fetch })
-  const toolbox = await createToolbox({ mount: providers.map(provider => ({ provider })), auth: { issuer: manifest.idOrigin, resource: toolboxResource }, db: runtime, id: machine, spans: tracer })
-  const poller = startGrantsPoller({ id: machine, grants: toolbox.grants, profiles: toolbox.profiles })
+  const toolbox = await createToolbox({ mount: mcps.mount, pools: mcps.pools, auth: { issuer: manifest.idOrigin, resource: toolboxResource }, db: runtime, id: machine, spans: tracer })
+  const poller = startAuditPoller({ id: machine, caches: [toolbox.grants, toolbox.profiles] })
   onCleanup(() => poller.stop())
 
   return {
     toolbox,
-    /** The providers the Toolbox mounts: the e2e provider. */
-    providers,
+    /** The providers the Toolbox mounts: those of its generated list. */
+    providers: mounted.map(({ provider }) => provider),
     /** The Toolbox's database as its owner, to read the catalogue, intents and evidence the Toolbox wrote as its runtime login. */
     db: owner,
     /** The Toolbox's spans, in memory. */

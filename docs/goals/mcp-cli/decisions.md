@@ -119,7 +119,7 @@ The shared mode in detail:
 
 **D13. Names.**
 - The MCP name rule is the provider id rule.
-- Reserved names: `toolbox`, `admin`, `id`, `mcp`, `mcps`, `standalone`, `api`, `www`, `test`, `ops`, `public` and `drizzle`. `e2e` and `example` aren't reserved; their directories take them.
+- Reserved names: `toolbox`, `admin`, `id`, `mcp`, `mcps`, `standalone`, `api`, `www`, `test`, `ops`, `public`, `drizzle`, `platform` and `postgres` (the last two would collide with `@answerable/mcp-platform` and `@answerable/mcp-postgres`). `e2e` and `example` aren't reserved; their directories take them.
 - Retired names are listed in `mcps/retired.json` and refused for ever.
 - The tool name rule is the SDK's, unique within the MCP.
 - `bun mcp retire`: Not yet.

@@ -26,7 +26,7 @@ test("the entry point learns the platform organisation from ID, serves as the ru
   const { fake, origin, server, stop } = start(login.url)
   try {
     expect(new TextDecoder().decode((await server.stdout.getReader().read()).value)).toBe(`Admin MCP serving ${origin}/mcp for platform organisation ${fake.organizationId}\n`)
-    expect(await (await fetch(`${origin}/health`)).json()).toEqual({ status: "ok" })
+    expect(await (await fetch(`${origin}/health`)).json()).toEqual({ status: "ok", databases: { admin: "ok" }, providers: ["admin"] })
     server.kill("SIGTERM")
     expect(await server.exited).toBe(0)
   } finally {
@@ -61,7 +61,7 @@ test("the entry point listens on ADMIN_HOST", async () => {
   const server = Bun.spawn([process.execPath, "src/server.ts"], { cwd: directory, env, stdout: "pipe", stderr: "pipe" })
   try {
     expect(new TextDecoder().decode((await server.stdout.getReader().read()).value)).toContain("Admin MCP serving")
-    expect(await (await fetch(`http://[::1]:${port}/health`)).json()).toEqual({ status: "ok" })
+    expect(await (await fetch(`http://[::1]:${port}/health`)).json()).toMatchObject({ status: "ok" })
     // Bound to the IPv6 loopback only, so nothing listens on the IPv4 loopback's port.
     await expect(fetch(`http://127.0.0.1:${port}/health`)).rejects.toThrow()
   } finally {

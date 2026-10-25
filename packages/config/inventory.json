@@ -209,6 +209,24 @@
         "optional": false
       },
       {
+        "name": "TOOLBOX_MCPS_DATABASE_URL",
+        "secret": true,
+        "defaults": {
+          "development": "postgres://answerable_mcps_toolbox:answerable@localhost:47432/answerable_mcps",
+          "test": "postgres://answerable_mcps_toolbox:answerable@localhost:47432/answerable_mcps"
+        },
+        "doc": "The shared MCP database, answerable_mcps, as the Toolbox's serving login, answerable_mcps_toolbox, which takes each mounted MCP's runtime role",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "TOOLBOX_MCPS_ROLE_PREFIX",
+        "secret": false,
+        "fallback": "mcp",
+        "doc": "The prefix of the MCPs' roles in the shared database: mcp; a test that serves its own database names its own",
+        "optional": true
+      },
+      {
         "name": "TOOLBOX_ID_ISSUER",
         "secret": false,
         "defaults": {
@@ -495,8 +513,8 @@
     ]
   },
   {
-    "name": "MCP",
-    "reader": "packages/mcp/src/environment.ts, read by readMcpEnvironment for the e2e server (bun run mcp:dev)",
+    "name": "standalone server",
+    "reader": "mcps/standalone/src/environment.ts, read from the root .env by bun run standalone:dev",
     "fields": [
       {
         "name": "NODE_ENV",
@@ -507,52 +525,156 @@
         "optional": true
       },
       {
-        "name": "MCP_ID_ISSUER",
+        "name": "STANDALONE_ORIGIN",
+        "secret": false,
+        "defaults": {
+          "development": "http://localhost:47510",
+          "test": "http://localhost:47510"
+        },
+        "doc": "The standalone server's origin: each MCP it serves is the resource <origin>/<name>/mcp, the audience of its tokens",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "STANDALONE_ID_ISSUER",
         "secret": false,
         "defaults": {
           "development": "http://localhost:47300",
           "test": "http://localhost:47300"
         },
-        "doc": "The Answerable ID issuer whose tokens the server accepts",
+        "doc": "The Answerable ID issuer whose tokens the standalone server accepts",
+        "source": "chart",
         "optional": false
       },
       {
-        "name": "MCP_RESOURCE_URL",
+        "name": "STANDALONE_HOST",
         "secret": false,
-        "defaults": {
-          "development": "http://localhost:47500/mcp",
-          "test": "http://localhost:47500/mcp"
-        },
-        "doc": "The server's own URL, the audience of the tokens it accepts",
-        "optional": false
-      },
-      {
-        "name": "MCP_PORT",
-        "secret": false,
-        "fallback": "47500",
-        "doc": "The port the server listens on; each MCP running at the same time needs its own",
+        "fallback": "127.0.0.1",
+        "doc": "The address to listen on: loopback unless a container or a proxy in front needs another",
+        "source": "image",
         "optional": true
       },
       {
-        "name": "MCP_ID_CLIENT_ID",
+        "name": "STANDALONE_PORT",
         "secret": false,
-        "doc": "A machine client in ID with platform:read, through which the server reads who is calling; a server whose profiles use ID needs it",
+        "fallback": "47510",
+        "doc": "The port the standalone server listens on",
+        "source": "image",
         "optional": true
       },
       {
-        "name": "MCP_ID_CLIENT_SECRET",
+        "name": "STANDALONE_DATABASE_URL",
         "secret": true,
-        "doc": "That machine client's secret, set with MCP_ID_CLIENT_ID",
+        "defaults": {
+          "development": "postgres://answerable_standalone_runtime:answerable@localhost:47432/answerable_standalone",
+          "test": "postgres://answerable_standalone_runtime:answerable@localhost:47432/answerable_standalone"
+        },
+        "doc": "The standalone server's Postgres URL, for intents and evidence, as its restricted runtime login, never the owner",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "STANDALONE_MCPS_DATABASE_URL",
+        "secret": true,
+        "defaults": {
+          "development": "postgres://answerable_mcps_standalone:answerable@localhost:47432/answerable_mcps",
+          "test": "postgres://answerable_mcps_standalone:answerable@localhost:47432/answerable_mcps"
+        },
+        "doc": "The shared MCP database, answerable_mcps, as the standalone server's serving login, answerable_mcps_standalone, which takes each served MCP's runtime role",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "STANDALONE_MCPS_ROLE_PREFIX",
+        "secret": false,
+        "fallback": "mcp",
+        "doc": "The prefix of the MCPs' roles in the shared database: mcp; a test that serves its own database names its own",
         "optional": true
       },
       {
-        "name": "MCP_ID_ADMIN_RESOURCE",
+        "name": "STANDALONE_ID_CLIENT_ID",
+        "secret": false,
+        "doc": "The standalone server's machine client in ID, standalone-hub, with platform:read, through which it reads who is calling",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "STANDALONE_ID_CLIENT_SECRET",
+        "secret": true,
+        "doc": "The standalone server machine client's secret",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "STANDALONE_ID_ADMIN_RESOURCE",
         "secret": false,
         "defaults": {
           "development": "http://localhost:47300/api/admin",
           "test": "http://localhost:47300/api/admin"
         },
-        "doc": "ID's admin API, the audience of the machine client's tokens; set with MCP_ID_CLIENT_ID",
+        "doc": "ID's admin API, the audience of the machine client's tokens",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "secret": false,
+        "doc": "Where to export spans over OTLP/HTTP, such as a local collector; unset, none are exported",
+        "source": "operator",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "standalone server migration",
+    "reader": "mcps/standalone/scripts/env.ts, read by scripts/migrate.ts",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "STANDALONE_DATABASE_MIGRATION_URL",
+        "secret": true,
+        "defaults": {
+          "development": "postgres://answerable_standalone_owner:answerable@localhost:47432/answerable_standalone",
+          "test": "postgres://answerable_standalone_owner:answerable@localhost:47432/answerable_standalone"
+        },
+        "doc": "The standalone server's Postgres URL as its owner, for the migration only",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "STANDALONE_DATABASE_RUNTIME_ROLE",
+        "secret": false,
+        "fallback": "answerable_standalone_runtime",
+        "doc": "The restricted role the migration provisions and the standalone server serves as",
+        "source": "chart",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "standalone server test database",
+    "reader": "mcps/standalone/src/test/database.ts, for the standalone server's tests",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "STANDALONE_TEST_DATABASE_URL",
+        "secret": false,
+        "fallback": "postgres://answerable:answerable@localhost:47432/answerable_standalone_test",
+        "doc": "The disposable database the standalone server's tests reset, named answerable_standalone_test",
         "optional": true
       }
     ]

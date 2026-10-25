@@ -20,7 +20,7 @@ It needs its registrations in ID and the `ADMIN_*` variables, which `default.env
 
 | File | Job |
 | --- | --- |
-| `src/admin.ts` | `createAdminMcp({ auth, db, id, platform, freshSeconds, toolbox })`: the provider on `@answerable/mcp` with `allow` (the platform check, the `admin` scope and the role against each tool's minimum), every mutation controlled class, evidence for every call and refusal on the platform organisation's chain, intents in Postgres, `/health` |
+| `src/admin.ts` | `createAdminMcp({ auth, db, id, platform, freshSeconds, toolbox })`: the provider on `@answerable/mcp` with `allow` (the platform check, the `admin` scope and the role against each tool's minimum), every mutation controlled class, evidence for every call and refusal on the platform organisation's chain, a refusal because ID did not answer with the role included, and `/health`, from `@answerable/mcp-platform`; intents in Postgres; `profiles`, which the entry point's audit-log poller invalidates |
 | `src/roles.ts` | `createRoles`: each caller's role from ID's member access view, once per request; `roleOf`, the three grant strings; `refusal`, why a caller may not use a tool |
 | `src/provider.ts` | `createAdminProvider`: `admin_whoami`, the read tools and the writes, each with its minimum role |
 | `src/calls.ts` | `createCalls`: ID's admin API as the tools call it, with the call's execution id as `x-request-id`; reads with ETags, and writes with the intent's id as `Idempotency-Key`, sent once more when ID does not answer; ID asking to be asked again (`503`, `409 operation_in_progress`) is `UPSTREAM_UNAVAILABLE` after its `Retry-After` |

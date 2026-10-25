@@ -1,34 +1,33 @@
 import { expect, test } from "bun:test"
 import { runtimeGrants } from "./db/migrate"
 import { database } from "./test/database"
+import { databases, prefix } from "./test/mcps"
 
 const directory = new URL("../", import.meta.url).pathname
-
-// The e2e view the entry point imports, built as the Toolbox's dev script builds it.
-const build = Bun.spawn([process.execPath, "run", "--filter", "@answerable/mcp-e2e", "build"], { cwd: directory, stdout: "ignore", stderr: "pipe" })
-if ((await build.exited) !== 0) throw new Error(`Building the e2e view failed: ${await new Response(build.stderr).text()}`)
+// The mounted MCPs' database as the suite serves it, with its role prefix.
+const mcps = { TOOLBOX_MCPS_DATABASE_URL: databases.url, TOOLBOX_MCPS_ROLE_PREFIX: prefix }
 
 // The entry point on a free port against `databaseUrl`. ID is not there: the poller logs that it failed, and nothing here reads grants.
-function start(databaseUrl: string) {
+function start(databaseUrl: string, overrides: Record<string, string> = {}) {
   const probe = Bun.serve({ port: 0, fetch: () => new Response() })
   const { port } = probe
   probe.stop(true)
   const origin = `http://127.0.0.1:${port}`
   const id = "http://127.0.0.1:1"
   const env = {
-    ...process.env, TOOLBOX_DATABASE_URL: databaseUrl, TOOLBOX_ID_ISSUER: id, TOOLBOX_RESOURCE_URL: `${origin}/mcp`, TOOLBOX_PORT: String(port),
-    TOOLBOX_ID_CLIENT_ID: "toolbox-hub", TOOLBOX_ID_CLIENT_SECRET: "secret", TOOLBOX_ID_ADMIN_RESOURCE: `${id}/api/admin`,
+    ...process.env, ...mcps, TOOLBOX_DATABASE_URL: databaseUrl, TOOLBOX_ID_ISSUER: id, TOOLBOX_RESOURCE_URL: `${origin}/mcp`, TOOLBOX_PORT: String(port),
+    TOOLBOX_ID_CLIENT_ID: "toolbox-hub", TOOLBOX_ID_CLIENT_SECRET: "secret", TOOLBOX_ID_ADMIN_RESOURCE: `${id}/api/admin`, ...overrides,
   }
   const server = Bun.spawn([process.execPath, "src/server.ts"], { cwd: directory, env, stdout: "pipe", stderr: "pipe" })
   return { origin, server }
 }
 
-test("the entry point serves as the runtime login, answers /health and stops on SIGTERM", async () => {
+test("the entry point serves as the runtime login, answers /health with the mounted providers and stops on SIGTERM", async () => {
   const login = await database.runtimeLogin(runtimeGrants)
   const { origin, server } = start(login.url)
   try {
     expect(new TextDecoder().decode((await server.stdout.getReader().read()).value)).toContain(`Toolbox serving ${origin}/mcp`)
-    expect(await (await fetch(`${origin}/health`)).json()).toEqual({ status: "ok" })
+    expect(await (await fetch(`${origin}/health`)).json()).toEqual({ status: "ok", databases: { toolbox: "ok", mcps: "ok" }, providers: ["e2e", "example"] })
     server.kill("SIGTERM")
     expect(await server.exited).toBe(0)
   } finally {
@@ -56,18 +55,30 @@ test("the entry point listens on TOOLBOX_HOST", async () => {
   probe.stop(true)
   const id = "http://127.0.0.1:1"
   const env = {
-    ...process.env, TOOLBOX_DATABASE_URL: login.url, TOOLBOX_ID_ISSUER: id, TOOLBOX_RESOURCE_URL: `http://[::1]:${port}/mcp`, TOOLBOX_PORT: String(port),
+    ...process.env, ...mcps, TOOLBOX_DATABASE_URL: login.url, TOOLBOX_ID_ISSUER: id, TOOLBOX_RESOURCE_URL: `http://[::1]:${port}/mcp`, TOOLBOX_PORT: String(port),
     TOOLBOX_HOST: "::1", TOOLBOX_ID_CLIENT_ID: "toolbox-hub", TOOLBOX_ID_CLIENT_SECRET: "secret", TOOLBOX_ID_ADMIN_RESOURCE: `${id}/api/admin`,
   }
   const server = Bun.spawn([process.execPath, "src/server.ts"], { cwd: directory, env, stdout: "pipe", stderr: "ignore" })
   try {
     expect(new TextDecoder().decode((await server.stdout.getReader().read()).value)).toContain("Toolbox serving")
-    expect(await (await fetch(`http://[::1]:${port}/health`)).json()).toEqual({ status: "ok" })
+    expect(await (await fetch(`http://[::1]:${port}/health`)).json()).toMatchObject({ status: "ok" })
     // Bound to the IPv6 loopback only, so nothing listens on the IPv4 loopback's port.
     await expect(fetch(`http://127.0.0.1:${port}/health`)).rejects.toThrow()
   } finally {
     server.kill()
     await server.exited
+    await login.drop()
+  }
+}, 30_000)
+
+test("the entry point refuses a serving login that cannot take a mounted MCP's role, naming it, before it listens", async () => {
+  const login = await database.runtimeLogin(runtimeGrants)
+  const { server } = start(login.url, { TOOLBOX_MCPS_ROLE_PREFIX: "mcp_tbxnone" })
+  try {
+    expect(await server.exited).toBe(1)
+    expect(await new Response(server.stderr).text()).toContain("is not a member of mcp_tbxnone_e2e")
+  } finally {
+    server.kill()
     await login.drop()
   }
 }, 30_000)

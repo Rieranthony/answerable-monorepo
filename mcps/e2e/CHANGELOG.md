@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+Its records live in Postgres, in schema `e2e`, each organisation's limited to it by row-level security, and it is laid out as `bun mcp new` lays an MCP out: `src/mcp.ts`, `src/provider.ts`, one file per tool in `src/tools`, `src/db/schema.ts` and `drizzle/`. It is served both ways (`mcp.json`: `both`, `shared`), by the Toolbox and the standalone server. Its contracts are unchanged: `manifest.json` is byte for byte the same, at version `2026-09-29`.
+
+- Breaking: `exports` is `./provider` alone, the provider as plain data. `createE2eProvider`, `createRecordStore` and its `touch`, `./mcp`, `./records` and `./view` are gone; a test makes and moves records through the database.
+- `src/server.ts`, its `MCP_ID_*` machine client and `bun run mcp:dev` are gone: the standalone server serves it (`bun run standalone:dev`).
+- The view is bundled when `src/view.ts` is first imported, so `dist/`, `scripts/build.ts` and `bun run build` are gone.
+
 ## 0.2.0
 
 The server reads who is calling from ID, so it needs a `platform:read` machine client: `MCP_ID_CLIENT_ID` and `MCP_ID_CLIENT_SECRET`. Without them it refuses to start, naming them. The provider has a description, which the manifest carries, and every tool but `records.delete` carries its example.

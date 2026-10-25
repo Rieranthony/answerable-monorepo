@@ -1,22 +1,5 @@
-import { ConfigError, defineConfig, locally, type Config, type Field } from "@answerable/config"
+import { ConfigError, type Config, type Field } from "@answerable/config"
 import { createIdVerifier } from "@answerable/auth"
-import { z } from "zod"
-
-/** The variables `readMcpEnvironment` reads; the local defaults are the e2e server's. The machine client has none, since the local ID issues it. */
-export const mcpConfig = defineConfig("MCP", {
-  MCP_ID_ISSUER: { schema: z.url(), defaults: locally("http://localhost:47300"), doc: "The Answerable ID issuer whose tokens the server accepts" },
-  MCP_RESOURCE_URL: { schema: z.url(), defaults: locally("http://localhost:47500/mcp"), doc: "The server's own URL, the audience of the tokens it accepts" },
-  MCP_PORT: { schema: z.coerce.number().int().min(1).max(65535), fallback: "47500", doc: "The port the server listens on; each MCP running at the same time needs its own" },
-  MCP_ID_CLIENT_ID: { schema: z.string().min(1).optional(), doc: "A machine client in ID with platform:read, through which the server reads who is calling; a server whose profiles use ID needs it" },
-  MCP_ID_CLIENT_SECRET: { schema: z.string().min(1).optional(), secret: true, doc: "That machine client's secret, set with MCP_ID_CLIENT_ID" },
-  MCP_ID_ADMIN_RESOURCE: { schema: z.url().optional(), defaults: locally("http://localhost:47300/api/admin"), doc: "ID's admin API, the audience of the machine client's tokens; set with MCP_ID_CLIENT_ID" },
-}, {
-  refine(data, issue) {
-    if (data.MCP_ID_CLIENT_ID === undefined) return
-    if (data.MCP_ID_CLIENT_SECRET === undefined) issue("MCP_ID_CLIENT_SECRET", "set it with MCP_ID_CLIENT_ID")
-    if (data.MCP_ID_ADMIN_RESOURCE === undefined) issue("MCP_ID_ADMIN_RESOURCE", "set it with MCP_ID_CLIENT_ID")
-  },
-})
 
 /**
  * Read `env` with `config`, a server's own variables from `defineConfig` (`@answerable/config`), then check the ID issuer and the resource URL,
@@ -52,16 +35,4 @@ export function parseEnvironment<Fields extends Record<string, Field>>(
     throw new ConfigError(config.label, [{ name: message.startsWith("resource") ? names.resource : names.issuer, message }])
   }
   return { data, auth }
-}
-
-/**
- * Read `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` (default 47500) into the `auth` option of `createMcpServer` and a port, and, when
- * `MCP_ID_CLIENT_ID` is set, the machine client `createIdAdmin` takes as `id`, from it, `MCP_ID_CLIENT_SECRET` and `MCP_ID_ADMIN_RESOURCE`. A server
- * whose profiles use ID refuses to start without `id`. Throws naming the variable that is missing or invalid. Outside production, the issuer and the
- * resource default to the local ID and `http://localhost:47500/mcp`, and the admin resource to the local ID's.
- */
-export function readMcpEnvironment(env: Record<string, string | undefined>) {
-  const { data, auth } = parseEnvironment(mcpConfig, env, { issuer: "MCP_ID_ISSUER", resource: "MCP_RESOURCE_URL" })
-  const { MCP_ID_CLIENT_ID: clientId, MCP_ID_CLIENT_SECRET: clientSecret, MCP_ID_ADMIN_RESOURCE: adminResource } = data
-  return { auth, port: data.MCP_PORT, id: clientId === undefined ? undefined : { issuer: auth.issuer, adminResource: adminResource!, clientId, clientSecret: clientSecret! } }
 }

@@ -24,6 +24,7 @@ COPY packages/auth packages/auth
 COPY packages/config packages/config
 COPY packages/id-admin packages/id-admin
 COPY packages/mcp packages/mcp
+COPY packages/mcp-platform packages/mcp-platform
 COPY packages/mcp-postgres packages/mcp-postgres
 COPY mcps/admin mcps/admin
 # Bun's transpiler cache would write under the home directory; the root filesystem is read-only.

@@ -64,7 +64,7 @@ test("a platform member without a role lists admin_whoami only, which says role 
   })
   await expect(client.callTool({ name: "organisations_list", arguments: {} })).rejects.toThrow("Tool organisations_list not found")
   expect((await events(platform)).map(({ kind, reason, capability_identity, data }) => [kind, reason, capability_identity, data])).toEqual([
-    ["capability.completed", null, "admin/admin.whoami", {}],
+    ["capability.completed", null, "admin/admin.whoami", { result_bytes: expect.any(Number) }],
     ["capability.denied", "role_below_minimum", "admin/organisations.list", { held: null, needed: "team" }],
   ])
 })
@@ -115,8 +115,8 @@ test("a token without the admin scope gets no tools, recorded as denied: missing
   expect((await events(platform)).map(({ reason, data }) => [reason, data])).toEqual([["missing_scope", { missing: ["admin"] }]])
 })
 
-test("when ID cannot say what a member may use, a list fails and a call answers UPSTREAM_UNAVAILABLE; nothing is served from memory", async () => {
-  const { staff, id } = await admin()
+test("when ID cannot say what a member may use, a list fails and a call answers UPSTREAM_UNAVAILABLE, a refusal in evidence; nothing is served from memory", async () => {
+  const { staff, id, platform } = await admin()
   const client = await staff(["admin", "answerable-owner"]).connect()
   expect(await names(client)).toEqual(ownerTools)
   const log = spyOn(console, "error").mockImplementation(() => {})
@@ -130,6 +130,9 @@ test("when ID cannot say what a member may use, a list fails and a call answers 
     }
     expect(log).toHaveBeenCalledWith("[admin] reading the role failed", expect.anything())
   } finally { log.mockRestore() }
+  expect((await events(platform)).map(({ kind, capability_identity, reason, error_code }) => [kind, capability_identity, reason, error_code])).toEqual([
+    ["capability.denied", "admin/admin.whoami", "authority_unavailable", "UPSTREAM_UNAVAILABLE"], ["capability.denied", "admin/admin.whoami", "authority_unavailable", "UPSTREAM_UNAVAILABLE"],
+  ])
 })
 
 test("every call leaves one evidence row on the platform organisation's chain, and every ID call it makes carries its execution id as x-request-id", async () => {
@@ -144,7 +147,7 @@ test("every call leaves one evidence row on the platform organisation's chain, a
   expect(rows).toEqual([
     {
       kind: "capability.completed", outcome: "success", actor_id: person.member.userId, client_id: "test-client", capability_identity: "admin/organisations.get",
-      capability_version: "2026-10-01", reason: null, error_code: null, data: {}, execution_id: expect.any(String), request_id: expect.any(String), upstream: "id",
+      capability_version: "2026-10-01", reason: null, error_code: null, data: { result_bytes: expect.any(Number) }, execution_id: expect.any(String), request_id: expect.any(String), upstream: "id",
     },
     expect.objectContaining({ kind: "capability.completed", outcome: "failure", error_code: "NOT_FOUND", execution_id: missing.request_id }),
   ])
@@ -166,9 +169,9 @@ test("health answers ok only while the database answers", async () => {
     const response = await server.fetch(new Request("https://mcp.test/health"))
     return [response.status, await response.json()]
   }
-  expect(await health()).toEqual([200, { status: "ok" }])
+  expect(await health()).toEqual([200, { status: "ok", databases: { admin: "ok" }, providers: ["admin"] }])
   await own.$client.end()
-  expect(await health()).toEqual([503, { status: "unavailable" }])
+  expect(await health()).toEqual([503, { status: "unavailable", databases: { admin: "unavailable" }, providers: ["admin"] }])
 })
 
 type Client = Awaited<ReturnType<TestMcp["connect"]>>

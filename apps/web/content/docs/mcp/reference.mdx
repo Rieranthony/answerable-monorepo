@@ -183,13 +183,13 @@ it for 30 seconds, for that caller alone.
 **Example**
 
 ```ts
-import { createMcpServer, readMcpEnvironment } from "@answerable/mcp"
+import { createMcpServer } from "@answerable/mcp"
 import { createIdAdmin, createIdProfiles } from "@answerable/id-admin"
 import { provider } from "./provider"
 
-const { auth, port, id } = readMcpEnvironment(process.env)
-const server = createMcpServer({ provider, auth, profiles: createIdProfiles(createIdAdmin(id!)) })
-Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
+const auth = { issuer: "http://localhost:47300", resource: "http://localhost:47510/acme/mcp" }
+const server = createMcpServer({ provider, auth, profiles: createIdProfiles(createIdAdmin(machineClient)) })
+Bun.serve({ hostname: "127.0.0.1", port: 47510, fetch: server.fetch })
 ```
 
 ### McpServerConfig
@@ -198,7 +198,7 @@ Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
 type McpServerConfig = {
   /** The provider it serves, from `defineProvider`: its tools, prompts and resources, named after it. */
   provider: Provider
-  /** The Answerable ID issuer to trust and this server's resource URL, the token audience: `readMcpEnvironment(process.env).auth`. */
+  /** The Answerable ID issuer to trust and this server's resource URL, the token audience: `parseEnvironment(config, process.env, names).auth`. */
   auth: IdVerifierConfig
   /**
    * Who is calling, beyond the token's ids: the person's name, email and groups, and the organisation's name and slug, which every handler
@@ -227,7 +227,8 @@ type McpServerConfig = {
    * requests, such as `initialize`, see no tools. `called` is true when the request calls that tool, so a hub can record the refusal.
    * A `ToolError` it throws answers a call with that error whatever tool the call names (a name no tool could have, outside lowercase letters,
    * digits and underscores, stays unknown); a list fails. Anything else it throws fails the request with HTTP 500, logged as `[mcp] request failed`.
-   * Default: the token carries every scope of the tool.
+   * The request is answered only once every decision has settled, so a hub's refusal evidence is written first. Default: the token carries every
+   * scope of the tool.
    */
   allow?: (principal: UserPrincipal, tool: Served<Tool | Mutation>, called: boolean) => boolean | Promise<boolean>
   /**
@@ -301,6 +302,15 @@ type ToolCall = Readonly<{
   requestId: string | number
   /** The request's `_meta`, such as a W3C `traceparent`. Untrusted, like every argument. */
   meta: Readonly<Record<string, unknown>>
+  /**
+   * For a commit tool, the intent the call names, read before `wrapCall` runs, when it exists and is the caller's own: its id and the identity and
+   * version of the mutation it prepared, so that a hub records which intent a commit applied, even when the commit fails. Absent otherwise.
+   */
+  intent?: Readonly<{
+    id: string
+    identity: string
+    version: string
+  }>
 }>
 ```
 
@@ -1232,29 +1242,6 @@ const config = defineConfig("Acme", {
 const { data, auth } = parseEnvironment(config, process.env, { issuer: "ACME_ID_ISSUER", resource: "ACME_RESOURCE_URL" })
 ```
 
-### readMcpEnvironment
-
-```ts
-function readMcpEnvironment(env: Record<string, string | undefined>): {
-  auth: {
-    issuer: string
-    resource: string
-  }
-  port: number
-  id: {
-    issuer: string
-    adminResource: string
-    clientId: string
-    clientSecret: string
-  } | undefined
-}
-```
-
-Read `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` (default 47500) into the `auth` option of `createMcpServer` and a port, and, when
-`MCP_ID_CLIENT_ID` is set, the machine client `createIdAdmin` takes as `id`, from it, `MCP_ID_CLIENT_SECRET` and `MCP_ID_ADMIN_RESOURCE`. A server
-whose profiles use ID refuses to start without `id`. Throws naming the variable that is missing or invalid. Outside production, the issuer and the
-resource default to the local ID and `http://localhost:47500/mcp`, and the admin resource to the local ID's.
-
 ### UserPrincipal
 
 Re-exported from `@answerable/auth`; see [UserPrincipal](#userprincipal).
@@ -1423,8 +1410,7 @@ expect(errorOf(result).code).toBe("NOT_FOUND")
 function assertProviderConformance(provider: Provider, fixture: ConformanceFixture): void
 ```
 
-Register one test per conformance check for a provider: call it at the top level of a test file, with the provider built on
-test dependencies such as in-memory stores. The provider is served in-process with its own intent store, so a failing test names the check
+Register one test per conformance check for a provider: call it at the top level of a test file. The provider is served in-process with its own intent store, so a failing test names the check
 and the definition to change. Each mutation is prepared once while the checks are registered: the two checks that need a target are
 registered as skipped, with the reason, for a mutation that prepares none.
 
@@ -1439,12 +1425,12 @@ Each definition is called with its own `example`, unless the fixture's `examples
 
 ```ts
 import { assertProviderConformance } from "@answerable/mcp/testing"
-import { createE2eProvider } from "./mcp"
+import { provider, tickets } from "./provider"
 
-assertProviderConformance(createE2eProvider({ records, viewHtml: "<title>Records</title>" }), {
+assertProviderConformance(provider, {
   manifest: new URL("../manifest.json", import.meta.url),
-  examples: { "records.delete": principal => ({ id: records.create(principal, "Doomed").id }) },
-  moveTarget: (target, principal) => records.touch(principal, target.resource_id),
+  examples: { "tickets.close": principal => ({ id: tickets.open(principal.organizationId, "Leak").id }) },
+  moveTarget: target => tickets.touch(target.resource_id),
 })
 ```
 

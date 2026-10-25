@@ -1,4 +1,5 @@
 import { createIdAdmin } from "@answerable/id-admin"
+import { startAuditPoller } from "@answerable/mcp-platform"
 import { assertRuntimeRole, connect } from "@answerable/mcp-postgres"
 import { createAdminMcp } from "./admin"
 import { readAdminEnvironment } from "./environment"
@@ -17,12 +18,15 @@ await assertRuntimeRole(db).catch(async (error: Error) => {
   console.error(`The admin MCP cannot start: ${error.message}`)
   process.exit(1)
 })
-const server = Bun.serve({ hostname, port, fetch: createAdminMcp({ auth, db, id, platform, freshSeconds, toolbox: toolboxAdminResource ? { resource: toolboxAdminResource } : undefined }).fetch })
+const admin = createAdminMcp({ auth, db, id, platform, freshSeconds, toolbox: toolboxAdminResource ? { resource: toolboxAdminResource } : undefined })
+const poller = startAuditPoller({ id, caches: [admin.profiles] })
+const server = Bun.serve({ hostname, port, fetch: admin.fetch })
 console.log(`Admin MCP serving ${auth.resource} for platform organisation ${platform}`)
 let closing = false
 async function close() {
   if (closing) return
   closing = true
+  poller.stop()
   await server.stop()
   await db.$client.end()
 }

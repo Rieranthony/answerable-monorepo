@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.0
+
+On the official MCP SDK 2.4.0 (`@modelcontextprotocol/server` and `client`, from 2.1.0) and `@modelcontextprotocol/ext-apps` 2.0.3. Breaking: `readMcpEnvironment` and its `MCP_*` variables are gone.
+
+- `ToolCall.intent`: for a commit tool, the intent the call names, read before `wrapCall` runs when it exists and is the caller's own: its `id` and the `identity` and `version` of the mutation it prepared. A hub's evidence names the intent a commit applied, even when the commit fails.
+- A request is answered only once every `allow` decision has settled, so a hub's refusal evidence is written before the answer.
+- Breaking: `readMcpEnvironment` and `mcpConfig` are gone with the e2e server they configured: the standalone server serves MCPs. `parseEnvironment` stays.
+
 ## 0.11.0
 
 Every handler is told who is calling, and an MCP with a database gets it typed in its context ([D17, D18](../../docs/goals/mcp-cli/decisions.md)). Breaking: `createMcpServer` needs `profiles`, `defineProvider` a `description`, and `mount` takes entries.

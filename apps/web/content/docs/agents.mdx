@@ -21,7 +21,7 @@ Read first: AGENTS.md, then https://www.answerable.org/docs/mcp/quickstart.md, h
 3. Change each tool's file and its table in src/db/schema.ts to the real data, then run `bun mcp db <name> generate`. Every table keeps organisation_id and its organisationIsolation policy. prepare returns a preview and changes nothing; commit applies exactly that.
 4. Throw ToolError for expected failures, and list any custom code in the definition's errors.
 5. Keep each tool's test proving that each organisation sees only its rows. Commit a mutation with the tool its intent's commit_tool names.
-6. Run `bun mcp check <name>` until it passes with 100% coverage, and commit the manifest and charts/answerable/mcps.json it rewrites.
+6. Run `bun mcp check <name>` until it passes with 100% coverage, and commit the manifest and the generated files it rewrites.
 
 Do not add a Better Auth instance and do not read Answerable ID's database. Report the tools you made, the risk of each mutation, and the output of bun mcp check.
 ```
@@ -31,17 +31,16 @@ The guide it follows: [Build your first MCP](/docs/mcp/quickstart).
 ## Add tools to the Toolbox
 
 ```text
-In the Answerable monorepo, mount the provider of mcps/<name> in the Toolbox, mcps/toolbox.
+In the Answerable monorepo, mount mcps/<name> in the Toolbox, mcps/toolbox.
 
 Read first: AGENTS.md and https://www.answerable.org/docs/toolbox/add-tools.md.
 
-1. Check that `bun run mcp:check @answerable/mcp-<name>` passes.
-2. Check that mcps/<name>/package.json has "exports": { "./provider": "./src/provider.ts" }, which bun mcp new writes; add it otherwise.
-3. Add "@answerable/mcp-<name>": "workspace:*" to the dependencies of mcps/toolbox/package.json, import the provider in mcps/toolbox/src/server.ts and add { provider } to the mount passed to createToolbox.
-4. Run `bun install`, then `bun run mcp:check @answerable/mcp-toolbox`. Its suite needs the development PostgreSQL on port 47432; never run `bun run env:up` from a worktree.
-5. Write out, for staff, the enable call and the entitlement from the guide, filled in with the provider id.
+1. Check that `bun mcp check <name>` passes.
+2. Set "serve" to "toolbox", or "both" to keep it on its own URL too, in mcps/<name>/mcp.json.
+3. Run `bun mcp check <name>`, which rewrites mcps/toolbox/src/mounted.generated.ts and the Toolbox's dependencies, then `bun install`, `bun mcp db <name> migrate` and `bun run mcp:check @answerable/mcp-toolbox`. The suites need the development PostgreSQL on port 47432; never run `bun run env:up` from a worktree.
+4. Write out, for staff, the enable call and the entitlement from the guide, filled in with the provider id.
 
-Change nothing else in the Toolbox. Report the diff and the output of both checks.
+Edit no generated file and nothing else in the Toolbox. Report the diff and the output of the checks.
 ```
 
 The guide it follows: [Add tools to the Toolbox](/docs/toolbox/add-tools).

@@ -1,15 +1,19 @@
 import { afterAll, afterEach, expect, spyOn, test } from "bun:test"
 import { createIdAdmin } from "@answerable/id-admin"
 import { createFakeId } from "@answerable/id-admin/testing"
-import { defineMutation, defineProvider, defineTool, type Provider } from "@answerable/mcp"
+import { defineMutation, defineProvider, defineTool, type Mount, type Provider } from "@answerable/mcp"
 import { errorOf } from "@answerable/mcp/testing"
 import { connect, createEvidence } from "@answerable/mcp-postgres"
-import { rowsOf } from "@answerable/mcp-postgres/testing"
+import { mcpPostgresTestConfig, rowsOf } from "@answerable/mcp-postgres/testing"
+import { Client } from "pg"
 import { z } from "zod"
 import { writeCatalogue } from "./catalogue"
-import { createMemoryTracer } from "./spans"
+import { createMemoryTracer } from "@answerable/mcp-platform"
 import { serving } from "./test/database"
-import { createHub, e2e, names, resource, view, type Hub } from "./test/hub"
+import { createHub, e2e, names, resource, type Hub } from "./test/hub"
+import { databases, opened, prefix } from "./test/mcps"
+import { mcpDatabases } from "@answerable/mcp-platform"
+import { testOwnMcp } from "@answerable/mcp-platform/testing"
 import { createToolbox } from "./toolbox"
 
 const purpose = "A fixture provider for the Toolbox's tests: it serves the tools each test gives it."
@@ -37,7 +41,7 @@ const bulk = defineProvider({ id: "bulk", description: purpose, version: "2026-0
   }),
 ] })
 
-async function hub(providers?: Provider[]) {
+async function hub(providers?: (Provider | Mount)[]) {
   const created = await createHub(db, providers)
   hubs.push(created)
   return created
@@ -56,12 +60,13 @@ test("a member granted a provider sees toolbox_whoami, then its capabilities by 
   expect(tools[3]!._meta).toEqual({ "com.answerable/capability": { identity: "e2e/records.delete", version: "2026-09-29", kind: "mutate", risk: "normal", policy_class: "controlled" } })
   expect(tools[5]!._meta).toMatchObject({ ui: { resourceUri: "ui://records/index.html" } })
   expect(tools[4]!.outputSchema).toMatchObject({ type: "object", required: ["items", "next_cursor", "has_more"] })
-  expect((await client.readResource({ uri: "ui://records/index.html" })).contents[0]).toMatchObject({ text: view })
+  const view = e2e.provider.tools.find(tool => tool.kind === "read" && tool.view)!
+  expect((await client.readResource({ uri: "ui://records/index.html" })).contents[0]).toMatchObject({ text: view.kind === "read" && view.view!.html })
   expect(await (await mcp.fetch("https://mcp.test/.well-known/oauth-protected-resource/mcp")).json()).toMatchObject({ scopes_supported: ["toolbox"], resource_name: "toolbox" })
 })
 
 test("providers are listed in order of their ids, whatever order they are mounted in", async () => {
-  const { member } = await hub([e2e(), bulk])
+  const { member } = await hub([e2e, bulk])
   expect(await names(await (await member(["e2e/identity", "bulk/items.dump"])).connect())).toEqual(["toolbox_whoami", "bulk_items_dump", "e2e_identity_get"])
 })
 
@@ -169,7 +174,7 @@ test("intents live in Postgres and each transition is evidence; a commit call ha
   })
   expect(rows).toEqual([
     row("intent.prepared", "e2e/records.create"), row("capability.completed", "e2e/records.create"),
-    row("capability.completed", "toolbox/commit_confirmed", { outcome: "failure", error_code: "APPROVAL_REQUIRED", intent_id: null }),
+    row("capability.completed", "toolbox/commit_confirmed", { outcome: "failure", error_code: "APPROVAL_REQUIRED" }),
     row("intent.committed", "e2e/records.create", { receipt_id: receipt.receipt_id }), row("receipt.issued", "e2e/records.create", { receipt_id: receipt.receipt_id }),
     row("capability.completed", "toolbox/commit", { receipt_id: receipt.receipt_id }),
   ])
@@ -215,13 +220,56 @@ test("when ID cannot say what a member may use, a call answers UPSTREAM_UNAVAILA
   } finally { log.mockRestore() }
 })
 
-test("health answers ok only while the database answers", async () => {
+test("health lists the mounted providers, and answers ok only while every database answers", async () => {
   const own = connect(login.url, { max: 1 })
-  const toolbox = await createToolbox({ mount: [], auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(createFakeId().config), spans: createMemoryTracer().tracer })
-  expect(await (await toolbox.fetch(new Request("https://mcp.test/health"))).json()).toEqual({ status: "ok" })
+  const toolbox = await createToolbox({ mount: [e2e, bulk].map(entry => ("provider" in entry ? entry : { provider: entry })), pools: { mcps: opened.pools.mcps! }, auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(createFakeId().config), spans: createMemoryTracer().tracer })
+  expect(await (await toolbox.fetch(new Request("https://mcp.test/health"))).json()).toEqual({ status: "ok", databases: { toolbox: "ok", mcps: "ok" }, providers: ["bulk", "e2e"] })
   await own.$client.end()
   const down = await toolbox.fetch(new Request("https://mcp.test/health"))
   expect(down.status).toBe(503)
-  expect(await down.json()).toEqual({ status: "unavailable" })
+  expect(await down.json()).toEqual({ status: "unavailable", databases: { toolbox: "unavailable", mcps: "ok" }, providers: ["bulk", "e2e"] })
   expect((await toolbox.fetch(new Request(resource, { method: "POST", headers: { Host: "mcp.test" } }))).status).toBe(401)
+})
+
+// A record through the Toolbox: prepared with e2e_records_create, committed with toolbox_commit, then each organisation's list.
+async function createdAndListed(hubbed: Hub) {
+  const [writer, other] = [await hubbed.member(["e2e"]), await hubbed.member(["e2e"])]
+  const client = await writer.connect()
+  const intent = (await client.callTool({ name: "e2e_records_create", arguments: { title: "In Postgres" } })).structuredContent as { intent_id: string; commit_token: string }
+  expect((await client.callTool({ name: "toolbox_commit", arguments: { intent_id: intent.intent_id, commit_token: intent.commit_token } })).structuredContent).toMatchObject({ status: "committed", results: { title: "In Postgres", organizationId: writer.organizationId } })
+  const list = async (member: typeof writer) => ((await (await member.connect()).callTool({ name: "e2e_records_list", arguments: {} })).structuredContent as { items: { title: string }[] }).items.map(item => item.title)
+  return { lists: [await list(writer), await list(other)], organisation: writer.organizationId }
+}
+// How many records of `organisation` database `name` holds, read as the development superuser, whom row-level security does not limit.
+async function held(name: string, organisation: string) {
+  const url = new URL(mcpPostgresTestConfig.read(process.env).MCPS_TEST_DATABASE_URL)
+  url.pathname = `/${name}`
+  const client = new Client({ connectionString: url.href })
+  await client.connect()
+  try {
+    return (await client.query<{ records: number }>("select count(*)::int as records from e2e.records where organisation_id = $1", [organisation])).rows[0]!.records
+  } finally {
+    await client.end()
+  }
+}
+
+test("a database-backed mounted provider runs through its own db, and each organisation sees only its own rows", async () => {
+  const { lists, organisation } = await createdAndListed(await hub())
+  expect(lists).toEqual([["In Postgres"], []])
+  expect(await held("answerable_toolbox_test_mcps", organisation)).toBe(1)
+})
+
+test("an own MCP runs through a pool of its own", async () => {
+  const database = await testOwnMcp({ name: "answerable_toolbox_test_own", provider: e2e.provider })
+  const own = mcpDatabases([{ provider: e2e.provider, database: "own", variable: "TOOLBOX_MCP_E2E_DATABASE_URL" }], { shared: databases.url, own: { TOOLBOX_MCP_E2E_DATABASE_URL: database.url }, prefix })
+  try {
+    expect(Object.keys(own.pools)).toEqual(["mcps", "e2e"])
+    const { lists, organisation } = await createdAndListed(await hub(own.mount))
+    expect(lists).toEqual([["In Postgres"], []])
+    expect([await held("answerable_toolbox_test_mcps", organisation), await held("answerable_toolbox_test_own", organisation)]).toEqual([0, 1])
+  } finally {
+    await Promise.all(hubs.splice(0).map(created => created.mcp.close()))
+    await own.close()
+    await database.close()
+  }
 })

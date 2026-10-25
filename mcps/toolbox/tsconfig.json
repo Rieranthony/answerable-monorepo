@@ -20,6 +20,7 @@
   "include": [
     "src/**/*.ts",
     "scripts/**/*.ts",
+    "bench/**/*.ts",
     "drizzle.config.ts"
   ]
 }

@@ -1,5 +1,6 @@
 import { afterAll, expect, test } from "bun:test"
 import { checkProviderId, createMcpServer, defineProvider } from "@answerable/mcp"
+import { eq } from "drizzle-orm"
 import { Pool } from "pg"
 import { assertMcpName } from "./names"
 import { projects } from "./test/fixtures/mpgfixa"
@@ -15,7 +16,17 @@ afterAll(async () => {
 })
 
 //#region conformance
-assertProviderConformance(provider, { manifest: new URL("test/fixtures/mpgfixa-manifest.json", import.meta.url) })
+assertProviderConformance(provider, {
+  manifest: new URL("test/fixtures/mpgfixa-manifest.json", import.meta.url),
+  // A rename needs a project to rename, made as the caller's organisation; moving its target renames it outside the MCP.
+  examples: {
+    "projects.rename": async ({ organizationId }, { db, asOrganisation }) => {
+      const [project] = await asOrganisation(organizationId, () => db.insert(projects).values({ organisation_id: organizationId, name: "Tower" }).returning())
+      return { id: project!.id, name: "Spire" }
+    },
+  },
+  moveTarget: ({ resource_id }, { organizationId }, { db, asOrganisation }) => asOrganisation(organizationId, () => db.update(projects).set({ name: "Moved" }).where(eq(projects.id, resource_id))),
+})
 //#endregion
 
 type Intent = { intent_id: string; commit_token: string; commit_tool: string }

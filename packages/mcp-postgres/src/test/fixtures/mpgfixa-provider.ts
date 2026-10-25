@@ -1,5 +1,5 @@
-import { defineProvider, withDatabase } from "@answerable/mcp"
-import { asc } from "drizzle-orm"
+import { defineProvider, ToolError, withDatabase } from "@answerable/mcp"
+import { asc, eq } from "drizzle-orm"
 import { z } from "zod"
 import * as schema from "./mpgfixa"
 import { projects } from "./mpgfixa"
@@ -27,7 +27,24 @@ const projectsAdd = defineMutation({
   },
 })
 
+const projectsRename = defineMutation({
+  name: "projects.rename", description: "Prepare renaming a project of the caller's organisation; commit the intent to rename it. A fixture MCP with a database.",
+  input: z.object({ id: z.uuid(), name: z.string().min(1) }), output: z.object({ name: z.string() }),
+  async prepare({ id, name }, { db }) {
+    const project = await db.query.projects.findFirst({ where: eq(projects.id, id) })
+    if (!project) throw new ToolError("NOT_FOUND", "No such project in your organisation")
+    return {
+      targets: [{ resource_type: "project", resource_id: id, label: project.name, version: { kind: "etag", value: project.name } }],
+      preview: { summary: `Rename project “${project.name}” to “${name}”`, changes: [{ path: "name", from: project.name, to: name }] }, plan: { id, name },
+    }
+  },
+  async commit({ plan }, { db }) {
+    await db.update(projects).set({ name: plan.name }).where(eq(projects.id, plan.id))
+    return { results: { name: plan.name }, applied_changes: [{ path: "name", to: plan.name }], effects_performed: [] }
+  },
+})
+
 export const provider = defineProvider({
   id: "mpgfixa", description: "A fixture MCP with a database: the projects of the caller's organisation, in schema mpgfixa.", version: "2026-10-25",
-  database: { schema, migrations: new URL("mpgfixa", import.meta.url) }, tools: [projectsList, projectsAdd],
+  database: { schema, migrations: new URL("mpgfixa", import.meta.url) }, tools: [projectsList, projectsAdd, projectsRename],
 })

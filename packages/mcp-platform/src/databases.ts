@@ -1,0 +1,40 @@
+import { callerOrganisation, type Mount, type Provider } from "@answerable/mcp"
+import { assertServingLogin, mcpDatabase } from "@answerable/mcp-postgres"
+import { drizzle } from "drizzle-orm/node-postgres"
+import { Pool } from "pg"
+
+/**
+ * An MCP as a server's generated list declares it: its provider, and where its tables live: `shared`, a schema in the shared database, or `own`,
+ * a database of its own, whose URL the server reads from `variable`.
+ */
+export type Declared = Readonly<{ provider: Provider; database: "shared" } | { provider: Provider; database: "own"; variable: string }>
+
+/**
+ * The databases of the MCPs a server serves, from its generated list and its configuration: one pool to the shared database at `shared`, as the
+ * server's serving login, and one pool to each `own` MCP's database at `own[variable]`, as that MCP's runtime login. Each MCP with a `database`
+ * gets its `db`, made once, through `mcpDatabase`, with the organisation of the call running (`callerOrganisation`): in mode `shared` each borrow
+ * takes its runtime role `<prefix>_<name>` (`prefix` is `mcp` unless given). Returns `mount`, for `createMcpServer` or `createToolbox`; `pools`,
+ * by name (`mcps`, and each own MCP's name), for `/health`; `assert()`, the serving login's assertion, to await before listening; and `close()`.
+ */
+export function mcpDatabases(declared: readonly Declared[], { shared, own, prefix = "mcp" }: { shared: string; own: Readonly<Record<string, string | undefined>>; prefix?: string }) {
+  const pool = new Pool({ connectionString: shared })
+  const owned = new Map(declared.flatMap(entry => {
+    if (entry.database === "shared") return []
+    const url = own[entry.variable]
+    if (!url) throw new Error(`Set ${entry.variable} to the database of ${entry.provider.id}, as its runtime login`)
+    return [[entry.provider.id, new Pool({ connectionString: url })] as const]
+  }))
+  const mount: Mount[] = declared.map(({ provider, database }) => {
+    if (!provider.database) return { provider }
+    const db = mcpDatabase(owned.get(provider.id) ?? pool, { name: provider.id, prefix, schema: provider.database.schema, mode: database, organisation: callerOrganisation })
+    return { provider, db }
+  })
+  const names = declared.filter(entry => entry.database === "shared").map(entry => entry.provider.id)
+  return {
+    mount,
+    pools: { mcps: pool, ...Object.fromEntries(owned) } as Readonly<Record<string, Pool>>,
+    /** Refuse to serve as a shared login that holds more than the runtime roles of the shared MCPs, or misses one. */
+    assert: () => assertServingLogin(drizzle({ client: pool }), { prefix, names }),
+    close: () => Promise.all([pool, ...owned.values()].map(each => each.end())).then(() => undefined),
+  }
+}

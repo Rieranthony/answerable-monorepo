@@ -25,7 +25,7 @@ It checks every answer before it writes anything, then prints one line per step:
 | Step | What it does |
 | --- | --- |
 | `write` | Writes `mcps/acme` |
-| `generate` | Writes `charts/answerable/mcps.json`, the list of MCPs the deployment reads |
+| `generate` | Writes `charts/answerable/mcps.json`, the list of MCPs the deployment reads, and the lists the Toolbox and the standalone server serve, with their dependencies |
 | `install` | `bun install`, which links the new workspace |
 | `database` | Creates schema `acme` and its two roles in `answerable_mcps` on the development Postgres |
 | `migration` | Writes the first migration, `drizzle/0000_initial.sql` |
@@ -123,7 +123,14 @@ bun mcp check acme
 
 ### Run it
 
-Running an MCP made by `bun mcp new` locally: Not yet. It has no server of its own: the Toolbox serves it, and mounting it from `mcp.json` is Not yet. [Add tools to the Toolbox](/docs/toolbox/add-tools) mounts a provider by hand today.
+**Run it locally.** It has no server of its own: the Toolbox mounts it when its `serve` is `toolbox` or `both`, and the standalone server serves it at `http://localhost:47510/<name>/mcp` when its `serve` is `standalone` or `both`, each from a list `bun mcp` generates from `mcp.json`.
+
+```sh
+bun mcp db example migrate
+bun run toolbox:dev
+```
+
+`bun mcp db example migrate` makes its schema in your local `answerable_mcps`, which `bun mcp new` already did; run it again after a migration. `bun run toolbox:dev` serves it at `http://localhost:47400/mcp` as `example_<domain>_<operation>`, or `bun run standalone:dev` at its path. Signing in to it needs the servers' registrations in your local ID: [the Toolbox's](/docs/toolbox#run-it-locally), [the standalone server's](/docs/mcp/claude-code#the-e2e-server). A single command that does all of it, `bun mcp dev`: Not yet.
 
 </Step>
 </Steps>
