@@ -58,27 +58,7 @@ Every SSO row, platform or own credentials, defaults to `email openid profile` w
 
 ## Configuration
 
-Required in production. In Answerable's deployment the Bootstrap workflow generates the application and root secrets and the deploy delivers every value ([`12-deployment.md`](12-deployment.md#secrets)); nothing here reads a file.
-
-| Variable | Value | Why |
-| --- | --- | --- |
-| `NODE_ENV` | `production` | See above |
-| `PORT` | listener port, default 47300 | Ingress upstream |
-| `BETTER_AUTH_URL` | `https://id.answerable.org` | Issuer, discovery, admin audience |
-| `BETTER_AUTH_TRUSTED_ORIGINS` | `https://login.microsoftonline.com,https://graph.microsoft.com,https://accounts.google.com,https://oauth2.googleapis.com,https://www.googleapis.com,https://openidconnect.googleapis.com`; use the IdP origins in use, with no paths or trailing slash | Browser CORS/CSRF and IdP endpoint trust |
-| `TRUSTED_PROXY_CIDRS` | comma-separated IPv4/IPv6 networks of the ingress proxies | Client address resolution |
-| `DATABASE_URL` | `postgres://answerable_id_runtime:…@host/answerable_id` | Application connection, restricted role |
-| `DATABASE_MIGRATION_URL` | owner login, used only by the migration Job; never given to the service | DDL and permission provisioning |
-| `DATABASE_RUNTIME_ROLE` | `answerable_id_runtime` unless you named it differently | Which role migration provisions |
-| `BETTER_AUTH_SECRET` | ≥ 32 characters, high entropy | Cookie signing, JWKS private-key encryption |
-| `GOOGLE_CLIENT_ID` | Google Web application client ID | Set together with `GOOGLE_CLIENT_SECRET` when using Google platform credentials |
-| `GOOGLE_CLIENT_SECRET` | Google client secret from the secret store | Environment only; never stored in platform SSO rows |
-| `MICROSOFT_CLIENT_ID` | Multi-tenant Entra Application (client) ID | Set together with `MICROSOFT_CLIENT_SECRET` when using Microsoft platform credentials |
-| `MICROSOFT_CLIENT_SECRET` | Entra client secret from the secret store | Environment only; record expiry and rotate before it |
-| `ROOT_ADMIN_SECRET` | ≥ 32 characters | Break-glass bearer for first run and recovery |
-| `ROOT_ADMIN_BREAK_GLASS` | `false` (set `true` only during a recovery) | Root stops working once a human holds `platform:write` |
-
-Optional, with defaults that hold for a first deployment: `BETTER_AUTH_SECRETS` (versioned ring for rotation; promotion signs everyone out, see the ID README), `DATABASE_POOL_MAX` 20.
+Every variable ID reads is in the `ID` group of [`packages/config/inventory.json`](../packages/config/inventory.json), and its migration's in `ID migration`: whether each is a secret, its default and where a deployment's value comes from. `bun run env:inventory` writes the file from [`apps/id/src/config.ts`](../apps/id/src/config.ts) and [`apps/id/scripts/env.ts`](../apps/id/scripts/env.ts); production applies no local default. In Answerable's deployment the Bootstrap workflow generates the application and root secrets and the deploy delivers every value ([`12-deployment.md`](12-deployment.md#secrets)); nothing here reads a file.
 
 Fixed in `apps/id/src/env.ts`, not configurable: the admin API's resource `${BETTER_AUTH_URL}/api/admin`; the platform organisation's slug `answerable` and name `Answerable`, seeded at first boot and bound by immutable id afterwards; statement timeout 10 s, lock timeout 2 s, idle-in-transaction timeout 15 s, pool checkout 5 s and pool idle 10 s; operational log every 30 s; protocol sweep every 60 s in batches of 1,000; OpenAPI routes outside production only.
 

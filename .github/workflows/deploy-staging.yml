@@ -190,6 +190,7 @@ jobs:
           MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          BETTER_AUTH_SECRETS: ${{ secrets.BETTER_AUTH_SECRETS }}
         run: bun infra/pipeline/src/cli.ts deploy --environment staging --image-tag "$IMAGE_TAG"
 
       - name: Summarise

@@ -143,7 +143,7 @@ A changed secret in the environment reaches the cluster on the next tag: the dep
 | Family | How |
 | --- | --- |
 | `ROOT_ADMIN_SECRET` | The Bootstrap workflow with `rotate: ROOT_ADMIN_SECRET`, then a tag |
-| `BETTER_AUTH_SECRET` | Never replaced: it decrypts ID's stored signing keys. Rotate through the ring `BETTER_AUTH_SECRETS`, two ships apart, as [ID's README](../apps/id/README.md#application-secret-rotation) describes: set the environment secret `BETTER_AUTH_SECRETS`, which the deploy passes through. Promotion signs every browser out |
+| `BETTER_AUTH_SECRET` | Never replaced: it decrypts ID's stored signing keys. A new secret comes in through the ring `BETTER_AUTH_SECRETS`, two ships apart: [The application secret](#the-application-secret). The second ship signs every browser out |
 | Microsoft or Google platform application | Create a new secret in the provider's console, set both of the pair in the environment (`gh secret set MICROSOFT_CLIENT_SECRET --env staging`, which asks for the value), tag, then retire the old secret ([`docs/06`](../docs/06-deploying-answerable-id.md#operating-it)) |
 | A database login (six) | Empty its key, for example `kubectl -n answerable patch secret id-database --type merge -p '{"stringData":{"DATABASE_URL":""}}'` with a [kubeconfig](#get-a-kubeconfig); tag (`ops-bootstrap` gives the login a new password and writes its URL); the service restarts with the deploy ([`infra/ops`](ops/README.md#bootstrap)) |
 | A machine client (`toolbox-id-client`, `admin-id-client`) | Empty its key the same way, then [register again](#register-again); `register` rotates the secret in ID and restarts the two servers |
@@ -151,6 +151,32 @@ A changed secret in the environment reaches the cluster on the next tag: the dep
 | The deployer token | `infra/civo/terraform.sh staging apply -replace=module.deployer.kubernetes_secret_v1.token` from a trusted machine; Terraform writes the new `KUBE_TOKEN` into the environment |
 | `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `GH_SECRETS_TOKEN` | Regenerate in the vendor's console (for Civo, regeneration is the only control), then `gh secret set <name> --env staging` (it asks for the value) |
 | `STATE_ACCESS_KEY_ID`, `STATE_SECRET_ACCESS_KEY` | Delete both from the environment, then the Bootstrap workflow writes a new credential's pair; delete the old credential in Civo's dashboard |
+
+### The application secret
+
+The ring `BETTER_AUTH_SECRETS` lists `version:secret` pairs: the first signs and encrypts, every one decrypts ([ID's README](../apps/id/README.md#application-secret-rotation)). The deploy puts it in `id-env` when the environment has it, and leaves it out when it does not. `BETTER_AUTH_SECRET` stays as it is throughout.
+
+1. **Read the current secret, make a new one.** The GitHub environment never shows a value, so read the current one from the cluster with a [kubeconfig](#get-a-kubeconfig), into your shell without printing it:
+
+   ```sh
+   CURRENT=$(kubectl -n answerable get secret id-env -o jsonpath='{.data.BETTER_AUTH_SECRET}' | base64 --decode)
+   NEW=$(openssl rand -base64 48 | tr -d '\n')
+   ```
+
+2. **Stage.** Set the ring with the current secret first, then [ship](#every-ship). Every browser stays signed in.
+
+   ```sh
+   printf '1:%s,2:%s' "$CURRENT" "$NEW" | gh secret set BETTER_AUTH_SECRETS --env staging
+   ```
+
+3. **Promote,** once the smoke test of that ship has passed: every ID pod then holds the ring. Put the new secret first, then ship again. Every browser must sign in again; tokens already issued stay valid.
+
+   ```sh
+   printf '2:%s,1:%s' "$NEW" "$CURRENT" | gh secret set BETTER_AUTH_SECRETS --env staging
+   unset CURRENT NEW
+   ```
+
+Delete the kubeconfig. Keep the ring in the environment with both versions: removing a version ID still needs stops signing. A later rotation starts from the ring (`{.data.BETTER_AUTH_SECRETS}`), adds version 3 last to stage and moves it first to promote, keeping every version.
 
 ### Register again
 

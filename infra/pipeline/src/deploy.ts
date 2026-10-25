@@ -98,8 +98,13 @@ const ID_ENV_PAIRS = [
   ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"],
   ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
 ] as const
-/** ID's versioned ring of authentication secrets, when one is being rotated (apps/id/README.md). */
+/** ID's versioned ring of authentication secrets, from its first rotation on (infra/README.md, The application secret). */
 const ID_ENV_OPTIONAL = ["BETTER_AUTH_SECRETS"] as const
+/**
+ * Every variable `id-env` can hold: the deploy's contract with ID. deploy.test.ts holds it to the variables ID's
+ * definition says the deploy delivers (packages/config/inventory.json) and to the deploy step of both workflows.
+ */
+export const ID_ENV_NAMES = [...ID_ENV_REQUIRED, ...ID_ENV_PAIRS.flat(), ...ID_ENV_OPTIONAL]
 
 /**
  * The values of the Secret `id-env`, from the deploy's environment: the two required secrets, each platform

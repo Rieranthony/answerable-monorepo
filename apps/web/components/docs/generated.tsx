@@ -1,10 +1,15 @@
 // Blocks the docs compute from the repository when a page builds, so they cannot drift from the code: what `mcp:new`
-// writes, the SDK's error codes and policy classes, and the committed provider manifests. Each has a Markdown form.
+// writes, the SDK's error codes and policy classes, the committed provider manifests and the services' configuration.
+// Each has a Markdown form.
 import { asMarkdown } from "fumadocs-core/server"
 import { ServerCodeBlock } from "fumadocs-ui/components/codeblock.rsc"
 import type { ReactNode } from "react"
 
 import { dataTable } from "@/components/docs/table"
+import {
+  configurationHeaders,
+  configurationRows,
+} from "@/lib/docs/configuration"
 import { errorRows } from "@/lib/docs/error-codes"
 import { codeFence } from "@/lib/docs/markdown"
 
@@ -136,5 +141,16 @@ export function PolicyClasses() {
       commitWith[policyClass],
       duration(classExpiry[policyClass]),
     ]),
+  })
+}
+
+/**
+ * The variables a service reads, from `packages/config/inventory.json`: secret or not, the default, where a deployment's
+ * value comes from, and what each is. `group` is an inventory group's name, such as `"Toolbox"`, or several in one table.
+ */
+export function Configuration({ group }: { group: string | string[] }) {
+  return dataTable({
+    headers: configurationHeaders,
+    rows: configurationRows(group),
   })
 }

@@ -2,6 +2,7 @@ import defaultMdxComponents from "fumadocs-ui/mdx"
 import type { MDXComponents } from "mdx/types"
 
 import {
+  Configuration,
   ErrorCodes,
   GrantStrings,
   ManifestEntry,
@@ -26,6 +27,7 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
     Cards,
     Step,
     Steps,
+    Configuration,
     ErrorCodes,
     GrantStrings,
     ManifestEntry,

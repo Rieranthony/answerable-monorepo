@@ -15,7 +15,7 @@ export const toolboxConfig = defineConfig("Toolbox", {
   TOOLBOX_RESOURCE_URL: { schema: z.url(), defaults: locally("http://localhost:47400/mcp"), doc: "The Toolbox's own URL, the audience of the tokens it accepts", source: "chart" },
   TOOLBOX_HOST: { schema: z.union([z.ipv4(), z.ipv6()]), fallback: "127.0.0.1", doc: "The address to listen on: loopback unless a container or a proxy in front needs another", source: "image" },
   TOOLBOX_PORT: { schema: z.coerce.number().int().min(1).max(65535), fallback: "47400", doc: "The port the Toolbox listens on", source: "image" },
-  TOOLBOX_ID_CLIENT_ID: { schema: z.string().min(1), doc: "The Toolbox's machine client in ID (toolbox-hub); register it as apps/web/content/docs/toolbox/index.mdx shows", source: "chart" },
+  TOOLBOX_ID_CLIENT_ID: { schema: z.string().min(1), doc: "The Toolbox's machine client in ID, toolbox-hub, with platform:read and platform:write, registered as the Toolbox's docs show", source: "chart" },
   TOOLBOX_ID_CLIENT_SECRET: { schema: z.string().min(1), secret: true, doc: "The Toolbox machine client's secret", source: "cluster" },
   TOOLBOX_ID_ADMIN_RESOURCE: { schema: z.url(), defaults: locally("http://localhost:47300/api/admin"), doc: "ID's admin API, the audience of the machine client's tokens", source: "chart" },
   OTEL_EXPORTER_OTLP_ENDPOINT: { schema: z.url().optional(), doc: "Where to export spans over OTLP/HTTP, such as a local collector; unset, none are exported", source: "operator" },

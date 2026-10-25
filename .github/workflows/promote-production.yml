@@ -137,6 +137,7 @@ jobs:
           MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          BETTER_AUTH_SECRETS: ${{ secrets.BETTER_AUTH_SECRETS }}
         run: |
           # The digests verified above: <image>=sha256:<hex>, space-separated.
           read -ra pairs <<< "$IMAGE_DIGESTS"

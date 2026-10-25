@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
 import { stat } from "node:fs/promises"
+import inventory from "../../../packages/config/inventory.json"
 import { PipelineError, UsageError } from "./errors"
 import {
   assertImageTag,
   deploy,
+  ID_ENV_NAMES,
   idEnv,
   idEnvChecksum,
   kubeconfig,
@@ -178,8 +180,28 @@ describe("parseDigests", () => {
   })
 })
 
+describe("id-env's variables", () => {
+  test("are exactly those ID's definition says the deploy delivers", () => {
+    const id = inventory.find((group) => group.name === "ID")!
+    const delivered = id.fields.filter((field) => "source" in field && field.source === "deploy").map((field) => field.name)
+    expect(delivered.sort()).toEqual([...ID_ENV_NAMES].sort())
+  })
+
+  test("each reaches the deploy step of both workflows from the GitHub environment", async () => {
+    for (const workflow of ["deploy-staging.yml", "promote-production.yml"]) {
+      const { jobs } = Bun.YAML.parse(await Bun.file(new URL(`../../../.github/workflows/${workflow}`, import.meta.url)).text()) as {
+        jobs: Record<string, { steps?: { name?: string; env?: Record<string, string> }[] }>
+      }
+      const env = Object.values(jobs)
+        .flatMap((job) => job.steps ?? [])
+        .find((step) => step.name === "Deploy")?.env
+      for (const name of ID_ENV_NAMES) expect(env?.[name], `${workflow}: ${name}`).toBe(`\${{ secrets.${name} }}`)
+    }
+  })
+})
+
 describe("idEnv and idEnvChecksum", () => {
-  test("hold the three required secrets and the Microsoft pair, trimmed, keys sorted", () => {
+  test("hold the two required secrets and the Microsoft pair, trimmed, keys sorted", () => {
     const values = idEnv({ ...ENV, ROOT_ADMIN_SECRET: ` ${ID_ENV.ROOT_ADMIN_SECRET}\n` })
     expect(values).toEqual(ID_ENV)
     expect(Object.keys(values)).toEqual([...Object.keys(ID_ENV)].sort())

@@ -15,7 +15,7 @@ export const adminConfig = defineConfig("admin MCP", {
     doc: "The admin MCP's Postgres URL as its restricted runtime login, never the schema owner",
     source: "cluster",
   },
-  ADMIN_ID_CLIENT_ID: { schema: z.string().min(1), doc: "The admin MCP's machine client of the platform organisation in ID (admin-mcp); register it as apps/web/content/docs/admin/index.mdx shows", source: "chart" },
+  ADMIN_ID_CLIENT_ID: { schema: z.string().min(1), doc: "The admin MCP's machine client in ID, admin-mcp, owned by the platform organisation, registered as the admin MCP's docs show", source: "chart" },
   ADMIN_ID_CLIENT_SECRET: { schema: z.string().min(1), secret: true, doc: "The admin MCP machine client's secret", source: "cluster" },
   ADMIN_ID_ADMIN_RESOURCE: { schema: z.url(), defaults: locally("http://localhost:47300/api/admin"), doc: "ID's admin API, the audience of the machine client's tokens", source: "chart" },
   ADMIN_TOOLBOX_ADMIN_RESOURCE: { schema: z.url().optional(), defaults: locally("http://localhost:47400/admin"), doc: "The Toolbox's admin API, for enabling the Toolbox for an organisation; unset, that is refused", source: "chart" },

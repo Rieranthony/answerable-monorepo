@@ -249,7 +249,7 @@
       {
         "name": "TOOLBOX_ID_CLIENT_ID",
         "secret": false,
-        "doc": "The Toolbox's machine client in ID (toolbox-hub); register it as apps/web/content/docs/toolbox/index.mdx shows",
+        "doc": "The Toolbox's machine client in ID, toolbox-hub, with platform:read and platform:write, registered as the Toolbox's docs show",
         "source": "chart",
         "optional": false
       },
@@ -398,7 +398,7 @@
       {
         "name": "ADMIN_ID_CLIENT_ID",
         "secret": false,
-        "doc": "The admin MCP's machine client of the platform organisation in ID (admin-mcp); register it as apps/web/content/docs/admin/index.mdx shows",
+        "doc": "The admin MCP's machine client in ID, admin-mcp, owned by the platform organisation, registered as the admin MCP's docs show",
         "source": "chart",
         "optional": false
       },
