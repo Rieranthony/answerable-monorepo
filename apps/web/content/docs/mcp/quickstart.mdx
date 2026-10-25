@@ -1,65 +1,64 @@
 ---
 title: Build your first MCP
-description: "Scaffold an MCP server in the monorepo, add a read tool and a mutation, test them, run the server and connect Claude Code."
+description: "Make an MCP in the monorepo with bun mcp new, add a read tool and a mutation with bun mcp add tool, read the code and tests they write, and check it."
 ---
 
 ```sh
-bun run mcp:new acme
+bun mcp new acme --description "Notes for construction projects: list, read and add notes on a project." --serve toolbox
 ```
 
-An MCP server gives an AI host, such as Claude Code, tools it can call. With `@answerable/mcp` each tool is plain data: a name, a description, the shape of its input and output, and a function. The kit does the rest: sign-in through [Answerable ID](/docs/id), checking every input and output, errors the model can act on, and the protocol.
+An MCP gives an AI host, such as Claude Code, tools it can call. With `@answerable/mcp` each tool is plain data: a name, a description, the shape of its input and output, and a function. The kit does the rest: sign-in through [Answerable ID](/docs/id), who is calling, a database limited to their organisation, checking every input and output, errors the model can act on, and the protocol.
 
-You will build `acme`, a server that keeps notes: `notes.list` reads them and `notes.add` adds one. The finished code is `mcps/example` in the repository; every snippet below comes from it, so it compiles and its tests pass.
+You will build `acme`, an MCP that keeps notes: `notes.list` reads them and `notes.add` adds one. The finished code is `mcps/example` in the repository, made with the same commands; every snippet below comes from it, so it compiles and its tests pass.
 
-**Before you start.** Bun 1.3.1 and a checkout of the monorepo. Run every command from the repository root. Handing this to a coding agent instead? Use the [prompt](/docs/agents#build-an-mcp-server).
+**Before you start.** Bun 1.3.1, a checkout of the monorepo, and the development PostgreSQL on port 47432 (`bun run env:up`). Run every command from the repository root. Handing this to a coding agent instead? Use the [prompt](/docs/agents#build-an-mcp-server).
 
 <Steps>
 <Step>
 
-### Scaffold a server
+### Make the MCP
 
-`bun run mcp:new acme` writes `mcps/acme`. Its provider, the set of tools the server serves, starts with one tool:
+Run the command above. In a terminal, `bun mcp new` asks for what you leave out: the name, what the MCP is for, where it runs and a first tool. Without a terminal, as in a coding agent's shell, it asks nothing: the name, `--description` and `--serve` are required, and a missing one exits with code 2 and prints the command to run, with placeholders.
 
-<ScaffoldFile file="src/provider.ts" />
+It checks every answer before it writes anything, then prints one line per step:
 
-The name is the provider's id: a lowercase letter, then up to 11 lowercase letters or digits. [Providers and servers](/docs/mcp/servers#create-a-workspace) lists every file it writes.
+| Step | What it does |
+| --- | --- |
+| `write` | Writes `mcps/acme` |
+| `generate` | Writes `charts/answerable/mcps.json`, the list of MCPs the deployment reads |
+| `install` | `bun install`, which links the new workspace |
+| `database` | Creates schema `acme` and its two roles in `answerable_mcps` on the development Postgres |
+| `migration` | Writes the first migration, `drizzle/0000_initial.sql` |
+| `manifest` | Runs the tests once to write `manifest.json`, the MCP's contract |
+| `generate` | Writes the list again, now with the MCP's scopes |
+| `check` | `bun mcp check acme`: the typecheck, the lint and the tests |
+
+The name is the provider id: a lowercase letter, then up to 11 lowercase letters or digits. It prefixes every tool, `acme_notes_list` in the Toolbox, and names the database schema. `--serve toolbox` declares that it runs in the Toolbox, in `mcp.json`:
+
+<ScaffoldFile file="mcp.json" />
+
+Every tool imports its definitions from `src/mcp.ts`, which binds them to the MCP's database:
+
+<ScaffoldFile file="src/mcp.ts" />
+
+The first tool, `acme.status`, says who is calling. It opens with guidance on names and descriptions, as every tool file does:
+
+<ScaffoldFile file="src/tools/acme-status.ts" />
 
 </Step>
 <Step>
 
-### Install and check it
+### Add a read tool
 
 ```sh
-bun install
-UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-acme test
-bun run mcp:check @answerable/mcp-acme
+bun mcp add tool acme notes.list --description "List your organisation's notes, newest first, 20 per page by default and at most 100. When has_more is true, pass next_cursor as cursor to read the next page."
 ```
 
-- `bun install` links the new workspace.
-- The first test run writes `manifest.json`, the server's contract: every tool with its schemas. Commit it. A test fails whenever the code and the file disagree, so every contract change shows in review.
-- `mcp:check` runs the typecheck, the lint and the tests. The tests include the conformance kit, which checks the server against [the design standard](/docs/mcp/standard), and a 100% coverage gate.
+It writes `src/tools/notes-list.ts` and its test, adds the tool to `src/provider.ts`, adds the `notes` table to `src/db/schema.ts`, writes the migration and the manifest, and checks the MCP:
 
-</Step>
-<Step>
+<include lang="ts" meta='title="src/tools/notes-list.ts"'>../../../../../mcps/example/src/tools/notes-list.ts#list</include>
 
-### Keep some data
-
-Tools need something to read. This store keeps notes in memory, per organisation; a real server uses its database. Save it as `mcps/acme/src/notes.ts`:
-
-<include lang="ts" meta='title="src/notes.ts"'>../../../../../mcps/example/src/notes.ts</include>
-
-Every read and write takes the organisation's id. A person only ever sees their own organisation's data.
-
-</Step>
-<Step>
-
-### Write the tools
-
-Replace `mcps/acme/src/provider.ts` with this file. Keep your own `id`, `acme`, and your own date.
-
-<include lang="ts" meta='title="src/provider.ts"'>../../../../../mcps/example/src/provider.ts</include>
-
-**The read tool, `notes.list`.** Five fields make a tool, and a sixth gives an example:
+Five fields make a tool, and a sixth gives an example:
 
 | Field | What it is |
 | --- | --- |
@@ -67,39 +66,55 @@ Replace `mcps/acme/src/provider.ts` with this file. Keep your own `id`, `acme`, 
 | `description` | What the model reads to choose a tool: what it does, when to use it and its limits. 40 to 1,000 characters |
 | `input` | A Zod object: the arguments. Unknown fields are refused |
 | `output` | A Zod object: the result. The server checks it before it leaves |
-| `execute` | The function. It receives the checked input and the caller: `person`, `organisation` and the AI app they use, from the verified token and from Answerable ID |
+| `execute` | The function. It receives the checked input and the caller: `person`, `organisation`, the AI app they use and `db`, the MCP's database |
 | `example` | One valid input, checked when the file loads. The conformance kit calls the tool with it |
 
 A list returns a page at a time, with `limit`, `cursor`, `next_cursor` and `has_more`: the standard's [pagination](/docs/mcp/tools#pagination) rule, which the conformance kit checks. Every other field: [Read tools](/docs/mcp/tools).
 
-**The mutation, `notes.add`.** A tool that changes data works in two steps, so a person can see what will happen before it does:
+The table it reads:
 
-1. **Prepare.** `prepare` works out the change and returns a preview, with a summary in plain words. It changes nothing. The host receives an *intent*: the preview, a one-time commit token and the name of the commit tool to call.
-2. **Commit.** The host calls that commit tool with the token. `commit` then applies exactly what was prepared.
+<include lang="ts" meta='title="src/db/schema.ts"'>../../../../../mcps/example/src/db/schema.ts#notes</include>
 
-`risk: "low"` lets the agent commit on its own. The default, `normal`, makes the host show the person the summary first. [Mutations](/docs/mcp/mutations) explains the rest.
-
-**The provider** groups the tools under the server's id, a description of what it is for, and a date, its version.
+Every table has `organisation_id` and the `organisationIsolation` policy, so Postgres limits every query to the caller's organisation, even one that forgets to filter.
 
 </Step>
 <Step>
 
-### Test them
+### Add a mutation
 
-Replace `mcps/acme/src/provider.test.ts` with this file:
+```sh
+bun mcp add tool acme notes.add --mutation --description "Prepare adding a note to your organisation. Changes nothing: returns a preview and a commit token; commit the intent with the tool its commit_tool names to add the note."
+```
+
+A tool that changes data works in two steps, so a person can see what will happen before it does:
+
+<include lang="ts" meta='title="src/tools/notes-add.ts"'>../../../../../mcps/example/src/tools/notes-add.ts#add</include>
+
+1. **Prepare.** `prepare` works out the change and returns a preview, with a summary in plain words that names the organisation. It changes nothing. The host receives an *intent*: the preview, a one-time commit token and the name of the commit tool to call.
+2. **Commit.** The host calls that commit tool with the token. `commit` then applies exactly what was prepared.
+
+`risk: "normal"`, the default, makes the host show the person the summary first; `"low"` lets the agent commit on its own. A mutation's description says that it prepares an intent: `bun mcp add tool` and the conformance kit refuse one that does not. [Mutations](/docs/mcp/mutations) explains the rest.
+
+`src/provider.ts` now lists the three tools, between the lines `bun mcp add tool` adds above:
+
+<include lang="ts" meta='title="src/provider.ts"'>../../../../../mcps/example/src/provider.ts</include>
+
+</Step>
+<Step>
+
+### Test and check it
+
+Each tool has its own test, which `add tool` wrote beside it, and `src/provider.test.ts` runs the conformance kit. This one also adds a note and lists it, as a host would:
 
 <include lang="ts" meta='title="src/provider.test.ts"'>../../../../../mcps/example/src/provider.test.ts</include>
 
-- `assertProviderConformance` registers one test per check of the standard, for every tool, calling each with its `example`.
-- `createTestMcp` serves the provider inside the test with a local ID issuer and the official MCP client: no port, no network. `connect()` signs in as the test person of the test organisation, with fresh ids each time.
-- The mutation is called as a host would: prepare, then the commit tool the intent names.
-
-The tools changed, so write the manifest again, then check:
-
 ```sh
-UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-acme test
-bun run mcp:check @answerable/mcp-acme
+bun mcp check acme
 ```
+
+- `assertProviderConformance` registers one test per check of the standard, for every tool, calling each with its `example`, and compares `manifest.json` with the code.
+- `createTestMcp`, from `@answerable/mcp-postgres/testing`, serves the MCP inside the test with a local ID issuer, the official MCP client and its own schema in `answerable_mcps_test`: no port, no network. `connect()` signs in as the test person of a new organisation each time.
+- `bun mcp check` runs the typecheck, the lint and the tests with a 100% coverage gate. A stale manifest is rewritten, and the check says to commit it.
 
 [Test an MCP](/docs/mcp/testing) covers every check and helper.
 
@@ -108,50 +123,7 @@ bun run mcp:check @answerable/mcp-acme
 
 ### Run it
 
-The server reads who is calling from Answerable ID, through a machine client with `platform:read`. Register one in your local ID as [Connect Claude Code](/docs/mcp/claude-code#register-the-servers-machine-client) does for the e2e server, with your own client id, then:
-
-```sh
-cp mcps/acme/.env.example mcps/acme/.env
-bun --env-file=mcps/acme/.env run --filter @answerable/mcp-acme dev
-curl http://localhost:47510/health
-```
-
-Set `MCP_ID_CLIENT_ID` and `MCP_ID_CLIENT_SECRET` in `mcps/acme/.env` between the first two commands. The last answers `{"status":"ok"}`. The MCP endpoint is `http://localhost:47510/mcp`. Without a token it answers `401`, and points at its metadata:
-
-```sh
-curl -i -X POST http://localhost:47510/mcp
-```
-
-```text
-HTTP/1.1 401 Unauthorized
-WWW-Authenticate: Bearer error="invalid_token", error_description="Missing Authorization header", resource_metadata="http://localhost:47510/.well-known/oauth-protected-resource/mcp"
-```
-
-The metadata names Answerable ID as the place to sign in, and the scopes to ask for:
-
-```sh
-curl http://localhost:47510/.well-known/oauth-protected-resource/mcp
-```
-
-```json
-{"resource":"http://localhost:47510/mcp","authorization_servers":["http://localhost:47300"],"scopes_supported":["acme:read","acme:write"],"bearer_methods_supported":["header"],"resource_name":"acme"}
-```
-
-`.env` holds the settings: Answerable ID's address, the server's own URL, its port and the machine client. [Configure](/docs/mcp/servers#configure) explains them.
-
-</Step>
-<Step>
-
-### Connect Claude Code
-
-Answerable ID must know the server before anyone can sign in to it. With ID running locally, register `http://localhost:47510/mcp` as a resource with the scopes `acme:read` and `acme:write`, and Claude Code as a client, as [Connect Claude Code](/docs/mcp/claude-code#register-the-server) does for the e2e server. Then:
-
-```sh
-claude mcp add --transport http acme http://localhost:47510/mcp \
-  --client-id claude-code-acme --callback-port 47700
-```
-
-In Claude Code, run `/mcp`, choose `acme`, then **Authenticate**, and sign in with your work account. Ask Claude to add a note, then to list your notes.
+Running an MCP made by `bun mcp new` locally: Not yet. It has no server of its own: the Toolbox serves it, and mounting it from `mcp.json` is Not yet. [Add tools to the Toolbox](/docs/toolbox/add-tools) mounts a provider by hand today.
 
 </Step>
 </Steps>
@@ -160,11 +132,14 @@ In Claude Code, run `/mcp`, choose `acme`, then **Authenticate**, and sign in wi
 
 | File | What it does |
 | --- | --- |
-| `src/notes.ts` | Keeps the data, per organisation |
-| `src/provider.ts` | The tools and the provider |
-| `src/server.ts` | Serves the provider over HTTP, with sign-in through Answerable ID, and reads who is calling from it |
+| `mcp.json` | Where the MCP runs and its database mode; `bun mcp` writes it, and you may change `serve` and `database` |
+| `src/mcp.ts` | `defineTool` and `defineMutation` bound to the MCP's database; never edited |
+| `src/provider.ts` | The provider: the MCP's id, description, version, database and tools |
+| `src/tools/*.ts` | One tool per file, each with its test |
+| `src/db/schema.ts` | The MCP's tables, in its own Postgres schema |
+| `drizzle/` | Its migrations, written by `bun mcp db acme generate` |
 | `src/provider.test.ts` | The conformance kit and your own tests, in-process |
-| `manifest.json` | The contract, regenerated with `UPDATE_MANIFEST=1` and reviewed with every change |
+| `manifest.json` | The contract, rewritten by `bun mcp check` and reviewed with every change |
 
 ## Next
 
@@ -174,14 +149,17 @@ In Claude Code, run `/mcp`, choose `acme`, then **Authenticate**, and sign in wi
 
 ## Errors
 
-| You see | Meaning | What to do |
+`bun mcp` exits with 2 when it refuses before writing anything, and with 1 when a step fails after. A refusal names every wrong or missing answer at once, a line each, then one command to run again with a placeholder in place of each. With `--json` it is `{ "ok": false, "error": { "code", "message", "fix", "problems": [{ "code", "message" }] } }`: one entry in `problems` for each answer, each with its stable `code`.
+
+| You see | Code | What to do |
 | --- | --- | --- |
-| `Server name "…" must be a lowercase letter…` from `mcp:new` | The name is not a provider id | Use a name such as `acme` |
-| `mcps/acme already exists…` from `mcp:new` | The directory exists | Choose another name, or remove the directory |
-| `…/manifest.json is out of date; regenerate it with UPDATE_MANIFEST=1…` | The tools changed since the manifest was written | Run `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-acme test`, review the diff, commit |
-| A conformance test fails, such as `list_paginates` | A tool breaks a rule of the standard | [Test an MCP](/docs/mcp/testing#errors) says what to change for each message |
-| `Tool name "…" must be <domain>.<operation>…` when the module loads | A definition breaks a rule | [When a definition is refused](/docs/mcp/errors#when-a-definition-is-refused) |
-| `Invalid MCP configuration: MCP_ID_ISSUER: …` at start | A setting is missing | Start it with `--env-file=mcps/acme/.env`, or set the variable |
-| `The acme MCP cannot start: set MCP_ID_CLIENT_ID and MCP_ID_CLIENT_SECRET…` | The machine client is not set | Register it and set both in `mcps/acme/.env` |
-| `Failed to start server. Is port 47510 in use?` | Another server holds the port | Stop it, or set another `MCP_PORT` and `MCP_RESOURCE_URL` |
-| `401` after signing in | The resource URL in ID differs from `MCP_RESOURCE_URL` | Register the exact URL: `localhost` and `127.0.0.1` are different resources |
+| `MCP name "…" must be a lowercase letter then up to 11 lowercase letters or digits, for example acme` | `invalid-name` | Use a name such as `acme` |
+| `acme is taken by mcps/acme; choose another name` | `name-taken` | Choose another name |
+| `toolbox is reserved; choose another name` | `name-reserved` | Choose another name; `standalone`'s says to pass `--serve standalone` |
+| `Missing --serve: where it runs, toolbox, standalone or both` | `missing-argument` | Run the command it prints, with the placeholders filled in |
+| `acme has a tool notes.list: mcps/acme/src/tools/notes-list.ts; choose another name` | `tool-exists` | Choose another tool name |
+| `acme/notes.add: a mutation's description must say that it prepares an intent…` | `mutation-description` | Say "prepare" or "intent" in the description |
+| `database failed: the development Postgres does not answer on localhost:47432…` | `database-failed` | Start Postgres, then run the command under `Finish the job with:` |
+| `…/manifest.json is out of date; regenerate it with UPDATE_MANIFEST=1…`, from `bun run mcp:check` | | Run `bun mcp check acme`, which rewrites it, review the diff and commit |
+| A conformance test fails, such as `list_paginates` | | [Test an MCP](/docs/mcp/testing#errors) says what to change for each message |
+| `Tool name "…" must be <domain>.<operation>…` when the module loads | | [When a definition is refused](/docs/mcp/errors#when-a-definition-is-refused) |

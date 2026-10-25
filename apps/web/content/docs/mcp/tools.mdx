@@ -3,7 +3,7 @@ title: Read tools
 description: "Define a read tool with @answerable/mcp: its fields, its example, names, descriptions, the caller and the database it receives, pagination, errors, deprecation, and what hosts receive."
 ---
 
-<include lang="ts" meta='title="mcps/example/src/provider.ts"'>../../../../../mcps/example/src/provider.ts#list</include>
+<include lang="ts" meta='title="mcps/example/src/tools/notes-list.ts"'>../../../../../mcps/example/src/tools/notes-list.ts#list</include>
 
 A read tool answers a question and changes nothing. Define it with `defineTool`: five fields are required and everything else has a default. `defineTool` checks the definition when the module loads, and returns it as frozen data. A tool that changes data is a [mutation](/docs/mcp/mutations). New here? [Build your first MCP](/docs/mcp/quickstart) first.
 
@@ -65,22 +65,22 @@ The description is what a model reads to choose a tool. Write operational docume
 
 ### The database
 
-<include lang="ts" meta='title="packages/mcp-postgres/src/test/fixtures/mpgfixa-provider.ts"'>../../../../../packages/mcp-postgres/src/test/fixtures/mpgfixa-provider.ts</include>
+<include lang="ts" meta='title="mcps/example/src/mcp.ts"'>../../../../../mcps/example/src/mcp.ts</include>
 
-An MCP with a database defines its tools with the `defineTool` and `defineMutation` that `withDatabase({ schema })` returns, given its drizzle schema module. Their handlers also receive:
+An MCP with a database defines its tools with the `defineTool` and `defineMutation` that `withDatabase({ schema })` returns, given its drizzle schema module. `bun mcp new` writes this file, and every tool imports the two from it, as `notes.list` above does. Their handlers also receive:
 
 <AutoTypeTable path="../../packages/mcp/src/database.ts" name="DatabaseFields" type="Pick<DatabaseContext<Record<string, unknown>>, 'db'>" />
 
 - **The provider declares it.** `defineProvider` takes `database: { schema, migrations }`, and refuses a tool made with `withDatabase` unless that is the same schema. See [Providers and servers](/docs/mcp/servers#the-provider).
 - **The server supplies it.** The process that serves the provider passes its `db` to `createMcpServer` or a hub's `mount`, made with `mcpDatabase` from `@answerable/mcp-postgres`; a test gets one from [`@answerable/mcp-postgres/testing`](/docs/mcp/testing#an-mcp-with-a-database).
-- **Each call is its caller's.** The server runs every handler inside its call, and `callerOrganisation()` gives that call's organisation. `mcpDatabase` sets it on each connection a query borrows, so a table with the `organisationIsolation` policy, as the fixture's tables have, returns and accepts only that organisation's rows.
+- **Each call is its caller's.** The server runs every handler inside its call, and `callerOrganisation()` gives that call's organisation. `mcpDatabase` sets it on each connection a query borrows, so a table with the `organisationIsolation` policy, as every table `bun mcp` writes has, returns and accepts only that organisation's rows.
 - **A plain `defineTool` has no `db`.** Its context type has none, so `context.db` fails the typecheck.
 
-The fixture above is `@answerable/mcp-postgres`'s, with its tests. A command that writes an MCP's `src/mcp.ts`, `src/db/schema.ts` and first migration: Not yet.
+`bun mcp new` writes an MCP's `src/mcp.ts`, `src/db/schema.ts` and first migration, and `bun mcp add tool` adds the table a new domain needs: [Build your first MCP](/docs/mcp/quickstart).
 
 ## Pagination
 
-<include lang="ts" meta='title="mcps/example/src/notes.ts"'>../../../../../mcps/example/src/notes.ts#store</include>
+<include lang="ts" meta='title="mcps/example/src/tools/notes-list.ts"'>../../../../../mcps/example/src/tools/notes-list.ts#page</include>
 
 Every tool that can return an unbounded list takes `limit` and `cursor`, and returns `items`, `next_cursor` and `has_more`, as `notes.list` above does. Never truncate silently.
 
@@ -92,7 +92,7 @@ Every tool that can return an unbounded list takes `limit` and `cursor`, and ret
 | `next_cursor` | The cursor for the next page, or `null` on the last |
 | `has_more` | `true` when another page exists |
 
-`@answerable/mcp` exports nothing for pagination: declare the fields in your schemas. The conformance kit's `list_paginates` fails a tool whose output has an `items` array without them. A cursor the server did not issue answers `INVALID_INPUT`.
+`@answerable/mcp` exports nothing for pagination: declare the fields in your schemas. The conformance kit's `list_paginates` fails a tool whose output has an `items` array without them. A cursor that is not one the tool issues answers `INVALID_INPUT`: here, anything but a row's id, a UUID v7, which sorts by creation.
 
 **Size.** Through [the Toolbox](/docs/toolbox#limits), a read whose result is above 100 KiB of JSON answers `RESULT_TOO_LARGE`, so keep the default page well below that.
 

@@ -132,8 +132,8 @@ These throw when the module loads, so the server never starts with a broken defi
 | `Provider … has a database, so its server needs its db…` at start | `createMcpServer` or a `mount` entry has no `db` for a provider with a database | Pass `db`, made with `mcpDatabase` from `@answerable/mcp-postgres`; in a test, use [its `createTestMcp`](/docs/mcp/testing#an-mcp-with-a-database) |
 | `The … MCP cannot start: set MCP_ID_CLIENT_ID and MCP_ID_CLIENT_SECRET…` at start | The server reads who is calling from ID, and has no machine client | Register one with `platform:read` and set the two variables; see [Configure](/docs/mcp/servers#configure) |
 | `Invalid MCP configuration: …` at start | A missing or invalid variable | Set the named variable; see [Configure](/docs/mcp/servers#configure) |
-| `Server name "…" must be a lowercase letter then up to 11 lowercase letters or digits…` from `mcp:new` | The name is not a provider id | Use a name such as `acme` |
-| `mcps/<name> already exists; choose another name or remove it` from `mcp:new` | The directory exists | Choose another name, or remove the directory |
+| `MCP name "…" must be a lowercase letter then up to 11 lowercase letters or digits…` from `bun mcp new` | The name is not a provider id | Use a name such as `acme`; [Build your first MCP](/docs/mcp/quickstart#errors) lists the rest of `bun mcp`'s refusals |
+| `<name> is taken by mcps/<name>; choose another name` from `bun mcp new` | The directory exists | Choose another name |
 | `…/manifest.json is out of date; regenerate it with UPDATE_MANIFEST=1…` | The manifest differs from the code, or has not been written yet | Run `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-<name> test`, review the diff and commit |
 
 ## Limits

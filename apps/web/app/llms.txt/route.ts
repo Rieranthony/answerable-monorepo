@@ -11,7 +11,7 @@ const intro = `# Answerable docs
 
 ## Start here
 
-- [Build your first MCP](/docs/mcp/quickstart): scaffold a server, add a read tool and a mutation, test them, connect Claude Code
+- [Build your first MCP](/docs/mcp/quickstart): make an MCP with bun mcp new, add a read tool and a mutation, test and check it
 - [How Answerable ID works](/docs/id): organisations, members, clients, resources, scopes and tokens
 - [Add tools to the Toolbox](/docs/toolbox/add-tools): mount a provider, enable it for an organisation, grant it to people
 - [Build with an AI agent](/docs/agents): prompts to paste into a coding agent working in this repository

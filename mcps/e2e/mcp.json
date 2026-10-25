@@ -1,0 +1,6 @@
+{
+  "$schema": "../../scripts/mcp/mcp.schema.json",
+  "name": "e2e",
+  "serve": "both",
+  "database": "shared"
+}

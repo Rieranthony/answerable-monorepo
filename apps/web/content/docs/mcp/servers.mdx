@@ -3,9 +3,9 @@ title: Providers and servers
 description: "Group tools in a provider and serve it with createMcpServer: its description and database, who is calling, the workspace, configuration, what the server answers, change notices, hubs, the manifest, prompts, resources and views."
 ---
 
-<ScaffoldFile file="src/server.ts" />
+<include lang="ts" meta='title="mcps/e2e/src/server.ts"'>../../../../../mcps/e2e/src/server.ts</include>
 
-A **provider** is a named, dated set of tools, prompts and resources. A **server** serves one provider over HTTP: it signs callers in through Answerable ID, lists what their token allows and runs their calls. Every server in `mcps/` has these two parts; `bun run mcp:new` writes both.
+A **provider** is a named, dated set of tools, prompts and resources. A **server** serves one provider over HTTP: it signs callers in through Answerable ID, lists what their token allows and runs their calls. `mcps/e2e` has both; an MCP made by [`bun mcp new`](#make-an-mcp) has a provider, which a hub serves.
 
 ## The provider
 
@@ -70,36 +70,35 @@ Every server advertises `tools.listChanged: true`. `toolsChanged()` sends `notif
 
 **`call(tool, args, context)`** runs a tool the server serves exactly as its direct call runs it, for the caller in `context`: the arguments are checked (`INVALID_INPUT` names the tool's own fields), the handler runs within its own timeout with its provider's `db`, the output is checked, and a mutation is prepared and its intent recorded, with the commit tool of its class. The codes the tool declares pass through the calling tool unchanged. It is for a hub's own tools, such as the Toolbox's `toolbox_execute`: it does not decide whether the caller may use the tool, and it runs inside the calling tool's `wrapCall`.
 
-## Create a workspace
+## Make an MCP
 
 ```sh
-bun run mcp:new acme
-bun install
-UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-acme test
-bun run mcp:check @answerable/mcp-acme
+bun mcp new acme --description "Notes for construction projects: list, read and add notes on a project." --serve toolbox
 ```
 
-Run these from the repository root. `mcp:new <name>` writes `mcps/<name>`, refuses a name that is not a [provider id](#the-provider) and a directory that exists, and prints the three commands that follow it here. `bun install` links the new workspace; the first test run writes `manifest.json`, the provider's contract, and the scaffolded server then passes `mcp:check` unchanged. [Test an MCP](/docs/mcp/testing#check-a-workspace) says what that runs.
+Run it from the repository root. It refuses a name that is not a [provider id](#the-provider), a reserved or retired name and one a directory of `mcps/` has, before it writes anything; then it writes `mcps/acme`, installs it, creates its local schema, writes its first migration and its manifest, and checks it. [Build your first MCP](/docs/mcp/quickstart) walks through it.
 
 | File | Holds |
 | --- | --- |
-| `package.json` | The workspace `@answerable/mcp-<name>`, depending on `@answerable/mcp`, `@answerable/id-admin` and `zod` at the versions of `mcps/e2e` |
-| `tsconfig.json`, `eslint.config.mjs`, `bunfig.toml` | Copies of `mcps/e2e`'s: the compiler and lint settings, and the gate of 100% line and function coverage over `src` |
-| `src/provider.ts` | One read tool, `<name>.status`, with its example, and `defineProvider` with a description to replace |
-| `src/server.ts` | `readMcpEnvironment`, `createMcpServer` and `createIdProfiles`; it refuses to start without the machine client |
-| `src/provider.test.ts` | The conformance kit and one `createTestMcp` test |
-| `.env.example` | `MCP_ID_ISSUER`, `MCP_RESOURCE_URL` and `MCP_PORT` (`47510`; each MCP running at the same time needs its own), and the machine client's two variables to set |
-| `README.md` | How to run and test it, with links to these guides |
+| `mcp.json` | Where it runs (`serve`: `toolbox`, `standalone` or `both`) and its database mode (`shared` or `own`) |
+| `package.json` | The workspace `@answerable/mcp-<name>`, its provider exported as `./provider`, and its versions pinned to the repository's |
+| `tsconfig.json`, `eslint.config.mjs`, `bunfig.toml` | The compiler and lint settings, and the gate of 100% line and function coverage over `src` |
+| `src/mcp.ts` | `defineTool` and `defineMutation` bound to its database |
+| `src/provider.ts` | `defineProvider` with its description, version, database and tools |
+| `src/tools/` | One file per tool, each with its test; the first is `<name>.status` unless `--tool` names another |
+| `src/db/schema.ts` | Its tables, in schema `<name>` |
+| `src/provider.test.ts` | The conformance kit |
+| `README.md` | What it is, where it runs, its commands and the guides |
 
-Not scaffolded: an `exports` map, views and mutations; add them when you need them. An `exports` map is what [the Toolbox](/docs/toolbox/add-tools) needs to mount the provider. `bun run mcp:test` runs every server under `mcps/`.
+It writes no server: the Toolbox serves an MCP, and mounting one from `mcp.json` is Not yet. `bun run mcp:test` runs every MCP under `mcps/`.
 
 ## Configure
 
-<ScaffoldFile file=".env.example" />
+<Configuration group="MCP" />
 
 `readMcpEnvironment(process.env)` reads these variables and returns `{ auth, port, id }`. Outside production (`NODE_ENV` unset, `development` or `test`), an unset issuer is `http://localhost:47300` and an unset resource `http://localhost:47500/mcp`, the e2e server's.
 
-**The machine client.** `id` is what `createIdAdmin` takes, set when `MCP_ID_CLIENT_ID` is: the client, `MCP_ID_CLIENT_SECRET` and `MCP_ID_ADMIN_RESOURCE`, ID's admin API (locally `http://localhost:47300/api/admin`). The server reads who is calling through it, so it needs `platform:read` on ID's admin API; register it as [Connect Claude Code](/docs/mcp/claude-code#register-the-server) does for the e2e server. A server whose profiles use ID, as the scaffold's and the e2e server's do, refuses to start without it. The secret without the client, or the client without its secret, is refused. A server with variables of its own lists them with `defineConfig` from `@answerable/config` and reads them with `parseEnvironment(config, env, names)`, as the Toolbox and the admin MCP do: it reads `env` with the definition, checks the issuer and resource URL in the two variables `names` gives, and throws `Invalid <label> configuration: <VARIABLE>: <problem>`.
+**The machine client.** `id` is what `createIdAdmin` takes, set when `MCP_ID_CLIENT_ID` is: the client, `MCP_ID_CLIENT_SECRET` and `MCP_ID_ADMIN_RESOURCE`, ID's admin API (locally `http://localhost:47300/api/admin`). The server reads who is calling through it, so it needs `platform:read` on ID's admin API; register it as [Connect Claude Code](/docs/mcp/claude-code#register-the-server) does for the e2e server. A server whose profiles use ID, as the e2e server's do, refuses to start without it. The secret without the client, or the client without its secret, is refused. A server with variables of its own lists them with `defineConfig` from `@answerable/config` and reads them with `parseEnvironment(config, env, names)`, as the Toolbox and the admin MCP do: it reads `env` with the definition, checks the issuer and resource URL in the two variables `names` gives, and throws `Invalid <label> configuration: <VARIABLE>: <problem>`.
 
 **Issuer.** The Answerable ID origin. The verifier reads ID's signing keys from the issuer's metadata; never take an issuer from a token.
 

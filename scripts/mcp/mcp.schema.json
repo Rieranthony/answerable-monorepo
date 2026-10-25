@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string",
+      "description": "The MCP's name: its provider id and the name of its directory, schema and roles"
+    },
+    "serve": {
+      "type": "string",
+      "enum": [
+        "toolbox",
+        "standalone",
+        "both"
+      ],
+      "description": "Where it runs: in the Toolbox, on its own URL in the standalone server, or both"
+    },
+    "database": {
+      "type": "string",
+      "enum": [
+        "shared",
+        "own"
+      ],
+      "description": "Where its tables live: a schema in the shared database answerable_mcps, or a database of its own"
+    }
+  },
+  "required": [
+    "name",
+    "serve",
+    "database"
+  ],
+  "additionalProperties": false,
+  "title": "An MCP's declaration, mcps/<name>/mcp.json",
+  "description": "Written by bun mcp new; serve and database may be changed by hand"
+}

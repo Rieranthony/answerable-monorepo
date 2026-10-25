@@ -1,6 +1,6 @@
 {
   "id": "example",
-  "version": "2026-09-30",
+  "version": "2026-10-25",
   "description": "Your organisation's notes: list them a page at a time, and add one. The finished quickstart of the MCP docs.",
   "tools": [
     {
@@ -273,15 +273,61 @@
       }
     },
     {
+      "identity": "example/example.status",
+      "name": "example_status",
+      "version": "2026-10-25",
+      "kind": "read",
+      "description": "Report that example is running and who is calling: your name and your organisation's. Replace it with the MCP's first real tool.",
+      "scopes": [
+        "example:read"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "ok while the MCP runs"
+          },
+          "person": {
+            "type": "string",
+            "description": "Your name"
+          },
+          "organisation": {
+            "type": "string",
+            "description": "Your organisation's name"
+          }
+        },
+        "required": [
+          "status",
+          "person",
+          "organisation"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "identity": "example/notes.add",
       "name": "notes_add",
-      "version": "2026-09-30",
+      "version": "2026-10-25",
       "kind": "mutate",
       "description": "Prepare adding a note to your organisation. Changes nothing: returns a preview and a commit token; commit the intent with the tool its commit_tool names to add the note.",
       "scopes": [
         "example:write"
       ],
-      "risk": "low",
+      "risk": "normal",
       "effects": [],
       "annotations": {
         "readOnlyHint": true,
@@ -293,15 +339,15 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "text": {
+          "title": {
             "type": "string",
             "minLength": 1,
             "maxLength": 200,
-            "description": "The note, 1 to 200 characters"
+            "description": "The title, 1 to 200 characters"
           }
         },
         "required": [
-          "text"
+          "title"
         ],
         "additionalProperties": false
       },
@@ -314,7 +360,7 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
           },
-          "text": {
+          "title": {
             "type": "string"
           },
           "created_at": {
@@ -325,7 +371,7 @@
         },
         "required": [
           "id",
-          "text",
+          "title",
           "created_at"
         ],
         "additionalProperties": false
@@ -334,9 +380,9 @@
     {
       "identity": "example/notes.list",
       "name": "notes_list",
-      "version": "2026-09-30",
+      "version": "2026-10-25",
       "kind": "read",
-      "description": "List your organisation's notes, oldest first, 20 per page by default and at most 100. When has_more is true, pass next_cursor as cursor to read the next page.",
+      "description": "List your organisation's notes, newest first, 20 per page by default and at most 100. When has_more is true, pass next_cursor as cursor to read the next page.",
       "scopes": [
         "example:read"
       ],
@@ -352,14 +398,16 @@
         "properties": {
           "limit": {
             "default": 20,
-            "description": "Notes per page, 1 to 100",
+            "description": "Items per page, 1 to 100",
             "type": "integer",
             "minimum": 1,
             "maximum": 100
           },
           "cursor": {
             "description": "next_cursor from the previous page; omit it for the first page",
-            "type": "string"
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
           }
         },
         "additionalProperties": false
@@ -376,30 +424,40 @@
                 "id": {
                   "type": "string",
                   "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "description": "The row's id"
                 },
-                "text": {
+                "title": {
                   "type": "string"
                 },
                 "created_at": {
                   "type": "string",
                   "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+                  "description": "When it was added"
                 }
               },
               "required": [
                 "id",
-                "text",
+                "title",
                 "created_at"
               ],
               "additionalProperties": false
-            }
+            },
+            "description": "Newest first"
           },
           "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The cursor of the next page, or null on the last"
           },
           "has_more": {
             "type": "boolean"

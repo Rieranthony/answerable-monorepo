@@ -4,6 +4,10 @@
 
 `@answerable/mcp-postgres/testing` exports `createTestMcp` and `assertProviderConformance` for a provider with a `database`: `@answerable/mcp/testing`'s, given the provider's `db`, which `testMcpDatabase` makes from `provider.database` with the SDK's `callerOrganisation` as its organisation, so each connection sees only its organisation's rows. A test checks that the MCP name rule agrees with the SDK's `checkProviderId`.
 
+- `createTestMcp` also returns `db` and `asOrganisation(id, fn)`, to seed and read rows as an organisation, and takes `server`, which builds the server from `{ auth, profiles, provider, db }`, for `createMcpServer` options such as `intents` or `policyClass`.
+- `testMcpDatabase`'s `asOrganisation(id, fn)` awaits `fn` as that organisation, and wins over an `organisation` getter, which serves outside it.
+- `ensureLocalMcpDatabases` applies the database privileges of `infra/postgres/init/006` only to a database it has just created. Its lock is the `postgres` database's, and advisory locks belong to one database, so granting on an existing database raced `provisionMcps` granting there under its own lock ("tuple concurrently updated") once several MCPs' suites ran at once; `provisionMcps` keeps those privileges.
+
 ## 0.8.0
 
 A database for every MCP, in a shared database or one of its own ([design](../../docs/goals/mcp-cli/design.md#database)). Nothing breaks: the hubs' `migrate`, `configureRuntimeRole` and `assertRuntimeRole` are unchanged.

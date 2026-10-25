@@ -1,0 +1,6 @@
+{
+  "$schema": "../../scripts/mcp/mcp.schema.json",
+  "name": "example",
+  "serve": "toolbox",
+  "database": "shared"
+}

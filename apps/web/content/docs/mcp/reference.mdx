@@ -644,6 +644,21 @@ or `undefined`.
 checkDescription("Gets notes.") // "is 11 characters; write 40 to 1,000 saying what it does, when to use it and its limits"
 ```
 
+### checkMutationDescription
+
+```ts
+function checkMutationDescription(description: string): string | undefined
+```
+
+Check a mutation's description for what the conformance kit's `descriptions_operational` requires: that it says the mutation prepares an
+intent, with the word "prepare" or "intent". Returns what is wrong, to follow "a mutation's description", or `undefined`.
+
+**Example**
+
+```ts
+checkMutationDescription("Add a note to your organisation's notes.") // 'must say that it prepares an intent; use the word "prepare" or "intent"'
+```
+
 ### checkProviderId
 
 ```ts

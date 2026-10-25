@@ -31,7 +31,7 @@ The Toolbox imports the provider from its workspace, so the workspace needs an `
 },
 ```
 
-`mcps/example` has none, since nothing mounts it; add the entry there first if you mount it, as the run end to end did.
+`bun mcp new` writes it, so `mcps/example` has it.
 
 </Step>
 <Step>
@@ -112,7 +112,7 @@ curl "$ID/api/admin/v1/organizations/$ORG/entitlements" \
 
 ### Try it
 
-In Claude Code, connected to the Toolbox as [Connect Claude Code](/docs/mcp/claude-code#the-toolbox) shows, ask Claude to call `toolbox_whoami`: its `capabilities` now include `acme/notes.add` and `acme/notes.list`. With `mcps/example` mounted and the grant string `example`, the Toolbox listed exactly:
+In Claude Code, connected to the Toolbox as [Connect Claude Code](/docs/mcp/claude-code#the-toolbox) shows, ask Claude to call `toolbox_whoami`: its `capabilities` now include `acme/notes.add` and `acme/notes.list`. With `mcps/example` mounted and the grant string `example`, before `bun mcp` remade it with a database and `example.status`, the Toolbox listed exactly:
 
 ```text
 toolbox_whoami, example_notes_add, example_notes_list, toolbox_commit, toolbox_commit_confirmed

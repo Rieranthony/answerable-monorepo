@@ -39,3 +39,16 @@ export function checkDescription(description: string): string | undefined {
   const { length } = description
   if (length < 40 || length > 1000) return `is ${length} characters; write 40 to 1,000 saying what it does, when to use it and its limits`
 }
+
+/**
+ * Check a mutation's description for what the conformance kit's `descriptions_operational` requires: that it says the mutation prepares an
+ * intent, with the word "prepare" or "intent". Returns what is wrong, to follow "a mutation's description", or `undefined`.
+ *
+ * @example
+ * ```ts
+ * checkMutationDescription("Add a note to your organisation's notes.") // 'must say that it prepares an intent; use the word "prepare" or "intent"'
+ * ```
+ */
+export function checkMutationDescription(description: string): string | undefined {
+  if (!/prepare|intent/i.test(description)) return 'must say that it prepares an intent; use the word "prepare" or "intent"'
+}

@@ -29,7 +29,7 @@ The MCP's URL is `https://mcp.test/mcp`.
 
 Pin `userId`, `organizationId` and `membershipId` to connect as the same principal twice, for example to replay a commit from a second connection. `mcp.fetch` sends a raw HTTP request, for example to check a `401`. `mcp.issuer.sign` makes an unusual token, such as an expired one. `mcp.close()` closes every client.
 
-**Server options.** In place of a provider, pass a function that builds the server from the local issuer's `auth` and the test `profiles`, both in the object it receives, which spreads into `createMcpServer`'s options. To move time, give the server a store whose clock you control; the store decides every expiry:
+**Server options.** In place of a provider, pass a function that builds the server from the local issuer's `auth` and the test `profiles`, both in the object it receives, which spreads into `createMcpServer`'s options. For an MCP with a database, its own `createTestMcp` takes that function as `server`, and the object also holds the provider and its `db`. To move time, give the server a store whose clock you control; the store decides every expiry:
 
 <include lang="ts" meta='title="mcps/example/src/intents.test.ts"'>../../../../../mcps/example/src/intents.test.ts#expiry</include>
 
@@ -47,7 +47,11 @@ Every caller is the test person, `Test Person` (`person@example.test`, in no gro
 
 <include lang="ts" meta='title="packages/mcp-postgres/src/test-mcp.test.ts"'>../../../../../packages/mcp-postgres/src/test-mcp.test.ts#isolation</include>
 
-A provider with a `database` imports `createTestMcp` and `assertProviderConformance` from `@answerable/mcp-postgres/testing`. They take the provider and the options or fixture the SDK's take, without `db`: they make the provider's `db` with `testMcpDatabase`, as production makes it: schema `<id>` in `answerable_mcps_test` on the development Postgres, dropped, provisioned and migrated from `database.migrations`, then reached as a fresh serving login with the caller's organisation, so `connect({ organizationId })` sees only that organisation's rows. `close()`, and the end of the conformance checks, drop the login. The suite needs the development Postgres on port 47432.
+A provider with a `database` imports `createTestMcp` and `assertProviderConformance` from `@answerable/mcp-postgres/testing`, as every MCP `bun mcp new` makes does. They take the provider and the options or fixture the SDK's take, without `db`: they make the provider's `db` with `testMcpDatabase`, as production makes it: schema `<id>` in `answerable_mcps_test` on the development Postgres, dropped, provisioned and migrated from `database.migrations`, then reached as a fresh serving login with the caller's organisation, so `connect({ organizationId })` sees only that organisation's rows. `close()`, and the end of the conformance checks, drop the login. The suite needs the development Postgres on port 47432.
+
+`mcp.db` is that database, and `mcp.asOrganisation(id, fn)` runs `fn` as a member of organisation `id`: a test seeds and reads rows with them, as the tests `bun mcp add tool` writes do.
+
+<include lang="ts" meta='title="mcps/example/src/tools/notes-list.test.ts"'>../../../../../mcps/example/src/tools/notes-list.test.ts</include>
 
 <include lang="ts" meta='title="packages/mcp-postgres/src/test-mcp.test.ts"'>../../../../../packages/mcp-postgres/src/test-mcp.test.ts#conformance</include>
 
@@ -123,7 +127,9 @@ The file holds the tools sorted by identity, with their wire names, schemas, sco
 bun run mcp:check @answerable/mcp-e2e
 ```
 
-Run this from the repository root with a workspace name. It runs the workspace's typecheck, lint and tests with Turborepo (`turbo run typecheck lint test --filter <workspace>`); the conformance checks and the manifest drift test are tests, so they run too. The `@answerable/auth`, `@answerable/mcp`, e2e and Toolbox suites, and every server that `bun run mcp:new` writes, enforce 100% line and function coverage; `@answerable/acceptance` is test support and has no coverage gate. `bun run mcp:test` runs the auth, SDK, e2e, Toolbox, scaffolded servers and scaffold suites together.
+Run this from the repository root with a workspace name. It runs the workspace's typecheck, lint and tests with Turborepo (`turbo run typecheck lint test --filter <workspace>`); the conformance checks and the manifest drift test are tests, so they run too. The `@answerable/auth`, `@answerable/mcp`, e2e and Toolbox suites, and every MCP that `bun mcp new` makes, enforce 100% line and function coverage; `@answerable/acceptance` is test support and has no coverage gate. `bun run mcp:test` runs the auth, SDK, e2e, Toolbox and every other MCP's suites, and `bun mcp`'s, together.
+
+For an MCP that `bun mcp new` made, `bun mcp check <name>` runs the same typecheck, lint and tests, then rewrites a stale manifest and the generated files instead of failing, and says to commit them; CI runs `mcp:check`, which fails on either.
 
 ## Not yet
 

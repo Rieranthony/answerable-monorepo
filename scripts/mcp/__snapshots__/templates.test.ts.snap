@@ -1,0 +1,482 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`every file of a new MCP, for a fixed name and date, with the status tool: mcp.json 1`] = `
+"{
+  "$schema": "../../scripts/mcp/mcp.schema.json",
+  "name": "acme",
+  "serve": "toolbox",
+  "database": "shared"
+}
+"
+`;
+
+exports[`every file of a new MCP, for a fixed name and date, with the status tool: package.json 1`] = `
+"{
+  "name": "@answerable/mcp-acme",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./provider": "./src/provider.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --max-warnings 0",
+    "mcp": "bun ../../scripts/mcp/cli.ts"
+  },
+  "dependencies": {
+    "@answerable/mcp": "workspace:*",
+    "@answerable/mcp-postgres": "workspace:*",
+    "drizzle-orm": "0.45.4",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/bun": "1.3.1",
+    "eslint": "9.39.5",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.48.1"
+  }
+}
+"
+`;
+
+exports[`every file of a new MCP, for a fixed name and date, with the status tool: tsconfig.json 1`] = `
+"{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2023",
+      "DOM"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "types": [
+      "bun"
+    ]
+  },
+  "include": [
+    "src/**/*.ts"
+  ]
+}
+"
+`;
+
+exports[`every file of a new MCP, for a fixed name and date, with the status tool: eslint.config.mjs 1`] = `
+"import eslint from "@eslint/js"
+import tseslint from "typescript-eslint"
+
+export default tseslint.config(
+  eslint.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    ignores: ["coverage/**"],
+  },
+)
+"
+`;
+
+exports[`every file of a new MCP, for a fixed name and date, with the status tool: bunfig.toml 1`] = `
+"[test]
+root = "src"
+coverage = true
+coverageSkipTestFiles = true
+coverageThreshold = { lines = 1, functions = 1 }
+coverageReporter = ["text", "lcov"]
+coveragePathIgnorePatterns = ["../**"]
+"
+`;
+
+exports[`every file of a new MCP, for a fixed name and date, with the status tool: README.md 1`] = `
+"# acme MCP
+
+Notes for construction projects: list, read and add notes on a project.
+
+- **Where it runs** (\`"serve": "toolbox"\` in \`mcp.json\`): in the Toolbox, where hosts call its tools \`acme_<domain>_<operation>\` at the Toolbox's one URL. Mounting it from \`mcp.json\`: Not yet; [Add tools to the Toolbox](../../apps/web/content/docs/toolbox/add-tools.mdx) mounts a provider by hand.
+- **Its tables** (\`"database": "shared"\`): in schema \`acme\` of the shared database \`answerable_mcps\`, each limited to the caller's organisation by Postgres. Its tests use schema \`acme\` of \`answerable_mcps_test\`.
+- **Its tools:** one file each in \`src/tools\`, with its test, listed in \`src/provider.ts\`. \`manifest.json\` is their contract.
+
+\`\`\`sh
+bun mcp add tool acme <domain.operation> --description "<what it does, when to use it, its limits>"
+bun mcp check acme
+bun mcp db acme generate
+bun mcp db acme migrate
+\`\`\`
+
+Run them from the repository root, or from \`mcps/acme\` without the name. \`add tool\` writes a read tool, or with \`--mutation\` a change, with its test and its table, then checks the MCP. \`check\` runs the typecheck, the lint and the tests, with [the conformance kit](../../apps/web/content/docs/mcp/testing.mdx) and a 100% coverage gate; it rewrites a stale \`manifest.json\` and says to commit it. After a change to \`src/db/schema.ts\`, \`db generate\` writes the migration into \`drizzle/\`: review and commit it. \`db migrate\` migrates the local development schema. \`bun mcp\` writes \`mcp.json\`; change \`serve\` and \`database\` there.
+
+Guides: [Build your first MCP](../../apps/web/content/docs/mcp/quickstart.mdx), [Read tools](../../apps/web/content/docs/mcp/tools.mdx), [Mutations](../../apps/web/content/docs/mcp/mutations.mdx), [Test an MCP](../../apps/web/content/docs/mcp/testing.mdx).
+"
+`;
+
+exports[`every file of a new MCP, for a fixed name and date, with the status tool: src/mcp.ts 1`] = `
+"// Written by bun mcp new; never edited. Every tool imports defineTool or defineMutation from here.
+import { withDatabase } from "@answerable/mcp"
+import * as schema from "./db/schema"
+
+/** This MCP's definitions: every handler's context.db is typed by src/db/schema.ts. */
+export const { defineTool, defineMutation } = withDatabase({ schema })
+
+/** This MCP's database, which src/provider.ts declares: its tables, and the migrations bun mcp db generate writes into drizzle/. */
+export const database = { schema, migrations: new URL("../drizzle", import.meta.url) }
+"
+`;
+
+exports[`every file of a new MCP, for a fixed name and date, with the status tool: src/provider.ts 1`] = `
+"// The acme MCP: what it is for, its version and its tools. bun mcp add tool adds a tool above each "bun mcp: tools" line.
+import { defineProvider } from "@answerable/mcp"
+import { database } from "./mcp"
+import { acmeStatus } from "./tools/acme-status"
+// bun mcp: tools
+
+export const provider = defineProvider({
+  id: "acme",
+  description: "Notes for construction projects: list, read and add notes on a project.",
+  version: "2026-10-25",
+  database,
+  tools: [
+    acmeStatus,
+    // bun mcp: tools
+  ],
+})
+"
+`;
+
+exports[`every file of a new MCP, for a fixed name and date, with the status tool: src/provider.test.ts 1`] = `
+"import { assertProviderConformance } from "@answerable/mcp-postgres/testing"
+import { provider } from "./provider"
+
+// One test per check of the Answerable MCP standard, for every tool, each called with its example; and manifest.json, the contract.
+assertProviderConformance(provider, { manifest: new URL("../manifest.json", import.meta.url) })
+"
+`;
+
+exports[`every file of a new MCP, for a fixed name and date, with the status tool: src/db/schema.ts 1`] = `
+"import * as pg from "drizzle-orm/pg-core"
+
+// The tables of the acme MCP, in its own Postgres schema, acme. After a change here, bun mcp db acme generate writes the
+// migration; bun mcp add tool adds the table a new domain needs.
+//
+// Every table has organisation_id and the organisationIsolation policy, with .enableRLS(): Postgres then limits every query to the
+// caller's organisation, even one that forgets to filter. A table without them is shared by every organisation: a reviewed exception,
+// with a comment above it saying why.
+//
+//   export const projects = acmeSchema.table("projects", {
+//     id: pg.uuid().primaryKey().$defaultFn(() => Bun.randomUUIDv7()),
+//     organisation_id: pg.uuid().notNull(),
+//     name: pg.text().notNull(),
+//   }, table => [organisationIsolation(table.organisation_id)]).enableRLS()
+//
+// The runtime role reads and writes every table here. To narrow that, export grants from src/db/grants.ts, which
+// bun mcp db acme migrate reads:
+//
+//   import type { Grant } from "@answerable/mcp-postgres"
+//   export const grants: Grant[] = [{ table: "projects", privileges: ["select", "insert"] }]
+export const acmeSchema = pg.pgSchema("acme")
+"
+`;
+
+exports[`every file of a new MCP, for a fixed name and date, with the status tool: src/tools/acme-status.ts 1`] = `
+"// One tool = one thing the caller can do. Hosts call this tool acme_acme_status in the Toolbox, acme_status alone.
+//
+// name: <domain>.<operation>, from the caller's side: notes.list, projects.search, rfis.create.
+//   Never the vendor or the transport (sharepoint_query), never a mode switch (manage_notes).
+//   Unique in this MCP; the CLI and defineProvider refuse a second one.
+//
+// description: the model reads only this to choose the tool. Say what it does, when to use it,
+//   its limits (page size, what it cannot see) and what the ids mean. 40 to 1,000 characters.
+//   Good: "List the notes of a project, newest first, 20 per page. Use projects.search first to find the project id."
+//   Bad: "Gets notes."
+//
+// input and output: Zod objects. Describe every field (.describe("…")): hosts show it to the model.
+//   A list takes limit and cursor and returns items, next_cursor and has_more (the conformance kit checks it).
+//
+// execute: gets the checked input and the caller: person, organisation and db. Row-level security (D19) limits every query to
+//   the caller's organisation, so no query filters on it by hand. Throw ToolError for a failure the caller can fix.
+import { z } from "zod"
+import { defineTool } from "../mcp"
+
+export const acmeStatus = defineTool({
+  name: "acme.status",
+  description: "Report that acme is running and who is calling: your name and your organisation's. Replace it with the MCP's first real tool.",
+  input: z.object({}),
+  output: z.object({
+    status: z.string().describe("ok while the MCP runs"),
+    person: z.string().describe("Your name"),
+    organisation: z.string().describe("Your organisation's name"),
+  }),
+  example: {},
+  async execute(_input, { person, organisation }) {
+    return { status: "ok", person: person.name, organisation: organisation.name }
+  },
+})
+"
+`;
+
+exports[`every file of a new MCP, for a fixed name and date, with the status tool: src/tools/acme-status.test.ts 1`] = `
+"import { expect, test } from "bun:test"
+import { createTestMcp } from "@answerable/mcp-postgres/testing"
+import { provider } from "../provider"
+
+test("acme_status says who is calling and from which organisation", async () => {
+  const mcp = await createTestMcp(provider)
+  try {
+    const client = await mcp.connect({ person: { name: "Ada Lovelace" }, organisation: { name: "Acme" } })
+    const result = await client.callTool({ name: "acme_status", arguments: {} })
+    expect(result.structuredContent).toEqual({ status: "ok", person: "Ada Lovelace", organisation: "Acme" })
+  } finally {
+    await mcp.close()
+  }
+})
+"
+`;
+
+exports[`a new MCP whose first tool is a read has its domain's table; a mutation's file and test: src/db/schema.ts 1`] = `
+"import { organisationIsolation } from "@answerable/mcp-postgres"
+import * as pg from "drizzle-orm/pg-core"
+
+// The tables of the acme MCP, in its own Postgres schema, acme. After a change here, bun mcp db acme generate writes the
+// migration; bun mcp add tool adds the table a new domain needs.
+//
+// Every table has organisation_id and the organisationIsolation policy, with .enableRLS(): Postgres then limits every query to the
+// caller's organisation, even one that forgets to filter. A table without them is shared by every organisation: a reviewed exception,
+// with a comment above it saying why.
+//
+//   export const projects = acmeSchema.table("projects", {
+//     id: pg.uuid().primaryKey().$defaultFn(() => Bun.randomUUIDv7()),
+//     organisation_id: pg.uuid().notNull(),
+//     name: pg.text().notNull(),
+//   }, table => [organisationIsolation(table.organisation_id)]).enableRLS()
+//
+// The runtime role reads and writes every table here. To narrow that, export grants from src/db/grants.ts, which
+// bun mcp db acme migrate reads:
+//
+//   import type { Grant } from "@answerable/mcp-postgres"
+//   export const grants: Grant[] = [{ table: "projects", privileges: ["select", "insert"] }]
+export const acmeSchema = pg.pgSchema("acme")
+
+// The notes table: each organisation's rows. The id is a UUID v7, so ids sort by creation.
+export const notes = acmeSchema.table("notes", {
+  id: pg.uuid().primaryKey().$defaultFn(() => Bun.randomUUIDv7()),
+  organisation_id: pg.uuid().notNull(),
+  title: pg.text().notNull(),
+  created_at: pg.timestamp({ withTimezone: true }).notNull().defaultNow(),
+}, table => [organisationIsolation(table.organisation_id)]).enableRLS()
+"
+`;
+
+exports[`a new MCP whose first tool is a read has its domain's table; a mutation's file and test: src/provider.ts 1`] = `
+"// The acme MCP: what it is for, its version and its tools. bun mcp add tool adds a tool above each "bun mcp: tools" line.
+import { defineProvider } from "@answerable/mcp"
+import { database } from "./mcp"
+import { notesList } from "./tools/notes-list"
+// bun mcp: tools
+
+export const provider = defineProvider({
+  id: "acme",
+  description: "Notes for construction projects: list, read and add notes on a project.",
+  version: "2026-10-25",
+  database,
+  tools: [
+    notesList,
+    // bun mcp: tools
+  ],
+})
+"
+`;
+
+exports[`a new MCP whose first tool is a read has its domain's table; a mutation's file and test: src/tools/notes-list.ts 1`] = `
+"// One tool = one thing the caller can do. Hosts call this tool acme_notes_list in the Toolbox, notes_list alone.
+//
+// name: <domain>.<operation>, from the caller's side: notes.list, projects.search, rfis.create.
+//   Never the vendor or the transport (sharepoint_query), never a mode switch (manage_notes).
+//   Unique in this MCP; the CLI and defineProvider refuse a second one.
+//
+// description: the model reads only this to choose the tool. Say what it does, when to use it,
+//   its limits (page size, what it cannot see) and what the ids mean. 40 to 1,000 characters.
+//   Good: "List the notes of a project, newest first, 20 per page. Use projects.search first to find the project id."
+//   Bad: "Gets notes."
+//
+// input and output: Zod objects. Describe every field (.describe("…")): hosts show it to the model.
+//   A list takes limit and cursor and returns items, next_cursor and has_more (the conformance kit checks it).
+//
+// execute: gets the checked input and the caller: person, organisation and db. Row-level security (D19) limits every query to
+//   the caller's organisation, so no query filters on it by hand. Throw ToolError for a failure the caller can fix.
+import { desc, lt } from "drizzle-orm"
+import { z } from "zod"
+import * as schema from "../db/schema"
+import { defineTool } from "../mcp"
+
+const item = z.object({
+  id: z.uuid().describe("The row's id"),
+  title: z.string(),
+  created_at: z.iso.datetime().describe("When it was added"),
+})
+
+export const notesList = defineTool({
+  name: "notes.list",
+  description: "List the notes of the caller's organisation, newest first, 20 per page.",
+  input: z.object({
+    limit: z.number().int().min(1).max(100).default(20).describe("Items per page, 1 to 100"),
+    cursor: z.uuid().optional().describe("next_cursor from the previous page; omit it for the first page"),
+  }),
+  output: z.object({
+    items: z.array(item).describe("Newest first"),
+    next_cursor: z.uuid().nullable().describe("The cursor of the next page, or null on the last"),
+    has_more: z.boolean(),
+  }),
+  example: { limit: 5 },
+  async execute({ limit, cursor }, { db }) {
+    const table = schema.notes
+    const rows = await db.select().from(table).where(cursor ? lt(table.id, cursor) : undefined).orderBy(desc(table.id)).limit(limit + 1)
+    const items = rows.slice(0, limit).map(row => ({ id: row.id, title: row.title, created_at: row.created_at.toISOString() }))
+    const has_more = rows.length > limit
+    return { items, next_cursor: has_more ? items.at(-1)!.id : null, has_more }
+  },
+})
+"
+`;
+
+exports[`a new MCP whose first tool is a read has its domain's table; a mutation's file and test: src/tools/notes-list.test.ts 1`] = `
+"import { expect, test } from "bun:test"
+import { createTestMcp } from "@answerable/mcp-postgres/testing"
+import * as schema from "../db/schema"
+import { provider } from "../provider"
+
+type Page = { items: { title: string }[]; next_cursor: string | null; has_more: boolean }
+
+test("notes_list lists the caller's organisation's rows only, newest first, a page at a time", async () => {
+  const mcp = await createTestMcp(provider)
+  try {
+    const [mine, theirs] = [crypto.randomUUID(), crypto.randomUUID()]
+    for (const title of ["First", "Second", "Third"]) await mcp.asOrganisation(mine, () => mcp.db.insert(schema.notes).values({ organisation_id: mine, title }))
+    await mcp.asOrganisation(theirs, () => mcp.db.insert(schema.notes).values({ organisation_id: theirs, title: "Theirs" }))
+    const client = await mcp.connect({ organizationId: mine })
+    const first = (await client.callTool({ name: "notes_list", arguments: { limit: 2 } })).structuredContent as Page
+    expect(first.items.map(item => item.title)).toEqual(["Third", "Second"])
+    expect(first.has_more).toBe(true)
+    const second = await client.callTool({ name: "notes_list", arguments: { limit: 2, cursor: first.next_cursor } })
+    expect(second.structuredContent).toMatchObject({ items: [{ title: "First" }], next_cursor: null, has_more: false })
+    const other = await mcp.connect({ organizationId: theirs })
+    expect((await other.callTool({ name: "notes_list", arguments: {} })).structuredContent).toMatchObject({ items: [{ title: "Theirs" }] })
+  } finally {
+    await mcp.close()
+  }
+})
+"
+`;
+
+exports[`a new MCP whose first tool is a read has its domain's table; a mutation's file and test: README.md 1`] = `
+"# acme MCP
+
+Notes for construction projects: list, read and add notes on a project.
+
+- **Where it runs** (\`"serve": "both"\` in \`mcp.json\`): both in the Toolbox, where hosts call its tools \`acme_<domain>_<operation>\` at the Toolbox's one URL. Mounting it from \`mcp.json\`: Not yet; [Add tools to the Toolbox](../../apps/web/content/docs/toolbox/add-tools.mdx) mounts a provider by hand; and on its own URL, \`/acme/mcp\` on the standalone server. The standalone server: Not yet.
+- **Its tables** (\`"database": "own"\`): in schema \`acme\` of its own database, \`answerable_mcp_acme\`, each limited to the caller's organisation by Postgres. Its tests use schema \`acme\` of \`answerable_mcps_test\`.
+- **Its tools:** one file each in \`src/tools\`, with its test, listed in \`src/provider.ts\`. \`manifest.json\` is their contract.
+
+\`\`\`sh
+bun mcp add tool acme <domain.operation> --description "<what it does, when to use it, its limits>"
+bun mcp check acme
+bun mcp db acme generate
+bun mcp db acme migrate
+\`\`\`
+
+Run them from the repository root, or from \`mcps/acme\` without the name. \`add tool\` writes a read tool, or with \`--mutation\` a change, with its test and its table, then checks the MCP. \`check\` runs the typecheck, the lint and the tests, with [the conformance kit](../../apps/web/content/docs/mcp/testing.mdx) and a 100% coverage gate; it rewrites a stale \`manifest.json\` and says to commit it. After a change to \`src/db/schema.ts\`, \`db generate\` writes the migration into \`drizzle/\`: review and commit it. \`db migrate\` migrates the local development schema. \`bun mcp\` writes \`mcp.json\`; change \`serve\` and \`database\` there.
+
+Guides: [Build your first MCP](../../apps/web/content/docs/mcp/quickstart.mdx), [Read tools](../../apps/web/content/docs/mcp/tools.mdx), [Mutations](../../apps/web/content/docs/mcp/mutations.mdx), [Test an MCP](../../apps/web/content/docs/mcp/testing.mdx).
+"
+`;
+
+exports[`a new MCP whose first tool is a read has its domain's table; a mutation's file and test: mcp.json 1`] = `
+"{
+  "$schema": "../../scripts/mcp/mcp.schema.json",
+  "name": "acme",
+  "serve": "both",
+  "database": "own"
+}
+"
+`;
+
+exports[`a new MCP whose first tool is a read has its domain's table; a mutation's file and test: src/tools/notes-add.ts 1`] = `
+"// One tool = one thing the caller can do. Hosts call this tool acme_notes_add in the Toolbox, notes_add alone.
+//
+// name: <domain>.<operation>, from the caller's side: notes.list, projects.search, rfis.create.
+//   Never the vendor or the transport (sharepoint_query), never a mode switch (manage_notes).
+//   Unique in this MCP; the CLI and defineProvider refuse a second one.
+//
+// description: the model reads only this to choose the tool. Say what it changes, that it prepares an intent to commit, when to use it
+//   and its limits. 40 to 1,000 characters, with the word "prepare" or "intent" (the conformance kit checks it).
+//   Good: "Prepare a new note on a project; commit it to save it. Use notes.list first to avoid duplicates."
+//   Bad: "Adds notes."
+//
+// input and output: Zod objects. Describe every field (.describe("…")): hosts show it to the model. output is the receipt's results.
+//
+// risk: low lets the agent commit on its own; normal, the default, shows the person the preview's summary first; high needs a
+//   person's approval.
+//
+// prepare: computes the preview and changes nothing. It checks the input, reads nothing that changes, and returns the summary the
+//   person confirms, naming their organisation.
+//
+// commit: applies exactly what was prepared, from plan. Row-level security (D19) limits it to the caller's organisation, so it
+//   sets organisation_id from organisation.id and filters on nothing by hand. Throw ToolError for a failure the caller can fix.
+import { z } from "zod"
+import * as schema from "../db/schema"
+import { defineMutation } from "../mcp"
+
+export const notesAdd = defineMutation({
+  name: "notes.add",
+  description: "Prepare a new note; commit the intent to save it. Use notes.list first to avoid duplicates.",
+  risk: "normal",
+  input: z.object({ title: z.string().trim().min(1).max(200).describe("The title, 1 to 200 characters") }),
+  output: z.object({ id: z.uuid(), title: z.string(), created_at: z.iso.datetime() }),
+  example: { title: "First" },
+  async prepare({ title }, { organisation }) {
+    return {
+      targets: [],
+      preview: { summary: \`Add “\${title}” to the notes of \${organisation.name}\`, changes: [{ path: "notes[]", to: { title } }] },
+      plan: { title },
+    }
+  },
+  async commit({ plan }, { db, organisation }) {
+    const [row] = await db.insert(schema.notes).values({ organisation_id: organisation.id, title: plan.title }).returning()
+    const added = { id: row!.id, title: row!.title, created_at: row!.created_at.toISOString() }
+    return { results: added, applied_changes: [{ path: "notes[]", to: added }], effects_performed: [] }
+  },
+})
+"
+`;
+
+exports[`a new MCP whose first tool is a read has its domain's table; a mutation's file and test: src/tools/notes-add.test.ts 1`] = `
+"import { expect, test } from "bun:test"
+import { createTestMcp } from "@answerable/mcp-postgres/testing"
+import * as schema from "../db/schema"
+import { provider } from "../provider"
+
+type Intent = { intent_id: string; commit_token: string; commit_tool: string; preview: { summary: string } }
+
+test("notes_add prepares a row, and the commit tool its intent names adds it to the caller's organisation only", async () => {
+  const mcp = await createTestMcp(provider)
+  try {
+    const [mine, theirs] = [crypto.randomUUID(), crypto.randomUUID()]
+    const client = await mcp.connect({ organizationId: mine, organisation: { name: "Acme" } })
+    const intent = (await client.callTool({ name: "notes_add", arguments: { title: "First" } })).structuredContent as Intent
+    expect(intent.preview.summary).toBe("Add “First” to the notes of Acme")
+    const { intent_id, commit_token, preview } = intent
+    const committed = await client.callTool({ name: intent.commit_tool, arguments: { intent_id, commit_token, preview_summary: preview.summary } })
+    expect(committed.structuredContent).toMatchObject({ status: "committed", results: { title: "First" } })
+    expect(await mcp.asOrganisation(mine, () => mcp.db.select({ title: schema.notes.title }).from(schema.notes))).toEqual([{ title: "First" }])
+    expect(await mcp.asOrganisation(theirs, () => mcp.db.select().from(schema.notes))).toEqual([])
+  } finally {
+    await mcp.close()
+  }
+})
+"
+`;

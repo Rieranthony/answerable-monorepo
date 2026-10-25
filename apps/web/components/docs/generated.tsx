@@ -1,4 +1,4 @@
-// Blocks the docs compute from the repository when a page builds, so they cannot drift from the code: what `mcp:new`
+// Blocks the docs compute from the repository when a page builds, so they cannot drift from the code: what `bun mcp new`
 // writes, the SDK's error codes and policy classes, the committed provider manifests and the services' configuration.
 // Each has a Markdown form.
 import { asMarkdown } from "fumadocs-core/server"
@@ -18,7 +18,7 @@ import {
   riskClass,
   type PolicyClass,
 } from "../../../../packages/mcp/src/mutation"
-import { scaffoldSources } from "../../../../scripts/mcp-templates"
+import { mcpFiles } from "../../../../scripts/mcp/templates"
 import admin from "../../../../mcps/admin/manifest.json"
 import e2e from "../../../../mcps/e2e/manifest.json"
 import example from "../../../../mcps/example/manifest.json"
@@ -44,16 +44,30 @@ function codeBlock({
 }
 
 const today = new Date().toISOString().slice(0, 10)
-const languages: Record<string, string> = { ts: "ts", example: "dotenv" }
-// The example name every page scaffolds with: `mcps/acme/<file>`.
+const languages: Record<string, string> = {
+  ts: "ts",
+  json: "json",
+  toml: "toml",
+  mjs: "js",
+  md: "md",
+}
+// The MCP every page makes, `bun mcp new acme --serve toolbox`, with the description the CLI's example gives and its default first tool.
 const SCAFFOLD_NAME = "acme"
+const scaffold = mcpFiles({
+  name: SCAFFOLD_NAME,
+  description:
+    "Notes for construction projects: list, read and add notes on a project.",
+  serve: "toolbox",
+  database: "shared",
+  date: today,
+})
 
-/** A file exactly as `bun run mcp:new <name>` writes it, dated the day the docs were built. */
+/** A file exactly as `bun mcp new acme` writes it, dated the day the docs were built. */
 export function ScaffoldFile({ file }: { file: string }) {
-  const source = scaffoldSources(SCAFFOLD_NAME, today)[file]
+  const source = scaffold[file]
 
   if (source === undefined) {
-    throw new Error(`mcp:new writes no ${file} from a template`)
+    throw new Error(`bun mcp new writes no ${file}`)
   }
 
   return codeBlock({

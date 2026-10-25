@@ -5,6 +5,7 @@ import { createKit, type Kit, type Subject, type ConformanceFixture } from "./ki
 import type { Mutation } from "./mutation"
 import type { intentView } from "./prepare"
 import type { Provider, Served } from "./provider"
+import { checkMutationDescription } from "./rules"
 import { lintOutput, type Schema } from "./schema-lint"
 import { wireName, type Tool } from "./tool"
 
@@ -137,7 +138,8 @@ export const targetChecks: readonly (keyof typeof mutateChecks)[] = ["targets_ha
 export const providerChecks = {
   descriptions_operational({ provider }: Subject) {
     for (const tool of provider.tools) {
-      assert(tool.kind === "read" || /prepare|intent/i.test(tool.description), `${tool.identity}: a mutation's description must say that it prepares an intent; use the word "prepare" or "intent"`)
+      const problem = tool.kind === "read" ? undefined : checkMutationDescription(tool.description)
+      assert(!problem, `${tool.identity}: a mutation's description ${problem}`)
     }
   },
 }

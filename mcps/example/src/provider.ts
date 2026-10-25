@@ -1,53 +1,22 @@
-import { defineMutation, defineProvider, defineTool } from "@answerable/mcp"
-import { z } from "zod"
-import { createNoteStore } from "./notes"
-
-const notes = createNoteStore()
-const note = z.object({ id: z.uuid(), text: z.string(), created_at: z.iso.datetime() })
-
-//#region list
-const notesList = defineTool({
-  name: "notes.list",
-  description: "List your organisation's notes, oldest first, 20 per page by default and at most 100. When has_more is true, pass next_cursor as cursor to read the next page.",
-  input: z.object({
-    limit: z.number().int().min(1).max(100).default(20).describe("Notes per page, 1 to 100"),
-    cursor: z.string().optional().describe("next_cursor from the previous page; omit it for the first page"),
-  }),
-  output: z.object({ items: z.array(note), next_cursor: z.string().nullable(), has_more: z.boolean() }),
-  example: { limit: 5 },
-  async execute(input, { principal }) {
-    return notes.list(principal.organizationId, input)
-  },
-})
-//#endregion
-
-//#region add
-const notesAdd = defineMutation({
-  name: "notes.add",
-  risk: "low",
-  description: "Prepare adding a note to your organisation. Changes nothing: returns a preview and a commit token; commit the intent with the tool its commit_tool names to add the note.",
-  input: z.object({ text: z.string().trim().min(1).max(200).describe("The note, 1 to 200 characters") }),
-  output: note,
-  example: { text: "Buy milk" },
-  async prepare({ text }) {
-    return {
-      targets: [],
-      preview: { summary: `Add the note “${text}”`, changes: [{ path: "notes[]", to: { text } }] },
-      plan: { text },
-    }
-  },
-  async commit({ plan }, { principal }) {
-    const added = notes.add(principal.organizationId, plan.text)
-    return { results: added, applied_changes: [{ path: "notes[]", to: added }], effects_performed: [] }
-  },
-})
-//#endregion
+// The example MCP: what it is for, its version and its tools. bun mcp add tool adds a tool above each "bun mcp: tools" line.
+import { defineProvider } from "@answerable/mcp"
+import { database } from "./mcp"
+import { exampleStatus } from "./tools/example-status"
+import { notesList } from "./tools/notes-list"
+import { notesAdd } from "./tools/notes-add"
+// bun mcp: tools
 
 //#region provider
 export const provider = defineProvider({
   id: "example",
   description: "Your organisation's notes: list them a page at a time, and add one. The finished quickstart of the MCP docs.",
-  version: "2026-09-30",
-  tools: [notesList, notesAdd],
+  version: "2026-10-25",
+  database,
+  tools: [
+    exampleStatus,
+    notesList,
+    notesAdd,
+    // bun mcp: tools
+  ],
 })
 //#endregion

@@ -45,6 +45,7 @@ A root script, `"mcp": "bun scripts/mcp/cli.ts"`, so `bun mcp <command>` runs fr
   > A tool's description is 22 characters; write 40 to 1,000 saying what it does, when to use it and its limits
 
   The rules are the SDK's own, exported from `@answerable/mcp` (today they are module constants in `tool.ts` and `provider.ts`), so the CLI and the SDK can never disagree.
+- **Every answer at once.** A command checks every answer it was given, and without a terminal lists every answer missing, before it refuses: one refusal with a line per problem, in the order of the questions, and one command to run again that keeps the valid answers, with a placeholder in place of each missing or refused one. A check that needs an earlier answer waits for it: whether a name is reserved, retired or taken needs a valid name; whether a tool's name is a commit tool's, or already the MCP's, needs a valid MCP.
 - **Nothing half-written.** Every check runs before the first file is written. A failure after that (for example, Postgres is down when the schema is created) leaves the files, says which step failed, and gives the command that finishes it (`bun mcp db acme migrate` creates a missing schema).
 - **Stable, short output.** One line per step, then `Next:` with the two or three commands that come next. `--json` prints the same facts as one object.
 - **Idempotent where it can be.** Running `add tool` again with the same name refuses, naming the file. `dev` and `check` can run any number of times.
@@ -52,7 +53,7 @@ A root script, `"mcp": "bun scripts/mcp/cli.ts"`, so `bun mcp <command>` runs fr
   - 0: done;
   - 1: a step failed after files were written, and the output names the command that finishes the job;
   - 2: refused before anything was written.
-- **`--json`:** success is `{ "ok": true, "steps": […], "next": […] }`; a refusal or failure is `{ "ok": false, "error": { "code", "message", "fix" } }`.
+- **`--json`:** success is `{ "ok": true, "steps": […], "next": […] }`; a refusal or failure is `{ "ok": false, "error": { "code", "message", "fix", "problems": [{ "code", "message" }] } }`, with every refused or missing answer in `problems`, `code` the first one's and `message` all of theirs, a line each. A failure has one problem.
 - **`list`:** sorted by name.
 - **Arguments:** in `add tool [mcp] <domain.operation>`, the positional with a dot is the tool and the other is the MCP.
 - **`--description`** always describes what the command creates: the MCP in `new`, the tool in `add tool`. The first tool's description in `new` is `--tool-description`.
@@ -183,11 +184,11 @@ How the pieces fit:
 // input and output: Zod objects. Describe every field (.describe("…")): hosts show it to the model.
 //   A list takes limit and cursor and returns items, next_cursor and has_more (the conformance kit checks it).
 //
-// execute: gets the checked input and the caller. Read only principal.organizationId's data:
-//   every query filters on it. Throw ToolError for a failure the caller can fix.
+// execute: gets the checked input and the caller: person, organisation and db. Row-level security (D19) limits every query to
+//   the caller's organisation, so no query filters on it by hand. Throw ToolError for a failure the caller can fix.
 ```
 
-A mutation file carries the same comments for `prepare` (it computes the preview and changes nothing) and `commit` (it applies exactly what was prepared), plus `risk`.
+A mutation file carries the same comments for `prepare` (it computes the preview and changes nothing) and `commit` (it applies exactly what was prepared; row-level security limits it to the caller's organisation, so it sets `organisation_id` from `organisation.id` and filters on nothing by hand), plus `risk`.
 
 ## Where an MCP runs
 

@@ -1,17 +1,20 @@
 # example MCP
 
-The finished server of [Build your first MCP](../../apps/web/content/docs/mcp/quickstart.mdx): a read tool, `notes.list`, and a mutation, `notes.add`, over notes kept in memory per organisation. The docs include its files, so every snippet in the guide is code that this workspace typechecks, lints and tests.
+Your organisation's notes: list them a page at a time, and add one. The finished quickstart of the MCP docs.
+
+Made with `bun mcp new` and `bun mcp add tool`, as [Build your first MCP](../../apps/web/content/docs/mcp/quickstart.mdx) does. The docs include its files, so every snippet in the guides is code this workspace typechecks, lints and tests; `src/docs/` holds the snippets no tool serves.
+
+- **Where it runs** (`"serve": "toolbox"` in `mcp.json`): in the Toolbox, where hosts call its tools `example_<domain>_<operation>` at the Toolbox's one URL. Mounting it from `mcp.json`: Not yet; [Add tools to the Toolbox](../../apps/web/content/docs/toolbox/add-tools.mdx) mounts a provider by hand.
+- **Its tables** (`"database": "shared"`): in schema `example` of the shared database `answerable_mcps`, each limited to the caller's organisation by Postgres. Its tests use schema `example` of `answerable_mcps_test`.
+- **Its tools:** one file each in `src/tools`, with its test, listed in `src/provider.ts`. `manifest.json` is their contract.
 
 ```sh
-bun --env-file=mcps/example/.env.example run --filter @answerable/mcp-example dev
-curl http://localhost:47510/health
+bun mcp add tool example <domain.operation> --description "<what it does, when to use it, its limits>"
+bun mcp check example
+bun mcp db example generate
+bun mcp db example migrate
 ```
 
-Run these from the repository root; the second answers `{"status":"ok"}`. Signing in needs the resource and a client registered in Answerable ID, as [Connect Claude Code](../../apps/web/content/docs/mcp/claude-code.mdx#register-the-server) does for the e2e server.
+Run them from the repository root, or from `mcps/example` without the name. `add tool` writes a read tool, or with `--mutation` a change, with its test and its table, then checks the MCP. `check` runs the typecheck, the lint and the tests, with [the conformance kit](../../apps/web/content/docs/mcp/testing.mdx) and a 100% coverage gate; it rewrites a stale `manifest.json` and says to commit it. After a change to `src/db/schema.ts`, `db generate` writes the migration into `drizzle/`: review and commit it. `db migrate` migrates the local development schema. `bun mcp` writes `mcp.json`; change `serve` and `database` there.
 
-```sh
-UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-example test
-bun run mcp:check @answerable/mcp-example
-```
-
-The first rewrites `manifest.json` after a change to a tool; the second runs the typecheck, the lint and the tests, with the conformance kit and a 100% coverage gate. The workspace has no `exports` map, since nothing mounts it; add one to mount the provider in the Toolbox: [Add tools to the Toolbox](../../apps/web/content/docs/toolbox/add-tools.mdx).
+Guides: [Build your first MCP](../../apps/web/content/docs/mcp/quickstart.mdx), [Read tools](../../apps/web/content/docs/mcp/tools.mdx), [Mutations](../../apps/web/content/docs/mcp/mutations.mdx), [Test an MCP](../../apps/web/content/docs/mcp/testing.mdx).

@@ -496,7 +496,7 @@
   },
   {
     "name": "MCP",
-    "reader": "packages/mcp/src/environment.ts, read by readMcpEnvironment for the e2e server (bun run mcp:dev) and a scaffolded one",
+    "reader": "packages/mcp/src/environment.ts, read by readMcpEnvironment for the e2e server (bun run mcp:dev)",
     "fields": [
       {
         "name": "NODE_ENV",
@@ -694,6 +694,27 @@
         "secret": false,
         "fallback": "postgres://answerable:answerable@localhost:47432/answerable_mcps_test",
         "doc": "The shared MCP test database, answerable_mcps_test, as a superuser of the development Postgres: each MCP's tests reset only their own schema there",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "bun mcp",
+    "reader": "scripts/mcp/config.ts, read by bun mcp db migrate and bun mcp new",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "MCPS_DATABASE_ADMIN_URL",
+        "secret": false,
+        "fallback": "postgres://answerable:answerable@localhost:47432/answerable_mcps",
+        "doc": "The shared MCP database, answerable_mcps, as a superuser of the development Postgres: bun mcp db migrate provisions and migrates an MCP's local schema there, and an own MCP's database beside it",
         "optional": true
       }
     ]

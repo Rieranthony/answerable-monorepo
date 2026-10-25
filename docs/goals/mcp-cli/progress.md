@@ -142,3 +142,21 @@
     - web: 100;
     - knip clean;
     - frozen install unchanged.
+- **M3, the `bun mcp` CLI,** by Opus.
+  - **What it built:**
+    - the commands `new`, `add tool`, `list`, `check`, `db` and `help`, in `scripts/mcp/`, with `@clack/prompts` 1.8.1 in a terminal only;
+    - templates with the guidance comments;
+    - `mcp.json`, its JSON schema and `mcps/retired.json`;
+    - the generator, writing `charts/answerable/mcps.json`;
+    - `mcps/example` remade with the CLI;
+    - `mcp:new` removed;
+    - `scripts` at 100% coverage.
+  - **What it fixed in M1:** a cross-database race between `ensureLocalMcpDatabases` and `provisionMcps`.
+  - **Measured** in the end-to-end test on a copy of the tree: `bun mcp new` 4.2 s, `add tool` 3.3 to 3.4 s; in the real tree, 3.8 to 4.5 s.
+  - **The coordinator's review:** a command now refuses every wrong or missing answer at once, with one fix command and `error.problems` in JSON.
+  - **Gates:**
+    - `mcp:test`: 830 pass, 0 fail;
+    - typecheck, lint and build forced: 19, 19 and 3 of 3;
+    - web: 100;
+    - knip clean;
+    - frozen install unchanged.

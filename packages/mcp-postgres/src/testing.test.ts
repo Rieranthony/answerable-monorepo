@@ -50,11 +50,12 @@ test("two MCPs' suites run at once, each in its own schema as a login of its own
   expect((await admin.query("select rolname from pg_roles where rolname = any($1)", [[a!.login, b!.login]])).rows).toEqual([])
 })
 
-test("an organisation getter replaces the helper's own, and a run again starts from an empty schema", async () => {
-  const id = crypto.randomUUID()
+test("an organisation getter serves outside asOrganisation, which wins inside, and a run again starts from an empty schema", async () => {
+  const [id, other] = [crypto.randomUUID(), crypto.randomUUID()]
   const suite = await testMcpDatabase({ name: "mpgfixa", schema: fixtureA, folder: fixtureFolder("mpgfixa"), organisation: () => id })
   try {
     expect((await suite.db.execute(who)).rows[0]!.organisation).toBe(id)
+    expect((await suite.asOrganisation(other, () => suite.db.execute(who))).rows[0]!.organisation).toBe(other)
     expect(await suite.db.select().from(projects)).toEqual([])
   } finally {
     await suite.close()

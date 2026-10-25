@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { z } from "zod"
-import { checkDescription, checkProviderId, checkToolName, defineMutation, definePrompt, defineProvider, defineResource, defineTool, defineView, withDatabase, type Mutation, type Tool } from "./index"
+import { checkDescription, checkMutationDescription, checkProviderId, checkToolName, defineMutation, definePrompt, defineProvider, defineResource, defineTool, defineView, withDatabase, type Mutation, type Tool } from "./index"
 
 const description = "A fixture tool that returns nothing, used to test providers."
 const purpose = "A fixture provider that holds nothing, used to test providers."
@@ -108,6 +108,8 @@ test("the rules are exported for checking a name before anything is defined, and
   expect(checkToolName("notes")).toBe('"notes" must be <domain>.<operation>, each part a lowercase letter then up to 15 lowercase letters or digits, for example records.list')
   expect(checkDescription("x".repeat(40))).toBeUndefined()
   expect(`A tool's description ${checkDescription("Gets notes.")}`).toBe("A tool's description is 11 characters; write 40 to 1,000 saying what it does, when to use it and its limits")
+  for (const description of ["Prepare adding a note.", "Returns an intent to add a note."]) expect(checkMutationDescription(description)).toBeUndefined()
+  expect(`A mutation's description ${checkMutationDescription("Add a note.")}`).toBe('A mutation\'s description must say that it prepares an intent; use the word "prepare" or "intent"')
 })
 
 test("a database is kept and frozen, and tools defined with withDatabase need the provider to declare that schema", () => {

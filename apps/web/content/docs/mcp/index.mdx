@@ -4,10 +4,10 @@ description: "Build MCP servers on Answerable ID with @answerable/mcp: what an M
 ---
 
 ```sh
-bun run mcp:new acme
+bun mcp new acme --description "Notes for construction projects: list, read and add notes on a project." --serve toolbox
 ```
 
-That writes a working MCP server in `mcps/acme`. [Build your first MCP](/docs/mcp/quickstart) takes it from there: a read tool, a mutation, their tests, and Claude Code signed in to it.
+That makes a working MCP in `mcps/acme`, with its database schema, its first migration and its tests. [Build your first MCP](/docs/mcp/quickstart) takes it from there: a read tool and a mutation with `bun mcp add tool`, and their tests.
 
 ## What an MCP server is
 
@@ -52,7 +52,7 @@ The server never sees a password, never runs Better Auth and never reads ID's da
 
 ## Status
 
-**Built.** `@answerable/mcp` defines read tools, [prepared mutations](/docs/mcp/mutations) and providers, serves them on the official MCP TypeScript SDK, answers every tool failure with one [error envelope](/docs/mcp/errors), exports each provider's contract as a manifest, and checks a provider against [the standard](/docs/mcp/standard) with [the conformance kit](/docs/mcp/testing). `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference server and `mcps/example` the finished quickstart; `mcps/admin` is [the admin MCP](/docs/admin), for Answerable staff. `bun run mcp:new` scaffolds a server, and [the acceptance](/docs/mcp/local-testing) signs organisations into the reference server, the Toolbox and the admin MCP through real ID with a browser and the official MCP OAuth client.
+**Built.** `@answerable/mcp` defines read tools, [prepared mutations](/docs/mcp/mutations) and providers, serves them on the official MCP TypeScript SDK, answers every tool failure with one [error envelope](/docs/mcp/errors), exports each provider's contract as a manifest, and checks a provider against [the standard](/docs/mcp/standard) with [the conformance kit](/docs/mcp/testing). `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference server and `mcps/example` the finished quickstart; `mcps/admin` is [the admin MCP](/docs/admin), for Answerable staff. `bun mcp new` makes an MCP and `bun mcp add tool` adds a tool, and [the acceptance](/docs/mcp/local-testing) signs organisations into the reference server, the Toolbox and the admin MCP through real ID with a browser and the official MCP OAuth client.
 
 **Not yet.** Human approvals (a human-class intent waits and answers `APPROVAL_REQUIRED`), operations for long work, `toolbox_run`, the OpenAPI adapter, administration by an organisation's own administrators, remote providers, hosted deployment and a public npm release. [The standard](/docs/mcp/standard#not-yet) lists the rules nothing enforces yet.
 
@@ -64,12 +64,12 @@ The server never sees a password, never runs Better Auth and never reads ID's da
 | --- | --- |
 | `@answerable/auth` | Verify an Answerable ID access token, for a person or a machine client |
 | `@answerable/auth/testing` | An in-process issuer that signs test tokens |
-| `@answerable/mcp` | `defineTool`, `defineMutation`, `defineProvider`, `definePrompt`, `defineResource`, `defineView`, `withDatabase`, `createMcpServer`, `callerOrganisation`, `createMemoryIntentStore`, `manifest`, `ToolError`, `errorCodes`, `errorCodeOf`, `riskClass`, `checkProviderId`, `checkToolName`, `checkDescription`, `readMcpEnvironment`, `parseEnvironment` |
+| `@answerable/mcp` | `defineTool`, `defineMutation`, `defineProvider`, `definePrompt`, `defineResource`, `defineView`, `withDatabase`, `createMcpServer`, `callerOrganisation`, `createMemoryIntentStore`, `manifest`, `ToolError`, `errorCodes`, `errorCodeOf`, `riskClass`, `checkProviderId`, `checkToolName`, `checkDescription`, `checkMutationDescription`, `readMcpEnvironment`, `parseEnvironment` |
 | `@answerable/mcp/build` | Bundle an MCP Apps view into one HTML resource |
 | `@answerable/mcp/testing` | `createTestMcp`, `assertProviderConformance`, `errorOf` and `testPrincipal`; for an MCP with a database, `@answerable/mcp-postgres/testing` has its own `createTestMcp` and `assertProviderConformance` |
 | `@answerable/acceptance` | The kit that starts real ID, provisions it and signs a person in, and the journeys (`packages/acceptance`) |
 | `@answerable/mcp-e2e` | The reference server: five tools, a prompt, a resource and a view (`mcps/e2e`) |
-| `@answerable/mcp-example` | The finished quickstart: `notes.list` and `notes.add` (`mcps/example`) |
+| `@answerable/mcp-example` | The finished quickstart, made with `bun mcp`: `example.status`, `notes.list` and `notes.add` over its database (`mcps/example`) |
 | `@answerable/id-admin` | A server's machine client on Answerable ID's admin API: `createIdAdmin`, `IdError`, `found`, `createIdProfiles` (who is calling, for `createMcpServer`), and the fake ID in `@answerable/id-admin/testing` (`packages/id-admin`) |
 | `@answerable/mcp-postgres` | Postgres storage for MCP servers: the intent store, the evidence chain, the drizzle base schema, and a database for every MCP with `mcpDatabase` (`packages/mcp-postgres`) |
 | `@answerable/mcp-toolbox` | The Toolbox: `createToolbox`, the grants reader and poller, the catalogue, evidence, spans and the admin API (`mcps/toolbox`) |

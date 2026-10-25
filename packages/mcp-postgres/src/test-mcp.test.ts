@@ -1,7 +1,8 @@
 import { afterAll, expect, test } from "bun:test"
-import { checkProviderId, defineProvider } from "@answerable/mcp"
+import { checkProviderId, createMcpServer, defineProvider } from "@answerable/mcp"
 import { Pool } from "pg"
 import { assertMcpName } from "./names"
+import { projects } from "./test/fixtures/mpgfixa"
 import { provider } from "./test/fixtures/mpgfixa-provider"
 import { forget, mcpsUrl } from "./test/mcps"
 import { assertProviderConformance, createTestMcp } from "./testing"
@@ -35,6 +36,21 @@ test("a provider with a database gets a working typed db, and each organisation 
   }
 })
 //#endregion
+
+test("a test seeds and reads rows as an organisation through the provider's db, and builds its own server with the provider and db", async () => {
+  const [acme, other] = [crypto.randomUUID(), crypto.randomUUID()]
+  const mcp = await createTestMcp(provider, { server: serving => createMcpServer({ ...serving, policyClass: () => "agent" }) })
+  try {
+    await mcp.asOrganisation(acme, () => mcp.db.insert(projects).values({ organisation_id: acme, name: "Seeded" }))
+    const client = await mcp.connect({ organizationId: acme })
+    expect((await client.callTool({ name: "projects_list", arguments: {} })).structuredContent).toEqual({ names: ["Seeded"] })
+    const { commit_tool } = (await client.callTool({ name: "projects_add", arguments: { name: "Agent" } })).structuredContent as Intent
+    expect(commit_tool).toBe("mpgfixa_commit")
+    expect(await mcp.asOrganisation(other, () => mcp.db.select().from(projects))).toEqual([])
+  } finally {
+    await mcp.close()
+  }
+})
 
 test("the wrappers refuse a provider without a database, pointing at the SDK's", async () => {
   const plain = defineProvider({ id: "mpgplain", description: "A fixture provider with no database, which the wrappers refuse.", version: "2026-10-25", tools: [] })

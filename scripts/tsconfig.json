@@ -11,5 +11,5 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["bun"]
   },
-  "include": ["*.ts"]
+  "include": ["*.ts", "mcp/**/*.ts"]
 }

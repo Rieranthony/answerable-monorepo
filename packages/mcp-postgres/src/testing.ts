@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks"
 import { fileURLToPath } from "node:url"
 import { defineConfig } from "@answerable/config"
 import { callerOrganisation, type Provider } from "@answerable/mcp"
-import { assertProviderConformance as assertConformance, createTestMcp as createSdkTestMcp, type ConformanceFixture, type TestMcp } from "@answerable/mcp/testing"
+import { assertProviderConformance as assertConformance, createTestMcp as createSdkTestMcp, type ConformanceFixture, type TestMcp, type TestServing } from "@answerable/mcp/testing"
 import { DrizzleQueryError, sql } from "drizzle-orm"
 import type { NodePgDatabase } from "drizzle-orm/node-postgres"
 import { Client, Pool } from "pg"
@@ -123,15 +123,16 @@ export function testDatabase(name: string, url = `postgres://answerable:answerab
 /**
  * An MCP's test database, served as production serves it: its schema `name` in `answerable_mcps_test` (`MCPS_TEST_DATABASE_URL`), dropped and
  * recreated, provisioned with the `mcp_test` prefix and migrated from `folder`, then reached through `mcpDatabase` as a fresh serving login with
- * a generated name. The local databases are created first when missing. `db` takes its organisation from `asOrganisation(id, fn)`, unless
- * `organisation` replaces that getter; `close()` drops the login. It never drops a role an MCP has, so suites for different MCPs run at once.
+ * a generated name. The local databases are created first when missing. `db` takes its organisation from `asOrganisation(id, fn)`, which
+ * awaits `fn` as that organisation, and otherwise from the `organisation` getter; `close()` drops the login. It never drops a role an MCP has,
+ * so suites for different MCPs run at once.
  */
 export async function testMcpDatabase<Schema extends Record<string, unknown>>({ name, schema, folder, organisation }: {
   name: string
   schema: Schema
   folder: string
   organisation?: () => string | undefined
-}): Promise<{ db: NodePgDatabase<Schema>; asOrganisation: <T>(id: string, fn: () => T) => T; close: () => Promise<void> }> {
+}): Promise<{ db: NodePgDatabase<Schema>; asOrganisation: <T>(id: string, fn: () => T) => Promise<Awaited<T>>; close: () => Promise<void> }> {
   assertMcpName(name)
   const url = new URL(mcpPostgresTestConfig.read(process.env).MCPS_TEST_DATABASE_URL)
   if (url.pathname !== "/answerable_mcps_test") throw new Error(`Refusing to reset an MCP's schema in ${url.pathname.slice(1) || "an unnamed database"}; expected answerable_mcps_test`)
@@ -163,8 +164,8 @@ export async function testMcpDatabase<Schema extends Record<string, unknown>>({ 
   const pool = new Pool({ connectionString: served.href, max: 4 })
   const organisations = new AsyncLocalStorage<string>()
   return {
-    db: mcpDatabase(pool, { name, prefix: "mcp_test", schema, mode: "shared", organisation: organisation ?? (() => organisations.getStore()) }),
-    asOrganisation: (id, fn) => organisations.run(id, fn),
+    db: mcpDatabase(pool, { name, prefix: "mcp_test", schema, mode: "shared", organisation: () => organisations.getStore() ?? organisation?.() }),
+    asOrganisation: <T>(id: string, fn: () => T) => organisations.run(id, async (): Promise<Awaited<T>> => await fn()),
     async close() {
       await pool.end()
       // Under the role lock: dropping what the login was granted rewrites the database's privileges, which provisioning beside it rewrites too.
@@ -180,26 +181,48 @@ function providerDatabase(provider: Provider) {
   return testMcpDatabase({ name: provider.id, schema, folder: fileURLToPath(migrations), organisation: callerOrganisation })
 }
 
+/** What a test's own server is built from: the SDK's `TestServing`, with the provider and its test `db`, ready to spread into `createMcpServer`. */
+export type DatabaseServing = TestServing & { provider: Provider; db: unknown }
+
+/** An in-process MCP with a database: the SDK's `TestMcp`, with the test database to seed and read rows as an organisation. */
+export type DatabaseTestMcp = TestMcp & {
+  /** The provider's test database, the one its handlers receive, typed by no schema: pass its tables to `insert` and `select`. */
+  db: NodePgDatabase<Record<string, unknown>>
+  /** Run `fn` as a member of organisation `id` and await it, so that `db` reads and writes that organisation's rows. */
+  asOrganisation<T>(id: string, fn: () => T): Promise<Awaited<T>>
+}
+
 /**
  * `@answerable/mcp/testing`'s `createTestMcp`, for a provider with a `database`: it serves the provider with its `db`, made by `testMcpDatabase`
  * from `provider.database` (schema `<id>` in `answerable_mcps_test`, reset and migrated), each call seeing only the rows of its caller's
- * organisation, so `connect({ organizationId })` gives isolation by organisation. `close()` also drops the test login.
+ * organisation, so `connect({ organizationId })` gives isolation by organisation. `db` and `asOrganisation(id, fn)` seed and read rows as an
+ * organisation. `server` builds the server from the local issuer's `auth`, the test `profiles`, the provider and its `db`, for options such as
+ * `intents` or `policyClass`. `close()` also drops the test login.
  *
  * @example
  * ```ts
  * import { createTestMcp } from "@answerable/mcp-postgres/testing"
+ * import { notes } from "./db/schema"
  * import { provider } from "./provider"
  *
  * const mcp = await createTestMcp(provider)
- * const client = await mcp.connect({ organizationId: crypto.randomUUID() })
+ * const organizationId = crypto.randomUUID()
+ * await mcp.asOrganisation(organizationId, () => mcp.db.insert(notes).values({ organisation_id: organizationId, title: "First" }))
+ * const client = await mcp.connect({ organizationId })
  * await mcp.close()
  * ```
  */
-export async function createTestMcp(provider: Provider, options: Omit<NonNullable<Parameters<typeof createSdkTestMcp>[1]>, "db"> = {}): Promise<TestMcp> {
+export async function createTestMcp(provider: Provider, { server, ...options }: Omit<NonNullable<Parameters<typeof createSdkTestMcp>[1]>, "db"> & {
+  /** Build the server from what the test serves with, `{ auth, profiles, provider, db }`, which spreads into `createMcpServer`'s options. */
+  server?: (serving: DatabaseServing) => { fetch(request: Request): Promise<Response> }
+} = {}): Promise<DatabaseTestMcp> {
   const database = await providerDatabase(provider)
-  const mcp = await createSdkTestMcp(provider, { ...options, db: database.db })
+  const { db } = database
+  const mcp = await createSdkTestMcp(server ? serving => server({ ...serving, provider, db }) : provider, { ...options, db })
   return {
     ...mcp,
+    db,
+    asOrganisation: database.asOrganisation,
     async close() {
       await mcp.close()
       await database.close()

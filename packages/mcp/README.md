@@ -25,7 +25,7 @@ const server = createMcpServer({ provider, auth, profiles: createIdProfiles(crea
 Bun.serve({ hostname: "127.0.0.1", port, fetch: server.fetch })
 ```
 
-A read tool is five fields and an example; everything else has a default. A mutation replaces `execute` with `prepare` and `commit`. Every handler receives who is calling, `person`, `organisation` and `client`, which `profiles` reads from Answerable ID; an MCP with a database defines its tools with `withDatabase({ schema })`, and they receive its typed `db` too. `bun run mcp:new <name>` scaffolds a server that uses them.
+A read tool is five fields and an example; everything else has a default. A mutation replaces `execute` with `prepare` and `commit`. Every handler receives who is calling, `person`, `organisation` and `client`, which `profiles` reads from Answerable ID; an MCP with a database defines its tools with `withDatabase({ schema })`, and they receive its typed `db` too. `bun mcp new <name>` makes an MCP that uses them, with its database.
 
 `@answerable/mcp/testing` serves a provider in-process with a local ID issuer and the official MCP client, with no port and no network, as a test person you can change, and `assertProviderConformance(provider, fixture)` checks it against the design standard with each tool's example. An MCP with a database takes both from `@answerable/mcp-postgres/testing`.
 

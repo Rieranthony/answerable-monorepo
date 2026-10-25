@@ -14,7 +14,8 @@
     "lint": "eslint src scripts --max-warnings 0",
     "build": "bun scripts/build.ts",
     "dev": "bun run build && bun --hot src/server.ts",
-    "start": "bun src/server.ts"
+    "start": "bun src/server.ts",
+    "mcp": "bun ../../scripts/mcp/cli.ts"
   },
   "dependencies": {
     "@answerable/id-admin": "workspace:*",

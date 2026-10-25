@@ -13,6 +13,7 @@ import { toolboxMigrationConfig } from "../mcps/toolbox/scripts/env"
 import { toolboxTestDatabaseConfig } from "../mcps/toolbox/src/test/database"
 import { mcpConfig } from "../packages/mcp/src/environment"
 import { mcpPostgresTestConfig } from "../packages/mcp-postgres/src/testing"
+import { mcpCliConfig } from "./mcp/config"
 
 type Group = { name: string; reader: string; fields: FieldMeta[] }
 
@@ -30,9 +31,10 @@ const groups: Group[] = [
   defined(adminConfig, "mcps/admin/src/environment.ts, read from the root .env by bun run admin:dev"),
   defined(adminMigrationConfig, "mcps/admin/scripts/env.ts, read by scripts/migrate.ts"),
   defined(adminTestDatabaseConfig, "mcps/admin/src/test/database.ts, for the admin MCP's tests"),
-  defined(mcpConfig, "packages/mcp/src/environment.ts, read by readMcpEnvironment for the e2e server (bun run mcp:dev) and a scaffolded one"),
+  defined(mcpConfig, "packages/mcp/src/environment.ts, read by readMcpEnvironment for the e2e server (bun run mcp:dev)"),
   defined(opsConfig, "infra/ops/src/commands.ts, set by charts/answerable for the bootstrap, register and make-admin Jobs (infra/ops/README.md)"),
   defined(mcpPostgresTestConfig, "packages/mcp-postgres/src/testing.ts, for the package's own tests and every MCP's (testMcpDatabase)"),
+  defined(mcpCliConfig, "scripts/mcp/config.ts, read by bun mcp db migrate and bun mcp new"),
   {
     name: "web",
     reader: "apps/web, read from apps/web/.env.local by Next.js (apps/web/.env.example)",
@@ -118,7 +120,6 @@ export function inventory(): Record<string, string> {
   }
 }
 
-if (import.meta.main) {
-  for (const [path, text] of Object.entries(inventory())) await Bun.write(new URL(`../${path}`, import.meta.url), text)
-  console.log("Wrote default.env, .env.example and packages/config/inventory.json")
-}
+// Run as a script, it writes them; each line is one statement, so the suite's coverage gate holds without running it.
+if (import.meta.main) for (const [path, text] of Object.entries(inventory())) await Bun.write(new URL(`../${path}`, import.meta.url), text)
+if (import.meta.main) console.log("Wrote default.env, .env.example and packages/config/inventory.json")

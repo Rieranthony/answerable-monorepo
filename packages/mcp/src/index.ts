@@ -2,7 +2,7 @@ export { createMcpServer, type McpServerConfig, type McpServerHandle, type Mount
 export { defineTool, type Tool, type ToolDefinition } from "./tool"
 export { defineMutation, riskClass, type Mutation, type MutationDefinition, type Plan, type Target, type Preview, type Change, type PolicyClass, type Risk, type Effect } from "./mutation"
 export { withDatabase, type DatabaseContext } from "./database"
-export { checkDescription, checkProviderId, checkToolName } from "./rules"
+export { checkDescription, checkMutationDescription, checkProviderId, checkToolName } from "./rules"
 export { callerOrganisation } from "./scope"
 export { createMemoryIntentStore, type Intent, type IntentStatus, type IntentStore, type Receipt } from "./intents"
 export { defineProvider, type Provider, type ProviderDatabase, type Served } from "./provider"
