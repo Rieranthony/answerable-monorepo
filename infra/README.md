@@ -44,7 +44,7 @@ gh workflow run bootstrap.yml --ref main -f environment=staging
 gh run watch
 ```
 
-**4. The first tag.** A tag `staging/<name>` on a commit of `main` ships it ([how a deploy runs](pipeline/README.md#how-a-deploy-runs)): CI, the staging infrastructure (the first apply creates the cluster, the database and the certificates, and writes the deploy credentials into the environment), the four images built and signed, the deploy, the smoke test.
+**4. The first tag.** A tag `staging/<name>` on a commit of `main` ships it ([how a deploy runs](pipeline/README.md#how-a-deploy-runs)): CI, the staging infrastructure (the first apply creates the cluster, the database and the certificates, and writes the deploy credentials into the environment), the images built and signed, the deploy, the smoke test.
 
 ```sh
 git tag staging/first main
@@ -52,9 +52,9 @@ git push origin staging/first
 gh run watch
 ```
 
-In the deploy, `ops-bootstrap` records the database's certificate (its log names the SHA-256 fingerprint: record it with the date), creates the three databases and their six logins, then the migrations run and ID starts. The first deploy finds that the MCPs' client Secrets do not exist, so it runs `ops-register` in the same upgrade, with the root secret, before anyone is a platform administrator: the Toolbox and the admin MCP are registered in ID and start by themselves, and the staff domain and the Entra provider are put on the platform organisation.
+In the deploy, `ops-bootstrap` records the database's certificate (its log names the SHA-256 fingerprint: record it with the date), creates the databases and their logins, and each MCP's schema and roles, then the migrations run and ID starts. The first deploy finds that the MCP servers' client Secrets do not exist, so it runs `ops-register` in the same upgrade, with the root secret, before anyone is a platform administrator: the Toolbox and the admin MCP are registered in ID, the standalone server's client is minted, the three start by themselves, and the staff domain and the Entra provider are put on the platform organisation.
 
-**5. Make the images public.** New GHCR packages are private, and the cluster pulls without credentials. If the deploy failed on pulling an image, open each of the four packages (`answerable/id`, `answerable/toolbox`, `answerable/admin-mcp`, `answerable/ops`) on GitHub under your profile's Packages, choose Package settings > Change visibility > Public, then rerun the failed jobs:
+**5. Make the images public.** New GHCR packages are private, and the cluster pulls without credentials. If the deploy failed on pulling an image, open each package of [`pipeline/images.json`](pipeline/images.json) (`answerable/id`, `answerable/mcps`, `answerable/ops`) on GitHub under your profile's Packages, choose Package settings > Change visibility > Public, then rerun the failed jobs:
 
 ```sh
 gh run list --workflow deploy-staging.yml --limit 1
@@ -96,13 +96,40 @@ gh run watch
 | `The tag names a commit of main` | Refuses a tag on any other commit |
 | CI | The same checks as every push |
 | `Apply the staging infrastructure` | `terraform apply` of `infra/civo` for staging; a no-op unless Terraform, `charts/platform` or Cloudflare's published ranges changed |
-| `Build …` | Four amd64 images, pushed as `sha-<commit>` and signed |
+| `Build …` | One amd64 image per entry of `pipeline/images.json`, pushed as `sha-<commit>` and signed |
 | `Deploy to staging` | The Secret `id-env` applied from the environment, `helm upgrade` by digest with every hook; on failure the release rolls back and the migration and ops Jobs' logs are printed |
-| `Smoke test staging` | A table of every check, in the run's summary |
+| `Smoke test staging` | A table of every check, in the run's summary: one line per standalone MCP, and the Toolbox's mounted MCPs |
 
 - **A Terraform change** applies on the next staging tag. Read `terraform plan` locally first when the change is more than a size (`infra/civo/terraform.sh staging plan`, [day two](civo/README.md#day-two)).
 - **A migration** must be expand, then contract: the previous image keeps serving during the rollout and after a rollback ([`docs/12`](../docs/12-deployment.md#images-and-deploys)).
 - **Which commit staging runs:** the deploy job's summary says it, as does `gh run list --workflow deploy-staging.yml --status success`.
+
+### The first ship with the standalone server
+
+Once per environment, the first tag of a commit that has the `mcps` image and the `mcp` hostname:
+
+1. **Terraform** adds the record `mcp.<zone>` and reissues the origin certificate for the four hostnames: the new certificate reaches `origin-tls` before the old one is revoked, so nothing stops. The plan shows the record, the certificate request and the certificate replaced.
+2. **The `mcps` package is new, so private**, and the deploy fails pulling it. Make it public once, as in [First run](#first-run) step 5 (`answerable/mcps`), and rerun the failed jobs. The packages `answerable/toolbox` and `answerable/admin-mcp` are no longer built; delete them once production runs `mcps`.
+3. **`standalone-id-client` does not exist**, so the deploy runs `register` in the same upgrade. Once a person holds `platform:write`, ID refuses the root secret: put a staff token in `ops-staff-token` before the tag, as in [Register again](#register-again), or the upgrade rolls back.
+
+### Ship an MCP
+
+An MCP made with `bun mcp new` ships with its commit, by the same tags: nothing outside `mcps/<name>` changes, and `bun mcp` has rewritten `charts/answerable/mcps.json`, the Toolbox's and the standalone server's lists. The `mcps` image holds it. On the staging tag the deploy:
+
+1. **provisions it** (`ops-bootstrap`): a `shared` MCP gets schema `<name>` in `answerable_mcps` with its roles `mcp_<name>_owner` and `mcp_<name>`; an `own` MCP gets the database `answerable_mcp_<name>`, its two logins and their Secrets `mcp-<name>-database-owner` and `mcp-<name>-database`;
+2. **migrates it** (`mcps-migrate`, after the hubs' own migrations): its log names each MCP and the time the whole list took;
+3. **serves it**: the Toolbox mounts a `toolbox` or `both` MCP, and the standalone server serves a `standalone` or `both` MCP at `https://mcp.<zone>/<name>/mcp`;
+4. **checks it** (`Smoke test staging`): a standalone MCP's metadata names its resource; the Toolbox's `/health` lists every mounted MCP.
+
+What to check when a new MCP ships:
+
+- `kubectl -n answerable logs job/mcps-migrate` (kept until the next deploy): `<name>: migrating in answerable_mcps as mcp_<name>_owner`, and `Migrated N MCPs in … s`.
+- The smoke table: `toolbox /health` names the providers it mounts; `<name> resource metadata` passes for a standalone MCP.
+- Not yet automatic: registering a standalone MCP in ID (its resource, Claude Code client and link) and giving organisations access. Until then a standalone MCP answers 401 with its metadata, and no token can be issued for it.
+
+Then tag `production/<name>` on the same commit. A failed migration fails the deploy and rolls the release back, as any migration does; each MCP migrates in one transaction, so the one that failed is left as it was, and those before it keep their migrations, which the previous image tolerates (expand, then contract).
+
+An MCP removed from `mcps/` keeps its schema, roles, own database and Secrets: its name goes into `mcps/retired.json`, and removing what it left is Not yet automated.
 
 ## Promote to production
 
@@ -114,7 +141,7 @@ git push origin production/<name>
 gh run watch
 ```
 
-The run verifies the four images' signatures (they must have been built by `deploy-staging.yml` on a staging tag), then waits for your approval (Actions > the run > Review deployments). After approval it applies production's Terraform, deploys exactly the verified digests and smoke-tests production. A commit staging never shipped is refused.
+The run verifies each image's signature (they must have been built by `deploy-staging.yml` on a staging tag), then waits for your approval (Actions > the run > Review deployments). After approval it applies production's Terraform, deploys exactly the verified digests and smoke-tests production. A commit staging never shipped is refused.
 
 ## Roll back
 
@@ -134,7 +161,7 @@ A migration is never rolled back: the earlier image runs on the newer schema. A 
 | Nodes | `node_count` (and `node_size`) in `infra/civo/envs/<environment>.tfvars` | Tag; the apply runs first |
 | The database | `database_size`, `database_nodes` in the same file | `terraform plan` first: if it says the database **must be replaced**, stop. Replacing it loses the data, and `prevent_destroy` refuses it. Whether Civo resizes in place, and for how long it stops, is undocumented |
 
-Before raising a ceiling, check the connections: each ID replica opens up to 20, each MCP replica up to 10, and the total must stay below the database's `max_connections` with room for the Jobs ([`docs/12`](../docs/12-deployment.md#database)).
+Before raising a ceiling, check the connections: each ID replica opens up to 20, the admin MCP's up to 10, the Toolbox's and the standalone server's up to 20 each and 10 more per `own` MCP they serve, and the total must stay below the database's `max_connections` with room for the Jobs ([`docs/12`](../docs/12-deployment.md#database)). `scripts/mcp/connections.ts` holds the ceilings: change it with the overlay, or its test fails.
 
 ## Rotate
 
@@ -145,9 +172,9 @@ A changed secret in the environment reaches the cluster on the next tag: the dep
 | `ROOT_ADMIN_SECRET` | The Bootstrap workflow with `rotate: ROOT_ADMIN_SECRET`, then a tag |
 | `BETTER_AUTH_SECRET` | Never replaced: it decrypts ID's stored signing keys. A new secret comes in through the ring `BETTER_AUTH_SECRETS`, two ships apart: [The application secret](#the-application-secret). The second ship signs every browser out |
 | Microsoft or Google platform application | Create a new secret in the provider's console, set both of the pair in the environment (`gh secret set MICROSOFT_CLIENT_SECRET --env staging`, which asks for the value), tag, then retire the old secret ([`docs/06`](../docs/06-deploying-answerable-id.md#operating-it)) |
-| A database login (six) | Empty its key, for example `kubectl -n answerable patch secret id-database --type merge -p '{"stringData":{"DATABASE_URL":""}}'` with a [kubeconfig](#get-a-kubeconfig); tag (`ops-bootstrap` gives the login a new password and writes its URL); the service restarts with the deploy ([`infra/ops`](ops/README.md#bootstrap)) |
-| A machine client (`toolbox-id-client`, `admin-id-client`) | Empty its key the same way, then [register again](#register-again); `register` rotates the secret in ID and restarts the two servers |
-| The origin certificate or the origin-pull certificate | A reviewed change adds `-replace` for the key to the apply once, or run it from a trusted machine: `infra/civo/terraform.sh staging apply -replace=module.edge.tls_private_key.<name>`; both switch within one apply, with a short interruption ([`infra/civo/README.md`](civo/README.md#certificates)) |
+| A database login | Empty its key, for example `kubectl -n answerable patch secret id-database --type merge -p '{"stringData":{"DATABASE_URL":""}}'` with a [kubeconfig](#get-a-kubeconfig); tag (`ops-bootstrap` gives the login a new password and writes its URL); the service restarts with the deploy ([`infra/ops`](ops/README.md#bootstrap)) |
+| A machine client (`toolbox-id-client`, `admin-id-client`, `standalone-id-client`) | Empty its key the same way, then [register again](#register-again); `register` rotates the secret in ID and restarts the servers |
+| The origin certificate or the origin-pull certificate | Adding a hostname (as `mcp` was) reissues the origin certificate on the next apply by itself: a new one is issued and written to `origin-tls` before the old one is revoked. Otherwise, a reviewed change adds `-replace` for the key to the apply once, or run it from a trusted machine: `infra/civo/terraform.sh staging apply -replace=module.edge.tls_private_key.<name>`; both switch within one apply, with a short interruption ([`infra/civo/README.md`](civo/README.md#certificates)) |
 | The deployer token | `infra/civo/terraform.sh staging apply -replace=module.deployer.kubernetes_secret_v1.token` from a trusted machine; Terraform writes the new `KUBE_TOKEN` into the environment |
 | `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `GH_SECRETS_TOKEN` | Regenerate in the vendor's console (for Civo, regeneration is the only control), then `gh secret set <name> --env staging` (it asks for the value) |
 | `STATE_ACCESS_KEY_ID`, `STATE_SECRET_ACCESS_KEY` | Delete both from the environment, then the Bootstrap workflow writes a new credential's pair; delete the old credential in Civo's dashboard |

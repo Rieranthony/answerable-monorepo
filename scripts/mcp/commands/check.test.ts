@@ -23,7 +23,7 @@ const run = async (argv: string[], exec = recorder(() => ({ code: 0, output: pas
 }
 const lines = (text: string) => text.split("\n").map(line => line.replace(/ \(\d+ ms\)$/, ""))
 
-test("it runs the typecheck, lint and tests in the workspace, the manifest, the generated files and the scan, one line each with counts", async () => {
+test("it runs the typecheck, lint and tests in the workspace, the manifest, the generated files, the scan and the budget, one line each with counts", async () => {
   const { exec, ran } = recorder(() => ({ code: 0, output: passing }))
   const { code, stdout } = await run(["acme"], exec)
   expect(code).toBe(0)
@@ -37,8 +37,21 @@ test("it runs the typecheck, lint and tests in the workspace, the manifest, the 
     "ok      manifest   current",
     "ok      generated  current",
     "ok      scan       6 files, no role switch",
+    "ok      budget     no MCP has a database of its own",
     "",
   ])
+})
+
+test("with MCPs of their own database it gives each environment's connections at the ceilings, and warns on stderr past the limit, --json or not", async () => {
+  await Bun.write(join(repository.root, "mcps/acme/mcp.json"), JSON.stringify({ name: "acme", serve: "both", database: "own" }))
+  for (const path of Object.keys(await generatedFiles(repository.root))) await Bun.write(join(repository.root, path), (await generatedFiles(repository.root))[path]!)
+  const { code, stdout, stderr } = await run(["acme"])
+  expect(code).toBe(0)
+  expect(lines(stdout())).toContain("ok      budget     1 own MCP: staging 290 (60 theirs), production 400 (80 theirs) connections at the ceilings, past 100")
+  expect(stderr()).toBe("Warning: with 1 MCP of their own database, the servers' pools at the autoscalers' ceilings reach staging 290 (60 theirs), production 400 (80 theirs) connections, past the 100 of PostgreSQL's default max_connections; Civo's limit is not measured yet. Prefer database shared, or see docs/12-deployment.md (Database)\n")
+  const json = await run(["acme", "--json"])
+  expect(JSON.parse(json.stdout())).toMatchObject({ ok: true })
+  expect(json.stderr()).toStartWith("Warning: with 1 MCP of their own database")
 })
 
 test("a stale manifest and stale generated files are rewritten, the check passes, and Next says to commit them", async () => {

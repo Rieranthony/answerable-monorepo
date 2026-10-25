@@ -20,8 +20,9 @@ const unfixable = [["rolsuper", "SUPERUSER"], ["rolreplication", "REPLICATION"],
  * the lock every role statement takes:
  * - the database: no privilege for `PUBLIC`, `CONNECT` for the three logins, no `TEMPORARY` for the two serving ones;
  * - for each MCP, its owner role `<prefix>_<name>_owner` and runtime role `<prefix>_<name>`, both `NOLOGIN NOINHERIT`; schema `<name>`,
- *   owned by the owner role; `USAGE` on it for the runtime role; the owner role for the migrator, and the runtime role for each login in
- *   `servedBy`, granted `WITH INHERIT FALSE, SET TRUE`; and the runtime role revoked from a serving login not in `servedBy`.
+ *   owned by the owner role; `USAGE` on it for the runtime role; the owner role for the migrator and for the administrative login itself, and
+ *   the runtime role for each login in `servedBy`, granted `WITH INHERIT FALSE, SET TRUE`; and the runtime role revoked from a serving login
+ *   not in `servedBy`. So the administrative login inherits no MCP's owner role.
  *
  * `prefix` is `mcp` unless given (tests use `mcp_test`). Every name is checked before any SQL runs. Running it twice changes nothing, and it
  * never drops anything.
@@ -49,10 +50,13 @@ export async function provisionMcps(sql: Sql, { mcps, prefix = "mcp", logins }: 
     for (const mcp of planned) {
       await role(sql, mcp.owner)
       await role(sql, mcp.runtime)
-      // Postgres 16 and later let a CREATEROLE login give a schema to a role only once it may SET ROLE to it.
-      await sql(`grant ${quote(mcp.owner)} to current_user`)
+      // Postgres 16 and later let a CREATEROLE login give a schema to a role only once it may SET ROLE to it. SET is all that check needs:
+      // without INHERIT this login holds none of the owner's privileges, so it grants USAGE as the owner.
+      await sql(`grant ${quote(mcp.owner)} to current_user with inherit false, set true`)
       await sql(`create schema if not exists ${quote(mcp.name)} authorization ${quote(mcp.owner)}`)
+      await sql(`set local role ${quote(mcp.owner)}`)
       await sql(`grant usage on schema ${quote(mcp.name)} to ${quote(mcp.runtime)}`)
+      await sql("reset role")
       await sql(`grant ${quote(mcp.owner)} to ${migrator} with inherit false, set true`)
       for (const server of ["toolbox", "standalone"] as const) {
         if (mcp.servedBy.includes(server)) {

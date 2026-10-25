@@ -24,13 +24,16 @@ const run = async (argv: string[]) => {
   return { ...io, code: await main(io.io) }
 }
 
-test("one line per MCP with an mcp.json, sorted by name: where it runs, its database, its tools, its first sentence and its local URLs", async () => {
+test("one line per MCP with an mcp.json, sorted by name: where it runs, its database, its tools, its first sentence and its local URLs, then its deployed URLs", async () => {
   const { code, stdout } = await run([])
   expect(code).toBe(0)
   expect(stdout()).toBe([
     "acme  both        shared  2 tools  Notes for construction projects: list, read and add notes on a project  http://localhost:47400/mcp http://localhost:47510/acme/mcp",
+    "  staging https://toolbox.answerable-staging.uk/mcp https://mcp.answerable-staging.uk/acme/mcp  production https://toolbox.answerable.org/mcp https://mcp.answerable.org/acme/mcp",
     "beta  toolbox     shared  0 tools                                                                          http://localhost:47400/mcp",
+    "  staging https://toolbox.answerable-staging.uk/mcp  production https://toolbox.answerable.org/mcp",
     "zeta  standalone  own     1 tool   Reads the weather.                                                      http://localhost:47510/zeta/mcp",
+    "  staging https://mcp.answerable-staging.uk/zeta/mcp  production https://mcp.answerable.org/zeta/mcp",
     "",
   ].join("\n"))
 })
@@ -40,9 +43,19 @@ test("--json names every MCP and its tools, commit tools aside", async () => {
   expect(JSON.parse(stdout())).toEqual({
     ok: true,
     mcps: [
-      { name: "acme", serve: "both", database: "shared", description: "Notes for construction projects: list, read and add notes on a project", tools: ["notes.add", "notes.list"], urls: { local: ["http://localhost:47400/mcp", "http://localhost:47510/acme/mcp"] } },
-      { name: "beta", serve: "toolbox", database: "shared", description: "", tools: [], urls: { local: ["http://localhost:47400/mcp"] } },
-      { name: "zeta", serve: "standalone", database: "own", description: "Reads the weather. It has one tool.", tools: ["weather.get"], urls: { local: ["http://localhost:47510/zeta/mcp"] } },
+      {
+        name: "acme", serve: "both", database: "shared", description: "Notes for construction projects: list, read and add notes on a project", tools: ["notes.add", "notes.list"],
+        urls: {
+          local: ["http://localhost:47400/mcp", "http://localhost:47510/acme/mcp"],
+          staging: ["https://toolbox.answerable-staging.uk/mcp", "https://mcp.answerable-staging.uk/acme/mcp"],
+          production: ["https://toolbox.answerable.org/mcp", "https://mcp.answerable.org/acme/mcp"],
+        },
+      },
+      { name: "beta", serve: "toolbox", database: "shared", description: "", tools: [], urls: { local: ["http://localhost:47400/mcp"], staging: ["https://toolbox.answerable-staging.uk/mcp"], production: ["https://toolbox.answerable.org/mcp"] } },
+      {
+        name: "zeta", serve: "standalone", database: "own", description: "Reads the weather. It has one tool.", tools: ["weather.get"],
+        urls: { local: ["http://localhost:47510/zeta/mcp"], staging: ["https://mcp.answerable-staging.uk/zeta/mcp"], production: ["https://mcp.answerable.org/zeta/mcp"] },
+      },
     ],
   })
 })

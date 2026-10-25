@@ -1,4 +1,7 @@
-{{- /* The Toolbox. Configuration: apps/web/content/docs/toolbox/index.mdx. It reaches ID at its public issuer. */ -}}
+{{- /*
+The Toolbox, from the mcps image. Configuration: apps/web/content/docs/toolbox/index.mdx. It reaches ID at its public issuer, and mounts each
+toolbox and both MCP of mcps.json: the shared ones through one pool to answerable_mcps, each own one through its database's runtime login.
+*/ -}}
 {{- define "answerable.toolboxEnv" -}}
 - name: TOOLBOX_ID_ISSUER
   value: {{ include "answerable.idUrl" . | quote }}
@@ -10,12 +13,15 @@
   value: {{ .Values.toolbox.clientId | quote }}
 {{ include "answerable.secretEnv" (dict "name" "TOOLBOX_ID_CLIENT_SECRET" "secret" "toolbox-id-client" "key" "TOOLBOX_ID_CLIENT_SECRET") }}
 {{ include "answerable.secretEnv" (dict "name" "TOOLBOX_DATABASE_URL" "secret" "toolbox-database" "key" "TOOLBOX_DATABASE_URL") }}
+{{ include "answerable.secretEnv" (dict "name" "TOOLBOX_MCPS_DATABASE_URL" "secret" "toolbox-mcps-database" "key" "TOOLBOX_MCPS_DATABASE_URL") }}
+{{- include "answerable.ownMcpEnv" (dict "root" . "serves" (list "toolbox" "both") "prefix" "TOOLBOX") }}
 {{- end -}}
 {{- if .Values.toolbox.enabled }}
 {{ include "answerable.server" (dict
   "root" .
   "component" "toolbox"
-  "image" "toolbox"
+  "image" "mcps"
+  "command" (list "bun" "mcps/toolbox/src/server.ts")
   "port" 47400
   "values" .Values.toolbox
   "host" .Values.hostnames.toolbox

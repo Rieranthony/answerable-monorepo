@@ -1,6 +1,6 @@
 # The kind stack
 
-`bun run infra:test` builds the four images, runs them in a local kind cluster with `charts/platform` and `charts/answerable` as a cloud runs them, and proves that the deployment behaves as production must. It deletes the cluster at the end, on failure and on Ctrl-C. CI runs it in the `containers` job of `ci.yml`.
+`bun run infra:test` builds the images of `infra/pipeline/images.json`, runs them in a local kind cluster with `charts/platform` and `charts/answerable` as a cloud runs them, and proves that the deployment behaves as production must. It deletes the cluster at the end, on failure and on Ctrl-C. CI runs it in the `containers` job of `ci.yml`.
 
 ## What it needs
 
@@ -12,13 +12,13 @@
 
 ## What it does, in order
 
-1. **Build** the `id`, `toolbox`, `admin-mcp` and `ops` images, while the cluster comes up.
+1. **Build** the `id`, `mcps` and `ops` images (`infra/pipeline/images.json`), while the cluster comes up.
 2. **Create** the cluster (`kind.yaml`) and the namespaces `platform`, `database` and `answerable` (restricted Pod Security Standard), as Terraform does in a cloud.
 3. **Start the company directory** on this host (`apps/id/scripts/stack-directories.ts`, port 47710), the platform organisation's stand-in for Entra or Google. The browser reaches it at `127.0.0.1`; ID's pods reach it at `host.docker.internal` (Docker Desktop) or at kind's network gateway (Linux).
-4. **Make the certificates** with `openssl`, in the run's temporary directory, each ECDSA P-256: three authorities (the stack's own, the stand-in for Cloudflare's origin-pull CA, the database's) and the certificates they sign (the three public names, the origin-pull client certificate, the database server's).
+4. **Make the certificates** with `openssl`, in the run's temporary directory, each ECDSA P-256: three authorities (the stack's own, the stand-in for Cloudflare's origin-pull CA, the database's) and the certificates they sign (the four public names, the origin-pull client certificate, the database server's).
 5. **Start the database and the edge, and install `charts/platform`.** PostgreSQL 17, TLS only, presenting its certificate and its authority's, holding one administrative login (`dbadmin`, `CREATEDB CREATEROLE`, not a superuser) as a managed database starts (`database.yaml`). The edge is an nginx beside Traefik that plays Cloudflare: it presents the origin-pull certificate (`edge.yaml`, `platform-edge.yaml`). The platform release gets the stand-in's origin-pull CA as `originPull.caPem`, as Terraform passes Cloudflare's, so the chart renders `answerable/cloudflare-origin-pull-ca` as it does on Civo.
-6. **Install `charts/answerable` with `ops.bootstrap=true`.** The test first writes what Terraform writes on Civo, the ConfigMap `trusted-proxies` (`127.0.0.1/32`), the Secrets `postgres-admin` and `origin-tls` (the stack CA's certificate for the three names), and what the deploy writes, `id-env`. The `ops-bootstrap` Job fetches the database's certificate into the ConfigMap `postgres-ca` (trust on first use), creates the three databases and six logins and writes their URL Secrets; the migrations run; ID starts. The Toolbox and the admin MCP wait at zero replicas: their client Secrets do not exist yet.
-7. **Upgrade with `ops.register=true`**, as the first deploy does. The `ops-register` Job registers both servers in ID with the root secret, writes their client Secrets and scales them up, and adds the staff domain (`id.staffDomain`); ID has no Microsoft client here, so it skips the Entra provider (`id.entraTenant`) with a line.
+6. **Install `charts/answerable` with `ops.bootstrap=true`.** The test first writes what Terraform writes on Civo, the ConfigMap `trusted-proxies` (`127.0.0.1/32`), the Secrets `postgres-admin` and `origin-tls` (the stack CA's certificate for the four names), and what the deploy writes, `id-env`. The `ops-bootstrap` Job fetches the database's certificate into the ConfigMap `postgres-ca` (trust on first use), creates the databases and their logins, provisions the MCPs of `charts/answerable/mcps.json` and writes the URL Secrets; the migrations run, `mcps-migrate` last; ID starts. The Toolbox, the admin MCP and the standalone server wait at zero replicas: their client Secrets do not exist yet.
+7. **Upgrade with `ops.register=true`**, as the first deploy does. The `ops-register` Job registers the Toolbox and the admin MCP in ID with the root secret, mints the standalone server's client, writes the three client Secrets and scales the servers up, and adds the staff domain (`id.staffDomain`); ID has no Microsoft client here, so it skips the Entra provider (`id.entraTenant`) with a line.
 
 ## What it proves
 
@@ -28,7 +28,8 @@
 | Through Traefik | ID's health, readiness, discovery and keys; the Toolbox's challenge and metadata |
 | The edge | No client certificate, or one Cloudflare's CA did not sign, is refused; strict SNI; a forged `X-Forwarded-For` is dropped; a pod's own address survives the trusted edge |
 | Inside the cluster | ID refuses `/auth` that bypasses Traefik; NetworkPolicies; Postgres TLS only, verified with `sslrootcert` (Bun and `pg`); the platform organisation provisioned then verified; the origin-pull CA rendered by the platform chart from `originPull.caPem`; the database's CA in `postgres-ca` written by the bootstrap, equal to the one the stack made, its fingerprint in the Job's log; every migration and ops Job succeeded |
-| The ops Jobs | Each database owned by its owner login; the runtime logins restricted, with `CONNECT` and without `TEMP`; nothing for `PUBLIC`; six URLs with 32-byte passwords; the client secrets stored; the two servers started; no log prints a generated value |
+| The ops Jobs | Each database owned by its owner login; the serving logins restricted, with `CONNECT` and without `TEMP`; nothing for `PUBLIC`; every URL with a 32-byte password; the client secrets stored; the servers started; no log prints a generated value |
+| The MCPs of `mcps.json` | The bootstrap made each shared MCP's schema, owned by its owner role, its runtime role for exactly the serving logins of the servers that serve it, and no owner role the administrative login inherits; `mcps-migrate` migrated each as its owner role and logged its time; the Toolbox's `/health` lists every `toolbox` and `both` MCP; through Traefik on `mcp`, each `standalone` and `both` MCP answers 401 at `/<name>/mcp` naming its metadata, which names its resource and ID, and nothing else on that host is routed; inside the cluster, the SDK's Host check refuses another host and `/health` lists what it serves; the deploy's smoke test, generated from the list, passes |
 | Machine tokens | The admin MCP's client gets a `toolbox:admin` token from ID and lists the Toolbox's providers |
 | Staff sign-in | `register` put the staff domain on the platform organisation; the test connects the company directory through the admin API; a staff member signs in with Chromium through Traefik and the directory; the official MCP client calls `admin_whoami` with no role, root makes them owner, and the next call shows `owner` |
 | Running again | `bootstrap` and `register` once more change no Secret, rotate nothing and keep every password |
@@ -37,7 +38,7 @@
 
 The run prints each step's wall-clock time at the end.
 
-**The browser's edge.** Traefik demands Cloudflare's client certificate of every visitor, a browser included. Playwright's `clientCertificates` hang under Bun (the same script under Node works), so the sign-in sends Chromium to a small proxy instead (`startBrowserEdge` in `stack.ts`): Chromium maps the three names to `[::1]` (`--host-resolver-rules`), and the proxy forwards each request to Traefik with the origin-pull certificate, as Cloudflare does. The MCP client calls Traefik directly with the certificate. The sign-in runs in a process of its own (`sign-in.ts`): Chromium launched and closed inside the test's Bun process broke later children's pipes (a `kubectl` killed by SIGPIPE), and the test runs `kubectl` and Helm after it.
+**The browser's edge.** Traefik demands Cloudflare's client certificate of every visitor, a browser included. Playwright's `clientCertificates` hang under Bun (the same script under Node works), so the sign-in sends Chromium to a small proxy instead (`startBrowserEdge` in `stack.ts`): Chromium maps the four names to `[::1]` (`--host-resolver-rules`), and the proxy forwards each request to Traefik with the origin-pull certificate, as Cloudflare does. The MCP client calls Traefik directly with the certificate. The sign-in runs in a process of its own (`sign-in.ts`): Chromium launched and closed inside the test's Bun process broke later children's pipes (a `kubectl` killed by SIGPIPE), and the test runs `kubectl` and Helm after it.
 
 ## When it fails
 

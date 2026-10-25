@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { access, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import images from "../images.json"
 import { CHART, NAMESPACE, REGISTRY, RELEASE, defaultValuesFile, type EnvironmentName } from "./environments"
 import { PipelineError, UsageError } from "./errors"
 import { commandLine, type Output, type RunOptions, type RunResult, type Runner } from "./run"
@@ -34,7 +35,7 @@ export function parseJob(value: string | undefined): OpsJob {
 /** An image tag the pipeline accepts: the full commit SHA, never a branch or `latest`. */
 const IMAGE_TAG = /^sha-[0-9a-f]{40}$/
 
-/** The Deployments whose pods read the machine-client secrets that `register` writes. */
+/** The Deployments whose pods read the machine-client secrets that `register` writes; the standalone server's exists only while it serves an MCP. */
 const REGISTERED_SERVERS = ["toolbox", "admin-mcp"]
 
 /** Jobs whose logs are printed when an upgrade fails. */
@@ -132,19 +133,17 @@ export function idEnvChecksum(values: Record<string, string>): string {
   return createHash("sha256").update(JSON.stringify(sorted)).digest("hex")
 }
 
-const IMAGE_NAMES = ["id", "toolbox", "admin-mcp", "ops"] as const
+/** The images the release runs, from `infra/pipeline/images.json`, which the build matrix and the promotion read too; the chart names them the same way in `images.<name>.digest`. */
+export const IMAGE_NAMES = images.map((image) => image.name)
 
-/** One of the four images the release runs; the chart names them the same way in `images.<name>.digest`. */
-type ImageName = (typeof IMAGE_NAMES)[number]
-
-/** The manifest digest, `sha256:` and 64 hex characters, of each of the four images. */
-export type Digests = Record<ImageName, string>
+/** The manifest digest, `sha256:` and 64 hex characters, of each image, by name. */
+export type Digests = Record<string, string>
 
 const DIGEST = /^sha256:[0-9a-f]{64}$/
 
 /**
  * Read repeated `--image-digest <image>=sha256:<hex>` options. None gives `undefined`, which means "look the
- * digests up"; some must be all four.
+ * digests up"; some must name every image.
  */
 export function parseDigests(pairs: readonly string[]): Digests | undefined {
   if (pairs.length === 0) return undefined
@@ -159,8 +158,8 @@ export function parseDigests(pairs: readonly string[]): Digests | undefined {
   }
   const missing = IMAGE_NAMES.filter((name) => !found.has(name))
   if (missing.length > 0)
-    throw new UsageError(`--image-digest must be given for all four images, or none; missing ${missing.join(", ")}`)
-  return Object.fromEntries(found) as Digests
+    throw new UsageError(`--image-digest must be given for every image (${IMAGE_NAMES.join(", ")}), or none; missing ${missing.join(", ")}`)
+  return Object.fromEntries(found)
 }
 
 /**
@@ -168,7 +167,7 @@ export function parseDigests(pairs: readonly string[]): Digests | undefined {
  * rerun could move. Needs Docker with buildx; the packages are public, so no login.
  */
 async function resolveDigests(imageTag: string, deps: Deps): Promise<Digests> {
-  const digests: Partial<Digests> = {}
+  const digests: Digests = {}
   for (const name of IMAGE_NAMES) {
     const reference = `${REGISTRY}/${name}:${imageTag}`
     const argv = ["docker", "buildx", "imagetools", "inspect", reference, "--format", "{{.Manifest.Digest}}"]
@@ -182,7 +181,7 @@ async function resolveDigests(imageTag: string, deps: Deps): Promise<Digests> {
     deps.log(`${name} is ${digest}\n`)
     digests[name] = digest
   }
-  return digests as Digests
+  return digests
 }
 
 type Session = {
@@ -247,9 +246,9 @@ async function applyIdEnv(session: Session, values: Record<string, string>): Pro
   session.deps.log(`id-env holds ${Object.keys(values).join(", ")}.\n`)
 }
 
-// The client Secrets that only `register` writes. The chart keeps the Toolbox and the admin MCP at zero replicas until
-// they exist.
-const CLIENT_SECRETS = ["toolbox-id-client", "admin-id-client"]
+// The client Secrets that only `register` writes. The chart keeps the Toolbox, the admin MCP and the standalone server at zero
+// replicas until they exist.
+const CLIENT_SECRETS = ["toolbox-id-client", "admin-id-client", "standalone-id-client"]
 
 async function missingClientSecrets(session: Session): Promise<string[]> {
   const result = await session.quiet(["kubectl", "get", "secret", ...CLIENT_SECRETS, "-n", NAMESPACE, "-o", "name", "--ignore-not-found"])
@@ -272,14 +271,14 @@ async function printJobDiagnostics(session: Session): Promise<void> {
   }
 }
 
-/** `helm upgrade` of the release with `args` after the chart's, which waits for the pods and the Jobs and rolls back on failure. */
-async function upgrade(session: Session, install: boolean, timeout: string, args: readonly string[]): Promise<void> {
+/** `helm upgrade` of the release from `chart` with `args` after it, which waits for the pods and the Jobs and rolls back on failure. */
+async function upgrade(session: Session, install: boolean, timeout: string, args: readonly string[], chart = CHART): Promise<void> {
   const result = await session.show([
     "helm",
     "upgrade",
     ...(install ? ["--install"] : []),
     RELEASE,
-    CHART,
+    chart,
     "--namespace",
     NAMESPACE,
     // Helm 4 deprecated --atomic for --rollback-on-failure; setup-tools pins Helm 4.
@@ -301,10 +300,10 @@ async function restartServers(session: Session, timeout: string): Promise<void> 
   if (listed.exitCode !== 0)
     throw new PipelineError(`kubectl get deployments failed with exit code ${listed.exitCode}: ${listed.stderr.trim()}`)
   const names = listed.stdout.split("\n").map((line) => line.trim())
-  const targets = REGISTERED_SERVERS.map((server) => names.find((name) => name.endsWith(`/${server}`) || name.endsWith(`-${server}`)))
-  if (targets.some((target) => target === undefined))
+  const find = (server: string) => names.find((name) => name.endsWith(`/${server}`) || name.endsWith(`-${server}`))
+  if (REGISTERED_SERVERS.some((server) => !find(server)))
     throw new PipelineError(`expected Deployments for ${REGISTERED_SERVERS.join(" and ")} in ${NAMESPACE}, found: ${names.filter(Boolean).join(", ") || "none"}`)
-  const found = targets as string[]
+  const found = [...REGISTERED_SERVERS, "standalone"].flatMap((server) => find(server) ?? [])
   const restarted = await session.show(["kubectl", "rollout", "restart", "-n", NAMESPACE, ...found])
   if (restarted.exitCode !== 0) throw new PipelineError(`kubectl rollout restart failed with exit code ${restarted.exitCode}`)
   for (const target of found) {
@@ -325,11 +324,11 @@ export type DeployOptions = {
 }
 
 /**
- * Deploy an image tag to an environment: pin the four images by digest, log in with the deployer token, apply the
- * Secret `id-env` from the deploy's environment, then `helm upgrade --install --rollback-on-failure` with the ops
+ * Deploy an image tag to an environment: pin each image of `images.json` by digest, log in with the deployer token, apply
+ * the Secret `id-env` from the deploy's environment, then `helm upgrade --install --rollback-on-failure` with the ops
  * bootstrap switched on and `idEnvChecksum`, which rolls ID when a secret changed. The upgrade also runs `register` when
- * the Toolbox's or the admin MCP's client Secret does not exist yet, which is the first install. When the upgrade fails
- * the migration and ops Jobs' logs are printed.
+ * a server's client Secret does not exist yet: the first install, and the first deploy with the standalone server's. When
+ * the upgrade fails the migration and ops Jobs' logs are printed.
  */
 export async function deploy(options: DeployOptions, deps: Deps): Promise<void> {
   assertImageTag(options.imageTag)
@@ -346,7 +345,7 @@ export async function deploy(options: DeployOptions, deps: Deps): Promise<void> 
     const jobs: OpsJob[] = ["bootstrap"]
     if (missing.length > 0) {
       deps.log(
-        `\n${missing.join(" and ")} ${missing.length === 1 ? "does" : "do"} not exist in ${NAMESPACE} yet, so this upgrade also runs register, which creates ${missing.length === 1 ? "it" : "them"} and starts the Toolbox and the admin MCP.\n`,
+        `\n${missing.join(" and ")} ${missing.length === 1 ? "does" : "do"} not exist in ${NAMESPACE} yet, so this upgrade also runs register, which creates ${missing.length === 1 ? "it" : "them"} and starts the servers that wait for ${missing.length === 1 ? "it" : "them"}.\n`,
       )
       jobs.push("register")
     }
@@ -377,30 +376,69 @@ export type RunJobOptions = {
   timeout?: string
 }
 
+/** The commit the release runs: its `image.tag`, `sha-<commit>`, which `deploy` sets and `--reset-then-reuse-values` keeps. */
+async function deployedRevision(session: Session): Promise<string> {
+  const values = await session.quiet(["helm", "get", "values", RELEASE, "--namespace", NAMESPACE, "--output", "json"])
+  if (values.exitCode !== 0) throw new PipelineError(`helm get values failed with exit code ${values.exitCode}: ${values.stderr.trim()}`)
+  const tag = (JSON.parse(values.stdout || "null") as { image?: { tag?: unknown } } | null)?.image?.tag
+  if (typeof tag !== "string" || !IMAGE_TAG.test(tag))
+    throw new PipelineError(`the release runs image tag ${JSON.stringify(tag ?? null)}, not sha-<commit>: deploy a commit before running a Job`)
+  return tag.slice("sha-".length)
+}
+
 /**
- * Run an `ops` Job once: upgrade the release on the values it runs (`--reset-then-reuse-values`, so the images, their
- * digests and `idEnvChecksum` stay) with this Job alone switched on, wait for it, and print its log. After `register`
- * it restarts the Toolbox and the admin MCP so they read the client secrets the Job wrote.
+ * The chart as `revision` committed it, with its overlays and its list of MCPs, extracted into `directory` with `git archive`: what the
+ * release runs, whatever the checkout is. The checkout must hold the commit, as one with its history does.
  */
-export async function runJob(options: RunJobOptions, deps: Deps): Promise<void> {
+async function chartAt(revision: string, directory: string, deps: Deps): Promise<string> {
+  const git = async (...argv: string[]) => {
+    deps.log(`$ ${commandLine(["git", ...argv])}\n`)
+    return deps.run(["git", ...argv], { cwd: deps.root })
+  }
+  if ((await git("cat-file", "-e", `${revision}^{commit}`)).exitCode !== 0)
+    throw new PipelineError(`the release runs commit ${revision}, which this checkout does not hold: check out the repository with its history`)
+  const archive = join(directory, "chart.tar")
+  const archived = await git("archive", "--output", archive, revision, CHART)
+  if (archived.exitCode !== 0) throw new PipelineError(`git archive of ${CHART} at ${revision} failed with exit code ${archived.exitCode}: ${archived.stderr.trim()}`)
+  const extracted = await deps.run(["tar", "-xf", archive, "-C", directory], { cwd: deps.root })
+  if (extracted.exitCode !== 0) throw new PipelineError(`tar could not extract the chart (exit code ${extracted.exitCode}): ${extracted.stderr.trim()}`)
+  return join(directory, CHART)
+}
+
+/**
+ * Run an `ops` Job once, with the chart at the commit the release runs, never the checkout's, which may hold MCPs the images do not: upgrade
+ * the release on the values it runs (`--reset-then-reuse-values`, so the images, their digests and `idEnvChecksum` stay) with that commit's
+ * overlay and this Job alone switched on, wait for it, and print its log. After `register` it restarts the servers that read the client
+ * secrets the Job wrote. Answers the commit.
+ */
+export async function runJob(options: RunJobOptions, deps: Deps): Promise<string> {
   if (options.job === "make-admin" && !options.email) throw new UsageError("make-admin needs --email, the address the staff member signed in with")
   if (options.job !== "make-admin" && options.email !== undefined) throw new UsageError("--email belongs to make-admin")
   if (options.email !== undefined && !EMAIL.test(options.email)) throw new UsageError(`--email must be an email address, got "${options.email}"`)
-  const valuesFile = defaultValuesFile(options.environment)
-  await requireFile(deps.root, valuesFile)
   const cluster = readCluster(deps.env)
   const timeout = options.timeout ?? "10m"
-  await withSession(deps, cluster, async (session) => {
-    await upgrade(session, false, timeout, [
-      "--reset-then-reuse-values",
-      "-f",
-      valuesFile,
-      ...Object.entries(OPS_JOBS).flatMap(([job, value]) => ["--set", `${value}=${job === options.job}`]),
-      ...(options.email ? ["--set-string", `ops.adminEmail=${options.email}`] : []),
-    ])
-    const log = await session.show(["kubectl", "logs", "-n", NAMESPACE, `job/ops-${options.job}`, "--all-containers"])
-    if (log.exitCode !== 0) deps.log(`(The Job's log could not be read: kubectl exited with ${log.exitCode}.)\n`)
-    if (options.job === "register") await restartServers(session, timeout)
-    deps.log(`\nRan ${options.job} in ${options.environment}.\n`)
-  })
+  const directory = await mkdtemp(join(tmpdir(), "answerable-chart-"))
+  try {
+    return await withSession(deps, cluster, async (session) => {
+      const revision = await deployedRevision(session)
+      const chart = await chartAt(revision, directory, deps)
+      const valuesFile = join(chart, defaultValuesFile(options.environment).slice(CHART.length + 1))
+      await requireFile(deps.root, valuesFile)
+      deps.log(`The release runs ${revision}: its chart and values.\n`)
+      await upgrade(session, false, timeout, [
+        "--reset-then-reuse-values",
+        "-f",
+        valuesFile,
+        ...Object.entries(OPS_JOBS).flatMap(([job, value]) => ["--set", `${value}=${job === options.job}`]),
+        ...(options.email ? ["--set-string", `ops.adminEmail=${options.email}`] : []),
+      ], chart)
+      const log = await session.show(["kubectl", "logs", "-n", NAMESPACE, `job/ops-${options.job}`, "--all-containers"])
+      if (log.exitCode !== 0) deps.log(`(The Job's log could not be read: kubectl exited with ${log.exitCode}.)\n`)
+      if (options.job === "register") await restartServers(session, timeout)
+      deps.log(`\nRan ${options.job} in ${options.environment}.\n`)
+      return revision
+    })
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 }

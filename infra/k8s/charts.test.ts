@@ -1,17 +1,31 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { databasesFor } from "../ops/src/bootstrap"
+import images from "../pipeline/images.json"
 import { buildDependencies, charts, check, crdSchemas, kubernetesVersion, type Manifest, overlays, render, run, templateArguments } from "./helm"
 
 // The charts' invariants, read from what `helm template` renders for the defaults and for every overlay. Needs `helm` and
-// `kubeconform` on the path and the network for the dependency chart and the schemas; no cluster and no Docker.
+// `kubeconform` on the path and the network for the dependency chart and the schemas; no cluster and no Docker. What the
+// answerable chart renders per MCP is read from its mcps.json, as the chart reads it, never from fixed names.
 
 const tag = "sha-0123456789abcdef0123456789abcdef01234567"
 const environments = {
-  "values-civo-staging.yaml": { id: "id.answerable-staging.uk", toolbox: "toolbox.answerable-staging.uk", adminMcp: "admin-mcp.answerable-staging.uk", network: "10.10.0.0/24" },
-  "values-civo-production.yaml": { id: "id.answerable.org", toolbox: "toolbox.answerable.org", adminMcp: "admin-mcp.answerable.org", network: "10.20.0.0/24" },
+  "values-civo-staging.yaml": { id: "id.answerable-staging.uk", toolbox: "toolbox.answerable-staging.uk", adminMcp: "admin-mcp.answerable-staging.uk", mcp: "mcp.answerable-staging.uk", network: "10.10.0.0/24" },
+  "values-civo-production.yaml": { id: "id.answerable.org", toolbox: "toolbox.answerable.org", adminMcp: "admin-mcp.answerable.org", mcp: "mcp.answerable.org", network: "10.20.0.0/24" },
 } as const
+
+/** An MCP as charts/answerable/mcps.json declares it, where it runs and its database mode. */
+type Declared = { name: string; serve: "toolbox" | "standalone" | "both"; database: "shared" | "own" }
+const declared = (JSON.parse(readFileSync(join(charts, "answerable/mcps.json"), "utf8")) as { mcps: Declared[] }).mcps
+const listed = (mcps: Declared[]) => mcps.map(({ name, serve, database }) => ({ name, serve, database }))
+const servedBy = (mcps: Declared[], server: "toolbox" | "standalone") => mcps.filter(mcp => mcp.serve === server || mcp.serve === "both")
+const standaloneRenders = servedBy(declared, "standalone").length > 0
+/** The Deployments the register Job starts, as the chart names them: the standalone server's only while it serves an MCP. */
+const registered = (mcps: Declared[]) => ["toolbox", "admin-mcp", ...(servedBy(mcps, "standalone").length ? ["standalone"] : [])]
+/** The Secrets the bootstrap writes for a list, as infra/ops names them: the ops Role must name exactly these. */
+const bootstrapSecrets = (mcps: Declared[]) => databasesFor(mcps).flatMap(database => [database.owner, ...database.runtime]).map(login => login.ref.secret)
 
 // The origin-pull CA Terraform passes to charts/platform with --set-file, which its Civo overlays refuse to render
 // without: a stand-in PEM here (the chart checks only that it is PEM), and one that is not PEM.
@@ -88,12 +102,23 @@ describe("charts/answerable", () => {
         }
       })
 
-      test("every image is one of ours at the given tag, never latest", () => {
+      test("every image is one of infra/pipeline/images.json at the given tag, never latest", () => {
         for (const workload of workloads(manifests)) {
           for (const container of containersOf(workload)) {
-            expect(container.image).toMatch(new RegExp(`^ghcr\\.io/rieranthony/answerable/(id|toolbox|admin-mcp|ops):${tag}$`))
+            expect(container.image).toMatch(new RegExp(`^ghcr\\.io/rieranthony/answerable/(${images.map(image => image.name).join("|")}):${tag}$`))
           }
         }
+      })
+
+      test("the servers of the mcps image each run their own entry point, and the chart never sets the role prefixes only tests use", () => {
+        const commands = Object.fromEntries(manifests.filter(manifest => manifest.kind === "Deployment").map(deployment => [deployment.metadata.name, containersOf(deployment)[0].command]))
+        expect(commands).toEqual({
+          id: undefined,
+          toolbox: ["bun", "mcps/toolbox/src/server.ts"],
+          "admin-mcp": ["bun", "mcps/admin/src/server.ts"],
+          ...(standaloneRenders ? { standalone: ["bun", "mcps/standalone/src/server.ts"] } : {}),
+        })
+        for (const workload of workloads(manifests)) for (const name of ["TOOLBOX_MCPS_ROLE_PREFIX", "STANDALONE_MCPS_ROLE_PREFIX"]) expect(env(workload, name), `${workload.metadata.name} ${name}`).toBeUndefined()
       })
 
       test("no secret value is written in the manifests: every secret-looking variable comes from a Secret", () => {
@@ -107,15 +132,24 @@ describe("charts/answerable", () => {
         }
       })
 
-      test("the migrations are pre-install and pre-upgrade hooks after the bootstrap, each with only its own owner login", () => {
-        const migrations = ["id-migrate", "toolbox-migrate", "admin-migrate"].map(job => named(manifests, "Job", job)!)
-        expect(migrations.map(weight)).toEqual([...migrations.map(weight)].sort((a, b) => a - b))
-        for (const [job, owner] of [[migrations[0], "id-database-owner"], [migrations[1], "toolbox-database-owner"], [migrations[2], "admin-database-owner"]] as const) {
+      test("the migrations are pre-install and pre-upgrade hooks after the bootstrap, in their order, each with only its own owner logins", () => {
+        const owners = {
+          "id-migrate": ["id-database-owner"],
+          "toolbox-migrate": ["toolbox-database-owner"],
+          "admin-migrate": ["admin-database-owner"],
+          "standalone-migrate": ["standalone-database-owner"],
+          "mcps-migrate": ["mcps-database-owner", ...declared.filter(mcp => mcp.database === "own").map(mcp => `mcp-${mcp.name}-database-owner`)],
+        }
+        const migrations = Object.keys(owners).map(job => named(manifests, "Job", job)!)
+        expect(migrations.map(weight)).toEqual([-10, -9, -8, -7, -6])
+        for (const job of migrations) {
           expect(job.metadata.annotations?.["helm.sh/hook"]).toBe("pre-install,pre-upgrade")
-          expect(new Set(secretReferences(job))).toEqual(new Set([owner]))
+          expect(new Set(secretReferences(job)), job.metadata.name).toEqual(new Set(owners[job.metadata.name as keyof typeof owners]))
           expect(podSpec(job).restartPolicy).toBe("Never")
           expect(podSpec(job).automountServiceAccountToken).toBe(false)
         }
+        // mcps-migrate migrates the list the bootstrap provisions: one rendered value.
+        expect(JSON.parse(env(named(manifests, "Job", "mcps-migrate")!, "MCPS_DECLARED").value)).toEqual(listed(declared))
         const bootstrap = named(manifests, "Job", "ops-bootstrap")!
         expect(bootstrap.metadata.annotations?.["helm.sh/hook"]).toBe("pre-install,pre-upgrade")
         for (const job of migrations) expect(weight(job)).toBeGreaterThan(weight(bootstrap))
@@ -142,7 +176,7 @@ describe("charts/answerable", () => {
 
       test("each Deployment rolls with no unavailable pod, waits for Traefik before it stops, probes readiness, spreads over nodes and has a disruption budget", () => {
         const deployments = manifests.filter(manifest => manifest.kind === "Deployment")
-        expect(deployments.map(deployment => deployment.metadata.name).sort()).toEqual(["admin-mcp", "id", "toolbox"])
+        expect(deployments.map(deployment => deployment.metadata.name).sort()).toEqual(["admin-mcp", "id", ...(standaloneRenders ? ["standalone"] : []), "toolbox"])
         for (const deployment of deployments) {
           expect(deployment.spec.strategy).toMatchObject({ type: "RollingUpdate", rollingUpdate: { maxUnavailable: 0 } })
           // Traefik keeps routing to a terminating pod for a few seconds; the pod waits longer than that before it stops.
@@ -157,7 +191,7 @@ describe("charts/answerable", () => {
 
       test("one Ingress per hostname, serving the shared Secret origin-tls, with no issuer and no TLS option: Traefik's default one applies", () => {
         const ingresses = manifests.filter(manifest => manifest.kind === "Ingress")
-        expect(ingresses.length).toBe(3)
+        expect(ingresses.length).toBe(standaloneRenders ? 4 : 3)
         for (const ingress of ingresses) {
           expect(ingress.spec.ingressClassName).toBe("traefik")
           expect(ingress.metadata.annotations).toEqual({
@@ -174,7 +208,7 @@ describe("charts/answerable", () => {
         expect(env(id, "TRUSTED_PROXY_CIDRS")).toEqual({ name: "TRUSTED_PROXY_CIDRS", valueFrom: { configMapKeyRef: { name: "trusted-proxies", key: "cidrs" } } })
         expect(id.spec.template.metadata.annotations).toEqual({ "checksum/id-env": "" })
         expect(containersOf(id)[0].envFrom).toEqual([{ secretRef: { name: "id-env" } }])
-        for (const server of ["toolbox", "admin-mcp"]) expect(named(manifests, "Deployment", server)!.spec.template.metadata.annotations, server).toBeUndefined()
+        for (const server of registered(declared)) expect(named(manifests, "Deployment", server)!.spec.template.metadata.annotations, server).toBeUndefined()
       })
 
       test("the ops Jobs: one attempt, the token of their own ServiceAccount where they call Kubernetes, the administrative login or the ID token from Secrets", () => {
@@ -192,7 +226,8 @@ describe("charts/answerable", () => {
         }
         expect(new Set(secretReferences(bootstrap))).toEqual(new Set(["postgres-admin"]))
         expect(env(bootstrap, "OPS_DATABASE_ADMIN_URL").valueFrom.secretKeyRef).toEqual({ name: "postgres-admin", key: "OPS_DATABASE_ADMIN_URL" })
-        expect(containersOf(bootstrap)[0].env.map((variable: { name: string }) => variable.name).filter((variable: string) => variable.startsWith("OPS_"))).toEqual(["OPS_NAMESPACE", "OPS_DATABASE_ADMIN_URL"])
+        expect(containersOf(bootstrap)[0].env.map((variable: { name: string }) => variable.name).filter((variable: string) => variable.startsWith("OPS_"))).toEqual(["OPS_NAMESPACE", "OPS_DATABASE_ADMIN_URL", "OPS_MCPS"])
+        expect(JSON.parse(env(bootstrap, "OPS_MCPS").value)).toEqual(listed(declared))
         // A staff token when the operator has stored one, else the root secret; either may be absent, and the command says which it needs.
         expect(env(register, "OPS_ID_TOKEN").valueFrom.secretKeyRef).toEqual({ name: "ops-staff-token", key: "OPS_ID_TOKEN", optional: true })
         expect(env(register, "OPS_ID_ROOT_SECRET").valueFrom.secretKeyRef).toEqual({ name: "id-env", key: "ROOT_ADMIN_SECRET", optional: true })
@@ -200,7 +235,7 @@ describe("charts/answerable", () => {
         expect(env(register, "OPS_TOOLBOX_URL").value).toBe(env(named(manifests, "Deployment", "toolbox")!, "TOOLBOX_RESOURCE_URL").value.replace(/\/mcp$/, ""))
         expect(env(register, "OPS_ADMIN_MCP_URL").value).toBe(env(named(manifests, "Deployment", "admin-mcp")!, "ADMIN_RESOURCE_URL").value.replace(/\/mcp$/, ""))
         const replicas = name === "values-local.yaml" ? 1 : 2
-        expect(env(register, "OPS_START_DEPLOYMENTS").value).toBe(`toolbox=${replicas},admin-mcp=${replicas}`)
+        expect(env(register, "OPS_START_DEPLOYMENTS").value).toBe(registered(declared).map(server => `${server}=${replicas}`).join(","))
         // A staff directory only where the overlay names one: staging names the local ID setup's.
         if (name === "values-civo-staging.yaml") {
           expect(env(register, "OPS_STAFF_DOMAIN").value).toBe("omniaccelerator.ai")
@@ -218,36 +253,36 @@ describe("charts/answerable", () => {
         expect(env(makeAdmin, "OPS_ID_URL").value).toBe(env(register, "OPS_ID_URL").value)
       })
 
-      test("the ops ServiceAccount reads and patches exactly the Secrets and the ConfigMap its Jobs own, and only register touches the two Deployments", () => {
+      test("the ops ServiceAccount reads and patches exactly the Secrets and the ConfigMap its Jobs own, the bootstrap's derived from the list, and only register touches the Deployments it starts", () => {
         const databaseCa = [
           { apiGroups: [""], resources: ["configmaps"], resourceNames: ["postgres-ca"], verbs: ["get", "patch"] },
           { apiGroups: [""], resources: ["configmaps"], verbs: ["create"] },
         ]
+        const clients = ["toolbox-id-client", "admin-id-client", "standalone-id-client"]
         const role = named(manifests, "Role", "ops")!
         expect(role.rules).toEqual([
-          { apiGroups: [""], resources: ["secrets"], resourceNames: ["id-database-owner", "id-database", "toolbox-database-owner", "toolbox-database", "admin-database-owner", "admin-database", "toolbox-id-client", "admin-id-client"], verbs: ["get", "patch"] },
+          { apiGroups: [""], resources: ["secrets"], resourceNames: [...bootstrapSecrets(declared), ...clients], verbs: ["get", "patch"] },
           { apiGroups: [""], resources: ["secrets"], verbs: ["create"] },
           ...databaseCa,
-          { apiGroups: ["apps"], resources: ["deployments"], resourceNames: ["toolbox", "admin-mcp"], verbs: ["get", "patch"] },
+          { apiGroups: ["apps"], resources: ["deployments"], resourceNames: registered(declared), verbs: ["get", "patch"] },
         ])
         expect(named(manifests, "ServiceAccount", "ops")!.automountServiceAccountToken).toBe(false)
         expect(named(manifests, "RoleBinding", "ops")).toMatchObject({ roleRef: { kind: "Role", name: "ops" }, subjects: [{ kind: "ServiceAccount", name: "ops" }] })
         const bootstrapOnly = renderSupplied("answerable", values, { "image.tag": tag, "ops.bootstrap": "true" })
         expect(named(bootstrapOnly, "Role", "ops")!.rules).toEqual([
-          { apiGroups: [""], resources: ["secrets"], resourceNames: ["id-database-owner", "id-database", "toolbox-database-owner", "toolbox-database", "admin-database-owner", "admin-database"], verbs: ["get", "patch"] },
+          { apiGroups: [""], resources: ["secrets"], resourceNames: bootstrapSecrets(declared), verbs: ["get", "patch"] },
           { apiGroups: [""], resources: ["secrets"], verbs: ["create"] },
           ...databaseCa,
         ])
         expect(named(bootstrapOnly, "Role", "ops")!.metadata.annotations?.["helm.sh/hook"]).toBe("pre-install,pre-upgrade")
         const registerOnly = renderSupplied("answerable", values, { "image.tag": tag, "ops.register": "true" })
-        expect(named(registerOnly, "Role", "ops")!.rules[0].resourceNames).toEqual(["toolbox-id-client", "admin-id-client"])
+        expect(named(registerOnly, "Role", "ops")!.rules[0].resourceNames).toEqual(clients)
         expect(named(registerOnly, "Role", "ops")!.rules.some((rule: { resources: string[] }) => rule.resources.includes("configmaps"))).toBe(false)
         expect(named(registerOnly, "Role", "ops")!.metadata.annotations?.["helm.sh/hook"]).toBe("post-install,post-upgrade")
       })
 
-      test("the Toolbox and the admin MCP wait at zero replicas while their client Secret is missing, which helm template, with no cluster, always finds", () => {
-        expect(named(manifests, "Deployment", "toolbox")!.spec.replicas).toBe(0)
-        expect(named(manifests, "Deployment", "admin-mcp")!.spec.replicas).toBe(0)
+      test("the Toolbox, the admin MCP and the standalone server wait at zero replicas while their client Secret is missing, which helm template, with no cluster, always finds", () => {
+        for (const server of registered(declared)) expect(named(manifests, "Deployment", server)!.spec.replicas, server).toBe(0)
         const id = named(manifests, "Deployment", "id")!
         if (name === "values-local.yaml") expect(id.spec.replicas).toBe(1)
         else expect(id.spec.replicas).toBeUndefined()
@@ -288,9 +323,18 @@ describe("charts/answerable", () => {
       expect(env(admin, "ADMIN_ID_ISSUER").value).toBe(issuer)
       expect(env(admin, "ADMIN_RESOURCE_URL").value).toBe(`https://${expected.adminMcp}/mcp`)
       expect(env(admin, "ADMIN_TOOLBOX_ADMIN_RESOURCE").value).toBe(`https://${expected.toolbox}/admin`)
-      expect(manifests.filter(manifest => manifest.kind === "Ingress").map(ingress => ingress.spec.rules[0].host).sort()).toEqual([expected.adminMcp, expected.id, expected.toolbox].sort())
+      if (standaloneRenders) {
+        const standalone = named(manifests, "Deployment", "standalone")!
+        expect(env(standalone, "STANDALONE_ORIGIN").value).toBe(`https://${expected.mcp}`)
+        expect(env(standalone, "STANDALONE_ID_ISSUER").value).toBe(issuer)
+        expect(env(standalone, "STANDALONE_ID_ADMIN_RESOURCE").value).toBe(`${issuer}/api/admin`)
+        expect(env(standalone, "STANDALONE_ID_CLIENT_ID").value).toBe("standalone-hub")
+      }
+      const servers = ["admin-mcp", "id", ...(standaloneRenders ? ["standalone"] : []), "toolbox"]
+      const hosts = { "admin-mcp": expected.adminMcp, id: expected.id, standalone: expected.mcp, toolbox: expected.toolbox }
+      expect(manifests.filter(manifest => manifest.kind === "Ingress").map(ingress => ingress.spec.rules[0].host).sort()).toEqual(servers.map(server => hosts[server as keyof typeof hosts]).sort())
       const autoscalers = manifests.filter(manifest => manifest.kind === "HorizontalPodAutoscaler")
-      expect(autoscalers.map(autoscaler => autoscaler.spec.scaleTargetRef.name).sort()).toEqual(["admin-mcp", "id", "toolbox"])
+      expect(autoscalers.map(autoscaler => autoscaler.spec.scaleTargetRef.name).sort()).toEqual(servers)
       for (const autoscaler of autoscalers) {
         expect(autoscaler.spec.metrics).toEqual([{ type: "Resource", resource: { name: "cpu", target: { type: "Utilization", averageUtilization: 60 } } }])
         if (file === "values-civo-production.yaml") expect(autoscaler.spec.minReplicas).toBeGreaterThanOrEqual(2)
@@ -354,16 +398,16 @@ describe("charts/answerable", () => {
   })
 
   test("an image with a digest runs by digest, the exact bytes verified; one without runs by the shared tag", () => {
-    const digests = { id: "a".repeat(64), toolbox: "b".repeat(64), "admin-mcp": "c".repeat(64), ops: "d".repeat(64) }
+    const digests = { id: "a".repeat(64), mcps: "b".repeat(64), ops: "d".repeat(64) }
     const set = Object.fromEntries([["image.tag", tag], ...Object.entries(allJobs), ...Object.entries(digests).map(([image, hex]) => [`images.${image}.digest`, `sha256:${hex}`])])
     const pinned = renderSupplied("answerable", ["values-civo-production.yaml"], set)
     const images = new Set(workloads(pinned).flatMap(workload => containersOf(workload).map((container: { image: string }) => container.image)))
     expect(images).toEqual(new Set(Object.entries(digests).map(([image, hex]) => `ghcr.io/rieranthony/answerable/${image}@sha256:${hex}`)))
-    // Only the Toolbox pinned: the others keep the tag.
-    const mixed = renderSupplied("answerable", ["values-civo-production.yaml"], { "image.tag": tag, "images.toolbox.digest": `sha256:${digests.toolbox}` })
-    expect(containersOf(named(mixed, "Deployment", "toolbox")!)[0].image).toBe(`ghcr.io/rieranthony/answerable/toolbox@sha256:${digests.toolbox}`)
+    // Only the mcps image pinned: the others keep the tag.
+    const mixed = renderSupplied("answerable", ["values-civo-production.yaml"], { "image.tag": tag, "images.mcps.digest": `sha256:${digests.mcps}` })
+    for (const [kind, name] of [...registered(declared).map(server => ["Deployment", server] as const), ["Job", "toolbox-migrate"], ["Job", "mcps-migrate"]] as const)
+      expect(containersOf(named(mixed, kind, name)!)[0].image, name).toBe(`ghcr.io/rieranthony/answerable/mcps@sha256:${digests.mcps}`)
     expect(containersOf(named(mixed, "Deployment", "id")!)[0].image).toBe(`ghcr.io/rieranthony/answerable/id:${tag}`)
-    expect(containersOf(named(mixed, "Job", "toolbox-migrate")!)[0].image).toBe(`ghcr.io/rieranthony/answerable/toolbox@sha256:${digests.toolbox}`)
     // A digest that is not sha256 and 64 hex digits is refused, rather than deployed as something else.
     const bad = run(templateArguments("answerable", [], { "image.tag": tag, "images.id.digest": "sha256:abc" }))
     expect(bad.exitCode).not.toBe(0)
@@ -376,13 +420,101 @@ describe("charts/answerable", () => {
 
   test("the servers connect as their runtime logins and the migrations as the owners, with the role to provision", () => {
     const manifests = renderSupplied("answerable", [], { "image.tag": tag })
-    for (const [deployment, variable, secret] of [["id", "DATABASE_URL", "id-database"], ["toolbox", "TOOLBOX_DATABASE_URL", "toolbox-database"], ["admin-mcp", "ADMIN_DATABASE_URL", "admin-database"]]) {
+    for (const [deployment, variable, secret] of [
+      ["id", "DATABASE_URL", "id-database"], ["toolbox", "TOOLBOX_DATABASE_URL", "toolbox-database"], ["admin-mcp", "ADMIN_DATABASE_URL", "admin-database"], ["toolbox", "TOOLBOX_MCPS_DATABASE_URL", "toolbox-mcps-database"],
+      ...(standaloneRenders ? [["standalone", "STANDALONE_DATABASE_URL", "standalone-database"], ["standalone", "STANDALONE_MCPS_DATABASE_URL", "standalone-mcps-database"]] : []),
+    ]) {
       expect(env(named(manifests, "Deployment", deployment!)!, variable!).valueFrom.secretKeyRef).toEqual({ name: secret, key: variable })
     }
-    for (const [job, prefix, role] of [["id-migrate", "", "answerable_id_runtime"], ["toolbox-migrate", "TOOLBOX_", "answerable_toolbox_runtime"], ["admin-migrate", "ADMIN_", "answerable_admin_runtime"]]) {
+    for (const [job, prefix, role] of [["id-migrate", "", "answerable_id_runtime"], ["toolbox-migrate", "TOOLBOX_", "answerable_toolbox_runtime"], ["admin-migrate", "ADMIN_", "answerable_admin_runtime"], ["standalone-migrate", "STANDALONE_", "answerable_standalone_runtime"]]) {
       const migration = named(manifests, "Job", job!)!
       expect(env(migration, `${prefix}DATABASE_MIGRATION_URL`).valueFrom.secretKeyRef.key).toBe(`${prefix}DATABASE_MIGRATION_URL`)
       expect(env(migration, `${prefix}DATABASE_RUNTIME_ROLE`).value).toBe(role)
+    }
+  })
+})
+
+describe("charts/answerable at 0, 1, 3 and 200 MCPs", () => {
+  /** An MCP as the generator writes it into mcps.json: its declaration, two scopes and the grant strings of five tools. */
+  const entry = (name: string, serve: Declared["serve"], database: Declared["database"]) => ({
+    name, serve, database, scopes: [`${name}:read`, `${name}:write`], grants: [name, `${name}/notes`, `${name}/notes.add`, `${name}/notes.list`, `${name}/projects`, `${name}/projects.search`],
+  })
+  const serves = ["toolbox", "standalone", "both"] as const
+  const lists: Record<string, Declared[]> = {
+    0: [],
+    1: [entry("acme", "standalone", "own")],
+    3: [entry("alpha", "toolbox", "shared"), entry("beta", "standalone", "own"), entry("gamma", "both", "own")],
+    // A third in each place, one in ten with a database of its own.
+    200: Array.from({ length: 200 }, (_, index) => entry(`m${String(index).padStart(3, "0")}`, serves[index % 3]!, index % 10 === 0 ? "own" : "shared")),
+  }
+  const copies = mkdtempSync(join(tmpdir(), "answerable-chart-lists-"))
+  afterAll(() => rmSync(copies, { recursive: true, force: true }))
+  /** A copy of charts/answerable whose mcps.json is `text`: .Files.Get reads only the chart's own files. */
+  function chartWith(name: string, text: string) {
+    const chart = join(copies, name, "answerable")
+    cpSync(join(charts, "answerable"), chart, { recursive: true })
+    writeFileSync(join(chart, "mcps.json"), text)
+    return chart
+  }
+  const file = (mcps: Declared[]) => `${JSON.stringify({ $comment: "Written by bun mcp", mcps }, null, 2)}\n`
+  const set = { "image.tag": tag, ...allJobs }
+  const flags = (chart: string) => ["--namespace", "answerable", "--values", join(chart, "values-civo-production.yaml"), ...Object.entries(set).flatMap(([key, value]) => ["--set", `${key}=${value}`])]
+  const renderCopy = (chart: string) => {
+    const rendered = check(["helm", "template", "answerable", chart, ...flags(chart)])
+    return { rendered, manifests: (Bun.YAML.parse(rendered) as (Manifest | null)[]).filter((manifest): manifest is Manifest => manifest !== null) }
+  }
+
+  for (const [count, mcps] of Object.entries(lists)) {
+    test(`${count} MCPs: the standalone server only while one is standalone or both, its two paths per MCP, each server's own databases, the bootstrap's and the migration's list, and the ops Role from it`, () => {
+      const chart = chartWith(count, file(mcps))
+      const { rendered, manifests } = renderCopy(chart)
+      const toolboxMcps = servedBy(mcps, "toolbox")
+      const standaloneMcps = servedBy(mcps, "standalone")
+      const standalone = manifests.filter(manifest => manifest.metadata.name === "standalone").map(manifest => manifest.kind).sort()
+      expect(standalone).toEqual(standaloneMcps.length ? ["Deployment", "HorizontalPodAutoscaler", "Ingress", "NetworkPolicy", "PodDisruptionBudget", "Service", "ServiceAccount"] : [])
+      if (standaloneMcps.length) {
+        const ingress = named(manifests, "Ingress", "standalone")!
+        expect(ingress.spec.rules.map((rule: { host: string }) => rule.host)).toEqual(["mcp.answerable.org"])
+        expect(ingress.spec.rules[0].http.paths).toEqual(standaloneMcps.flatMap(({ name }) => [`/${name}/`, `/.well-known/oauth-protected-resource/${name}/`]).map(path => (
+          { path, pathType: "Prefix", backend: { service: { name: "standalone", port: { name: "http" } } } })))
+        const policy = named(manifests, "NetworkPolicy", "standalone")!
+        expect(policy.spec.ingress).toEqual([{ from: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "platform" } }, podSelector: { matchLabels: { "app.kubernetes.io/name": "traefik" } } }], ports: [{ port: 47510, protocol: "TCP" }] }])
+      }
+      // Each own MCP's database: its runtime login for each server that serves it, its owner for the migration; a shared MCP needs no variable.
+      const ownVariables = (workload: Manifest, pattern: RegExp) => containersOf(workload).flatMap((container: { env: { name: string; valueFrom?: { secretKeyRef?: unknown } }[] }) => container.env)
+        .filter(variable => pattern.test(variable.name)).map(variable => [variable.name, variable.valueFrom?.secretKeyRef])
+      const own = (list: Declared[], prefix: string, secret: string, key: string) => list.filter(mcp => mcp.database === "own").map(({ name }) => [`${prefix}MCP_${name.toUpperCase()}_DATABASE${key === "DATABASE_URL" ? "" : "_MIGRATION"}_URL`, { name: `mcp-${name}-${secret}`, key }])
+      expect(ownVariables(named(manifests, "Deployment", "toolbox")!, /^TOOLBOX_MCP_/)).toEqual(own(toolboxMcps, "TOOLBOX_", "database", "DATABASE_URL"))
+      if (standaloneMcps.length) expect(ownVariables(named(manifests, "Deployment", "standalone")!, /^STANDALONE_MCP_/)).toEqual(own(standaloneMcps, "STANDALONE_", "database", "DATABASE_URL"))
+      expect(ownVariables(named(manifests, "Job", "mcps-migrate")!, /^MCP_/)).toEqual(own(mcps, "", "database-owner", "DATABASE_MIGRATION_URL"))
+      for (const [job, variable] of [["ops-bootstrap", "OPS_MCPS"], ["mcps-migrate", "MCPS_DECLARED"]]) expect(JSON.parse(env(named(manifests, "Job", job!)!, variable!).value), job).toEqual(listed(mcps))
+      const role = named(manifests, "Role", "ops")!
+      expect(role.rules[0].resourceNames).toEqual([...bootstrapSecrets(mcps), "toolbox-id-client", "admin-id-client", "standalone-id-client"])
+      expect(role.rules.at(-1).resourceNames).toEqual(registered(mcps))
+      expect(env(named(manifests, "Job", "ops-register")!, "OPS_START_DEPLOYMENTS").value).toBe(registered(mcps).map(server => `${server}=2`).join(","))
+      // Hooks in order, whatever the list: RBAC, bootstrap, the five migrations, then register and make-admin.
+      const hooks = manifests.filter(manifest => manifest.kind === "Job").map(job => [job.metadata.name, weight(job)])
+      expect(hooks).toEqual(expect.arrayContaining([["ops-bootstrap", -20], ["id-migrate", -10], ["toolbox-migrate", -9], ["admin-migrate", -8], ["standalone-migrate", -7], ["mcps-migrate", -6], ["ops-register", 10], ["ops-make-admin", 20]]))
+      const validated = run(["kubeconform", "-strict", "-summary", "-ignore-missing-schemas", "-kubernetes-version", kubernetesVersion, "-schema-location", "default", "-schema-location", crdSchemas, "-"], { stdin: rendered })
+      expect(validated.stdout, validated.stdout + validated.stderr).toContain("Invalid: 0, Errors: 0")
+    }, 120_000)
+  }
+
+  test("at 200 MCPs, the release Helm stores (its JSON, gzipped, then base64, in one Secret) stays well under Kubernetes' 1 MiB", () => {
+    const chart = chartWith("release", file(lists[200]!))
+    const record = check(["helm", "install", "answerable", chart, "--dry-run=client", "--output", "json", ...flags(chart)])
+    const stored = Buffer.from(Bun.gzipSync(Buffer.from(record), { level: 9 })).toString("base64").length
+    const baseline = Buffer.from(Bun.gzipSync(Buffer.from(check(["helm", "install", "answerable", chartWith("baseline", file([])), "--dry-run=client", "--output", "json", ...flags(chart)])), { level: 9 })).toString("base64").length
+    console.log(`The release at 200 MCPs: ${record.length} bytes of JSON, ${stored} bytes stored (${(stored / 1024).toFixed(1)} KiB, ${((stored / 1048576) * 100).toFixed(1)}% of 1 MiB); at 0 MCPs ${baseline} bytes stored`)
+    expect(stored).toBeLessThan(1048576 / 4)
+  }, 120_000)
+
+  test("a list whose root is not an object, as fromJson would misread, fails the render, naming the file", () => {
+    for (const text of ["[]", "not json"]) {
+      const chart = chartWith(`broken-${text.length}`, text)
+      const result = run(["helm", "template", "answerable", chart, ...flags(chart)])
+      expect(result.exitCode, text).not.toBe(0)
+      expect(result.stderr).toContain('charts/answerable/mcps.json must be { "mcps": [...] }, as bun mcp writes it')
     }
   })
 })

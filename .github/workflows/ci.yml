@@ -87,7 +87,7 @@ jobs:
       - name: Check infrastructure code
         run: bun run infra:check
 
-  # The four images built and run in a kind cluster with both charts, as Civo runs them: amd64, Civo's architecture.
+  # The images of infra/pipeline/images.json built and run in a kind cluster with both charts, as Civo runs them: amd64, Civo's architecture.
   # Only after validate, so a red suite never builds images (bun run infra:test, infra/k8s/local/README.md).
   containers:
     needs: validate

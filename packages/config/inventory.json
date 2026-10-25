@@ -659,6 +659,38 @@
     ]
   },
   {
+    "name": "MCP migration",
+    "reader": "mcps/standalone/scripts/env.ts, read by scripts/migrate-mcps.ts, the Job mcps-migrate; each own MCP adds MCP_<NAME>_DATABASE_MIGRATION_URL",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "MCPS_DATABASE_MIGRATION_URL",
+        "secret": true,
+        "defaults": {
+          "development": "postgres://answerable_mcps_migrator:answerable@localhost:47432/answerable_mcps",
+          "test": "postgres://answerable_mcps_migrator:answerable@localhost:47432/answerable_mcps"
+        },
+        "doc": "The shared MCP database, answerable_mcps, as its migrator login, answerable_mcps_migrator, which takes each shared MCP's owner role; for the migration only",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "MCPS_DECLARED",
+        "secret": false,
+        "doc": "The MCPs charts/answerable/mcps.json declares, as JSON [{ name, serve, database }], which the chart renders",
+        "source": "chart",
+        "optional": false
+      }
+    ]
+  },
+  {
     "name": "standalone server test database",
     "reader": "mcps/standalone/src/test/database.ts, for the standalone server's tests",
     "fields": [
@@ -711,6 +743,13 @@
         "fallback": "/etc/ssl/db/ca.pem",
         "doc": "bootstrap: where the chart mounts the database's certificate authority, for the services' URLs",
         "optional": true
+      },
+      {
+        "name": "OPS_MCPS",
+        "secret": false,
+        "doc": "bootstrap: the MCPs charts/answerable/mcps.json declares, as JSON [{ name, serve, database }], whose schemas, roles and own databases it provisions",
+        "source": "chart",
+        "optional": false
       },
       {
         "name": "OPS_ID_URL",

@@ -4,6 +4,7 @@ import { fakeIdAdmin, memoryStore } from "./testing"
 
 // The order and the keys of the two docs pages: apps/web/content/docs/toolbox/admin.mdx (Register the Toolbox in ID) and
 // apps/web/content/docs/admin/setup.mdx (Register the admin MCP). The Toolbox's staff client is the operator's, not the services', and is left out.
+// Then the standalone server's machine client, which reads who is calling, as the Toolbox's does.
 const keys = [
   "toolbox-resource-v1", "toolbox-admin-resource-v1", "toolbox-hub-v1", "toolbox-hub-link-v1", "toolbox-hub-capability-v1", "claude-code-toolbox-v1",
   "admin-mcp-resource-v1", "claude-code-admin-v1", "claude-code-admin-link-v1",
@@ -11,8 +12,9 @@ const keys = [
   "admin-login-entitlement-v1", "admin-resource-entitlement-v1",
   "admin-group-team-v1", "admin-role-team-v1", "admin-group-admin-v1", "admin-role-admin-v1", "admin-group-owner-v1", "admin-role-owner-v1",
   "admin-mcp-v1", "admin-mcp-link-id-v1", "admin-mcp-capability-id-v1", "admin-mcp-link-toolbox-v1", "admin-mcp-capability-toolbox-v1",
+  "standalone-hub-v1", "standalone-hub-link-v1", "standalone-hub-capability-v1",
 ]
-const secrets = ["toolbox-id-client/TOOLBOX_ID_CLIENT_SECRET", "admin-id-client/ADMIN_ID_CLIENT_SECRET"]
+const secrets = ["toolbox-id-client/TOOLBOX_ID_CLIENT_SECRET", "admin-id-client/ADMIN_ID_CLIENT_SECRET", "standalone-id-client/STANDALONE_ID_CLIENT_SECRET"]
 
 function setup(id = fakeIdAdmin()) {
   const memory = memoryStore()
@@ -22,16 +24,20 @@ function setup(id = fakeIdAdmin()) {
   return { id, memory, lines, run }
 }
 
-test("registers the Toolbox and the admin MCP in ID with the docs' keys, in their order, and stores the two machine clients' secrets", async () => {
+test("registers the Toolbox, the admin MCP and the standalone server's client in ID with the docs' keys, in their order, and stores the three machine clients' secrets", async () => {
   const { id, memory, lines, run } = setup()
   const result = await run()
   expect(id.state.calls.filter(call => call.key).map(call => call.key)).toEqual(keys)
   expect(id.state.resources).toEqual(new Set(["https://toolbox.example/mcp", "https://toolbox.example/admin", "https://admin-mcp.example/mcp"]))
-  expect([...id.state.clients.keys()]).toEqual(["toolbox-hub", "claude-code-toolbox", "claude-code-admin", "admin-mcp"])
-  expect(id.state.links).toEqual(new Set(["toolbox-hub https://id.example/api/admin", "claude-code-admin https://admin-mcp.example/mcp", "admin-mcp https://id.example/api/admin", "admin-mcp https://toolbox.example/admin"]))
+  expect([...id.state.clients.keys()]).toEqual(["toolbox-hub", "claude-code-toolbox", "claude-code-admin", "admin-mcp", "standalone-hub"])
+  expect(id.state.links).toEqual(new Set(["toolbox-hub https://id.example/api/admin", "claude-code-admin https://admin-mcp.example/mcp", "admin-mcp https://id.example/api/admin", "admin-mcp https://toolbox.example/admin", "standalone-hub https://id.example/api/admin"]))
+  // The standalone server's client reads ID only: platform:read, on ID's admin API.
+  expect(id.state.clients.get("standalone-hub")!.scopes).toEqual(["platform:read"])
+  expect(id.state.capabilities).toContain(JSON.stringify([id.platform, "standalone-hub", "https://id.example/api/admin", "client_credentials"]))
   expect(memory.writes).toEqual(secrets)
   expect(memory.values[secrets[0]!]).toBe(id.state.clients.get("toolbox-hub")!.secret!)
   expect(memory.values[secrets[1]!]).toBe(id.state.clients.get("admin-mcp")!.secret!)
+  expect(memory.values[secrets[2]!]).toBe(id.state.clients.get("standalone-hub")!.secret!)
   expect(result).toEqual({ platform: id.platform, ownerGroup: id.state.groups.get("answerable-owner")! })
   // It ends with what an operator does next, and never prints the token or a secret.
   const printed = lines.join("\n")

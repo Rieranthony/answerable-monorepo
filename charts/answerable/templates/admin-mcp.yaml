@@ -1,4 +1,4 @@
-{{- /* The admin MCP. Configuration: apps/web/content/docs/admin/index.mdx. It waits at zero replicas until ops register has created its machine client in ID. */ -}}
+{{- /* The admin MCP, from the mcps image. Configuration: apps/web/content/docs/admin/index.mdx. It waits at zero replicas until ops register has created its machine client in ID. */ -}}
 {{- define "answerable.adminMcpEnv" -}}
 - name: ADMIN_ID_ISSUER
   value: {{ include "answerable.idUrl" . | quote }}
@@ -17,7 +17,8 @@
 {{ include "answerable.server" (dict
   "root" .
   "component" "admin-mcp"
-  "image" "admin-mcp"
+  "image" "mcps"
+  "command" (list "bun" "mcps/admin/src/server.ts")
   "port" 47520
   "values" .Values.adminMcp
   "host" .Values.hostnames.adminMcp

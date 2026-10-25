@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url"
 import { Client, Pool } from "pg"
-import { roleLock } from "../names"
+import { roleLock, sharedMcps } from "../names"
 import type { McpLogins, Sql } from "../provision"
 import { mcpPostgresTestConfig } from "../testing"
 
@@ -11,7 +11,7 @@ export const mcpsUrl = mcpPostgresTestConfig.read(process.env).MCPS_TEST_DATABAS
 export const clusterUrl = Object.assign(new URL(mcpsUrl), { pathname: "/postgres" }).href
 
 /** The local logins `ensureLocalMcpDatabases` makes, whose password is `answerable`. */
-export const localLogins: McpLogins = { migrator: "answerable_mcps_migrator", toolbox: "answerable_mcps_toolbox", standalone: "answerable_mcps_standalone" }
+export const localLogins: McpLogins = sharedMcps.logins
 
 /** `url` with `login` and its password in place of the superuser's. */
 export function as(login: string, password = "answerable", url = mcpsUrl) {

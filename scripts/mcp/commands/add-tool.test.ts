@@ -115,7 +115,7 @@ test("it writes the tool and its test, adds the import and the entry above the m
     "ok      migration  drizzle/0001_notes.sql",
     "ok      manifest   mcps/acme/manifest.json: 4 tests pass",
     "ok      generate   rewrote charts/answerable/mcps.json",
-    "ok      check      typecheck 9 files; lint 9 files; test 4 pass, 0 fail; manifest current; generated current; scan 9 files, no role switch",
+    "ok      check      typecheck 9 files; lint 9 files; test 4 pass, 0 fail; manifest current; generated current; scan 9 files, no role switch; budget no MCP has a database of its own",
     "",
     "Next:",
     "  git add mcps/acme charts/answerable/mcps.json",

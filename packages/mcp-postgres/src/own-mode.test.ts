@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { sql } from "drizzle-orm"
+import { drizzle } from "drizzle-orm/node-postgres"
 import { Client, Pool } from "pg"
 import { mcpDatabase } from "./mcp-database"
 import { migrateMcp } from "./migrate-mcp"
 import { provisionOwnMcp } from "./provision"
+import { assertOwnLogin } from "./serving-login"
 import { database } from "./test/database"
 import * as fixtureA from "./test/fixtures/mpgfixa"
 import { projects } from "./test/fixtures/mpgfixa"
@@ -82,4 +84,27 @@ test("served as the runtime login itself, with no role taken, in the MCP's schem
   expect(await asOrganisation(second, () => db.select().from(projects))).toEqual([])
   expect(await refusalOf(asOrganisation(second, () => db.insert(projects).values({ organisation_id: first, name: "Planted" })))).toBe('new row violates row-level security policy for table "projects"')
   expect(await refusalOf(asOrganisation(first, () => db.execute(sql`create table mpgfixa.extra (id int)`)))).toBe("permission denied for schema mpgfixa")
+})
+
+test("its runtime login may serve it: no attribute but login, no membership, owns nothing, no CREATE or TEMPORARY on the database, USAGE on its schema", async () => {
+  const db = drizzle({ client: pool })
+  await assertOwnLogin(db, { name: "mpgfixa" })
+  const refusal = (problems: string) => `Database role ${runtime.name} may not serve the own MCP mpgfixa: ${problems}. Serve as its runtime login, which provisioning made`
+  const database = "answerable_mcp_postgres_test_ownmode"
+  /** Make `change`, expect the assertion to refuse with `problems`, then `undo`, and expect it to pass again. */
+  async function refused(change: string, problems: string, undo: string, on: Pool | Client = admin) {
+    await on.query(change)
+    try {
+      await expect(assertOwnLogin(db, { name: "mpgfixa" })).rejects.toThrow(refusal(problems))
+    } finally {
+      await on.query(undo)
+    }
+    await assertOwnLogin(db, { name: "mpgfixa" })
+  }
+  await refused(`alter role ${runtime.name} createdb`, "has CREATEDB", `alter role ${runtime.name} nocreatedb`)
+  await refused(`grant pg_read_all_data to ${runtime.name}`, "is a member of pg_read_all_data", `revoke pg_read_all_data from ${runtime.name}`)
+  await refused(`grant create, temporary on database ${database} to ${runtime.name}`, `holds CREATE on database ${database}; holds TEMPORARY on database ${database}`, `revoke create, temporary on database ${database} from ${runtime.name}`)
+  await asOwner(client => refused(`revoke usage on schema mpgfixa from ${runtime.name}`, "lacks USAGE on schema mpgfixa", `grant usage on schema mpgfixa to ${runtime.name}`, client))
+  await asOwner(client => refused(`grant create on schema mpgfixa to ${runtime.name}`, "holds CREATE on schema mpgfixa", `revoke create on schema mpgfixa from ${runtime.name}`, client))
+  await refused(`create table mpgfix_owned (id int); alter table mpgfix_owned owner to ${runtime.name}`, "owns table mpgfix_owned", "drop table mpgfix_owned", scratch.db.$client)
 })

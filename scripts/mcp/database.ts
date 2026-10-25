@@ -2,7 +2,7 @@
 // provisioned and migrated as the deployment does it (@answerable/mcp-postgres).
 import { existsSync, readdirSync } from "node:fs"
 import { dirname, join } from "node:path"
-import { ensureLocalMcpDatabases, migrateMcp, provisionMcps, provisionOwnMcp, withoutSchemaCreation, type Grant, type ServedBy } from "@answerable/mcp-postgres"
+import { ensureLocalMcpDatabases, migrateMcp, ownMcpDatabase, provisionMcps, provisionOwnMcp, sharedMcps, withoutSchemaCreation, type Grant, type ServedBy } from "@answerable/mcp-postgres"
 import { is } from "drizzle-orm"
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core"
 import { Client } from "pg"
@@ -41,7 +41,6 @@ export async function generateMigration(exec: Exec, root: string, name: string, 
 }
 
 const servedBy = { toolbox: ["toolbox"], standalone: ["standalone"], both: ["toolbox", "standalone"] } satisfies Record<Declaration["serve"], ServedBy[]>
-const logins = { migrator: "answerable_mcps_migrator", toolbox: "answerable_mcps_toolbox", standalone: "answerable_mcps_standalone" }
 
 // A Postgres that does not answer, named, with how to start it.
 const unreachable = (url: URL) => (error: Error & { code?: string }) => {
@@ -78,13 +77,12 @@ export async function migrateLocal(root: string, { name, serve, database }: Decl
   const done = `${migrations ? "migrated" : "provisioned; no migration yet"}${grants ? ", with src/db/grants.ts" : ""}`
   if (database === "shared") {
     await connected(admin, async client => {
-      await provisionMcps(sqlOf(client), { mcps: [{ name, servedBy: servedBy[serve] }], logins })
+      await provisionMcps(sqlOf(client), { mcps: [{ name, servedBy: servedBy[serve] }], logins: sharedMcps.logins })
       if (migrations) await migrateMcp({ client, name, folder, mode: "shared", grants })
     })
     return `schema ${name} in ${admin.pathname.slice(1)}: ${done}`
   }
-  const own = `answerable_mcp_${name}`
-  const [owner, runtime] = [`${own}_owner`, `${own}_runtime`]
+  const { database: own, owner, runtime } = ownMcpDatabase(name)
   await connected(cluster, async client => {
     for (const login of [owner, runtime]) {
       if (!(await client.query("select 1 from pg_roles where rolname = $1", [login])).rowCount) await client.query(`create role ${login} login password 'answerable' noinherit`)

@@ -14,16 +14,18 @@ describe("environments", () => {
     expect(() => parseEnvironment(undefined)).toThrow("--environment must be one of staging, production")
   })
 
-  test("derives the three hostnames from the environment's zone", () => {
+  test("derives the four hostnames from the environment's zone", () => {
     expect(hostsFor("staging")).toEqual({
       id: "id.answerable-staging.uk",
       toolbox: "toolbox.answerable-staging.uk",
       admin: "admin-mcp.answerable-staging.uk",
+      mcp: "mcp.answerable-staging.uk",
     })
     expect(hostsFor("production")).toEqual({
       id: "id.answerable.org",
       toolbox: "toolbox.answerable.org",
       admin: "admin-mcp.answerable.org",
+      mcp: "mcp.answerable.org",
     })
   })
 

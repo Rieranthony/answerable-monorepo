@@ -1,9 +1,11 @@
-// bun mcp check [mcp]: the MCP's typecheck, lint and tests, then its manifest, the generated files and the role-switching scan.
+// bun mcp check [mcp]: the MCP's typecheck, lint and tests, then its manifest, the generated files, the role-switching scan and the
+// connection budget.
 import { join } from "node:path"
+import { budget, connectionsAtCeilings } from "../connections"
 import { generate } from "../generate"
 import { jsonFlag, Refusal, runSteps, sh, type Command, type Io, type Step } from "../io"
 import { roleSwitching } from "../role-switching"
-import { findRoot, resolveMcp } from "../workspace"
+import { declarations, findRoot, resolveMcp } from "../workspace"
 
 // What a test run reports: its counts, and the coverage of every file when the workspace gates it.
 function testSummary(output: string) {
@@ -52,8 +54,25 @@ function checkSteps(io: Io, root: string, name: string): { steps: Step[]; next: 
           return `${files} files, no role switch`
         },
       },
+      { name: "budget", fix, run: async () => budgetOf(io, await declarations(root)) },
     ],
   }
+}
+
+/**
+ * The connection budget, with every MCP declared: nothing to say while none has a database of its own, since the shared ones add no pool;
+ * otherwise each environment's connections at the autoscalers' ceilings, and a warning on stderr, which --json leaves alone, past the limit.
+ */
+function budgetOf(io: Io, mcps: Awaited<ReturnType<typeof declarations>>) {
+  const own = mcps.filter(mcp => mcp.database === "own").length
+  if (!own) return "no MCP has a database of its own"
+  const at = (["staging", "production"] as const).map(environment => ({ environment, ...connectionsAtCeilings(mcps, environment) }))
+  const over = at.filter(({ total }) => total > budget.maxConnections)
+  const figures = at.map(({ environment, total, own: theirs }) => `${environment} ${total} (${theirs} theirs)`).join(", ")
+  if (over.length) {
+    io.stderr.write(`Warning: with ${own} MCP${own === 1 ? "" : "s"} of their own database, the servers' pools at the autoscalers' ceilings reach ${figures} connections, past the ${budget.maxConnections} of PostgreSQL's default max_connections; Civo's limit is not measured yet. Prefer database shared, or see docs/12-deployment.md (Database)\n`)
+  }
+  return `${own} own MCP${own === 1 ? "" : "s"}: ${figures} connections at the ceilings, ${over.length ? "past" : "within"} ${budget.maxConnections}`
 }
 
 /** The check, as one step of a bigger command: each of its steps in turn, their details joined; the first failure names its step. */

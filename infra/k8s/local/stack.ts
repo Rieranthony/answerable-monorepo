@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import pipelineImages from "../../pipeline/images.json"
 import { buildDependencies, charts, helmEnv, repo } from "../helm"
 
 /** The kind cluster's name: one stack per machine at a time. */
@@ -8,17 +9,20 @@ const cluster = "answerable-local"
 const here = join(repo, "infra/k8s/local")
 
 /** The public names: 127.0.0.1 on the laptop through public DNS, the edge inside the cluster through /etc/hosts. */
-export const hosts = { id: "id.127-0-0-1.sslip.io", toolbox: "toolbox.127-0-0-1.sslip.io", adminMcp: "admin-mcp.127-0-0-1.sslip.io" }
+export const hosts = { id: "id.127-0-0-1.sslip.io", toolbox: "toolbox.127-0-0-1.sslip.io", adminMcp: "admin-mcp.127-0-0-1.sslip.io", mcp: "mcp.127-0-0-1.sslip.io" }
 export const origin = (host: string) => `https://${host}:48443`
 
-/** The four images, built from the repository root and loaded into the cluster under the local tag. */
-export const images = [
-  { name: "id", dockerfile: "apps/id/Dockerfile" },
-  { name: "toolbox", dockerfile: "mcps/toolbox/Dockerfile" },
-  { name: "admin-mcp", dockerfile: "mcps/admin/Dockerfile" },
-  { name: "ops", dockerfile: "infra/ops/Dockerfile" },
-] as const
+/** The images the pipeline builds (infra/pipeline/images.json), built from the repository root and loaded into the cluster under the local tag. */
+export const images = pipelineImages
 export const image = (name: string) => `ghcr.io/rieranthony/answerable/${name}:local`
+
+/** The MCPs the chart renders from charts/answerable/mcps.json, which every proof below reads rather than naming one. */
+export const declared = (JSON.parse(readFileSync(join(charts, "answerable/mcps.json"), "utf8")) as { mcps: { name: string; serve: "toolbox" | "standalone" | "both"; database: "shared" | "own" }[] }).mcps
+/** The MCPs the Toolbox mounts and those the standalone server serves. */
+export const mounted = declared.filter(mcp => mcp.serve !== "standalone")
+export const servedAlone = declared.filter(mcp => mcp.serve !== "toolbox")
+/** The servers the register Job starts: the standalone server's only while it serves an MCP. */
+export const registered = ["toolbox", "admin-mcp", ...(servedAlone.length ? ["standalone"] : [])]
 
 /** The company directory's port on the host (apps/id/scripts/stack-directories.ts). */
 const directoryPort = 47_710
@@ -79,7 +83,7 @@ async function makeCertificates(directory: string) {
     stackCa: stack.cert,
     originPullCa: originPull.cert,
     databaseCa: database.cert,
-    /** The three public names: origin-tls, which Traefik serves, and the edge's own (edge-tls). */
+    /** The public names: origin-tls, which Traefik serves, and the edge's own (edge-tls). */
     publicNames: await issue("public-names", hosts.id, stack, ["extendedKeyUsage = serverAuth", `subjectAltName = ${Object.values(hosts).map(host => `DNS:${host}`).join(",")}`]),
     /** What the edge presents to Traefik, as Cloudflare does. */
     originPullClient: await issue("origin-pull-client", "origin-pull.local", originPull, ["extendedKeyUsage = clientAuth"]),
@@ -301,7 +305,7 @@ export async function startStack() {
   try {
     const revision = (await exec(["git", "rev-parse", "HEAD"])).stdout.trim()
     // The images build while the cluster and its platform come up.
-    const built = step("build the four images", () => Promise.all(images.map(({ name, dockerfile }) =>
+    const built = step("build the images", () => Promise.all(images.map(({ name, dockerfile }) =>
       exec(["docker", "build", "-f", dockerfile, "-t", image(name), "--build-arg", `REVISION=${revision}`, "."]))))
     built.catch(() => {})
     await step("create the kind cluster", async () => {
@@ -369,10 +373,10 @@ export async function startStack() {
       ])
       await release(["ops.bootstrap=true"])
     })
-    // As deploy.ts run-job register does: one upgrade with the Job switched on. The Job starts the two servers it registered.
+    // As deploy.ts run-job register does: one upgrade with the Job switched on. The Job starts the servers it registered.
     await step("run the ops register", async () => {
       await release(["ops.register=true"])
-      for (const deployment of ["toolbox", "admin-mcp"]) await kubectl(["rollout", "status", "-n", "answerable", `deploy/${deployment}`, "--timeout=300s"])
+      for (const deployment of registered) await kubectl(["rollout", "status", "-n", "answerable", `deploy/${deployment}`, "--timeout=300s"])
     })
     return { kubectl, helm, release, diagnose: (why: string) => diagnose(kubectl, helmOnly, why), kubeconfig, readSecret, secrets, stop, dockerGateway, podHost, directory: directory.directory, certificates, stackCa: certificates.stackCa, originPullCert: certificates.originPullClient, edgeCert: certificates.publicNames }
   } catch (error) {

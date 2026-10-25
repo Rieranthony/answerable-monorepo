@@ -41,7 +41,7 @@ test("bun mcp new, check, add tool for a read and a mutation, list and a second 
 
   const checked = await bun("mcp", "check", name)
   expect(checked.code, checked.output).toBe(0)
-  expect(steps(checked.output)).toEqual(["ok typecheck", "ok lint", "ok test", "ok manifest", "ok generated", "ok scan"])
+  expect(steps(checked.output)).toEqual(["ok typecheck", "ok lint", "ok test", "ok manifest", "ok generated", "ok scan", "ok budget"])
 
   const listed = await bun("mcp", "add", "tool", name, "notes.list", "--description", "List the notes of the caller's organisation, newest first, 20 per page.")
   expect(listed.code, listed.output).toBe(0)
@@ -53,7 +53,8 @@ test("bun mcp new, check, add tool for a read and a mutation, list and a second 
   const all = await bun("mcp", "list", "--json")
   // bun prints the script it runs on stderr, after the JSON on stdout. Tools are sorted by identity, and the name starts with t.
   expect(JSON.parse(all.output.slice(0, all.output.lastIndexOf("}") + 1)).mcps).toContainEqual({
-    name, serve: "toolbox", database: "shared", description, tools: ["notes.add", "notes.list", `${name}.status`], urls: { local: ["http://localhost:47400/mcp"] },
+    name, serve: "toolbox", database: "shared", description, tools: ["notes.add", "notes.list", `${name}.status`],
+    urls: { local: ["http://localhost:47400/mcp"], staging: ["https://toolbox.answerable-staging.uk/mcp"], production: ["https://toolbox.answerable.org/mcp"] },
   })
   const again = await bun("mcp", "new", name, "--description", description, "--serve", "toolbox")
   expect(again.code).toBe(2)

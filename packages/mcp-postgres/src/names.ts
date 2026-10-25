@@ -26,3 +26,16 @@ export function mcpRoles(prefix: string, name: string): { owner: string; runtime
   if (!/^[a-z][a-z0-9_]*$/.test(prefix) || !identifier.test(roles.owner)) throw new Error(`Role prefix "${prefix}" must be lowercase letters, digits and underscores, short enough for ${roles.owner} to be a role name`)
   return roles
 }
+
+/** The shared MCP database and its three logins, as the deployment's bootstrap and the development Postgres name them. */
+export const sharedMcps = {
+  database: "answerable_mcps",
+  logins: { migrator: "answerable_mcps_migrator", toolbox: "answerable_mcps_toolbox", standalone: "answerable_mcps_standalone" },
+} as const
+
+/** An own MCP's database, `answerable_mcp_<name>`, and its two logins: its owner, `…_owner`, which migrates it, and its runtime login, `…_runtime`. */
+export function ownMcpDatabase(name: string): { database: string; owner: string; runtime: string } {
+  assertMcpName(name)
+  const database = `answerable_mcp_${name}`
+  return { database, owner: `${database}_owner`, runtime: `${database}_runtime` }
+}

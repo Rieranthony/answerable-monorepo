@@ -1,6 +1,6 @@
 // The ops commands behind cli.ts, configured from OPS_* variables (infra/ops/README.md).
 import { defineConfig, type Field } from "@answerable/config"
-import { connect } from "@answerable/mcp-postgres"
+import { connect, declaredMcps } from "@answerable/mcp-postgres"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -21,11 +21,22 @@ type Deps = {
   error: (line: string) => void
 }
 
-/** The administrative connection: a `pg` pool through `connect`, so the URL's `sslrootcert` is verified (D5), one connection, statements outside a transaction. */
+/**
+ * The administrative connection: a `pg` pool through `connect`, so the URL's `sslrootcert` is verified (D5), and one connection of it, held
+ * from the first statement to `close`, so that a transaction's statements all reach it.
+ */
 export function pgSql(url: string) {
   const { $client: pool } = connect(url, { max: 1 })
-  const sql: Sql = async (text, params = []) => (await pool.query(text, params)).rows
-  return { sql, close: () => pool.end() }
+  const acquire = () => pool.connect()
+  let client: ReturnType<typeof acquire> | undefined
+  const sql: Sql = async (text, params = []) => (await (await (client ??= acquire())).query(text, params)).rows
+  return {
+    sql,
+    async close() {
+      ;(await client?.catch(() => undefined))?.release()
+      await pool.end()
+    },
+  }
 }
 
 const COMMANDS = ["bootstrap", "register", "make-admin"] as const
@@ -40,6 +51,7 @@ const opsFields = {
     source: "cluster",
   },
   OPS_DATABASE_SSLROOTCERT: { schema: nonEmpty, fallback: "/etc/ssl/db/ca.pem", doc: "bootstrap: where the chart mounts the database's certificate authority, for the services' URLs" },
+  OPS_MCPS: { schema: declaredMcps, doc: "bootstrap: the MCPs charts/answerable/mcps.json declares, as JSON [{ name, serve, database }], whose schemas, roles and own databases it provisions", source: "chart" },
   OPS_ID_URL: { schema: origin, doc: "register and make-admin: ID's origin", source: "chart" },
   // A staff token when one is given (the chart reads it from the ops-staff-token Secret), else ID's root secret.
   OPS_ID_TOKEN: { schema: nonEmpty.optional(), secret: true, doc: "register: a staff token, used over OPS_ID_ROOT_SECRET once ID's root secret is locked", source: "operator" },
@@ -69,7 +81,7 @@ const pick = <Name extends keyof typeof opsFields>(...names: Name[]) => Object.f
 
 /** Every variable the ops Jobs read, for the inventory; each command reads its own below. */
 export const opsConfig = defineConfig("ops", opsFields)
-const bootstrapConfig = defineConfig("ops", pick("OPS_DATABASE_ADMIN_URL", "OPS_DATABASE_SSLROOTCERT"))
+const bootstrapConfig = defineConfig("ops", pick("OPS_DATABASE_ADMIN_URL", "OPS_DATABASE_SSLROOTCERT", "OPS_MCPS"))
 const registerConfig = defineConfig(
   "ops",
   pick("OPS_ID_URL", "OPS_ID_TOKEN", "OPS_ID_ROOT_SECRET", "OPS_TOOLBOX_URL", "OPS_ADMIN_MCP_URL", "OPS_PLATFORM_SLUG", "OPS_CLAUDE_CALLBACK_PORT", "OPS_START_DEPLOYMENTS", "OPS_STAFF_DOMAIN", "OPS_ENTRA_TENANT"),
@@ -87,9 +99,9 @@ const present = (env: Record<string, string | undefined>) => Object.fromEntries(
 
 /**
  * bootstrap: the database's certificate authority (the ConfigMap's, or fetched and written on first use), then the
- * databases and logins over a connection that verifies the database against it. The authority reaches that one
- * connection as a file only its owner reads, deleted afterwards; the services' URLs name `sslRootCert`, where the chart
- * mounts the ConfigMap.
+ * databases, logins and MCPs over connections that verify the database against it, the administrative URL's and one to
+ * each database it provisions MCPs in. The authority reaches them as a file only its owner reads, deleted afterwards; the
+ * services' URLs name `sslRootCert`, where the chart mounts the ConfigMap.
  */
 async function runBootstrap(config: ReturnType<typeof bootstrapConfig.read>, env: Record<string, string | undefined>, deps: Deps) {
   const kube = deps.kubernetes(env)
@@ -103,8 +115,9 @@ async function runBootstrap(config: ReturnType<typeof bootstrapConfig.read>, env
     writeFileSync(file, pem, { mode: 0o600 })
     admin.searchParams.set("sslrootcert", file)
     const database = deps.database(admin.toString())
+    const to = (name: string) => deps.database(Object.assign(new URL(admin), { pathname: `/${name}` }).toString())
     try {
-      await bootstrap({ sql: database.sql, store: createKubernetesSecretStore(kube), host, port, sslRootCert: config.OPS_DATABASE_SSLROOTCERT, log: deps.log })
+      await bootstrap({ sql: database.sql, database: to, mcps: config.OPS_MCPS, store: createKubernetesSecretStore(kube), host, port, sslRootCert: config.OPS_DATABASE_SSLROOTCERT, log: deps.log })
     } finally {
       await database.close()
     }

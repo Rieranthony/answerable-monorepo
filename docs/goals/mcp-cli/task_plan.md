@@ -75,7 +75,7 @@ The order is M1 to M9, one at a time. `mcp:test:e2e` and `infra:test` (M2, M4, M
 5. **Path routing through Traefik and Cloudflare on `mcp.<zone>`,** the well-known path included. The kind stack in M5, staging at the first ship.
 6. **A machine principal creating resources and clients in ID after the root lock.** Not yet verified (F5). M6's first test.
 7. **`run-job` checking out `main` ahead of the deployed commit** (F6). M5 fixes it.
-8. **Civo's `max_connections`,** still unmeasured (B7a). The first staging ship records it.
+8. **Civo's `max_connections`,** still unmeasured (B7a). M5 measured the services' ceiling at 230 connections in staging and 320 in production at the autoscalers' maximums, against PostgreSQL's default of 100; `bun mcp check` warns from those numbers. Before the first staging tag of #13, read `max_connections` on the staging database (a one-line query through the ops Job's admin login). If it is near 100, cap the pool sizes (ID's `DATABASE_POOL_MAX`, the MCP pools) before shipping.
 
 ## Errors encountered
 

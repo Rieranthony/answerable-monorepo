@@ -66,7 +66,7 @@ export function fakeIdAdmin({ rootSecret = "root-secret", platformSlug = "answer
   const state = {
     rootLocked,
     resources: new Set<string>(),
-    clients: new Map<string, { secret?: string }>(),
+    clients: new Map<string, { secret?: string; scopes?: unknown }>(),
     links: new Set<string>(),
     capabilities: new Set<string>(),
     entitlements: new Set<string>(),
@@ -92,7 +92,7 @@ export function fakeIdAdmin({ rootSecret = "root-secret", platformSlug = "answer
       const clientId = String(body.clientId)
       if (state.clients.has(clientId)) return problem(409, "conflict")
       const secret = body.tokenEndpointAuthMethod === "client_secret_basic" ? `secret-of-${clientId}-${crypto.randomUUID()}` : undefined
-      state.clients.set(clientId, { secret })
+      state.clients.set(clientId, { secret, scopes: body.clientCredentialsScopes })
       return Response.json({ clientId, ...(secret ? { clientSecret: secret } : {}) }, { status: 201 })
     }
     if (method === "POST" && (match = path.match(/^\/clients\/([^/]+)\/rotate-secret$/))) {

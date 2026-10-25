@@ -15,28 +15,29 @@ images:
   id:
     repository: ghcr.io/rieranthony/answerable/id
     digest: ""
-  toolbox:
-    repository: ghcr.io/rieranthony/answerable/toolbox
-    digest: ""
-  admin-mcp:
-    repository: ghcr.io/rieranthony/answerable/admin-mcp
+  # The Toolbox, the admin MCP, the standalone server, their migrations and every MCP (mcps/Dockerfile): each Deployment and Job names its
+  # command.
+  mcps:
+    repository: ghcr.io/rieranthony/answerable/mcps
     digest: ""
   # The ops Jobs render only while this names a repository.
   ops:
     repository: ghcr.io/rieranthony/answerable/ops
     digest: ""
 
-# The public origins are https://<hostname>, with :<publicPort> when it is not 443 (the kind stack's 48443).
+# The public origins are https://<hostname>, with :<publicPort> when it is not 443 (the kind stack's 48443). mcp is the standalone server's:
+# each standalone or both MCP of mcps.json is the resource https://<mcp>/<name>/mcp.
 hostnames:
   id: id.answerable.org
   toolbox: toolbox.answerable.org
   adminMcp: admin-mcp.answerable.org
+  mcp: mcp.answerable.org
 publicPort: ""
 
 ingress:
   # Traefik's IngressClass (charts/platform, D31).
   className: traefik
-  # The Secret (type kubernetes.io/tls) every Ingress serves, one certificate for the three hostnames: Cloudflare's Origin
+  # The Secret (type kubernetes.io/tls) every Ingress serves, one certificate for the four hostnames: Cloudflare's Origin
   # CA certificate, which Terraform writes in this namespace (the kind stack writes one from its own CA). The Ingresses
   # name no TLS option: Traefik's default one, which charts/platform renders here, demands Cloudflare's origin-pull
   # client certificate (D19).
@@ -113,6 +114,20 @@ adminMcp:
   runtimeRole: answerable_admin_runtime
   env: {}
 
+# The standalone server (templates/standalone.yaml), rendered only while mcps.json has a standalone or both MCP: there is no switch.
+standalone:
+  replicas: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+  clientId: standalone-hub
+  runtimeRole: answerable_standalone_runtime
+  env: {}
+
 migrations:
   resources:
     requests: { cpu: 100m, memory: 128Mi }
@@ -121,10 +136,11 @@ migrations:
   activeDeadlineSeconds: 600
 
 # The ops image's Jobs (infra/ops/README.md): bootstrap writes the database's certificate authority on first use, creates
-# the databases and their logins and writes their Secrets before the migrations; register registers the Toolbox and the
-# admin MCP in ID after the release, writes their client Secrets and starts them; make-admin makes adminEmail's member, who
-# has signed in once, an owner and a platform administrator, which locks ID's root secret. The deploy switches bootstrap
-# on every time and register on the first install; deploy.ts run-job switches one on for one upgrade.
+# the databases and their logins, the MCPs' schemas and roles from mcps.json, and writes their Secrets before the migrations;
+# register registers the Toolbox and the admin MCP in ID after the release, mints the standalone server's client, writes
+# their client Secrets and starts them; make-admin makes adminEmail's member, who has signed in once, an owner and a platform
+# administrator, which locks ID's root secret. The deploy switches bootstrap on every time and register when a client Secret
+# is missing; deploy.ts run-job switches one on for one upgrade.
 ops:
   bootstrap: false
   register: false

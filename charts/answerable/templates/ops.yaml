@@ -1,19 +1,23 @@
 {{- /*
 The ops image's Jobs (infra/ops/README.md), each switched on for one upgrade by the pipeline (deploy.ts):
 - bootstrap, before the migrations, writes the database's certificate authority to the ConfigMap postgres-ca on first
-  use, creates the databases and their logins with the postgres-admin login and writes the URL Secrets the migrations
-  and the services read;
-- register, after the release and once ID is up, registers the Toolbox and the admin MCP in ID, writes their client
-  Secrets and starts the two servers, which wait at zero replicas until their Secret exists (_server.tpl), and, with
-  id.staffDomain and id.entraTenant, connects the staff domain and directory to the platform organisation;
+  use, creates the databases and their logins with the postgres-admin login, provisions each MCP of mcps.json (OPS_MCPS):
+  its schema and roles in answerable_mcps, or its own database and logins, and writes the URL Secrets the migrations and
+  the services read;
+- register, after the release and once ID is up, registers the Toolbox and the admin MCP in ID, mints the standalone
+  server's client, writes their client Secrets and starts the servers, which wait at zero replicas until their Secret
+  exists (_server.tpl), and, with id.staffDomain and id.entraTenant, connects the staff domain and directory to the
+  platform organisation;
 - make-admin, after register, puts the first staff member, who has signed in once, in the owner and platform-admins
   groups with ID's root secret, which locks that secret.
 The ServiceAccount of bootstrap and register may read and patch exactly the Secrets and, for bootstrap, the ConfigMap
-their Jobs own and, for register, the two Deployments it starts. make-admin calls only ID and mounts no token. Their
-NetworkPolicy is in network-policies.yaml.
+their Jobs own, the Secrets of each own MCP of mcps.json among them, and, for register, the Deployments it starts.
+make-admin calls only ID and mounts no token. Their NetworkPolicy is in network-policies.yaml.
 */ -}}
 {{- if .Values.images.ops.repository }}
 {{- $scope := dict "root" . "component" "ops" }}
+{{- $mcps := fromJsonArray (include "answerable.mcps" .) }}
+{{- $standalone := fromJsonArray (include "answerable.standaloneMcps" .) | empty | not }}
 {{- $switches := dict "bootstrap" .Values.ops.bootstrap "register" .Values.ops.register "make-admin" .Values.ops.makeAdmin }}
 {{- if .Values.ops.makeAdmin }}
 {{- $_ := required "ops.makeAdmin needs ops.adminEmail: the email of the staff member who signed in once" .Values.ops.adminEmail }}
@@ -23,11 +27,17 @@ NetworkPolicy is in network-policies.yaml.
 {{- $secrets := list }}
 {{- if .Values.ops.bootstrap }}
 {{- $phases = concat $phases (list "pre-install" "pre-upgrade") }}
-{{- $secrets = concat $secrets (list "id-database-owner" "id-database" "toolbox-database-owner" "toolbox-database" "admin-database-owner" "admin-database") }}
+{{- /* The Secrets bootstrap writes, as infra/ops/src/bootstrap.ts's databasesFor names them. */}}
+{{- $secrets = concat $secrets (list "id-database-owner" "id-database" "toolbox-database-owner" "toolbox-database" "admin-database-owner" "admin-database" "standalone-database-owner" "standalone-database" "mcps-database-owner" "toolbox-mcps-database" "standalone-mcps-database") }}
+{{- range $mcps }}
+{{- if eq .database "own" }}
+{{- $secrets = concat $secrets (list (printf "mcp-%s-database-owner" .name) (printf "mcp-%s-database" .name)) }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- if .Values.ops.register }}
 {{- $phases = concat $phases (list "post-install" "post-upgrade") }}
-{{- $secrets = concat $secrets (list "toolbox-id-client" "admin-id-client") }}
+{{- $secrets = concat $secrets (list "toolbox-id-client" "admin-id-client" "standalone-id-client") }}
 {{- end }}
 {{- range $kind := list "ServiceAccount" "Role" "RoleBinding" }}
 ---
@@ -68,7 +78,7 @@ rules:
   {{- if $.Values.ops.register }}
   - apiGroups: [apps]
     resources: [deployments]
-    resourceNames: [toolbox, admin-mcp]
+    resourceNames: {{ toJson (concat (list "toolbox" "admin-mcp") (ternary (list "standalone") (list) $standalone)) }}
     verbs: [get, patch]
   {{- end }}
 {{- else }}
@@ -132,6 +142,8 @@ spec:
             # a Secret Terraform writes. Bootstrap verifies the database against the ConfigMap postgres-ca, which it
             # writes on first use.
             {{- include "answerable.secretEnv" (dict "name" "OPS_DATABASE_ADMIN_URL" "secret" "postgres-admin" "key" "OPS_DATABASE_ADMIN_URL") | nindent 12 }}
+            - name: OPS_MCPS
+              value: {{ toJson $mcps | quote }}
             {{- else }}
             {{- if eq $job "register" }}
             - name: OPS_NAMESPACE

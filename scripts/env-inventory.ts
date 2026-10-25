@@ -11,7 +11,7 @@ import { adminTestDatabaseConfig } from "../mcps/admin/src/test/database"
 import { toolboxConfig } from "../mcps/toolbox/src/environment"
 import { toolboxMigrationConfig } from "../mcps/toolbox/scripts/env"
 import { toolboxTestDatabaseConfig } from "../mcps/toolbox/src/test/database"
-import { standaloneMigrationConfig } from "../mcps/standalone/scripts/env"
+import { mcpsMigrationConfig, standaloneMigrationConfig } from "../mcps/standalone/scripts/env"
 import { standaloneConfig } from "../mcps/standalone/src/environment"
 import { standaloneTestDatabaseConfig } from "../mcps/standalone/src/test/database"
 import { mcpPostgresTestConfig } from "../packages/mcp-postgres/src/testing"
@@ -35,6 +35,7 @@ const groups: Group[] = [
   defined(adminTestDatabaseConfig, "mcps/admin/src/test/database.ts, for the admin MCP's tests"),
   defined(standaloneConfig, "mcps/standalone/src/environment.ts, read from the root .env by bun run standalone:dev"),
   defined(standaloneMigrationConfig, "mcps/standalone/scripts/env.ts, read by scripts/migrate.ts"),
+  defined(mcpsMigrationConfig, "mcps/standalone/scripts/env.ts, read by scripts/migrate-mcps.ts, the Job mcps-migrate; each own MCP adds MCP_<NAME>_DATABASE_MIGRATION_URL"),
   defined(standaloneTestDatabaseConfig, "mcps/standalone/src/test/database.ts, for the standalone server's tests"),
   defined(opsConfig, "infra/ops/src/commands.ts, set by charts/answerable for the bootstrap, register and make-admin Jobs (infra/ops/README.md)"),
   defined(mcpPostgresTestConfig, "packages/mcp-postgres/src/testing.ts, for the package's own tests and every MCP's (testMcpDatabase)"),

@@ -1,8 +1,9 @@
 {{/*
 One server: its ServiceAccount, Deployment, Service, Ingress, HorizontalPodAutoscaler and PodDisruptionBudget.
-Takes root, component (the resource name), image, port, values (its block of values), host, env (rendered variables),
-readiness (the readiness path), liveness (an HTTP path, or empty for a TCP check), clientSecret (the Secret holding its
-ID client secret, or empty) and podAnnotations (optional). Traefik streams responses as they come, which the MCP
+Takes root, component (the resource name), image, command (optional: the servers of the mcps image each name theirs), port,
+values (its block of values), host, paths (optional: the Ingress's Prefix paths on host, / unless given), env (rendered
+variables), readiness (the readiness path), liveness (an HTTP path, or empty for a TCP check), clientSecret (the Secret holding
+its ID client secret, or empty) and podAnnotations (optional). Traefik streams responses as they come, which the MCP
 endpoints' server-sent events need. The Ingress serves the shared certificate ingress.tlsSecret and names no TLS option:
 Traefik's default one, which charts/platform renders, demands Cloudflare's origin-pull certificate.
 A server whose client Secret does not exist yet waits at zero replicas rather than failing to start: the ops register Job
@@ -68,6 +69,9 @@ spec:
         - name: {{ .component }}
           image: {{ include "answerable.image" (dict "root" $root "name" .image) }}
           imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          {{- with .command }}
+          command: {{ toJson . }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .port }}
@@ -153,13 +157,15 @@ spec:
     - host: {{ .host }}
       http:
         paths:
-          - path: /
+          {{- range .paths | default (list "/") }}
+          - path: {{ . }}
             pathType: Prefix
             backend:
               service:
-                name: {{ .component }}
+                name: {{ $.component }}
                 port:
                   name: http
+          {{- end }}
 {{- if $values.autoscaling.enabled }}
 ---
 apiVersion: autoscaling/v2

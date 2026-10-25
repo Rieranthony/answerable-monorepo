@@ -31,7 +31,7 @@ data:
       scgi_temp_path /tmp/scgi;
       server {
         listen 48444 ssl;
-        server_name id.127-0-0-1.sslip.io toolbox.127-0-0-1.sslip.io admin-mcp.127-0-0-1.sslip.io;
+        server_name id.127-0-0-1.sslip.io toolbox.127-0-0-1.sslip.io admin-mcp.127-0-0-1.sslip.io mcp.127-0-0-1.sslip.io;
         ssl_certificate /edge/tls/tls.crt;
         ssl_certificate_key /edge/tls/tls.key;
         location / {

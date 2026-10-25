@@ -1,8 +1,8 @@
 name: Deploy staging
 
 # A tag staging/<name> on a commit of main ships that commit to staging: CI, the staging infrastructure applied by
-# Terraform, the four images built for amd64 (Civo's nodes), signed and tagged sha-<commit>, the release upgraded by
-# digest, and a smoke test through the public hostnames. To roll back, tag an earlier commit of main.
+# Terraform, the images of infra/pipeline/images.json built for amd64 (Civo's nodes), signed and tagged sha-<commit>, the
+# release upgraded by digest, and a smoke test through the public hostnames. To roll back, tag an earlier commit of main.
 #
 # What this does and which secrets the staging environment holds: infra/pipeline/README.md.
 
@@ -29,11 +29,13 @@ env:
   IMAGE_TAG: sha-${{ github.sha }}
 
 jobs:
-  # A tag ships only a commit that is on main.
+  # A tag ships only a commit that is on main. It also reads the images to build from infra/pipeline/images.json.
   guard:
     name: The tag names a commit of main
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    outputs:
+      images: ${{ steps.images.outputs.images }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -47,6 +49,10 @@ jobs:
             exit 1
           fi
           echo "$GITHUB_REF_NAME ships $GITHUB_SHA." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: The images to build
+        id: images
+        run: echo "images=$(jq -c . infra/pipeline/images.json)" >> "$GITHUB_OUTPUT"
 
   ci:
     name: CI
@@ -93,11 +99,11 @@ jobs:
       - name: Terraform apply
         run: infra/civo/terraform.sh staging apply -input=false -auto-approve
 
-  # One build per image, for linux/amd64, pushed as sha-<commit> and signed keyless on its digest: the signature names
-  # this workflow on a staging tag, which promote-production.yml checks before it deploys.
+  # One build per image of infra/pipeline/images.json, for linux/amd64, pushed as sha-<commit> and signed keyless on its
+  # digest: the signature names this workflow on a staging tag, which promote-production.yml checks before it deploys.
   build:
-    name: Build ${{ matrix.image }}
-    needs: ci
+    name: Build ${{ matrix.name }}
+    needs: [guard, ci]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -107,15 +113,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - image: id
-            dockerfile: apps/id/Dockerfile
-          - image: toolbox
-            dockerfile: mcps/toolbox/Dockerfile
-          - image: admin-mcp
-            dockerfile: mcps/admin/Dockerfile
-          - image: ops
-            dockerfile: infra/ops/Dockerfile
+        include: ${{ fromJSON(needs.guard.outputs.images) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -137,24 +135,24 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ matrix.image }}:${{ env.IMAGE_TAG }}
+          tags: ${{ env.REGISTRY }}/${{ matrix.name }}:${{ env.IMAGE_TAG }}
           build-args: |
             REVISION=${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.title=answerable-${{ matrix.image }}
+            org.opencontainers.image.title=answerable-${{ matrix.name }}
           provenance: mode=max
           sbom: true
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Sign the image
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
-        run: cosign sign --yes "$REGISTRY/${{ matrix.image }}@$DIGEST"
+        run: cosign sign --yes "$REGISTRY/${{ matrix.name }}@$DIGEST"
 
   deploy:
     name: Deploy to staging

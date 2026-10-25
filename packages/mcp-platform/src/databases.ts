@@ -1,5 +1,5 @@
 import { callerOrganisation, type Mount, type Provider } from "@answerable/mcp"
-import { assertServingLogin, mcpDatabase } from "@answerable/mcp-postgres"
+import { assertOwnLogin, assertServingLogin, mcpDatabase } from "@answerable/mcp-postgres"
 import { drizzle } from "drizzle-orm/node-postgres"
 import { Pool } from "pg"
 
@@ -14,7 +14,8 @@ export type Declared = Readonly<{ provider: Provider; database: "shared" } | { p
  * server's serving login, and one pool to each `own` MCP's database at `own[variable]`, as that MCP's runtime login. Each MCP with a `database`
  * gets its `db`, made once, through `mcpDatabase`, with the organisation of the call running (`callerOrganisation`): in mode `shared` each borrow
  * takes its runtime role `<prefix>_<name>` (`prefix` is `mcp` unless given). Returns `mount`, for `createMcpServer` or `createToolbox`; `pools`,
- * by name (`mcps`, and each own MCP's name), for `/health`; `assert()`, the serving login's assertion, to await before listening; and `close()`.
+ * by name (`mcps`, and each own MCP's name), for `/health`; `assert()`, the serving login's assertion and each own MCP's runtime login's, to
+ * await before listening; and `close()`.
  */
 export function mcpDatabases(declared: readonly Declared[], { shared, own, prefix = "mcp" }: { shared: string; own: Readonly<Record<string, string | undefined>>; prefix?: string }) {
   const pool = new Pool({ connectionString: shared })
@@ -33,8 +34,11 @@ export function mcpDatabases(declared: readonly Declared[], { shared, own, prefi
   return {
     mount,
     pools: { mcps: pool, ...Object.fromEntries(owned) } as Readonly<Record<string, Pool>>,
-    /** Refuse to serve as a shared login that holds more than the runtime roles of the shared MCPs, or misses one. */
-    assert: () => assertServingLogin(drizzle({ client: pool }), { prefix, names }),
+    /** Refuse to serve as a shared login that holds more than the runtime roles of the shared MCPs, or misses one, or as an own MCP's login that is more than its runtime login. */
+    assert: () => Promise.all([
+      assertServingLogin(drizzle({ client: pool }), { prefix, names }),
+      ...[...owned].map(([name, own]) => assertOwnLogin(drizzle({ client: own }), { name })),
+    ]).then(() => undefined),
     close: () => Promise.all([pool, ...owned.values()].map(each => each.end())).then(() => undefined),
   }
 }

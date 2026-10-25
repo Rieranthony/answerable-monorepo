@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0
+
+What the deployment needs to provision, migrate and serve the MCPs of its list (MCP CLI M5).
+
+- `provisionMcps` takes each owner role for its administrative login `WITH INHERIT FALSE, SET TRUE`, as it gives the migrator, and grants the runtime role `USAGE` as the owner role: a managed database's administrator no longer inherits every MCP's owner.
+- `assertOwnLogin(db, { name })` checks an own MCP's runtime login before a server listens, as `assertServingLogin` checks the shared one.
+- `sharedMcps` and `ownMcpDatabase(name)` name the shared database, its logins, and an own MCP's database and logins, for the ops bootstrap, the migration Job and `bun mcp`.
+- `declaredMcps`, the zod schema of the chart's list held in a variable.
+
 ## 0.10.0
 
 - `assertProviderConformance` from `@answerable/mcp-postgres/testing` hands its fixture's `examples` functions and `moveTarget` the provider's test database, `{ db, asOrganisation }`, as their last argument (`DatabaseFixture`), so a mutation with targets makes and moves its rows.

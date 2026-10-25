@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.0
+
+- `mcpDatabases(…).assert()` also checks each own MCP's login with `@answerable/mcp-postgres`'s `assertOwnLogin`, so the Toolbox and the standalone server refuse to start on an own MCP's URL that names another login.
+- `ownDatabases` names an own MCP's local database and login with `ownMcpDatabase`.
+
 ## 0.1.0
 
 What the Toolbox and the admin MCP each built by hand, in one package that they and the standalone server use.

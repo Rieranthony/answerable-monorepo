@@ -12,8 +12,10 @@ database_size  = "g3.db.small"
 database_nodes = 1
 
 zone_name = "answerable-staging.uk"
+# mcp is the standalone server's, which serves every standalone MCP by path: no MCP adds a name.
 hostnames = {
   id        = "id.answerable-staging.uk"
   toolbox   = "toolbox.answerable-staging.uk"
   admin_mcp = "admin-mcp.answerable-staging.uk"
+  mcp       = "mcp.answerable-staging.uk"
 }

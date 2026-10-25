@@ -1,6 +1,6 @@
-# The environment's Cloudflare zone (D18, D19): three proxied records to the load balancer, TLS strict to the origin,
+# The environment's Cloudflare zone (D18, D19): four proxied records to the load balancer, TLS strict to the origin,
 # origin pulls on with the zone's own client certificate, the origin's certificate from Cloudflare's Origin CA, and for
-# the three machine-facing hostnames no browser check, no challenge and no cache except /assets/. Nothing here may
+# the four machine-facing hostnames no browser check, no challenge and no cache except /assets/. Nothing here may
 # touch any other name in the zone, above all production's www, which Vercel serves.
 mock_provider "cloudflare" {
   override_during = plan
@@ -86,15 +86,16 @@ variables {
     id        = "id.answerable-staging.uk"
     toolbox   = "toolbox.answerable-staging.uk"
     admin_mcp = "admin-mcp.answerable-staging.uk"
+    mcp       = "mcp.answerable-staging.uk"
   }
 }
 
-run "points_three_proxied_records_at_the_load_balancer" {
+run "points_four_proxied_records_at_the_load_balancer" {
   command = plan
 
   assert {
-    condition     = toset([for record in cloudflare_dns_record.service : record.name]) == toset(["id.answerable-staging.uk", "toolbox.answerable-staging.uk", "admin-mcp.answerable-staging.uk"])
-    error_message = "The module must write exactly the three service records."
+    condition     = toset([for record in cloudflare_dns_record.service : record.name]) == toset(["id.answerable-staging.uk", "toolbox.answerable-staging.uk", "admin-mcp.answerable-staging.uk", "mcp.answerable-staging.uk"])
+    error_message = "The module must write exactly the four service records."
   }
 
   assert {
@@ -211,8 +212,9 @@ run "signs_and_uploads_the_client_certificate" {
   }
 }
 
-# The origin's server certificate: Cloudflare's Origin CA, exactly the three hostnames, ECDSA, 5475 days.
-run "requests_the_origin_certificate_for_the_three_hostnames" {
+# The origin's server certificate: Cloudflare's Origin CA, exactly the four hostnames, ECDSA, 5475 days. Adding mcp reissues it once, before
+# the old one is revoked (create_before_destroy).
+run "requests_the_origin_certificate_for_the_four_hostnames" {
   command = plan
 
   assert {
@@ -222,21 +224,21 @@ run "requests_the_origin_certificate_for_the_three_hostnames" {
 
   assert {
     condition = (
-      tls_cert_request.origin.dns_names == tolist(["admin-mcp.answerable-staging.uk", "id.answerable-staging.uk", "toolbox.answerable-staging.uk"])
+      tls_cert_request.origin.dns_names == tolist(["admin-mcp.answerable-staging.uk", "id.answerable-staging.uk", "mcp.answerable-staging.uk", "toolbox.answerable-staging.uk"])
       && tls_cert_request.origin.subject[0].common_name == "id.answerable-staging.uk"
       && nonsensitive(tls_cert_request.origin.private_key_pem) == "placeholder: origin key"
     )
-    error_message = "The origin's request must name the three hostnames, with ID's as the common name, made with the origin's key."
+    error_message = "The origin's request must name the four hostnames, with ID's as the common name, made with the origin's key."
   }
 
   assert {
     condition = (
-      cloudflare_origin_ca_certificate.this.hostnames == tolist(["admin-mcp.answerable-staging.uk", "id.answerable-staging.uk", "toolbox.answerable-staging.uk"])
+      cloudflare_origin_ca_certificate.this.hostnames == tolist(["admin-mcp.answerable-staging.uk", "id.answerable-staging.uk", "mcp.answerable-staging.uk", "toolbox.answerable-staging.uk"])
       && cloudflare_origin_ca_certificate.this.request_type == "origin-ecc"
       && cloudflare_origin_ca_certificate.this.requested_validity == 5475
       && cloudflare_origin_ca_certificate.this.csr == "placeholder: origin request"
     )
-    error_message = "The Origin CA request must name exactly the three hostnames, ECC, for 5475 days, from the origin's own request."
+    error_message = "The Origin CA request must name exactly the four hostnames, ECC, for 5475 days, from the origin's own request."
   }
 
   assert {
@@ -250,7 +252,7 @@ run "requests_the_origin_certificate_for_the_three_hostnames" {
   }
 }
 
-run "turns_challenges_off_for_the_three_hostnames_only" {
+run "turns_challenges_off_for_the_four_hostnames_only" {
   command = plan
 
   assert {
@@ -259,8 +261,8 @@ run "turns_challenges_off_for_the_three_hostnames_only" {
   }
 
   assert {
-    condition     = cloudflare_ruleset.config.rules[0].expression == "(http.host in {\"admin-mcp.answerable-staging.uk\" \"id.answerable-staging.uk\" \"toolbox.answerable-staging.uk\"})"
-    error_message = "The configuration rule must match exactly the three service hostnames."
+    condition     = cloudflare_ruleset.config.rules[0].expression == "(http.host in {\"admin-mcp.answerable-staging.uk\" \"id.answerable-staging.uk\" \"mcp.answerable-staging.uk\" \"toolbox.answerable-staging.uk\"})"
+    error_message = "The configuration rule must match exactly the four service hostnames."
   }
 
   assert {
@@ -283,11 +285,11 @@ run "caches_nothing_but_assets" {
 
   assert {
     condition = (
-      cloudflare_ruleset.cache.rules[0].expression == "(http.host in {\"admin-mcp.answerable-staging.uk\" \"id.answerable-staging.uk\" \"toolbox.answerable-staging.uk\"} and not starts_with(http.request.uri.path, \"/assets/\"))"
+      cloudflare_ruleset.cache.rules[0].expression == "(http.host in {\"admin-mcp.answerable-staging.uk\" \"id.answerable-staging.uk\" \"mcp.answerable-staging.uk\" \"toolbox.answerable-staging.uk\"} and not starts_with(http.request.uri.path, \"/assets/\"))"
       && cloudflare_ruleset.cache.rules[0].action == "set_cache_settings"
       && cloudflare_ruleset.cache.rules[0].action_parameters.cache == false
     )
-    error_message = "Every response from the three hostnames except /assets/ must bypass Cloudflare's cache."
+    error_message = "Every response from the four hostnames except /assets/ must bypass Cloudflare's cache."
   }
 }
 
@@ -301,6 +303,7 @@ run "leaves_production_www_alone" {
       id        = "id.answerable.org"
       toolbox   = "toolbox.answerable.org"
       admin_mcp = "admin-mcp.answerable.org"
+      mcp       = "mcp.answerable.org"
     }
   }
 
@@ -329,6 +332,7 @@ run "refuses_a_second_level_hostname_universal_ssl_does_not_cover" {
       id        = "id.staging.answerable-staging.uk"
       toolbox   = "toolbox.answerable-staging.uk"
       admin_mcp = "admin-mcp.answerable-staging.uk"
+      mcp       = "mcp.answerable-staging.uk"
     }
   }
 
@@ -343,6 +347,7 @@ run "refuses_www" {
       id        = "www.answerable-staging.uk"
       toolbox   = "toolbox.answerable-staging.uk"
       admin_mcp = "admin-mcp.answerable-staging.uk"
+      mcp       = "mcp.answerable-staging.uk"
     }
   }
 
@@ -354,8 +359,9 @@ run "refuses_a_missing_service" {
 
   variables {
     hostnames = {
-      id      = "id.answerable-staging.uk"
-      toolbox = "toolbox.answerable-staging.uk"
+      id        = "id.answerable-staging.uk"
+      toolbox   = "toolbox.answerable-staging.uk"
+      admin_mcp = "admin-mcp.answerable-staging.uk"
     }
   }
 

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { Pool } from "pg"
 import { ensureLocalMcpDatabases } from "./local"
+import { ownMcpDatabase } from "./names"
 import { provisionMcps, provisionOwnMcp, type ServedBy, type Sql } from "./provision"
 import { database } from "./test/database"
 import { clientOf, clusterUrl, forget, localLogins, mcpsUrl, sqlOf, testLogin } from "./test/mcps"
@@ -41,11 +42,11 @@ test("each MCP gets its owner and runtime roles, its schema and the memberships 
   expect(after.roles).toEqual(["mcp_test_mpgprova", "mcp_test_mpgprova_owner", "mcp_test_mpgprovb", "mcp_test_mpgprovb_owner"].map(role))
   expect(after.memberships).toEqual([
     membership("mcp_test_mpgprova", "answerable_mcps_toolbox"),
-    { ...membership("mcp_test_mpgprova_owner", "answerable"), inherit_option: true },
+    membership("mcp_test_mpgprova_owner", "answerable"),
     membership("mcp_test_mpgprova_owner", "answerable_mcps_migrator"),
     membership("mcp_test_mpgprovb", "answerable_mcps_standalone"),
     membership("mcp_test_mpgprovb", "answerable_mcps_toolbox"),
-    { ...membership("mcp_test_mpgprovb_owner", "answerable"), inherit_option: true },
+    membership("mcp_test_mpgprovb_owner", "answerable"),
     membership("mcp_test_mpgprovb_owner", "answerable_mcps_migrator"),
   ])
   expect(after.schemas).toEqual(["mpgprova", "mpgprovb"].map(name => ({ nspname: name, owner: `mcp_test_${name}_owner`, acl: `{mcp_test_${name}_owner=UC/mcp_test_${name}_owner,mcp_test_${name}=U/mcp_test_${name}_owner}` })))
@@ -89,7 +90,7 @@ test("a role or membership changed by hand is brought back in line, and changing
   await admin.query("alter role mcp_test_mpgprova nobypassrls")
 })
 
-test("a CREATEROLE login that is not a superuser provisions once it holds the database owner's privileges, and could not give the schema away without granting itself the owner", async () => {
+test("a CREATEROLE login that is not a superuser provisions once it holds the database owner's privileges, could not give the schema away without granting itself the owner, and inherits no owner role afterwards", async () => {
   // The Civo shape: the managed database's administrator, a member of the migrator as the bootstrap makes it.
   const civo = await testLogin(admin, "createrole")
   await admin.query(`grant answerable_mcps_migrator to ${civo.name}`)
@@ -104,11 +105,19 @@ test("a CREATEROLE login that is not a superuser provisions once it holds the da
       membership("mcp_test_mpgprovc", "answerable_mcps_toolbox", civo.name),
       membership("mcp_test_mpgprovc_owner", "answerable_mcps_migrator", civo.name),
     ])
+    // It may take the owner role, which giving it the schema needs, but holds none of the owner's privileges outside that.
+    const own = after.memberships.filter(row => row.member === civo.name && row.role === "mcp_test_mpgprovc_owner")
+    expect(own.some(row => row.set_option)).toBe(true)
+    expect(own.some(row => row.inherit_option)).toBe(false)
   } finally {
     await client.end()
     await forget(admin, "mpgprovc")
     await civo.drop()
   }
+})
+
+test("an own MCP's database and logins are named after it, as the deployment and the development Postgres make them", () => {
+  expect(ownMcpDatabase("acme")).toEqual({ database: "answerable_mcp_acme", owner: "answerable_mcp_acme_owner", runtime: "answerable_mcp_acme_runtime" })
 })
 
 test("a bad name, prefix, server, login or a name listed twice is refused before any SQL runs", async () => {
@@ -125,6 +134,7 @@ test("a bad name, prefix, server, login or a name listed twice is refused before
   await expect(refused({ mcps: [{ name: "acme", servedBy: [] }, { name: "acme", servedBy: ["toolbox"] }] })).rejects.toThrow("MCP acme is listed twice")
   await expect(refused({ logins: { ...localLogins, toolbox: 'toolbox"; drop' } })).rejects.toThrow('Invalid login name "toolbox"; drop"')
   await expect(provisionOwnMcp(spy, { name: "Acme", owner: "o", runtime: "r" })).rejects.toThrow('MCP name "Acme" must be')
+  expect(() => ownMcpDatabase("Acme")).toThrow('MCP name "Acme" must be')
   await expect(provisionOwnMcp(spy, { name: "acme", owner: "o; drop", runtime: "r" })).rejects.toThrow('Invalid login name "o; drop"')
   expect(sent).toEqual([])
 })

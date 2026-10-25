@@ -1,6 +1,6 @@
 # Staging as envs/staging.tfvars describes it, run as terraform.sh plans it: `terraform test
 # -filter=tests/staging.tftest.hcl -var-file=envs/staging.tfvars` (bun run infra:check does). Every name
-# answerable-staging-, two nodes, one database node, the staging zone's three hostnames, the edge wired to Cloudflare's
+# answerable-staging-, two nodes, one database node, the staging zone's four hostnames, the edge wired to Cloudflare's
 # ranges as the data source returns them, and the GitHub environment staging.
 mock_provider "civo" {}
 mock_provider "cloudflare" {}
@@ -88,8 +88,8 @@ run "serves_the_staging_zone" {
   command = plan
 
   assert {
-    condition     = output.hostnames == tolist(["admin-mcp.answerable-staging.uk", "id.answerable-staging.uk", "toolbox.answerable-staging.uk"])
-    error_message = "Staging serves id, toolbox and admin-mcp under answerable-staging.uk (D12)."
+    condition     = output.hostnames == tolist(["admin-mcp.answerable-staging.uk", "id.answerable-staging.uk", "mcp.answerable-staging.uk", "toolbox.answerable-staging.uk"])
+    error_message = "Staging serves id, toolbox, admin-mcp and mcp, the standalone server, under answerable-staging.uk (D12)."
   }
 }
 

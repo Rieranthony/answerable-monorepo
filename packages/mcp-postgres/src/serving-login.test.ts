@@ -3,12 +3,14 @@ import { Pool } from "pg"
 import { connect } from "./connect"
 import { ensureLocalMcpDatabases } from "./local"
 import { migrateMcp } from "./migrate-mcp"
+import { roleLock } from "./names"
 import { provisionMcps } from "./provision"
 import { assertServingLogin } from "./serving-login"
 import { as, clientOf, clusterUrl, fixtureFolder, forget, localLogins, mcpsUrl, sqlOf, testLogin } from "./test/mcps"
 
 const admin = new Pool({ connectionString: mcpsUrl, max: 1 })
-const run = (statements: string) => admin.query(statements)
+// Under the lock every role statement takes: provisioning in another suite grants on answerable_mcps_test's own catalogue row meanwhile.
+const run = (statements: string) => admin.query(`begin; select pg_advisory_xact_lock(${roleLock}); ${statements}; commit`)
 let login: Awaited<ReturnType<typeof testLogin>>
 let db: ReturnType<typeof connect>
 beforeAll(async () => {

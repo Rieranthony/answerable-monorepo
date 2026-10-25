@@ -20,7 +20,8 @@ async function run(argv: string[], env: Record<string, string>, extra: { kube?: 
   const sql: Sql = async text => {
     statements.push(text)
     if (extra.failing) throw new Error("the database broke")
-    return []
+    // provisionMcps checks the shared database's owner first.
+    return text.startsWith("select datname as name") ? [{ name: "answerable_mcps", owner: "answerable_mcps_migrator" }] : []
   }
   const code = await main(argv, env, {
     database: url => {
@@ -38,21 +39,26 @@ async function run(argv: string[], env: Record<string, string>, extra: { kube?: 
 }
 
 const adminUrl = "postgres://dbadmin:pw@db.internal:6432/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem"
+const OPS_MCPS = JSON.stringify([{ name: "e2e", serve: "both", database: "shared" }, { name: "acme", serve: "toolbox", database: "own" }])
 const registerEnv = { OPS_ID_URL: "https://id.example", OPS_ID_TOKEN: "root-secret", OPS_TOOLBOX_URL: "https://toolbox.example", OPS_ADMIN_MCP_URL: "https://admin-mcp.example" }
 
 test("bootstrap fetches the database's authority on first use, writes it to postgres-ca, and verifies the database against it", async () => {
-  const { code, connections, kube, statements, fetched, out } = await run(["bootstrap"], { OPS_DATABASE_ADMIN_URL: adminUrl })
+  const { code, connections, kube, statements, fetched, out } = await run(["bootstrap"], { OPS_DATABASE_ADMIN_URL: adminUrl, OPS_MCPS })
   expect(code).toBe(0)
   expect(fetched.calls).toEqual(["db.internal:6432"])
   expect(kube.configMaps["postgres-ca"]).toEqual({ "ca.pem": ROOT })
   expect(out).toContain(`SHA-256:  ${new X509Certificate(ROOT).fingerprint256}`)
-  // One connection, with the URL's login and verify-full, and the authority in a file only this process reads, gone afterwards.
-  expect(connections).toHaveLength(1)
-  const url = new URL(connections[0]!.url)
-  expect(`${url.username}@${url.host}${url.pathname} ${url.searchParams.get("sslmode")}`).toBe("dbadmin@db.internal:6432/postgres verify-full")
-  expect(connections[0]).toMatchObject({ ca: ROOT, mode: 0o600 })
-  expect(existsSync(url.searchParams.get("sslrootcert")!)).toBe(false)
+  // A connection with the URL's login and verify-full, then one to each database it provisions MCPs in, each with the authority in a file only
+  // this process reads, gone afterwards.
+  const urls = connections.map(connection => new URL(connection.url))
+  expect(urls.map(url => `${url.username}@${url.host}${url.pathname} ${url.searchParams.get("sslmode")}`)).toEqual(
+    ["/postgres", "/answerable_mcps", "/answerable_mcp_acme"].map(path => `dbadmin@db.internal:6432${path} verify-full`))
+  for (const connection of connections) expect(connection).toMatchObject({ ca: ROOT, mode: 0o600 })
+  expect(existsSync(urls[0]!.searchParams.get("sslrootcert")!)).toBe(false)
   expect(statements.some(statement => statement.startsWith('create database "answerable_id"'))).toBe(true)
+  expect(statements).toContain('create schema if not exists "e2e" authorization "mcp_e2e_owner"')
+  expect(statements).toContain('create schema if not exists "acme" authorization "answerable_mcp_acme_owner"')
+  expect(kube.secrets["mcp-acme-database"]!.DATABASE_URL).toStartWith("postgres://answerable_mcp_acme_runtime:")
   // The services' URLs name the address of the administrative URL and the authority where the chart mounts it.
   const service = new URL(kube.secrets["id-database"]!.DATABASE_URL!)
   expect(service.host).toBe("db.internal:6432")
@@ -61,7 +67,7 @@ test("bootstrap fetches the database's authority on first use, writes it to post
 
 test("bootstrap uses the authority postgres-ca holds without fetching, the given path in the services' URLs, and an IPv6 host bare", async () => {
   const kube = fakeKubernetes({ configMaps: { "postgres-ca": { "ca.pem": INTERMEDIATE } } })
-  const { code, connections, fetched } = await run(["bootstrap"], { OPS_DATABASE_ADMIN_URL: "postgres://a:b@[fd00::5]/postgres?sslmode=verify-full", OPS_DATABASE_SSLROOTCERT: "/ca.pem" }, { kube })
+  const { code, connections, fetched } = await run(["bootstrap"], { OPS_DATABASE_ADMIN_URL: "postgres://a:b@[fd00::5]/postgres?sslmode=verify-full", OPS_DATABASE_SSLROOTCERT: "/ca.pem", OPS_MCPS: "[]" }, { kube })
   expect(code).toBe(0)
   expect(fetched.calls).toEqual([])
   expect(connections[0]!.ca).toBe(INTERMEDIATE)
@@ -70,23 +76,23 @@ test("bootstrap uses the authority postgres-ca holds without fetching, the given
 })
 
 test("bootstrap stops before the database when the fetch fails, and removes the authority file when the work fails", async () => {
-  const refused = await run(["bootstrap"], { OPS_DATABASE_ADMIN_URL: adminUrl }, { chain: new Error("The database at db.internal:6432 refused TLS") })
+  const refused = await run(["bootstrap"], { OPS_DATABASE_ADMIN_URL: adminUrl, OPS_MCPS }, { chain: new Error("The database at db.internal:6432 refused TLS") })
   expect(refused.code).toBe(1)
   expect(refused.err).toBe("bootstrap failed: The database at db.internal:6432 refused TLS")
   expect(refused.connections).toEqual([])
   expect(refused.kube.configMaps).toEqual({})
-  const broken = await run(["bootstrap"], { OPS_DATABASE_ADMIN_URL: adminUrl }, { failing: true })
+  const broken = await run(["bootstrap"], { OPS_DATABASE_ADMIN_URL: adminUrl, OPS_MCPS }, { failing: true })
   expect(broken.code).toBe(1)
   expect(broken.err).toBe("bootstrap failed: the database broke")
   expect(existsSync(new URL(broken.connections[0]!.url).searchParams.get("sslrootcert")!)).toBe(false)
 })
 
 test("register registers in ID, stores the client secrets, then starts the servers that were waiting at zero replicas", async () => {
-  const kube = fakeKubernetes({ deployments: { toolbox: 0, "admin-mcp": 0, other: 3 } })
-  const { code, out, id } = await run(["register"], { ...registerEnv, OPS_START_DEPLOYMENTS: "toolbox=2, admin-mcp=1,other=1,missing=1" }, { kube })
+  const kube = fakeKubernetes({ deployments: { toolbox: 0, "admin-mcp": 0, standalone: 0, other: 3 } })
+  const { code, out, id } = await run(["register"], { ...registerEnv, OPS_START_DEPLOYMENTS: "toolbox=2, admin-mcp=1,standalone=2,other=1,missing=1" }, { kube })
   expect(code).toBe(0)
-  expect(Object.keys(kube.secrets).sort()).toEqual(["admin-id-client", "toolbox-id-client"])
-  expect(kube.deployments).toEqual({ toolbox: 2, "admin-mcp": 1, other: 3 })
+  expect(Object.keys(kube.secrets).sort()).toEqual(["admin-id-client", "standalone-id-client", "toolbox-id-client"])
+  expect(kube.deployments).toEqual({ toolbox: 2, "admin-mcp": 1, standalone: 2, other: 3 })
   expect(out).toContain("toolbox: scaled from 0 to 2")
   expect(out).toContain("other: already running")
   expect(out).toContain("missing: no such Deployment")
@@ -125,7 +131,11 @@ test("a missing or invalid variable is named, with exit code 2, before anything 
   const missing = await run(["bootstrap"], { NODE_ENV: "production" })
   expect(missing).toMatchObject({ code: 2, statements: [] })
   expect(missing.err).toStartWith("Invalid ops configuration: OPS_DATABASE_ADMIN_URL: ")
-  const unverified = await run(["bootstrap"], { OPS_DATABASE_ADMIN_URL: "postgres://a:b@db/postgres?sslmode=require" })
+  expect(missing.err).toContain("OPS_MCPS: ")
+  const badList = await run(["bootstrap"], { OPS_DATABASE_ADMIN_URL: adminUrl, OPS_MCPS: '[{"name":"Acme","serve":"toolbox","database":"shared"}]' })
+  expect(badList).toMatchObject({ code: 2, statements: [] })
+  expect(badList.err).toContain("OPS_MCPS: Expected an MCP's name")
+  const unverified = await run(["bootstrap"], { OPS_DATABASE_ADMIN_URL: "postgres://a:b@db/postgres?sslmode=require", OPS_MCPS })
   expect(unverified).toMatchObject({ code: 2, err: "Invalid ops configuration: OPS_DATABASE_ADMIN_URL: Must ask for sslmode=verify-full" })
   expect(unverified.fetched.calls).toEqual([])
   const noToken = await run(["register"], { ...registerEnv, OPS_ID_TOKEN: "" })
@@ -157,8 +167,10 @@ test("a failure is printed without its stack and exits 1", async () => {
   expect(signedOut.err).toStartWith("make-admin failed: No member of the platform organisation has the email you@answerable.org")
 })
 
-test("the database connection is a pg pool through connect, verifying the URL's sslrootcert, with one connection", async () => {
+test("the database connection is a pg pool through connect, verifying the URL's sslrootcert, with one connection held until it closes", async () => {
   const database = pgSql("postgres://nobody:x@127.0.0.1:1/postgres")
   await expect(database.sql("select 1")).rejects.toThrow()
   await database.close()
+  // Closed before any statement, it never connects.
+  await pgSql("postgres://nobody:x@127.0.0.1:1/postgres").close()
 })

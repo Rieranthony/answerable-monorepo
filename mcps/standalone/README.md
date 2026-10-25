@@ -17,6 +17,7 @@ It needs its machine client, `standalone-hub` with `platform:read`, in the root 
 | `src/server.ts` | The entry point: the runtime login and the serving login checked before listening, the audit-log poller, `SIGTERM` closing the listener and every pool |
 | `src/environment.ts` | `readStandaloneEnvironment`, from `standaloneConfig`, with an own MCP's database URL from the variable its generated entry names |
 | `src/db/schema.ts`, `drizzle/`, `src/db/migrate.ts`, `scripts/migrate.ts` | Its database, `answerable_standalone`: `@answerable/mcp-postgres`'s tables and evidence chain, migrated as the owner, served as `answerable_standalone_runtime` with `runtimeGrants` |
+| `src/db/migrate-mcps.ts`, `scripts/migrate-mcps.ts` | Every MCP's migrations, as the deployment's hook Job `mcps-migrate` runs them from the `mcps` image: the chart's list (`MCPS_DECLARED`), each `shared` MCP through `MCPS_DATABASE_MIGRATION_URL` as its owner role, each `own` MCP as its owner login (`MCP_<NAME>_DATABASE_MIGRATION_URL`), with the grants `mcps/<name>/src/db/grants.ts` exports. It lives here because this workspace is in the image and imports nothing that depends back on it. Locally, `bun mcp db <name> migrate` does the same for one MCP |
 
 ```sh
 bun run --filter @answerable/mcp-standalone test

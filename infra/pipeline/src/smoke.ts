@@ -1,5 +1,8 @@
 import type { EnvironmentName, Hosts } from "./environments"
 
+/** An MCP as `charts/answerable/mcps.json` declares it: what the smoke test needs of it. */
+export type DeclaredMcp = { name: string; serve: "toolbox" | "standalone" | "both" }
+
 /** The part of `fetch` the smoke test uses; tests pass a fake. */
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>
 
@@ -88,15 +91,34 @@ function health(name: string, host: string, path: string): Check {
   }
 }
 
-function resourceMetadata(name: string, host: string, issuer: string): Check {
-  const url = `https://${host}/.well-known/oauth-protected-resource/mcp`
+/** The Toolbox's health, which lists the providers it mounts: every `toolbox` and `both` MCP of the list, and no other. */
+function mounted(host: string, providers: readonly string[]): Check {
+  const url = `https://${host}/health`
+  const expected = [...providers].sort()
+  return {
+    name: "toolbox /health",
+    url,
+    async run(context) {
+      const { status, providers: found } = await context.json(url)
+      if (status !== "ok") throw new Error(`status is ${JSON.stringify(status)}, expected "ok"`)
+      const listed = Array.isArray(found) ? [...found].sort() : found
+      if (!Bun.deepEquals(listed, expected)) throw new Error(`providers are ${JSON.stringify(listed)}, expected ${JSON.stringify(expected)}`)
+      return `status "ok", ${expected.length} provider${expected.length === 1 ? "" : "s"} mounted`
+    },
+  }
+}
+
+/** A resource's protected-resource metadata, at `/.well-known/oauth-protected-resource<path>/mcp`, naming the resource `https://<host><path>/mcp` and ID. */
+function resourceMetadata(name: string, host: string, issuer: string, path = ""): Check {
+  const url = `https://${host}/.well-known/oauth-protected-resource${path}/mcp`
+  const resource = `https://${host}${path}/mcp`
   return {
     name: `${name} resource metadata`,
     url,
     async run(context) {
       const body = await context.json(url)
-      if (body.resource !== `https://${host}/mcp`)
-        throw new Error(`resource is ${JSON.stringify(body.resource)}, expected https://${host}/mcp`)
+      if (body.resource !== resource)
+        throw new Error(`resource is ${JSON.stringify(body.resource)}, expected ${resource}`)
       const servers = body.authorization_servers
       if (!Array.isArray(servers) || !servers.includes(issuer))
         throw new Error(`authorization_servers is ${JSON.stringify(servers)}, expected it to name ${issuer}`)
@@ -105,7 +127,7 @@ function resourceMetadata(name: string, host: string, issuer: string): Check {
   }
 }
 
-function checksFor(hosts: Hosts): Check[] {
+function checksFor(hosts: Hosts, mcps: readonly DeclaredMcp[]): Check[] {
   const issuer = `https://${hosts.id}`
   const discoveryUrl = `${issuer}/.well-known/openid-configuration`
   return [
@@ -133,23 +155,25 @@ function checksFor(hosts: Hosts): Check[] {
         return `${keys.length} signing key${keys.length === 1 ? "" : "s"}`
       },
     },
-    health("toolbox", hosts.toolbox, "/health"),
+    mounted(hosts.toolbox, mcps.filter((mcp) => mcp.serve !== "standalone").map((mcp) => mcp.name)),
     resourceMetadata("toolbox", hosts.toolbox, issuer),
     health("admin-mcp", hosts.admin, "/health"),
     resourceMetadata("admin-mcp", hosts.admin, issuer),
+    ...mcps.filter((mcp) => mcp.serve !== "toolbox").map((mcp) => resourceMetadata(mcp.name, hosts.mcp, issuer, `/${mcp.name}`)),
   ]
 }
 
 /**
- * Check an environment through its public hostnames: ID's health, discovery and signing keys, and the Toolbox's
- * and the admin MCP's health and protected-resource metadata. A failing check is retried until the shared
- * `timeoutMs` has passed, because a rollout and a first certificate take time.
+ * Check an environment through its public hostnames: ID's health, discovery and signing keys; the Toolbox's health, which
+ * must list every `toolbox` and `both` MCP of `mcps`, and its protected-resource metadata; the admin MCP's health and
+ * metadata; and each `standalone` and `both` MCP's metadata on the standalone server's host. A failing check is retried
+ * until the shared `timeoutMs` has passed, because a rollout and a first certificate take time.
  */
-export async function runSmoke(hosts: Hosts, options: SmokeOptions): Promise<CheckResult[]> {
+export async function runSmoke(hosts: Hosts, mcps: readonly DeclaredMcp[], options: SmokeOptions): Promise<CheckResult[]> {
   const context = createContext(options)
   const deadline = options.now() + options.timeoutMs
   const results: CheckResult[] = []
-  for (const check of checksFor(hosts)) {
+  for (const check of checksFor(hosts, mcps)) {
     const started = options.now()
     let attempts = 0
     for (;;) {
@@ -193,7 +217,7 @@ export function formatReport(environment: EnvironmentName, hosts: Hosts, results
   const verdict =
     failed === 0 ? `PASSED: ${results.length} of ${results.length} checks` : `FAILED: ${failed} of ${results.length} checks failed`
   return [
-    `Smoke test of ${environment}: ${hosts.id}, ${hosts.toolbox}, ${hosts.admin}`,
+    `Smoke test of ${environment}: ${hosts.id}, ${hosts.toolbox}, ${hosts.admin}, ${hosts.mcp}`,
     "",
     ...table,
     "",

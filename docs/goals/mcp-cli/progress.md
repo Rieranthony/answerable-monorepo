@@ -182,3 +182,30 @@
     - knip clean;
     - frozen install unchanged;
     - the agent's final acceptance: 62 pass in 139 s.
+- **M5, shipping,** by Opus.
+  - **What it built:**
+    - one `mcps` image (262 MB; `infra/pipeline/images.json`: `id`, `mcps`, `ops`);
+    - the chart from `mcps.json`;
+    - the bootstrap provisioning `answerable_mcps`, `answerable_standalone` and own databases;
+    - `mcps-migrate` at -6 beside the hubs' Jobs;
+    - the standalone server's Deployment and path Ingress on `mcp.<zone>`;
+    - `standalone-hub`;
+    - the `mcp` hostname in Terraform;
+    - `run-job` at the deployed revision (`git archive` of `image.tag`);
+    - a smoke test from the list;
+    - the connection budget in `bun mcp check`;
+    - deployed URLs in `bun mcp list`;
+    - from M3's notes, the admin's self-grant `INHERIT FALSE`; from M4's, `assertOwnLogin`.
+  - **Measured:**
+    - the release at 200 MCPs: 52.8 KiB stored, 5.2% of Helm's 1 MiB;
+    - `mcps-migrate` in kind: 0.1 s for 2 MCPs;
+    - the kind stack: 273 s.
+  - **Gates:**
+    - `mcp:test`: 889 pass, 0 fail;
+    - typecheck and lint forced: 21 of 21;
+    - build: 2 of 2;
+    - web: 100;
+    - knip clean;
+    - `infra:check` passed;
+    - the agent's runs: `infra:test` 120 pass, and the acceptance 62 pass.
+  - **Side effect:** while cleaning up its images, the agent ran `docker image prune -f`, which also removed dangling (untagged) images elsewhere on the machine.

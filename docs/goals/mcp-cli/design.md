@@ -307,7 +307,7 @@ The Toolbox, the admin MCP and ID keep the databases they have. The rest of this
 **What the chart renders from the list:**
 - the bootstrap's MCP list, as `OPS_MCPS`;
 - the ops Role's Secret names;
-- one `mcps-migrate` hook at weight -9;
+- one `mcps-migrate` hook at weight -6, after the hubs' own migration Jobs (`toolbox-migrate` -9, `admin-migrate` -8, `standalone-migrate` -7);
 - the Toolbox's `TOOLBOX_MCPS_DATABASE_URL`;
 - the standalone server's Deployment, rendered only when at least one MCP is `standalone` or `both`;
 - the standalone server's Ingress on `mcp.<zone>`, with two Prefix paths per MCP;

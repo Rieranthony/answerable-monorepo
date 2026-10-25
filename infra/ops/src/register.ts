@@ -23,11 +23,13 @@ type Options = {
   timeoutMs?: number
 }
 
-/** Where each machine client's secret goes: the Secrets the Toolbox and the admin MCP read. */
+/** Where each machine client's secret goes: the Secrets the Toolbox, the admin MCP and the standalone server read. */
 export const clientSecrets = {
   "toolbox-hub": { secret: "toolbox-id-client", key: "TOOLBOX_ID_CLIENT_SECRET" },
   "admin-mcp": { secret: "admin-id-client", key: "ADMIN_ID_CLIENT_SECRET" },
+  "standalone-hub": { secret: "standalone-id-client", key: "STANDALONE_ID_CLIENT_SECRET" },
 } as const satisfies Record<string, SecretRef>
+const clientNames: Record<keyof typeof clientSecrets, string> = { "toolbox-hub": "Toolbox", "admin-mcp": "Admin MCP", "standalone-hub": "Standalone server" }
 
 /** The `Idempotency-Key`s of the staff domain and directory: those of `apps/web/content/docs/id/onboard.mdx` § First run. */
 const STAFF_KEYS = { domain: "platform-domain-setup", sso: "platform-sso-setup" } as const
@@ -36,7 +38,8 @@ const roles = ["team", "admin", "owner"] as const
 
 /**
  * Register the Toolbox and the admin MCP in ID as their docs do (apps/web/content/docs/toolbox/admin.mdx and admin/setup.mdx), with the same
- * calls and `Idempotency-Key`s, and store each machine client's secret the moment ID answers it. Safe to run again: a call ID has seen
+ * calls and `Idempotency-Key`s, then the standalone server's machine client, `standalone-hub` (`platform:read` on ID's admin API), and store each
+ * machine client's secret the moment ID answers it. Safe to run again: a call ID has seen
  * replays, and an object that already exists (made under another key or by another caller) is left as it is. A machine client that exists
  * while its secret is not stored gets a new one, rotated in ID. With `staff`, then connects the staff domain and directory (see
  * {@link connectStaff}). Prints the Claude Code commands and the first owner's step; never a secret.
@@ -60,7 +63,7 @@ export async function register({ id, token, toolbox, adminMcp, platformSlug, cal
   /** A machine client of the platform organisation: its secret stored from the creation's answer, or rotated when it exists unstored. */
   async function machine(clientId: keyof typeof clientSecrets, key: string, scopes: string[]) {
     const ref = clientSecrets[clientId]
-    const created = await write("POST", "/clients", key, { clientId, name: clientId === "admin-mcp" ? "Admin MCP" : "Toolbox", organizationId: platform, tokenEndpointAuthMethod: "client_secret_basic", grantTypes: ["client_credentials"], clientCredentialsScopes: scopes })
+    const created = await write("POST", "/clients", key, { clientId, name: clientNames[clientId], organizationId: platform, tokenEndpointAuthMethod: "client_secret_basic", grantTypes: ["client_credentials"], clientCredentialsScopes: scopes })
     if (typeof created.clientSecret === "string") {
       await store.put(ref, created.clientSecret)
       log(`${clientId}: secret stored in ${ref.secret}/${ref.key}`)
@@ -108,6 +111,12 @@ export async function register({ id, token, toolbox, adminMcp, platformSlug, cal
   await capability("admin-mcp-capability-id-v1", "admin-mcp", admin, "client_credentials", ["platform:read", "platform:write"])
   await link("admin-mcp-link-toolbox-v1", "admin-mcp", toolboxAdmin)
   await capability("admin-mcp-capability-toolbox-v1", "admin-mcp", toolboxAdmin, "client_credentials", ["toolbox:admin"])
+
+  // The standalone server's machine client, which reads who is calling from ID's admin API, as the Toolbox's does. Registering each MCP it
+  // serves is not yet automatic.
+  await machine("standalone-hub", "standalone-hub-v1", ["platform:read"])
+  await link("standalone-hub-link-v1", "standalone-hub", admin)
+  await capability("standalone-hub-capability-v1", "standalone-hub", admin, "client_credentials", ["platform:read"])
 
   if (staff) await connectStaff(call, platform, staff, log)
 

@@ -53,7 +53,7 @@ test("an own MCP's db borrows from a pool of its own, as its own runtime login, 
   expect(pools).toEqual(["mcps", "pltfix"])
 })
 
-test("a provider without a database is mounted with no db; an own MCP without its URL is refused; a serving login missing a role does not serve", async () => {
+test("a provider without a database is mounted with no db; an own MCP without its URL is refused; a serving login missing a role, or an own MCP's login that is not its runtime login, does not serve", async () => {
   const plain = defineProvider({
     id: "plain", description: "A fixture MCP with no database, which its server mounts with no db.", version: "2026-10-25",
     tools: [defineTool({ name: "plain.ping", description: "Answer nothing; a fixture MCP with no database, mounted with no db.", input: z.object({}), output: z.object({}), async execute() { return {} } })],
@@ -67,5 +67,12 @@ test("a provider without a database is mounted with no db; an own MCP without it
     await expect(missing.assert()).rejects.toThrow("is not a member of mcp_plt_pltfix")
   } finally {
     await missing.close()
+  }
+  // The shared database's serving login, named as the own MCP's: it takes pltfix's role rather than holding USAGE on its schema itself.
+  const borrowed = mcpDatabases([{ provider: pltfix, database: "own", variable: "PLTFIX_DATABASE_URL" }], { shared: empty.url, own: { PLTFIX_DATABASE_URL: shared.url }, prefix: "mcp_plte" })
+  try {
+    await expect(borrowed.assert()).rejects.toThrow(/may not serve the own MCP pltfix: is a member of mcp_plt_pltfix; lacks USAGE on schema pltfix/)
+  } finally {
+    await borrowed.close()
   }
 })

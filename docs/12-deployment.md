@@ -1,7 +1,7 @@
 # Deployment
 
 > **TL;DR**
-> - **Decides:** where Answerable ID, the Toolbox and the admin MCP run outside a laptop, and why: Civo London, one Civo account per environment, one Helm chart on Civo Kubernetes, Civo Database PostgreSQL 17, Cloudflare in front, every secret in a GitHub environment or generated where it is used, a tag `staging/<name>` shipping staging and a tag `production/<name>` shipping production behind the owner's approval. Nothing is done by hand from a laptop.
+> - **Decides:** where Answerable ID, the Toolbox, the admin MCP, the standalone server and every MCP run outside a laptop, and why: Civo London, one Civo account per environment, one Helm chart on Civo Kubernetes, Civo Database PostgreSQL 17, Cloudflare in front, every secret in a GitHub environment or generated where it is used, a tag `staging/<name>` shipping staging and a tag `production/<name>` shipping production behind the owner's approval. Nothing is done by hand from a laptop.
 > - **Rule:** only Cloudflare reaches the services, and only with the origin-pull certificate; no service holds a database owner login; the cluster runs images by digest, built from a commit that passed CI and shipped to staging first; no secret sits in plain text in git, in a Terraform variable or in a log.
 > - **Not here:** how to do each step ([`infra/README.md`](../infra/README.md), the runbook), what ID itself needs from any deployment ([`06-deploying-answerable-id.md`](06-deploying-answerable-id.md)), the decisions with the alternatives they rejected ([`goals/civo-deploy/decisions.md`](goals/civo-deploy/decisions.md), D-numbers below), the measured evidence from the first staging run (`reports/staging-evidence.md`, written by brief B7a: Not yet).
 
@@ -12,14 +12,15 @@
 | Piece | Where | Count per environment | Defined in |
 | --- | --- | --- | --- |
 | **Answerable ID** (`id`) | Deployment in namespace `answerable`, port 47300 | 2 to 4 (staging), 2 to 6 (production) | [`charts/answerable`](../charts/answerable/README.md) |
-| **The Toolbox** (`toolbox`) | Deployment in `answerable`, port 47400 | 2 to 3, 2 to 4 | the same |
-| **The admin MCP** (`admin-mcp`) | Deployment in `answerable`, port 47520 | 2 to 3, 2 to 4 | the same |
-| **Migrations and ops Jobs** | Helm hook Jobs in `answerable`: `ops-bootstrap`, `id-migrate`, `toolbox-migrate`, `admin-migrate`, `ops-register`, `ops-make-admin` | one run per deploy; `make-admin` on request | the same, and [`infra/ops`](../infra/ops/README.md) |
+| **The Toolbox** (`toolbox`) | Deployment in `answerable`, port 47400, from the `mcps` image; mounts every `toolbox` and `both` MCP of `charts/answerable/mcps.json` | 2 to 3, 2 to 4 | the same |
+| **The admin MCP** (`admin-mcp`) | Deployment in `answerable`, port 47520, from the `mcps` image | 2 to 3, 2 to 4 | the same |
+| **The standalone server** (`standalone`) | Deployment in `answerable`, port 47510, from the `mcps` image; serves every `standalone` and `both` MCP at `https://mcp.<zone>/<name>/mcp`. Rendered only while there is one | 2 to 3, 2 to 4 | the same |
+| **Migrations and ops Jobs** | Helm hook Jobs in `answerable`: `ops-bootstrap`, `id-migrate`, `toolbox-migrate`, `admin-migrate`, `standalone-migrate`, `mcps-migrate`, `ops-register`, `ops-make-admin` | one run per deploy; `register` when a client Secret is missing; `make-admin` on request | the same, and [`infra/ops`](../infra/ops/README.md) |
 | **Traefik** (the edge in the cluster) | Deployment in namespace `platform`, behind a Civo load balancer | 2 | [`charts/platform`](../charts/platform/README.md) |
-| **PostgreSQL 17** | Civo Database on the environment's private network: `answerable_id`, `answerable_toolbox`, `answerable_admin` | 1 node | [`infra/civo`](../infra/civo/README.md) |
+| **PostgreSQL 17** | Civo Database on the environment's private network: `answerable_id`, `answerable_toolbox`, `answerable_admin`, `answerable_standalone`, `answerable_mcps` (a schema per shared MCP) and `answerable_mcp_<name>` per MCP with a database of its own | 1 node | [`infra/civo`](../infra/civo/README.md) |
 | **Cluster, network, firewalls, Cloudflare zone, certificates, the GitHub environment's deploy secrets** | One Civo account, one Cloudflare zone and one GitHub environment per environment, Civo region LON1 | 2 nodes (staging), 3 nodes (production), Medium | `infra/civo`, `envs/<environment>.tfvars` |
 | **The state bucket** | Civo object store in the environment's account | one 500 GB block | `bootstrap.yml` |
-| **Images** | GHCR, public: `ghcr.io/rieranthony/answerable/{id,toolbox,admin-mcp,ops}`, amd64 | one per image and commit | the Dockerfiles, `deploy-staging.yml` |
+| **Images** | GHCR, public: `ghcr.io/rieranthony/answerable/{id,mcps,ops}`, amd64, listed in [`infra/pipeline/images.json`](../infra/pipeline/images.json) | one per image and commit | the Dockerfiles, `deploy-staging.yml` |
 | **The pipeline** | GitHub Actions: `ci.yml`, `bootstrap.yml`, `deploy-staging.yml`, `promote-production.yml`, `ops.yml` | | [`infra/pipeline`](../infra/pipeline/README.md) |
 
 | Hostname | Staging (zone `answerable-staging.uk`) | Production (zone `answerable.org`) |
@@ -27,14 +28,15 @@
 | ID, the issuer | `id.answerable-staging.uk` | `id.answerable.org` |
 | The Toolbox | `toolbox.answerable-staging.uk` (resource `/mcp`, admin API `/admin`) | `toolbox.answerable.org` |
 | The admin MCP | `admin-mcp.answerable-staging.uk` (resource `/mcp`) | `admin-mcp.answerable.org` |
+| The standalone server | `mcp.answerable-staging.uk` (resource `/<name>/mcp` per MCP) | `mcp.answerable.org` |
 
-Every name is first-level in its zone, so Cloudflare's Universal SSL covers it without an add-on ([D12](goals/civo-deploy/decisions.md)). Production's records sit beside Vercel's DNS-only `www`, which Terraform never touches.
+Every name is first-level in its zone, so Cloudflare's Universal SSL covers it without an add-on ([D12](goals/civo-deploy/decisions.md)). A new MCP adds no name: the standalone server serves each by path on `mcp` ([MCP CLI D2](goals/mcp-cli/decisions.md)). Production's records sit beside Vercel's DNS-only `www`, which Terraform never touches.
 
 ```mermaid
 flowchart TB
   people["Browsers, MCP hosts, machine clients"]
   gha["GitHub Actions, on a tag"]
-  ghcr["GHCR: id, toolbox, admin-mcp, ops"]
+  ghcr["GHCR: id, mcps, ops"]
   cf["Cloudflare: one zone per environment"]
   subgraph civo["One Civo account per environment, LON1"]
     lb["Civo load balancer: 443 from Cloudflare's ranges only"]
@@ -44,6 +46,7 @@ flowchart TB
       id["id"]
       toolbox["toolbox"]
       admin["admin-mcp"]
+      standalone["standalone"]
       jobs["Jobs: ops-bootstrap, migrations, ops-register, ops-make-admin"]
     end
     db[("Civo Database: PostgreSQL 17")]
@@ -54,12 +57,15 @@ flowchart TB
   traefik --> id
   traefik --> toolbox
   traefik --> admin
+  traefik --> standalone
   id -->|"TLS verify-full, runtime login"| db
   toolbox --> db
   admin --> db
+  standalone --> db
   jobs -->|"owner and administrator logins"| db
   toolbox -.->|"ID's issuer, through Cloudflare"| cf
   admin -.->|"ID and the Toolbox, through Cloudflare"| cf
+  standalone -.->|"ID's issuer, through Cloudflare"| cf
   gha -->|"terraform apply"| civo
   gha -->|"build, sign, push"| ghcr
   gha -->|"helm upgrade with the deployer token"| api
@@ -67,7 +73,7 @@ flowchart TB
   cluster -.->|"pull by digest"| ghcr
 ```
 
-The Toolbox and the admin MCP call ID at its public issuer, through Cloudflare, so one URL is the issuer everywhere.
+The Toolbox, the admin MCP and the standalone server call ID at its public issuer, through Cloudflare, so one URL is the issuer everywhere.
 
 ## Accounts and access
 
@@ -90,7 +96,7 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 
 | Layer | What it enforces |
 | --- | --- |
-| **Cloudflare** ([D18](goals/civo-deploy/decisions.md), [D19](goals/civo-deploy/decisions.md)) | Proxied A records for the three hostnames; SSL Full (strict); Always Use HTTPS; TLS 1.2 minimum, TLS 1.3 on; HSTS for a year (no subdomains, no preload); zone-level Authenticated Origin Pulls with Answerable's own client certificate, made and uploaded by Terraform; on the three hostnames no Browser Integrity Check, Security Level essentially off, and no cache except `/assets/`. Bot Fight Mode is off by hand: the token cannot change it. All of it is Terraform, in the `edge` module, except Bot Fight Mode |
+| **Cloudflare** ([D18](goals/civo-deploy/decisions.md), [D19](goals/civo-deploy/decisions.md)) | Proxied A records for the four hostnames; SSL Full (strict); Always Use HTTPS; TLS 1.2 minimum, TLS 1.3 on; HSTS for a year (no subdomains, no preload); zone-level Authenticated Origin Pulls with Answerable's own client certificate, made and uploaded by Terraform; on the four hostnames no Browser Integrity Check, Security Level essentially off, and no cache except `/assets/`. Bot Fight Mode is off by hand: the token cannot change it. All of it is Terraform, in the `edge` module, except Bot Fight Mode |
 | **Load balancer firewall** | TCP 443 from Cloudflare's published IPv4 ranges only, read by Terraform at apply time; no port 80 |
 | **Traefik** ([D31](goals/civo-deploy/decisions.md), [D35](goals/civo-deploy/decisions.md)) | TLS with the Origin CA certificate Terraform requested from Cloudflare (the Secret `origin-tls`, trusted by Cloudflare alone); every TLS connection must present a client certificate signed by the environment's origin-pull CA, through the TLSOption `default`, which applies to every router; strict SNI; `X-Forwarded-For` kept only from Cloudflare's ranges and the private network, and the connecting address appended |
 | **NetworkPolicy** | Default deny in `answerable`; each service admits only Traefik's pods; egress to DNS, the database's network and HTTPS outside the private ranges; the migrations reach DNS and the database only |
@@ -108,8 +114,9 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 - **Scaling.** HorizontalPodAutoscalers on CPU (60% of requests): ID 2 to 4 in staging and 2 to 6 in production, the MCPs 2 to 3 and 2 to 4. Replicas spread over nodes; production refuses to place two replicas on one node (`DoNotSchedule`). Each PodDisruptionBudget allows one pod down at a time.
 - **Rolling deploys.** `maxUnavailable: 0`, `maxSurge: 1`; readiness on `/readyz` (ID) and `/health` (the MCPs); a startup probe; liveness on `/healthz` for ID and a TCP check for the MCPs, so that a database outage does not restart every MCP pod. `helm upgrade --rollback-on-failure --wait` rolls the release back when a Job fails or the pods never become ready. A changed secret rolls ID on the next tag through a checksum annotation. A terminating pod waits five seconds before it stops, because Traefik keeps routing to it for a few seconds after Kubernetes marks it terminating (2.5 s measured in the kind stack) and the servers stop within a second of the signal.
 - **Restricted Pod Security** is enforced on `answerable` and on `platform`: every container runs as a non-root user, with a read-only root filesystem, no privilege escalation, every capability dropped and seccomp `RuntimeDefault`; no pod mounts a ServiceAccount token except the ops Jobs.
-- **The MCPs wait for their client secrets.** The Toolbox and the admin MCP render at zero replicas until `ops-register` has written `toolbox-id-client` and `admin-id-client`; the register Job then starts them.
-- **Images.** From `oven/bun:1.3.1-slim` pinned by digest, built for linux/amd64 (Civo's nodes are amd64, [D36](goals/civo-deploy/decisions.md)), non-root, `NODE_ENV=production`, no test, coverage, `.env` or Markdown file. Measured on arm64 at build time: `id` 287 MB, `toolbox` 247 MB, `admin-mcp` 218 MB, `ops` 218 MB.
+- **The MCP servers wait for their client secrets.** The Toolbox, the admin MCP and the standalone server render at zero replicas until `ops-register` has written `toolbox-id-client`, `admin-id-client` and `standalone-id-client`; the register Job then starts them.
+- **One image for every MCP server** ([MCP CLI D8](goals/mcp-cli/decisions.md)). `mcps` holds the Toolbox, the admin MCP, the standalone server and every MCP under `mcps/`; each Deployment and migration Job names its command. A new MCP needs no image, no Dockerfile line and no GHCR package.
+- **Images.** From `oven/bun:1.3.1-slim` pinned by digest, built for linux/amd64 (Civo's nodes are amd64, [D36](goals/civo-deploy/decisions.md)), non-root, `NODE_ENV=production`, no test, coverage, `.env` or Markdown file. Measured on arm64 at build time: `id` 287 MB, `ops` 218 MB (civo-deploy); `mcps` 262 MB (25 October 2026, with e2e and example), where `toolbox` was 247 MB and `admin-mcp` 218 MB.
 - **Nodes.** Medium (2 vCPU, 4 GB): two in staging, three in production, so that one can drain for maintenance with two replicas per service still on different nodes.
 
 ## Database
@@ -121,10 +128,22 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 | **Nodes** | 1 | 1, until a failover has been measured ([D37](goals/civo-deploy/decisions.md)) |
 | **Reach** | 5432 from the private network only | the same |
 
-- **Two logins per database** ([D5](goals/civo-deploy/decisions.md)): an owner (`answerable_<name>_owner`) that only the migration Jobs receive, and a runtime login (`answerable_<name>_runtime`) the service runs as. All three services refuse to start as an owner or a privileged role. The `ops-bootstrap` Job creates the databases, the six logins and their URL Secrets with Civo's administrator login, which Terraform writes into the Secret `postgres-admin` and which no service receives.
+- **Two logins per database** ([D5](goals/civo-deploy/decisions.md)): an owner (`answerable_<name>_owner`) that only the migration Jobs receive, and a runtime login (`answerable_<name>_runtime`) the service runs as. Every service refuses to start as an owner or a privileged role. The `ops-bootstrap` Job creates the databases, their logins and their URL Secrets with Civo's administrator login, which Terraform writes into the Secret `postgres-admin` and which no service receives.
+- **The MCPs' database** ([MCP CLI D1](goals/mcp-cli/decisions.md)). A `shared` MCP is a schema of `answerable_mcps`, owned by its `NOLOGIN` owner role `mcp_<name>_owner` and read through its runtime role `mcp_<name>`. The database has three logins whatever the number of MCPs: its owner, `answerable_mcps_migrator`, which takes each owner role to migrate; and `answerable_mcps_toolbox` and `answerable_mcps_standalone`, which take the runtime role of each MCP they serve on every borrowed connection and hold nothing of their own. An `own` MCP has a database `answerable_mcp_<name>` with its owner and runtime logins. `ops-bootstrap` makes all of it from `charts/answerable/mcps.json`, then `mcps-migrate` migrates every MCP; the administrative login takes each owner role without inheriting it.
 - **Verified TLS.** Every URL ends `?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem`; the chart mounts the ConfigMap `postgres-ca` there. Civo documents nothing about TLS for its database (the first staging run answered it, 23 October 2026: it serves TLS, with a private `dbaas-ca` root valid for one year and a leaf naming Civo-internal DNS names only; `reports/staging-evidence.md`) and its Terraform resource exposes no certificate, so the bootstrap Job records the certificate the database presents on its first run, **trust on first use** inside the private network, and logs its SHA-256 fingerprint for the owner to record ([D38](goals/civo-deploy/decisions.md)). Whether Civo serves TLS at all, and whether its certificate names the private address the services use, is B7a's first question. Not yet.
 - **Backups.** Civo's page says "automatic backups" and documents no schedule, retention or restore. The `civo` CLI offers `database backup` and `database restore`. A restore drill on Civo precedes any production data ([D26](goals/civo-deploy/decisions.md)); its RTO and RPO are B7a's measurements. A restored database is unreadable without the keys that were active when its rows were written; rotation never replaces `BETTER_AUTH_SECRET` ([runbook](../infra/README.md#restore)).
-- **Connections.** At the autoscalers' ceilings the services open up to 140 connections in staging (ID 4 × 20, the MCPs 3 × 10 each) and 200 in production (6 × 20, 4 × 10, 4 × 10), plus the Jobs. Civo's `max_connections` per size is measured in B7a. Not yet.
+- **Connections.** Each ID process opens up to 20 (`DATABASE_POOL_MAX`) and every other pool up to 10 (pg's default). At the autoscalers' ceilings:
+
+  | Pool | Per replica | Staging | Production |
+  | --- | --- | --- | --- |
+  | ID | 20 | 4 × 20 = 80 | 6 × 20 = 120 |
+  | The admin MCP | 10 | 3 × 10 = 30 | 4 × 10 = 40 |
+  | The Toolbox: its database and `answerable_mcps` | 2 × 10 | 3 × 20 = 60 | 4 × 20 = 80 |
+  | The standalone server, while it serves an MCP: its database and `answerable_mcps` | 2 × 10 | 3 × 20 = 60 | 4 × 20 = 80 |
+  | **Total, shared MCPs only** | | **230** | **320** |
+  | Each `own` MCP, per server that serves it | 10 | + 3 × 10 = 30 | + 4 × 10 = 40 |
+
+  Plus one connection per running Job. A shared MCP adds no pool. Civo's `max_connections` per size is measured in B7a: Not yet. Until then `bun mcp check` takes PostgreSQL's default, 100, which these totals already pass, and warns whenever an `own` MCP adds to them (`scripts/mcp/connections.ts` holds the same numbers, held to the overlays by its test). The pools open connections on demand, so the ceiling is the worst case, not the measured load.
 - **Growth.** ID's `audit_events` and `admin_operations`, and the MCPs' evidence, are kept forever. ID records an audit event for each code exchange and none for a refresh. At 100 organisations of 1,000 users (the activity measured on 6 October 2026) that is about 15 GB a month: production's 80 GB fills in about five months, and Civo bundles storage with the size. Deciding retention ([`Q-EVIDENCE-RETENTION`](02-plan.md#open-register)) is a prerequisite for production data on Civo.
 
 ## Secrets
@@ -134,17 +153,19 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 - **What a person provides** goes once into the GitHub environment, pasted in the browser: the Civo key, the Cloudflare token, the Entra client ID and secret, and a fine-grained GitHub token for this repository with read and write on Environments alone (the permission that writes environment secrets; managing the environment itself would need repository administration, which can also delete the repository, so the environment's policy and reviewer are the owner's, set once). GitHub encrypts each value with a libsodium sealed box before it reaches GitHub, stores it write-only, masks it in logs and hands it only to the workflow steps that name it.
 - **What a workflow generates** goes into the environment the same way: `bootstrap.yml` creates the state bucket's credential in Civo and ID's two random secrets, each only when missing, and rotates `ROOT_ADMIN_SECRET` on request.
 - **What Terraform makes** stays in its state and goes where it is used: the deploy credentials into the GitHub environment (the `github` module), the database administrator's URL, the origin certificate and the trusted proxies into the cluster (the `platform` module), the origin-pull certificate to Cloudflare (the `edge` module). Terraform holds no secret as input.
-- **What the ops Jobs generate never leaves the cluster.** `ops-bootstrap` writes the six database URLs and `ops-register` the two machine-client secrets straight into Kubernetes Secrets. A rebuilt cluster re-runs both: bootstrap sets a new password for a login whose Secret is gone, register rotates a client secret it cannot find.
+- **What the ops Jobs generate never leaves the cluster.** `ops-bootstrap` writes the database URLs and `ops-register` the three machine-client secrets straight into Kubernetes Secrets. A rebuilt cluster re-runs both: bootstrap sets a new password for a login whose Secret is gone, register rotates a client secret it cannot find.
 - **Kubernetes Secrets rest in Civo's etcd**, whose encryption at rest is undocumented.
 
 | Secret in `answerable` | Keys | Written by | Rotated by |
 | --- | --- | --- | --- |
 | `id-env` | `BETTER_AUTH_SECRET`, `ROOT_ADMIN_SECRET`; `MICROSOFT_CLIENT_ID` with `MICROSOFT_CLIENT_SECRET`, the Google pair and `BETTER_AUTH_SECRETS` when set | The deploy, from the GitHub environment, on every tag | `bootstrap.yml` with `rotate`, or a new value in the environment; the next tag applies it and rolls ID |
 | `postgres-admin` | `OPS_DATABASE_ADMIN_URL` | Terraform, from the database's administrator login | Civo rotates the administrator; `terraform apply` rewrites the Secret |
-| `origin-tls` | `tls.crt`, `tls.key`: the Origin CA certificate for the three hostnames, 15 years | Terraform | `terraform apply -replace` on its key |
+| `origin-tls` | `tls.crt`, `tls.key`: the Origin CA certificate for the four hostnames, 15 years | Terraform | `terraform apply -replace` on its key |
 | `cloudflare-origin-pull-ca` | `ca.crt`, public | The platform chart, from the edge module's CA | `terraform apply -replace` on the CA's key |
-| `id-database`, `id-database-owner`, `toolbox-database`, `toolbox-database-owner`, `admin-database`, `admin-database-owner` | `DATABASE_URL`, `DATABASE_MIGRATION_URL` and the `TOOLBOX_` and `ADMIN_` equivalents | `ops-bootstrap` | Empty the key, tag |
-| `toolbox-id-client`, `admin-id-client` | `TOOLBOX_ID_CLIENT_SECRET`, `ADMIN_ID_CLIENT_SECRET` | `ops-register` | Empty the key, register again |
+| `id-database`, `id-database-owner`, `toolbox-database`, `toolbox-database-owner`, `admin-database`, `admin-database-owner`, `standalone-database`, `standalone-database-owner` | `DATABASE_URL`, `DATABASE_MIGRATION_URL` and the `TOOLBOX_`, `ADMIN_` and `STANDALONE_` equivalents | `ops-bootstrap` | Empty the key, tag |
+| `mcps-database-owner`, `toolbox-mcps-database`, `standalone-mcps-database` | `MCPS_DATABASE_MIGRATION_URL`, `TOOLBOX_MCPS_DATABASE_URL`, `STANDALONE_MCPS_DATABASE_URL`: the shared MCP database's three logins | `ops-bootstrap` | Empty the key, tag |
+| `mcp-<name>-database-owner`, `mcp-<name>-database`, per `own` MCP | `DATABASE_MIGRATION_URL`, `DATABASE_URL` | `ops-bootstrap` | Empty the key, tag |
+| `toolbox-id-client`, `admin-id-client`, `standalone-id-client` | `TOOLBOX_ID_CLIENT_SECRET`, `ADMIN_ID_CLIENT_SECRET`, `STANDALONE_ID_CLIENT_SECRET` | `ops-register` | Empty the key, register again |
 | `ops-staff-token` | `OPS_ID_TOKEN` | The owner, by hand, only while registering again after root has locked | Delete it after use |
 
 Public, in the cluster: the ConfigMaps `trusted-proxies` (Terraform) and `postgres-ca` (the bootstrap Job).
@@ -162,11 +183,13 @@ Public, in the cluster: the ConfigMaps `trusted-proxies` (Terraform) and `postgr
 1. The tag names a commit of `main`, or the run stops.
 2. CI (`ci.yml`): typecheck, lint, build, every test suite, `infra:check` and `infra:test`.
 3. `terraform apply` of `infra/civo` for staging, a no-op when nothing changed; it also keeps the deploy credentials in the environment current.
-4. Build and sign the four images.
-5. Deploy: apply `id-env` from the environment, then `helm upgrade --install` with `--rollback-on-failure`. The hooks run in order: `ops-bootstrap` (every deploy; it records the database's certificate on the first run and changes nothing when nothing is missing), `id-migrate`, `toolbox-migrate`, `admin-migrate`, then the release, then `ops-register` when either client Secret is missing (the first install).
-6. Smoke test through Cloudflare: ID's health, readiness, discovery and keys, the MCPs' health and metadata, retried for five minutes.
+4. Build and sign the images of `infra/pipeline/images.json`.
+5. Deploy: apply `id-env` from the environment, then `helm upgrade --install` with `--rollback-on-failure`. The hooks run in order: ops RBAC; `ops-bootstrap` (every deploy; it records the database's certificate on the first run, makes every database, login and Secret, and each MCP's schema and roles or own database, from `charts/answerable/mcps.json`, and changes nothing when nothing is missing); `id-migrate`, `toolbox-migrate`, `admin-migrate`, `standalone-migrate`, then `mcps-migrate`, one at a time; then the release: the Toolbox rolls with every new provider mounted, the standalone server with every new path; `--wait`; then `ops-register` when a client Secret is missing (the first install).
+6. Smoke test through Cloudflare, generated from `charts/answerable/mcps.json`: ID's health, readiness, discovery and keys; the Toolbox's health, which lists every mounted MCP; the admin MCP's health; the metadata of the Toolbox, the admin MCP and each standalone MCP; retried for five minutes.
 
-**A tag `production/<name>`** ([`promote-production.yml`](../.github/workflows/promote-production.yml), [D8](goals/civo-deploy/decisions.md)): the commit must be on `main` and its four images must carry `deploy-staging.yml`'s signature from a staging tag, so staging always comes first; the run waits for the owner's approval, applies `infra/civo` for production, deploys exactly the verified digests, smoke-tests. Production is never rebuilt.
+An MCP ships with its commit: nothing outside its folder changes, the image holds it, and the chart's list, which `bun mcp` writes, provisions, migrates, mounts and routes it. Its registration in ID is Not yet automatic (MCP CLI M6).
+
+**A tag `production/<name>`** ([`promote-production.yml`](../.github/workflows/promote-production.yml), [D8](goals/civo-deploy/decisions.md)): the commit must be on `main` and each of its images must carry `deploy-staging.yml`'s signature from a staging tag, so staging always comes first; the run waits for the owner's approval, applies `infra/civo` for production, deploys exactly the verified digests, smoke-tests. Production is never rebuilt.
 
 - **Roll back** by tagging an earlier commit, or `helm rollback` with a kubeconfig.
 - **Migrations are expand, then contract** ([D10](goals/civo-deploy/decisions.md)): a migration never breaks the image before it, because that image keeps serving during the rollout and after a rollback. A change that cannot be written that way needs a restore, not a rollback.
@@ -208,8 +231,8 @@ Civo's list prices, measured on 10 October 2026 from its pricing page; USD a mon
 | Check | Proves | Needs |
 | --- | --- | --- |
 | `bun run infra:check` | Both charts lint and validate (`helm lint --strict`, `kubeconform` for every overlay); `terraform fmt`, `validate` and `terraform test` with mocked providers for every module and the root (the firewall rules, names, RBAC, the certificates' wiring, the three GitHub secrets and the refusals); `tflint`; `trivy config` (no HIGH or CRITICAL); `actionlint` on the workflows | No cloud account, no Docker |
-| `bun run infra:test` ([the kind stack](../infra/k8s/local/README.md)) | The four real images in a kind cluster with both charts, Traefik and a TLS-only PostgreSQL 17, with the stack writing what Terraform and the deploy write: refusal without the origin-pull certificate, the forged-header walk, restricted runtime logins, the bootstrap Job recording the database's certificate and `verify-full` against it, NetworkPolicies, `ops-bootstrap` and `ops-register`, a machine token, a staff sign-in in Chromium and an admin MCP call, the Jobs again changing nothing | Docker, kind, about four minutes |
-| `infra/k8s/charts.test.ts` | Every overlay renders with its invariants: digests, the restricted security context, hooks, the shared TLS Secret, the trusted-proxies ConfigMap | Helm |
+| `bun run infra:test` ([the kind stack](../infra/k8s/local/README.md)) | The real images in a kind cluster with both charts, Traefik and a TLS-only PostgreSQL 17, with the stack writing what Terraform and the deploy write: refusal without the origin-pull certificate, the forged-header walk, restricted runtime logins, the bootstrap Job recording the database's certificate and `verify-full` against it, NetworkPolicies, `ops-bootstrap` and `ops-register`, the MCPs of `mcps.json` provisioned and migrated, the Toolbox mounting them, the standalone server serving them by path on `mcp`, the deploy's smoke test, a machine token, a staff sign-in in Chromium and an admin MCP call, the Jobs again changing nothing | Docker, kind, about four minutes |
+| `infra/k8s/charts.test.ts` | Every overlay renders with its invariants: digests, the restricted security context, hooks, the shared TLS Secret, the trusted-proxies ConfigMap; the chart at 0, 1, 3 and 200 MCPs, with the release Helm stores at 200 measured | Helm |
 | `infra/ops` and `infra/pipeline` suites | The commands against fakes, at 100% line and function coverage | Bun |
 | The smoke test | Each deployed environment through Cloudflare, after every deploy | The environment |
 

@@ -5,7 +5,7 @@ locals {
   host_set = "{${join(" ", [for host in sort(values(var.hostnames)) : "\"${host}\""])}}"
 }
 
-# The three service hostnames, proxied, to the load balancer's reserved address. Every name is first-level, so
+# The four service hostnames, proxied, to the load balancer's reserved address. Every name is first-level, so
 # Universal SSL covers it and no certificate add-on is needed (D12). An A record because the origin is an address.
 resource "cloudflare_dns_record" "service" {
   for_each = var.hostnames
@@ -130,7 +130,7 @@ resource "cloudflare_authenticated_origin_pulls_certificate" "this" {
   }
 }
 
-# The origin's server certificate, from Cloudflare's Origin CA: the three hostnames, ECDSA, fifteen years (Cloudflare's
+# The origin's server certificate, from Cloudflare's Origin CA: the four hostnames, ECDSA, fifteen years (Cloudflare's
 # longest). Cloudflare alone trusts it, which is all Full (strict) needs, and it only ever encrypts Cloudflare to the
 # origin. The key never leaves Terraform but for the origin-tls Secret the platform module writes. Cloudflare sends no
 # expiry notice: output origin_certificate_expires_on says when.
@@ -160,7 +160,7 @@ resource "cloudflare_origin_ca_certificate" "this" {
   }
 }
 
-# For the three machine-facing hostnames, no Browser Integrity Check and no challenge: MCP hosts, Claude Code and the
+# For the four machine-facing hostnames, no Browser Integrity Check and no challenge: MCP hosts, Claude Code and the
 # servers' calls to ID are not browsers and would receive an HTML challenge instead of JSON (D18). Elsewhere in the
 # zone the defaults stand. One ruleset per zone and phase: an existing one must be imported first (see the README).
 resource "cloudflare_ruleset" "config" {
@@ -185,7 +185,7 @@ resource "cloudflare_ruleset" "config" {
   ]
 }
 
-# Cloudflare caches nothing from the three hostnames except their static /assets/: tokens, discovery documents and
+# Cloudflare caches nothing from the four hostnames except their static /assets/: tokens, discovery documents and
 # MCP responses must always come from the origin.
 resource "cloudflare_ruleset" "cache" {
   zone_id     = var.zone_id

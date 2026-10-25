@@ -1,5 +1,6 @@
 {{- /*
-Nothing moves in this namespace unless a policy below allows it. The servers take connections only from Traefik;
+Nothing moves in this namespace unless a policy below allows it. The servers, the standalone server among them while it is
+rendered, take connections only from Traefik;
 every pod may resolve names; the servers and the Jobs reach the database; the servers and the ops Jobs reach HTTPS
 outside the private ranges (ID through Cloudflare, the identity providers); the ops Jobs reach the Kubernetes API; ID
 reaches what id.extraEgress adds, such as a company directory on a private network. The ops policy exists whenever an ops
@@ -7,6 +8,7 @@ image is named, not only in a run that switches a Job on: the Jobs are hooks, wh
 resources are applied, so a policy rendered only with them would not exist yet when bootstrap runs.
 */ -}}
 {{- $np := .Values.networkPolicy -}}
+{{- $standalone := fromJsonArray (include "answerable.standaloneMcps" .) | empty | not -}}
 {{- define "answerable.egressDns" -}}
 - to:
     - namespaceSelector:
@@ -46,7 +48,7 @@ metadata:
 spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
-{{- range $server := list (dict "component" "id" "port" 47300 "enabled" true) (dict "component" "toolbox" "port" 47400 "enabled" $.Values.toolbox.enabled) (dict "component" "admin-mcp" "port" 47520 "enabled" $.Values.adminMcp.enabled) }}
+{{- range $server := list (dict "component" "id" "port" 47300 "enabled" true) (dict "component" "toolbox" "port" 47400 "enabled" $.Values.toolbox.enabled) (dict "component" "admin-mcp" "port" 47520 "enabled" $.Values.adminMcp.enabled) (dict "component" "standalone" "port" 47510 "enabled" $standalone) }}
 {{- if $server.enabled }}
 ---
 apiVersion: networking.k8s.io/v1

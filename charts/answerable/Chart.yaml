@@ -1,8 +1,8 @@
 apiVersion: v2
 name: answerable
-description: "Answerable ID, the Toolbox and the admin MCP, with their migrations and the ops Jobs. Values per environment in values-civo-<environment>.yaml."
+description: "Answerable ID, the Toolbox, the admin MCP, the standalone server and every MCP of mcps.json, with their migrations and the ops Jobs. Values per environment in values-civo-<environment>.yaml."
 type: application
-version: 0.2.0
+version: 0.3.0
 kubeVersion: ">=1.29.0-0"
 home: https://github.com/Rieranthony/answerable-monorepo
 sources:
