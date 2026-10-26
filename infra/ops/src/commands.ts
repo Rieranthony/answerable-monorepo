@@ -42,6 +42,17 @@ export function pgSql(url: string) {
 const COMMANDS = ["bootstrap", "register", "make-admin"] as const
 const nonEmpty = z.string().min(1)
 const origin = z.url().transform(url => url.replace(/\/+$/, ""))
+// register's reading of the chart's list: each MCP's manifest scopes too, which its resource allows. bootstrap's reading (declaredMcps) checks the names.
+const registeredMcps = z.string()
+  .transform((text, context) => {
+    try {
+      return JSON.parse(text) as unknown
+    } catch {
+      context.addIssue({ code: "custom", message: "Expected the chart's list of MCPs as JSON" })
+      return z.NEVER
+    }
+  })
+  .pipe(z.array(z.object({ name: nonEmpty, serve: z.enum(["toolbox", "standalone", "both"]), scopes: z.array(nonEmpty) })))
 const opsFields = {
   OPS_NAMESPACE: { schema: nonEmpty.optional(), doc: "bootstrap and register: the namespace of the Secrets they write, read by src/kubernetes.ts; unset, the service account's", source: "chart" },
   OPS_DATABASE_ADMIN_URL: {
@@ -51,13 +62,18 @@ const opsFields = {
     source: "cluster",
   },
   OPS_DATABASE_SSLROOTCERT: { schema: nonEmpty, fallback: "/etc/ssl/db/ca.pem", doc: "bootstrap: where the chart mounts the database's certificate authority, for the services' URLs" },
-  OPS_MCPS: { schema: declaredMcps, doc: "bootstrap: the MCPs charts/answerable/mcps.json declares, as JSON [{ name, serve, database }], whose schemas, roles and own databases it provisions", source: "chart" },
+  OPS_MCPS: {
+    schema: declaredMcps,
+    doc: "bootstrap and register: the MCPs charts/answerable/mcps.json declares, as JSON [{ name, serve, database, scopes }]: bootstrap provisions their schemas, roles and own databases, register each standalone or both one in ID",
+    source: "chart",
+  },
   OPS_ID_URL: { schema: origin, doc: "register and make-admin: ID's origin", source: "chart" },
-  // A staff token when one is given (the chart reads it from the ops-staff-token Secret), else ID's root secret.
-  OPS_ID_TOKEN: { schema: nonEmpty.optional(), secret: true, doc: "register: a staff token, used over OPS_ID_ROOT_SECRET once ID's root secret is locked", source: "operator" },
+  // A staff token when one is given (the chart reads it from the ops-staff-token Secret), else ID's root secret: what mints register's own client.
+  OPS_ID_TOKEN: { schema: nonEmpty.optional(), secret: true, doc: "register: a staff token, used over OPS_ID_ROOT_SECRET, once, to mint register's own client when ID's root secret is locked and ops-id-client is empty", source: "operator" },
   OPS_ID_ROOT_SECRET: { schema: nonEmpty.optional(), secret: true, doc: "register and make-admin: ID's root secret, ROOT_ADMIN_SECRET", source: "deploy" },
   OPS_TOOLBOX_URL: { schema: origin, doc: "register: the Toolbox's origin", source: "chart" },
   OPS_ADMIN_MCP_URL: { schema: origin, doc: "register: the admin MCP's origin", source: "chart" },
+  OPS_MCP_URL: { schema: origin, doc: "register: the standalone server's origin; <origin>/<name>/mcp is each standalone or both MCP's resource", source: "chart" },
   OPS_PLATFORM_SLUG: { schema: nonEmpty, fallback: "answerable", doc: "register and make-admin: the platform organisation's slug" },
   OPS_CLAUDE_CALLBACK_PORT: { schema: z.coerce.number().int().min(1).max(65535), fallback: "47700", doc: "register: the port of Claude Code's OAuth callback that the clients allow", source: "chart" },
   OPS_START_DEPLOYMENTS: {
@@ -84,10 +100,12 @@ export const opsConfig = defineConfig("ops", opsFields)
 const bootstrapConfig = defineConfig("ops", pick("OPS_DATABASE_ADMIN_URL", "OPS_DATABASE_SSLROOTCERT", "OPS_MCPS"))
 const registerConfig = defineConfig(
   "ops",
-  pick("OPS_ID_URL", "OPS_ID_TOKEN", "OPS_ID_ROOT_SECRET", "OPS_TOOLBOX_URL", "OPS_ADMIN_MCP_URL", "OPS_PLATFORM_SLUG", "OPS_CLAUDE_CALLBACK_PORT", "OPS_START_DEPLOYMENTS", "OPS_STAFF_DOMAIN", "OPS_ENTRA_TENANT"),
+  {
+    ...pick("OPS_ID_URL", "OPS_ID_TOKEN", "OPS_ID_ROOT_SECRET", "OPS_TOOLBOX_URL", "OPS_ADMIN_MCP_URL", "OPS_MCP_URL", "OPS_PLATFORM_SLUG", "OPS_CLAUDE_CALLBACK_PORT", "OPS_START_DEPLOYMENTS", "OPS_STAFF_DOMAIN", "OPS_ENTRA_TENANT"),
+    OPS_MCPS: { ...opsFields.OPS_MCPS, schema: registeredMcps },
+  },
   {
     refine(env, issue) {
-      if (!(env.OPS_ID_TOKEN ?? env.OPS_ID_ROOT_SECRET)) issue("OPS_ID_TOKEN", "Required: a staff token, or ID's root secret as OPS_ID_ROOT_SECRET")
       if (!env.OPS_STAFF_DOMAIN !== !env.OPS_ENTRA_TENANT) issue("OPS_ENTRA_TENANT", "OPS_STAFF_DOMAIN and OPS_ENTRA_TENANT go together: set both or neither")
     },
   },
@@ -129,7 +147,10 @@ async function runBootstrap(config: ReturnType<typeof bootstrapConfig.read>, env
 async function runRegister(config: ReturnType<typeof registerConfig.read>, env: Record<string, string | undefined>, deps: Deps) {
   const kube = deps.kubernetes(env)
   const staff = config.OPS_STAFF_DOMAIN && config.OPS_ENTRA_TENANT ? { domain: config.OPS_STAFF_DOMAIN.toLowerCase(), entraTenant: config.OPS_ENTRA_TENANT.toLowerCase() } : undefined
-  await register({ id: config.OPS_ID_URL, token: (config.OPS_ID_TOKEN ?? config.OPS_ID_ROOT_SECRET)!, toolbox: config.OPS_TOOLBOX_URL, adminMcp: config.OPS_ADMIN_MCP_URL, platformSlug: config.OPS_PLATFORM_SLUG, callbackPort: config.OPS_CLAUDE_CALLBACK_PORT, staff, store: createKubernetesSecretStore(kube), fetch: deps.fetch, log: deps.log })
+  await register({
+    id: config.OPS_ID_URL, token: config.OPS_ID_TOKEN ?? config.OPS_ID_ROOT_SECRET, toolbox: config.OPS_TOOLBOX_URL, adminMcp: config.OPS_ADMIN_MCP_URL, mcpOrigin: config.OPS_MCP_URL,
+    mcps: config.OPS_MCPS, platformSlug: config.OPS_PLATFORM_SLUG, callbackPort: config.OPS_CLAUDE_CALLBACK_PORT, staff, store: createKubernetesSecretStore(kube), fetch: deps.fetch, log: deps.log,
+  })
   // The servers wait at zero replicas until their client secrets exist (charts/answerable); start them now that they do.
   for (const entry of config.OPS_START_DEPLOYMENTS?.split(",") ?? []) {
     const [name, count] = entry.trim().split("=") as [string, string]

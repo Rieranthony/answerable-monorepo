@@ -7,6 +7,7 @@ import { requireFresh } from "./fresh"
 import { organisationWrites } from "./organisations"
 import { roleOf, roles, type Role, type Roles } from "./roles"
 import { staffWrites } from "./staff"
+import { standaloneWrites } from "./standalone"
 import { toolboxWrites, type ToolboxAdmin } from "./toolbox"
 import { createOrganisations, memberId, missingMember, missingOrganisation, organizationId, scopes, type Writes } from "./writes"
 
@@ -46,10 +47,12 @@ type AdminProviderConfig = {
   freshSeconds: number
   /** The Toolbox's admin API; without it `toolbox_enable` answers `PRECONDITION_FAILED`. */
   toolbox?: ToolboxAdmin
+  /** The standalone server's origin, whose `/<name>/mcp` is each standalone MCP's resource; without it `standalone_enable` answers `PRECONDITION_FAILED`. */
+  standaloneOrigin?: string
 }
 
 /** The tools of the admin MCP and the least role each needs, reading and writing ID's admin API as the admin MCP's machine client. */
-export function createAdminProvider({ id, authority, platform, resource, issuer, freshSeconds, toolbox }: AdminProviderConfig) {
+export function createAdminProvider({ id, authority, platform, resource, issuer, freshSeconds, toolbox, standaloneOrigin }: AdminProviderConfig) {
   // Each tool with the least role that may use it; null: any member of the platform organisation.
   const minimums = new Map<string, Role | null>()
   const role = <Definition extends Tool | Mutation>(minimum: Role | null, tool: Definition) => {
@@ -224,10 +227,10 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
   const writes: Writes = { calls, role, platform, resource, fresh, ...createOrganisations({ calls, authority, platform, fresh }) }
   const provider = defineProvider({
     id: "admin", version: "2026-10-01",
-    description: "Answerable's staff-only admin MCP: organisations, members, groups, access, single sign-on, the audit log and the Toolbox in Answerable ID, each tool behind a staff role.",
+    description: "Answerable's staff-only admin MCP: organisations, members, groups, access, single sign-on, the audit log, the Toolbox and standalone MCPs in Answerable ID, each tool behind a staff role.",
     tools: [
       whoami, organisationsList, organisationsGet, membersList, membersGet, groupsList, accessList, auditList, ssoTest, staffList,
-      ...organisationWrites(writes), ...accessWrites(writes), ...toolboxWrites(writes, toolbox), ...staffWrites(writes),
+      ...organisationWrites(writes), ...accessWrites(writes), ...toolboxWrites(writes, toolbox), ...standaloneWrites(writes, standaloneOrigin), ...staffWrites(writes),
     ],
   })
   /** The least role a tool needs; null: any member of the platform organisation. */

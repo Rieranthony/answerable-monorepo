@@ -23,7 +23,7 @@ const refusalText = "Access is unavailable for this organisation. Sign in again 
 const freshSeconds = 10
 
 const reads = ["access_list", "audit_list", "groups_list", "members_get", "members_list", "organisations_get", "organisations_list", "sso_test", "staff_list"]
-const ordinary = ["access_enable", "access_grant", "access_revoke", "domains_add", "groups_addmember", "groups_create", "groups_dropmember", "organisations_create", "organisations_update", "sso_set", "toolbox_enable"]
+const ordinary = ["access_enable", "access_grant", "access_revoke", "domains_add", "groups_addmember", "groups_create", "groups_dropmember", "organisations_create", "organisations_update", "sso_set", "standalone_enable", "toolbox_enable"]
 const critical = ["organisations_disable", "organisations_enable", "staff_grant", "staff_revoke"]
 const commits = ["admin_commit", "admin_commit_confirmed"]
 const teamTools = ["admin_whoami", ...reads].toSorted()

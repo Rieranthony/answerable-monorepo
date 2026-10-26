@@ -18,10 +18,11 @@ test("reads ID, the resource, the database and the machine client, defaulting th
     databaseUrl: complete.ADMIN_DATABASE_URL,
     id: { issuer: "http://localhost:47300", adminResource: "http://localhost:47300/api/admin", clientId: "admin-mcp", clientSecret: "secret" },
     toolboxAdminResource: undefined,
+    standaloneOrigin: undefined,
     freshSeconds: undefined,
   })
-  expect(readAdminEnvironment({ ...complete, ADMIN_PORT: "47521", ADMIN_TOOLBOX_ADMIN_RESOURCE: "http://localhost:47400/admin", ADMIN_FRESH_SECONDS: "600" }))
-    .toMatchObject({ port: 47521, toolboxAdminResource: "http://localhost:47400/admin", freshSeconds: 600 })
+  expect(readAdminEnvironment({ ...complete, ADMIN_PORT: "47521", ADMIN_TOOLBOX_ADMIN_RESOURCE: "http://localhost:47400/admin", ADMIN_STANDALONE_ORIGIN: "https://mcp.example/", ADMIN_FRESH_SECONDS: "600" }))
+    .toMatchObject({ port: 47521, toolboxAdminResource: "http://localhost:47400/admin", standaloneOrigin: "https://mcp.example", freshSeconds: 600 })
   expect(readAdminEnvironment({ ...complete, ADMIN_HOST: "0.0.0.0" })).toMatchObject({ hostname: "0.0.0.0" })
   expect(readAdminEnvironment({ ...complete, ADMIN_HOST: "::" })).toMatchObject({ hostname: "::" })
 })
@@ -35,6 +36,7 @@ test("outside production, everything but the client pair defaults to the local s
       databaseUrl: "postgres://answerable_admin_runtime:answerable@localhost:47432/answerable_admin",
       id: { issuer: "http://localhost:47300", adminResource: "http://localhost:47300/api/admin", clientId: "admin-mcp", clientSecret: "secret" },
       toolboxAdminResource: "http://localhost:47400/admin",
+      standaloneOrigin: "http://localhost:47510",
       freshSeconds: undefined,
     })
   expect(() => readAdminEnvironment({})).toThrow("Invalid admin MCP configuration: ADMIN_ID_CLIENT_ID: ")
@@ -55,6 +57,7 @@ test("names the variable that is missing or invalid", () => {
   expect(() => readAdminEnvironment({ ...complete, ADMIN_HOST: "admin.example" })).toThrow("Invalid admin MCP configuration: ADMIN_HOST: ")
   expect(() => readAdminEnvironment({ ...complete, ADMIN_FRESH_SECONDS: "0" })).toThrow("ADMIN_FRESH_SECONDS")
   expect(() => readAdminEnvironment({ ...complete, ADMIN_TOOLBOX_ADMIN_RESOURCE: "not a url" })).toThrow("ADMIN_TOOLBOX_ADMIN_RESOURCE")
+  expect(() => readAdminEnvironment({ ...complete, ADMIN_STANDALONE_ORIGIN: "not a url" })).toThrow("ADMIN_STANDALONE_ORIGIN")
   expect(() => readAdminEnvironment({ ...complete, ADMIN_RESOURCE_URL: "http://admin.example/mcp" })).toThrow("Invalid admin MCP configuration: ADMIN_RESOURCE_URL: resource must use HTTPS or loopback HTTP")
   expect(() => readAdminEnvironment({ ...complete, ADMIN_ID_ISSUER: "http://id.example" })).toThrow("Invalid admin MCP configuration: ADMIN_ID_ISSUER: issuer must use HTTPS or loopback HTTP")
 })

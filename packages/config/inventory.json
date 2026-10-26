@@ -450,6 +450,17 @@
         "optional": true
       },
       {
+        "name": "ADMIN_STANDALONE_ORIGIN",
+        "secret": false,
+        "defaults": {
+          "development": "http://localhost:47510",
+          "test": "http://localhost:47510"
+        },
+        "doc": "The standalone server's origin, whose <origin>/<name>/mcp is each standalone MCP's resource, for giving an organisation access to one; unset, that is refused",
+        "source": "chart",
+        "optional": true
+      },
+      {
         "name": "ADMIN_FRESH_SECONDS",
         "secret": false,
         "doc": "How recent an upstream sign-in a critical operation needs, in seconds; unset, 1,800",
@@ -747,7 +758,7 @@
       {
         "name": "OPS_MCPS",
         "secret": false,
-        "doc": "bootstrap: the MCPs charts/answerable/mcps.json declares, as JSON [{ name, serve, database }], whose schemas, roles and own databases it provisions",
+        "doc": "bootstrap and register: the MCPs charts/answerable/mcps.json declares, as JSON [{ name, serve, database, scopes }]: bootstrap provisions their schemas, roles and own databases, register each standalone or both one in ID",
         "source": "chart",
         "optional": false
       },
@@ -761,7 +772,7 @@
       {
         "name": "OPS_ID_TOKEN",
         "secret": true,
-        "doc": "register: a staff token, used over OPS_ID_ROOT_SECRET once ID's root secret is locked",
+        "doc": "register: a staff token, used over OPS_ID_ROOT_SECRET, once, to mint register's own client when ID's root secret is locked and ops-id-client is empty",
         "source": "operator",
         "optional": true
       },
@@ -783,6 +794,13 @@
         "name": "OPS_ADMIN_MCP_URL",
         "secret": false,
         "doc": "register: the admin MCP's origin",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "OPS_MCP_URL",
+        "secret": false,
+        "doc": "register: the standalone server's origin; <origin>/<name>/mcp is each standalone or both MCP's resource",
         "source": "chart",
         "optional": false
       },

@@ -19,6 +19,8 @@ export type AdminMcpConfig = {
   freshSeconds?: number
   /** The Toolbox's admin resource (`ADMIN_TOOLBOX_ADMIN_RESOURCE`) and, for tests, the HTTP client that reaches it; unset, `toolbox_enable` is refused. */
   toolbox?: { resource: string; fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response> }
+  /** The standalone server's origin (`ADMIN_STANDALONE_ORIGIN`); unset, `standalone_enable` is refused. */
+  standaloneOrigin?: string
 }
 
 /**
@@ -29,10 +31,10 @@ export type AdminMcpConfig = {
  * organisation's chain (`@answerable/mcp-platform`); a commit's names the intent it applied and the service that intent's capability calls.
  * `GET /health` answers from the database.
  */
-export function createAdminMcp({ auth, db, id, platform, freshSeconds = 1800, toolbox }: AdminMcpConfig) {
+export function createAdminMcp({ auth, db, id, platform, freshSeconds = 1800, toolbox, standaloneOrigin }: AdminMcpConfig) {
   const authority = createRoles({ id, platform, resource: auth.resource })
   const { provider, minimum } = createAdminProvider({
-    id, authority, platform, resource: auth.resource, issuer: auth.issuer, freshSeconds, toolbox: toolbox && createToolboxAdmin({ id, ...toolbox }),
+    id, authority, platform, resource: auth.resource, issuer: auth.issuer, freshSeconds, toolbox: toolbox && createToolboxAdmin({ id, ...toolbox }), standaloneOrigin,
   })
   const profiles = createIdProfiles(id)
   const calls = createCalls({

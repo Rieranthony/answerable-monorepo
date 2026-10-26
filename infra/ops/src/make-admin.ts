@@ -49,8 +49,8 @@ export async function makeAdmin({ id, rootSecret, email, platformSlug, fetch = g
   })
   if (check === undefined) {
     log(`Root is locked now: ID refuses the root secret (403 root_locked), because a person holds platform:write.
-From now on register, and anything else with ID's admin API, needs a staff token: get one as apps/web/content/docs/id/onboard.mdx
-(Get a staff token) says, put it in the Secret ops-staff-token (key OPS_ID_TOKEN) in this namespace, and run register.
+register goes on as its own machine client, ops-register, which its first run minted: no staff token is needed. Anything else with
+ID's admin API needs your own session or a staff token (apps/web/content/docs/id/onboard.mdx, Get a staff token).
 Keep ROOT_ADMIN_SECRET in the GitHub environment, with ROOT_ADMIN_BREAK_GLASS unset: it is the break-glass.`)
     return { platform, member: member.id }
   }

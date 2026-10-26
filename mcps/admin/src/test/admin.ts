@@ -10,6 +10,8 @@ export const resource = "https://mcp.test/mcp"
 export const toolboxResource = "https://toolbox.test/admin"
 /** The Toolbox's MCP resource, which entitlements for people name. */
 export const toolboxMcp = "https://toolbox.test/mcp"
+/** The standalone server's origin in the tests: each standalone MCP is the resource `<origin>/<name>/mcp`. */
+export const standaloneOrigin = "https://mcp.test"
 export const entraIssuer = "https://login.microsoftonline.com/00000000-0000-0000-0000-00000000000a/v2.0"
 
 /** A fake ID whose machine client, admin-mcp, gets tokens for ID's admin API and, with `toolbox:admin`, for the Toolbox's admin API. */
@@ -114,7 +116,7 @@ export async function createAdmin(db: Database, { freshSeconds }: { freshSeconds
   }
   const mcp: TestMcp = await createTestMcp(({ auth }) => {
     const server = createAdminMcp({
-      auth, db, id: createIdAdmin({ ...id.config, fetch: observed }), platform, freshSeconds, toolbox: { resource: toolboxResource, fetch: toolbox.fetch },
+      auth, db, id: createIdAdmin({ ...id.config, fetch: observed }), platform, freshSeconds, toolbox: { resource: toolboxResource, fetch: toolbox.fetch }, standaloneOrigin,
     })
     return { fetch: async (request: Request) => server.fetch(await resign(request)) }
   })

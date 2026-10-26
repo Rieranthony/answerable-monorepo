@@ -17,8 +17,9 @@ https://{{ .host }}{{ with .root.Values.publicPort }}:{{ . }}{{ end }}
 
 {{/*
 The MCPs charts/answerable/mcps.json declares, as JSON that fromJsonArray reads back: each one's name, serve (toolbox, standalone or
-both) and database (shared or own). bun mcp writes the file from each MCP's mcp.json, with an object root: fromJson turns an array into an
-error map, which would read as no MCP at all, so anything but { "mcps": [...] } fails the render.
+both), database (shared or own) and scopes, its manifest's, which the ops register Job gives a standalone MCP's resource. bun mcp writes
+the file from each MCP's mcp.json and manifest, with an object root: fromJson turns an array into an error map, which would read as no
+MCP at all, so anything but { "mcps": [...] } fails the render.
 */}}
 {{- define "answerable.mcps" -}}
 {{- $file := .Files.Get "mcps.json" | fromJson -}}
@@ -27,7 +28,7 @@ error map, which would read as no MCP at all, so anything but { "mcps": [...] } 
 {{- end -}}
 {{- $mcps := list -}}
 {{- range $file.mcps -}}
-{{- $mcps = append $mcps (dict "name" .name "serve" .serve "database" .database) -}}
+{{- $mcps = append $mcps (dict "name" .name "serve" .serve "database" .database "scopes" .scopes) -}}
 {{- end -}}
 {{- toJson $mcps -}}
 {{- end -}}

@@ -1,6 +1,6 @@
 // bun mcp end to end, as a coding agent runs it: in a copy of the working tree as it is (untracked files included, never HEAD), without a
 // terminal, with a random name, against the development Postgres. Whatever happens, the MCP's schemas and roles and the copy are removed.
-import { afterAll, expect, test } from "bun:test"
+import { expect, test } from "bun:test"
 import { existsSync, lstatSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -26,12 +26,22 @@ async function copyWorkingTree() {
   const install = await bun("install", "--frozen-lockfile")
   if (install.code) throw new Error(`bun install --frozen-lockfile failed in the copy:\n${install.output}`)
 }
-afterAll(async () => {
+// The clean-up runs inside the test, under its timeout: removing an installed copy and the MCP's roles under the role lock can outlast Bun's
+// 5-second hook timeout when other suites share the machine, and Bun 1.3.1 gives a hook no timeout of its own.
+async function forgetAll() {
   await forget(name)
   if (copy) await rm(copy, { recursive: true, force: true })
-})
+}
 
 test("bun mcp new, check, add tool for a read and a mutation, list and a second new, without a terminal", async () => {
+  try {
+    await run()
+  } finally {
+    await forgetAll()
+  }
+}, 300_000)
+
+async function run() {
   await copyWorkingTree()
   const description = "An end-to-end test's MCP, made and removed by scripts/mcp/end-to-end.test.ts."
   const made = await bun("mcp", "new", name, "--description", description, "--serve", "toolbox")
@@ -60,4 +70,4 @@ test("bun mcp new, check, add tool for a read and a mutation, list and a second 
   expect(again.code).toBe(2)
   expect(again.output).toContain(`${name} is taken by mcps/${name}; choose another name`)
   expect(await traces(name)).toEqual([`answerable_mcps.${name}`, `answerable_mcps_test.${name}`, `mcp_${name}`, `mcp_${name}_owner`, `mcp_test_${name}`, `mcp_test_${name}_owner`])
-}, 300_000)
+}

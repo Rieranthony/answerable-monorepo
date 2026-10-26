@@ -52,7 +52,7 @@ git push origin staging/first
 gh run watch
 ```
 
-In the deploy, `ops-bootstrap` records the database's certificate (its log names the SHA-256 fingerprint: record it with the date), creates the databases and their logins, and each MCP's schema and roles, then the migrations run and ID starts. The first deploy finds that the MCP servers' client Secrets do not exist, so it runs `ops-register` in the same upgrade, with the root secret, before anyone is a platform administrator: the Toolbox and the admin MCP are registered in ID, the standalone server's client is minted, the three start by themselves, and the staff domain and the Entra provider are put on the platform organisation.
+In the deploy, `ops-bootstrap` records the database's certificate (its log names the SHA-256 fingerprint: record it with the date), creates the databases and their logins, and each MCP's schema and roles, then the migrations run and ID starts. Then `ops-register` runs, as it does on every deploy. This first time it holds only the root secret, before anyone is a platform administrator, so it first mints its own machine client, `ops-register`, and keeps its secret in the Secret `ops-id-client`; it goes on as that client. The Toolbox and the admin MCP are registered in ID, the standalone server's client is minted, each `standalone` or `both` MCP is registered, the three servers start by themselves, and the staff domain and the Entra provider are put on the platform organisation.
 
 **5. Make the images public.** New GHCR packages are private, and the cluster pulls without credentials. If the deploy failed on pulling an image, open each package of [`pipeline/images.json`](pipeline/images.json) (`answerable/id`, `answerable/mcps`, `answerable/ops`) on GitHub under your profile's Packages, choose Package settings > Change visibility > Public, then rerun the failed jobs:
 
@@ -63,7 +63,7 @@ gh run rerun <run id> --failed
 
 **6. Sign in once** at `https://id.answerable-staging.uk/login` with your work account. That creates your user and your platform membership.
 
-**7. Make yourself the administrator.** Run the **Ops** workflow with `staging`, `make-admin` and your email. With the root secret, the Job puts you in `answerable-owner`, the admin MCP's owner role, then in `platform-admins`. That second step locks root, which is why the owner role comes first; the Job confirms ID now refuses the root secret.
+**7. Make yourself the administrator.** Run the **Ops** workflow with `staging`, `make-admin` and your email. With the root secret, the Job puts you in `answerable-owner`, the admin MCP's owner role, then in `platform-admins`. That second step locks root, which is why the owner role comes first; the Job confirms ID now refuses the root secret. Nothing else needs root afterwards: every deploy's `ops-register` runs as its own client.
 
 ```sh
 gh workflow run ops.yml --ref main -f environment=staging -f command=make-admin -f email=<you>@answerable.org
@@ -97,7 +97,7 @@ gh run watch
 | CI | The same checks as every push |
 | `Apply the staging infrastructure` | `terraform apply` of `infra/civo` for staging; a no-op unless Terraform, `charts/platform` or Cloudflare's published ranges changed |
 | `Build …` | One amd64 image per entry of `pipeline/images.json`, pushed as `sha-<commit>` and signed |
-| `Deploy to staging` | The Secret `id-env` applied from the environment, `helm upgrade` by digest with every hook; on failure the release rolls back and the migration and ops Jobs' logs are printed |
+| `Deploy to staging` | The Secret `id-env` applied from the environment, `helm upgrade` by digest with every hook, `ops-register` among them; on failure the release rolls back and the migration and ops Jobs' logs are printed |
 | `Smoke test staging` | A table of every check, in the run's summary: one line per standalone MCP, and the Toolbox's mounted MCPs |
 
 - **A Terraform change** applies on the next staging tag. Read `terraform plan` locally first when the change is more than a size (`infra/civo/terraform.sh staging plan`, [day two](civo/README.md#day-two)).
@@ -106,11 +106,13 @@ gh run watch
 
 ### The first ship with the standalone server
 
-Once per environment, the first tag of a commit that has the `mcps` image and the `mcp` hostname:
+Once per environment, the first tag of a commit that has the `mcps` image, the `mcp` hostname and `ops-register`:
 
 1. **Terraform** adds the record `mcp.<zone>` and reissues the origin certificate for the four hostnames: the new certificate reaches `origin-tls` before the old one is revoked, so nothing stops. The plan shows the record, the certificate request and the certificate replaced.
 2. **The `mcps` package is new, so private**, and the deploy fails pulling it. Make it public once, as in [First run](#first-run) step 5 (`answerable/mcps`), and rerun the failed jobs. The packages `answerable/toolbox` and `answerable/admin-mcp` are no longer built; delete them once production runs `mcps`.
-3. **`standalone-id-client` does not exist**, so the deploy runs `register` in the same upgrade. Once a person holds `platform:write`, ID refuses the root secret: put a staff token in `ops-staff-token` before the tag, as in [Register again](#register-again), or the upgrade rolls back.
+3. **`ops-register` has no client of its own yet.** It is minted in this deploy, by whichever bearer the Job holds:
+   - **Nobody has run `make-admin` in the environment yet:** the root secret mints it, as on a first run. Nothing to do.
+   - **Root is locked already:** ID refuses the root secret, the Job stops with `register has no machine client of its own yet (the Secret ops-id-client is empty), and ID refuses the root secret (root_locked)`, and the release rolls back. So, before the tag, put a staff token in `ops-staff-token`, as in [Register again](#register-again); the Job mints `ops-register` with it and goes on as `ops-register`. Delete the Secret afterwards. This is the last time anyone places a token by hand.
 
 ### Ship an MCP
 
@@ -119,17 +121,19 @@ An MCP made with `bun mcp new` ships with its commit, by the same tags: nothing 
 1. **provisions it** (`ops-bootstrap`): a `shared` MCP gets schema `<name>` in `answerable_mcps` with its roles `mcp_<name>_owner` and `mcp_<name>`; an `own` MCP gets the database `answerable_mcp_<name>`, its two logins and their Secrets `mcp-<name>-database-owner` and `mcp-<name>-database`;
 2. **migrates it** (`mcps-migrate`, after the hubs' own migrations): its log names each MCP and the time the whole list took;
 3. **serves it**: the Toolbox mounts a `toolbox` or `both` MCP, and the standalone server serves a `standalone` or `both` MCP at `https://mcp.<zone>/<name>/mcp`;
-4. **checks it** (`Smoke test staging`): a standalone MCP's metadata names its resource; the Toolbox's `/health` lists every mounted MCP.
+4. **registers it** (`ops-register`): a `standalone` or `both` MCP gets its resource `https://mcp.<zone>/<name>/mcp` in ID, allowing its manifest's scopes and `offline_access`, its Claude Code client `claude-code-<name>` and their link;
+5. **checks it** (`Smoke test staging`): a standalone MCP's metadata names its resource; the Toolbox's `/health` lists every mounted MCP.
 
 What to check when a new MCP ships:
 
 - `kubectl -n answerable logs job/mcps-migrate` (kept until the next deploy): `<name>: migrating in answerable_mcps as mcp_<name>_owner`, and `Migrated N MCPs in … s`.
 - The smoke table: `toolbox /health` names the providers it mounts; `<name> resource metadata` passes for a standalone MCP.
-- Not yet automatic: registering a standalone MCP in ID (its resource, Claude Code client and link) and giving organisations access. Until then a standalone MCP answers 401 with its metadata, and no token can be issued for it.
+- `kubectl -n answerable logs job/ops-register` (kept a day): `mcp-<name>-resource-v1: done`, `claude-code-<name>-v1: done` and the link the first time; afterwards the summary line counts it among what is as declared. A scope the manifest dropped is logged as its resource stops allowing it.
+- Giving an organisation access is a staff decision, not part of shipping: `standalone_enable` in the admin MCP ([the admin MCP](../apps/web/content/docs/admin/index.mdx)), then `access_grant` of the MCP's scopes with `clientId` `claude-code-<name>`, or `everyone: true`.
 
 Then tag `production/<name>` on the same commit. A failed migration fails the deploy and rolls the release back, as any migration does; each MCP migrates in one transaction, so the one that failed is left as it was, and those before it keep their migrations, which the previous image tolerates (expand, then contract).
 
-An MCP removed from `mcps/` keeps its schema, roles, own database and Secrets: its name goes into `mcps/retired.json`, and removing what it left is Not yet automated.
+An MCP removed from `mcps/` keeps its schema, roles, own database and Secrets, and its resource, client and link in ID: its name goes into `mcps/retired.json`, and removing what it left is Not yet automated.
 
 ## Promote to production
 
@@ -174,6 +178,7 @@ A changed secret in the environment reaches the cluster on the next tag: the dep
 | Microsoft or Google platform application | Create a new secret in the provider's console, set both of the pair in the environment (`gh secret set MICROSOFT_CLIENT_SECRET --env staging`, which asks for the value), tag, then retire the old secret ([`docs/06`](../docs/06-deploying-answerable-id.md#operating-it)) |
 | A database login | Empty its key, for example `kubectl -n answerable patch secret id-database --type merge -p '{"stringData":{"DATABASE_URL":""}}'` with a [kubeconfig](#get-a-kubeconfig); tag (`ops-bootstrap` gives the login a new password and writes its URL); the service restarts with the deploy ([`infra/ops`](ops/README.md#bootstrap)) |
 | A machine client (`toolbox-id-client`, `admin-id-client`, `standalone-id-client`) | Empty its key the same way, then [register again](#register-again); `register` rotates the secret in ID and restarts the servers |
+| Register's own client (`ops-id-client`) | Empty its key, put a staff token in `ops-staff-token` and [register again](#register-again): `register` rotates its secret in ID with the token and stores it. Delete `ops-staff-token` afterwards |
 | The origin certificate or the origin-pull certificate | Adding a hostname (as `mcp` was) reissues the origin certificate on the next apply by itself: a new one is issued and written to `origin-tls` before the old one is revoked. Otherwise, a reviewed change adds `-replace` for the key to the apply once, or run it from a trusted machine: `infra/civo/terraform.sh staging apply -replace=module.edge.tls_private_key.<name>`; both switch within one apply, with a short interruption ([`infra/civo/README.md`](civo/README.md#certificates)) |
 | The deployer token | `infra/civo/terraform.sh staging apply -replace=module.deployer.kubernetes_secret_v1.token` from a trusted machine; Terraform writes the new `KUBE_TOKEN` into the environment |
 | `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `GH_SECRETS_TOKEN` | Regenerate in the vendor's console (for Civo, regeneration is the only control), then `gh secret set <name> --env staging` (it asks for the value) |
@@ -207,13 +212,21 @@ Delete the kubeconfig. Keep the ring in the environment with both versions: remo
 
 ### Register again
 
-Not part of the first run, which registers by itself. `register` must run again to rotate a machine client's secret or after a registration changes. Root is locked by then, so it needs a staff token ([Get a staff token](../apps/web/content/docs/id/onboard.mdx#get-a-staff-token)) in the Secret the Job reads. With a [kubeconfig](#get-a-kubeconfig):
+Every deploy runs `register` already, as its own client: a changed MCP list or manifest reaches ID on the next tag, with nothing to do. Run it by hand only to rotate a machine client's secret ([Rotate](#rotate)) without a deploy:
+
+```sh
+gh workflow run ops.yml --ref main -f environment=staging -f command=register
+gh run watch
+```
+
+`register` reads each resource and client, changes with `If-Match` only what differs, and writes nothing when everything is as declared. Scopes only widen, so what `toolbox_enable` added to the Toolbox's resource stays; an MCP's own resource follows its manifest. An MCP removed from the list keeps its rows.
+
+**A staff token, once.** `register` needs one only when it has no client of its own (`ops-id-client` empty) and root is locked: the first ship of `ops-register` after `make-admin`, or a rotation of its own secret. Get one ([Get a staff token](../apps/web/content/docs/id/onboard.mdx#get-a-staff-token)) and put it where the Job reads it, with a [kubeconfig](#get-a-kubeconfig), before the tag or the workflow:
 
 ```sh
 printf 'Staff token: '; read -rs TOKEN; echo
 kubectl -n answerable create secret generic ops-staff-token --from-literal=OPS_ID_TOKEN="$TOKEN"
-gh workflow run ops.yml --ref main -f environment=staging -f command=register
-gh run watch
+# … the tag, or gh workflow run ops.yml … -f command=register
 kubectl -n answerable delete secret ops-staff-token
 ```
 
@@ -297,4 +310,5 @@ What each proves: [`docs/12`](../docs/12-deployment.md#testing). On macOS, a Ter
 - **New GHCR packages are private** and have no API to change that: set them public once, after the first build.
 - **Traefik's CRDs** are installed by Helm on the first install only. A later Traefik upgrade applies its CRDs first (for example with the `traefik-crds` chart).
 - **The database admits the private network**, not the nodes alone: Civo firewalls match ranges, and nothing else may join the network ([`modules/database`](civo/modules/database/README.md)).
+- **Register's own client is broad.** `ops-register` holds `platform:read platform:write`, as the Toolbox's and the admin MCP's clients do: with its secret one can mint further clients and rotate secrets. A narrower scope for registration is Not yet ([`Q-PLATFORM-REGISTER-SCOPE`](../docs/02-plan.md#open-register)); its secret lives only in `ops-id-client`, which only the ops Jobs' Role reads.
 - **The `civo` provider and macOS.** A provider binary rewritten in a shared plugin cache is killed on start; `infra:check` keeps a cache per checkout ([details](civo/README.md#checks)).

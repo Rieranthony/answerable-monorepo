@@ -209,3 +209,38 @@
     - `infra:check` passed;
     - the agent's runs: `infra:test` 120 pass, and the acceptance 62 pass.
   - **Side effect:** while cleaning up its images, the agent ran `docker image prune -f`, which also removed dangling (untagged) images elsewhere on the machine.
+- **M6, registration,** by Opus. Interrupted once when the machine slept, then resumed.
+  - **The first test, against real ID:** `ops-register` (`platform:read platform:write`), minted with root, creates and patches a resource, a client and a link after the root lock.
+  - **What it built:**
+    - register mints its own client on the first run with a bearer and needs neither root nor a token after;
+    - it registers each standalone MCP from `OPS_MCPS` (now with scopes) on every deploy;
+    - compare, then patch with `If-Match` under revision-suffixed keys, widening only (an MCP's own resource may narrow, logged);
+    - a failed register still rolls the release back, deliberately;
+    - `standalone_enable` in the admin MCP;
+    - `Q-OPS-REGISTER-CLIENT` resolved, and `Q-PLATFORM-REGISTER-SCOPE` added.
+  - **Found:** a standalone MCP's grants must name the host client (ID's `member-permission.ts:147`); the design is corrected, and M7 and M8 carry the fix.
+  - **Measured:** register in kind took 1.3 s on the first run, then 0.8 s with nothing to change; about 10 to 24 s estimated at 200 MCPs.
+  - **The kind proof:**
+    1. first deploy mints with root;
+    2. root locked;
+    3. a new standalone MCP registered by `ops-register` with no token;
+    4. smoke test;
+    5. `standalone_enable` committed by staff in a browser;
+    6. the tenant's person signs in and calls `example_status`;
+    7. the unenabled organisation is refused.
+  - **The agent's gates:**
+    - `mcp:test`: 908 pass;
+    - `infra:test`: 123 pass in 265 s;
+    - the acceptance: 63 pass in 147 s;
+    - `infra:check` passed.
+- **The coordinator's gates on M6:**
+  - typecheck and lint forced: 21 of 21;
+  - build: 2 of 2;
+  - web: 100;
+  - knip clean;
+  - frozen install unchanged;
+  - `infra:check` passed;
+  - the acceptance: 63 pass, 0 fail, in 144 s;
+  - `mcp:test`: 908 pass, 0 fail, 6 runs in a row, after one fix.
+- **The fix:** the CLI's end-to-end test removed its copy and roles in `afterAll`, which timed out at Bun's 5-second hook limit in about 1 run in 5 under load, and Bun 1.3.1 rejects a hook timeout. The clean-up now runs in the test's own `finally`, under its 300 s timeout.
+- **What's left for CI:** the kind stack, on the push of M4 to M6.

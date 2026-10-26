@@ -92,7 +92,7 @@ At ID's email step type the address given below; the company sign-in that follow
 
 1. Staff, an owner of the admin MCP: ${platform.email}
    claude mcp add --transport http answerable-admin ${adminResource} --client-id ${adminHost.clientId} --callback-port 47700
-   then run /mcp in Claude Code, choose answerable-admin and Authenticate, and type the email above. Ask Claude to call admin_whoami: you are an owner, with 27 tools.
+   then run /mcp in Claude Code, choose answerable-admin and Authenticate, and type the email above. Ask Claude to call admin_whoami: you are an owner, with 28 tools.
 
 2. Onboard a new organisation: ask Claude to create the organisation ${spare.slug}, named Newco, and route the domain ${spare.domain} to it, enable the Toolbox for it from
    ${toolboxHost.clientId} with e2e, and grant everyone in it e2e/records on ${toolboxResource}. A directory with its own credentials needs a secret that no tool takes,

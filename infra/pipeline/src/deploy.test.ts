@@ -40,8 +40,6 @@ const ID_ENV = {
 }
 const ENV = { ...CLUSTER_ENV, ...ID_ENV }
 const VALUES = "charts/answerable/values-civo-staging.yaml"
-const CLIENT_SECRETS_COMMAND = "kubectl get secret toolbox-id-client admin-id-client standalone-id-client -n answerable -o name --ignore-not-found"
-const ALL_EXIST = "secret/toolbox-id-client\nsecret/admin-id-client\nsecret/standalone-id-client\n"
 const NAMES = ["id", "mcps", "ops"] as const
 
 /** The digests the registry answers for TAG, and others given on the command line. */
@@ -77,17 +75,12 @@ type FixtureOptions = {
   env?: Record<string, string | undefined>
   /** Answers `docker buildx imagetools inspect`; the registry by default. */
   docker?: (call: RecordedCall) => Partial<RunResult>
-  /** Answers the check for the client Secrets; both exist by default. */
-  clients?: (call: RecordedCall) => Partial<RunResult>
 }
 
-async function fixture(reply: (call: RecordedCall) => Partial<RunResult> | undefined = () => undefined, { env = ENV, docker = registry, clients = () => ({ stdout: ALL_EXIST }) }: FixtureOptions = {}) {
+async function fixture(reply: (call: RecordedCall) => Partial<RunResult> | undefined = () => undefined, { env = ENV, docker = registry }: FixtureOptions = {}) {
   const root = await createRoot({ [VALUES]: "" })
   cleanups.push(root.remove)
-  const isClientCheck = (call: RecordedCall) => call.argv[0] === "kubectl" && call.argv[1] === "get" && call.argv[2] === "secret"
-  const runner = createFakeRunner((call) =>
-    call.argv[0] === "docker" ? docker(call) : isClientCheck(call) ? clients(call) : reply(call),
-  )
+  const runner = createFakeRunner((call) => (call.argv[0] === "docker" ? docker(call) : reply(call)))
   const logs: string[] = []
   const deps: Deps = { run: runner.run, log: (text) => logs.push(text), env, root: root.path }
   return {
@@ -268,14 +261,13 @@ describe("idEnv and idEnvChecksum", () => {
 })
 
 describe("deploy", () => {
-  test("looks up the digests, applies id-env and upgrades the release by digest, with the bootstrap and the secrets' checksum", async () => {
+  test("looks up the digests, applies id-env and upgrades the release by digest, with the bootstrap, register and the secrets' checksum", async () => {
     const f = await fixture()
     await deploy({ environment: "staging", imageTag: TAG }, f.deps)
     expect(f.runner.commands()).toEqual([
       ...lookups(TAG),
       "kubectl apply -n answerable -f -",
-      CLIENT_SECRETS_COMMAND,
-      upgradeCommand(`${pins(DIGESTS)} --set-string idEnvChecksum=${checksum(ID_ENV)} --set ops.bootstrap=true`),
+      upgradeCommand(`${pins(DIGESTS)} --set-string idEnvChecksum=${checksum(ID_ENV)} --set ops.bootstrap=true --set ops.register=true`),
     ])
     expect(f.log()).toContain(`Deployed ${TAG} to staging.`)
     expect(f.log()).toContain(`id is ${DIGESTS.id}`)
@@ -311,7 +303,7 @@ describe("deploy", () => {
     const f = await fixture()
     await deploy({ environment: "staging", imageTag: TAG, digests: OTHER_DIGESTS }, f.deps)
     expect(f.runner.commands().some((command) => command.startsWith("docker "))).toBe(false)
-    expect(f.cluster()[2]).toContain(`--set image.tag=${TAG} ${pins(OTHER_DIGESTS)}`)
+    expect(f.cluster()[1]).toContain(`--set image.tag=${TAG} ${pins(OTHER_DIGESTS)}`)
   })
 
   test("stops before the cluster when a tag cannot be resolved", async () => {
@@ -341,7 +333,7 @@ describe("deploy", () => {
     }
     await deploy({ environment: "staging", imageTag: TAG }, deps)
     const clusterCalls = f.runner.calls.filter((call) => call.argv[0] !== "docker")
-    expect(clusterCalls).toHaveLength(3)
+    expect(clusterCalls).toHaveLength(2)
     expect(new Set(modes)).toEqual(new Set([0o600]))
     for (const call of f.runner.calls) expect(call.options.cwd).toBe(f.root)
     for (const call of clusterCalls) expect(JSON.parse(call.kubeconfig!).users[0].user.token).toBe("deployer-token-value")
@@ -370,40 +362,27 @@ describe("deploy", () => {
     expect(f.cluster()).toHaveLength(1)
   })
 
-  test("registers in the same upgrade when no client Secret exists yet, and says why", async () => {
-    const f = await fixture(undefined, { clients: () => ({ stdout: "" }) })
-    await deploy({ environment: "staging", imageTag: TAG }, f.deps)
-    expect(f.cluster()).toContain(CLIENT_SECRETS_COMMAND)
-    expect(f.cluster().at(-1)).toEndWith("--set ops.bootstrap=true --set ops.register=true")
-    expect(f.log()).toContain("toolbox-id-client and admin-id-client and standalone-id-client do not exist in answerable yet, so this upgrade also runs register, which creates them and starts the servers that wait for them")
-  })
-
-  test("registers when only one client Secret is missing, naming it: the standalone server's too, on the first deploy that has it", async () => {
-    for (const [present, missing] of [
-      ["secret/toolbox-id-client\nsecret/standalone-id-client\n", "admin-id-client"],
-      ["secret/admin-id-client\nsecret/standalone-id-client\n", "toolbox-id-client"],
-      ["secret/toolbox-id-client\nsecret/admin-id-client\n", "standalone-id-client"],
-    ] as const) {
-      const f = await fixture(undefined, { clients: () => ({ stdout: present }) })
+  test("registers on every upgrade, whatever Secrets exist: register is its own machine client once its first run has minted it", async () => {
+    for (const f of [await fixture(), await fixture()]) {
       await deploy({ environment: "staging", imageTag: TAG }, f.deps)
-      expect(f.cluster().at(-1)).toEndWith("--set ops.register=true")
-      expect(f.log()).toContain(`${missing} does not exist in answerable yet, so this upgrade also runs register, which creates it and`)
+      expect(f.cluster().at(-1)).toEndWith("--set ops.bootstrap=true --set ops.register=true")
+      expect(f.cluster().some((command) => command.startsWith("kubectl get secret"))).toBe(false)
     }
   })
 
-  test("does not register once every client Secret exists: root may be locked by then", async () => {
-    const f = await fixture()
-    await deploy({ environment: "staging", imageTag: TAG }, f.deps)
-    expect(f.cluster().at(-1)).not.toContain("ops.register")
-    expect(f.log()).not.toContain("also runs register")
-  })
-
-  test("stops before the upgrade when it cannot tell whether the client Secrets exist", async () => {
-    const f = await fixture(undefined, { clients: () => ({ exitCode: 1, stderr: "Error from server (Forbidden): secrets is forbidden\n" }) })
-    await expect(deploy({ environment: "staging", imageTag: TAG }, f.deps)).rejects.toThrow(
-      "kubectl get secret failed with exit code 1: Error from server (Forbidden): secrets is forbidden",
-    )
-    expect(f.cluster().some((command) => command.startsWith("helm "))).toBe(false)
+  test("a failed register fails the upgrade, which Helm rolls back, and its log is printed with the migrations'", async () => {
+    const f = await fixture((call) => {
+      const command = call.argv.join(" ")
+      if (call.argv[0] === "helm") return { exitCode: 1, stderr: "Error: UPGRADE FAILED: post-upgrade hooks failed: job ops-register failed: BackoffLimitExceeded\n" }
+      if (command === "kubectl get jobs -n answerable -o name") return { stdout: "job.batch/id-migrate\njob.batch/ops-register\n" }
+      if (command.includes("logs")) return { stdout: `log of ${command.split("job-name=")[1]!.split(" ")[0]}\n` }
+      return undefined
+    })
+    await expect(deploy({ environment: "staging", imageTag: TAG }, f.deps)).rejects.toThrow("helm upgrade failed with exit code 1")
+    expect(f.cluster().find((command) => command.startsWith("helm upgrade"))).toContain("--rollback-on-failure")
+    expect(f.log()).toContain("--- Job ops-register ---")
+    expect(f.log()).toContain("log of ops-register")
+    expect(f.log()).not.toContain("Deployed")
   })
 
   test("honours another timeout", async () => {

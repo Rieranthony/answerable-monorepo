@@ -1,10 +1,10 @@
-import { afterEach, expect, spyOn, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { createIdAdmin } from "@answerable/id-admin"
 import { createMcpServer, createMemoryIntentStore, type ToolCall } from "@answerable/mcp"
 import { createTestMcp, errorOf, type TestMcp } from "@answerable/mcp/testing"
 import { createAdminProvider } from "./provider"
 import { createRoles } from "./roles"
-import { createFakeToolbox, createIdFake, entraIssuer, resource, seed, toolboxMcp, toolboxResource } from "./test/admin"
+import { createFakeToolbox, createIdFake, entraIssuer, resource, seed, standaloneOrigin, toolboxMcp, toolboxResource } from "./test/admin"
 import { createToolboxAdmin } from "./toolbox"
 
 type Intent = {
@@ -17,7 +17,7 @@ const servers: TestMcp[] = []
 afterEach(async () => { await Promise.all(servers.splice(0).map(mcp => mcp.close())) })
 
 // The provider served alone on a fake ID seeded with Newco and the platform's role groups, and a fake Toolbox; the intents in memory.
-async function setup({ toolbox: withToolbox = true } = {}) {
+async function setup({ toolbox: withToolbox = true, standalone = true } = {}) {
   const id = createIdFake()
   const world = seed(id)
   const toolbox = createFakeToolbox(id)
@@ -25,7 +25,7 @@ async function setup({ toolbox: withToolbox = true } = {}) {
   const intents = createMemoryIntentStore()
   const { provider } = createAdminProvider({
     id: admin, authority: createRoles({ id: admin, platform: world.platform, resource }), platform: world.platform, resource, issuer: "https://id.test", freshSeconds: 1800,
-    toolbox: withToolbox ? createToolboxAdmin({ id: admin, resource: toolboxResource, fetch: toolbox.fetch }) : undefined,
+    toolbox: withToolbox ? createToolboxAdmin({ id: admin, resource: toolboxResource, fetch: toolbox.fetch }) : undefined, standaloneOrigin: standalone ? standaloneOrigin : undefined,
   })
   const calls: ToolCall[] = []
   const mcp = await createTestMcp(serving => createMcpServer({ ...serving, provider, intents, wrapCall: (call, run) => (calls.push(call), run()) }))
@@ -322,6 +322,141 @@ test("toolbox_enable reads the Toolbox's providers and catalogue, posts the enab
       details: { upstream: { status: 500, code: "internal_error" } },
     })
   } finally { log.mockRestore() }
+})
+
+describe("standalone_enable", () => {
+  const acme = `${standaloneOrigin}/acme/mcp`
+  /** A standalone MCP as the deploy's register Job leaves it in ID: its resource, with its scopes and offline_access, and its Claude Code client. */
+  function registered(id: ReturnType<typeof createIdFake>) {
+    id.resource(acme, ["acme:read", "acme:write", "offline_access"])
+    id.client("claude-code-acme")
+  }
+  const signIn = ["openid", "offline_access"]
+
+  test("prepare reads the MCP's resource, the client and the organisation's rows, and previews exactly what it would make; nothing is written", async () => {
+    const { id, world: { newco }, prepare, writes } = await setup()
+    registered(id)
+    const intent = await prepare("standalone_enable", { organizationId: newco.id, mcp: "acme" })
+    expect(intent).toMatchObject({ policy_class: "controlled", commit_tool: "admin_commit_confirmed" })
+    expect(intent.targets).toEqual([
+      expect.objectContaining({ resource_type: "organization", resource_id: newco.id }),
+      { resource_type: "resource", resource_id: acme, label: acme, version: { kind: "etag", value: etag(id.resourceOf(acme)) } },
+    ])
+    expect(intent.preview.summary).toBe("Enable acme for organisation “Newco” (newco) from claude-code-acme")
+    expect(intent.preview.changes).toEqual([
+      { path: "link claude-code-acme", from: null, to: { linked: acme } },
+      { path: "capability claude-code-acme login authorization_code", from: null, to: { clientId: "claude-code-acme", resource: null, grantKind: "authorization_code", scopes: signIn } },
+      { path: "capability claude-code-acme login refresh_token", from: null, to: { clientId: "claude-code-acme", resource: null, grantKind: "refresh_token", scopes: signIn } },
+      { path: "capability claude-code-acme acme authorization_code", from: null, to: { clientId: "claude-code-acme", resource: acme, grantKind: "authorization_code", scopes: ["acme:read", "acme:write"] } },
+      { path: "capability claude-code-acme acme refresh_token", from: null, to: { clientId: "claude-code-acme", resource: acme, grantKind: "refresh_token", scopes: ["acme:read", "acme:write"] } },
+      { path: "entitlement claude-code-acme login", from: null, to: { clientId: "claude-code-acme", scopes: signIn } },
+    ])
+    expect(intent.preview.effects).toEqual(["permission_change"])
+    expect(intent.preview.warnings[0]).toBe(`Nobody may use acme's tools yet: grant acme:read acme:write on ${acme} with access_grant, clientId claude-code-acme, or prepare again with everyone: true.`)
+    expect(writes()).toEqual([])
+  })
+
+  test("commit makes each row once, under the intent's key and its place; committing it again replays its receipt, and preparing again finds nothing to do", async () => {
+    const { id, world: { newco }, prepare, refusal, commit, committed, writes } = await setup()
+    registered(id)
+    const intent = await prepare("standalone_enable", { organizationId: newco.id, mcp: "acme" })
+    const receipt = await committed(intent)
+    const made = intent.preview.changes.map(change => change.path)
+    expect(receipt.results).toEqual({ created: made, existing: [] })
+    expect(writes().map(({ request, idempotencyKey }) => [request, idempotencyKey])).toEqual([
+      [`PUT /api/admin/v1/clients/claude-code-acme/resources/${encodeURIComponent(acme)}`, `${intent.intent_id}.0`],
+      ...[1, 2, 3, 4].map(index => [`POST /api/admin/v1/organizations/${newco.id}/capabilities`, `${intent.intent_id}.${index}`]),
+      [`POST /api/admin/v1/organizations/${newco.id}/entitlements`, `${intent.intent_id}.5`],
+    ])
+    expect(id.resourceOf(acme).clients).toEqual(["claude-code-acme"])
+    expect(id.capabilities(newco.id).map(row => [row.clientId, row.resource, row.grantKind, row.scopes])).toEqual([
+      ["claude-code-acme", null, "authorization_code", signIn], ["claude-code-acme", null, "refresh_token", signIn],
+      ["claude-code-acme", acme, "authorization_code", ["acme:read", "acme:write"]], ["claude-code-acme", acme, "refresh_token", ["acme:read", "acme:write"]],
+    ])
+    expect(id.entitlements(newco.id).map(row => [row.clientId, row.resource, row.scopes])).toEqual([["claude-code-acme", null, signIn]])
+    const count = writes().length
+    const again = await commit(intent)
+    expect(again.structuredContent).toMatchObject({ idempotent_replay: true, results: { created: made, existing: [] } })
+    expect(writes()).toHaveLength(count)
+    expect(await refusal("standalone_enable", { organizationId: newco.id, mcp: "acme" })).toMatchObject({
+      code: "PRECONDITION_FAILED", message: "Organisation “Newco” (newco) can already sign in to acme from claude-code-acme; nothing to enable",
+    })
+  })
+
+  test("a row another writer made between prepare and commit is found, not made twice", async () => {
+    const { id, world: { newco }, prepare, committed } = await setup()
+    registered(id)
+    id.resourceOf(acme).clients.push("claude-code-acme")
+    const intent = await prepare("standalone_enable", { organizationId: newco.id, mcp: "acme" })
+    id.capabilities(newco.id).push({
+      id: Bun.randomUUIDv7(), revision: 1, organizationId: newco.id, clientId: "claude-code-acme", resource: null, grantKind: "authorization_code", scopes: signIn, status: "active",
+    } as never)
+    expect((await committed(intent)).results).toEqual({
+      created: intent.preview.changes.map(change => change.path).filter(path => path !== "capability claude-code-acme login authorization_code"),
+      existing: ["capability claude-code-acme login authorization_code"],
+    })
+    expect(id.capabilities(newco.id)).toHaveLength(4)
+  })
+
+  test("everyone: true also grants the MCP's scopes to the whole organisation through the host client, which ID requires of a token's scopes; access_revoke disables it", async () => {
+    const { id, world: { newco }, prepare, refusal, committed } = await setup()
+    registered(id)
+    const intent = await prepare("standalone_enable", { organizationId: newco.id, mcp: "acme", everyone: true })
+    expect(intent.preview.summary).toBe("Enable acme for organisation “Newco” (newco) from claude-code-acme, with acme:read acme:write for everyone in it")
+    expect(intent.preview.changes.at(-1)).toEqual({ path: "entitlement claude-code-acme acme", from: null, to: { clientId: "claude-code-acme", resource: acme, scopes: ["acme:read", "acme:write"] } })
+    expect(intent.preview.warnings[0]).toBe("Everyone in the organisation may use every tool of acme through claude-code-acme once this commits; access_revoke disables those entitlements.")
+    await committed(intent)
+    const everyone = id.entitlements(newco.id).find(row => row.resource === acme)!
+    expect(everyone).toMatchObject({ clientId: "claude-code-acme", memberId: null, groupId: null, scopes: ["acme:read", "acme:write"], status: "active" })
+    await committed(await prepare("access_revoke", { organizationId: newco.id, entitlementId: everyone.id }))
+    expect(id.entitlements(newco.id).find(row => row.resource === acme)!.status).toBe("disabled")
+    // Disabled, it is a row that does not fit: access_enable enables it, rather than a second row.
+    expect(await refusal("standalone_enable", { organizationId: newco.id, mcp: "acme", everyone: true })).toMatchObject({
+      code: "PRECONDITION_FAILED", message: expect.stringContaining(`acme entitlement of claude-code-acme (${everyone.id}) with status disabled`),
+    })
+  })
+
+  test("names the host clients asked for, and refuses an MCP ID does not know, a client it does not hold, a row that does not fit, and a missing origin", async () => {
+    const { id, world: { newco }, prepare, refusal } = await setup()
+    registered(id)
+    id.client("cursor-acme")
+    const both = await prepare("standalone_enable", { organizationId: newco.id, mcp: "acme", hostClientIds: ["cursor-acme", "claude-code-acme", "cursor-acme"] })
+    expect(both.preview.summary).toBe("Enable acme for organisation “Newco” (newco) from claude-code-acme, cursor-acme")
+    expect(both.preview.changes.filter(change => change.path.startsWith("link"))).toHaveLength(2)
+    expect(await refusal("standalone_enable", { organizationId: newco.id, mcp: "beta" })).toMatchObject({
+      code: "NOT_FOUND", message: `Answerable ID has no resource ${standaloneOrigin}/beta/mcp: ship beta with serve standalone or both, and the deploy's register Job registers it`,
+    })
+    expect(await refusal("standalone_enable", { organizationId: newco.id, mcp: "acme", hostClientIds: ["nobody"] })).toMatchObject({
+      code: "INVALID_INPUT", message: "Answerable ID has no client nobody; register it first", details: { field_violations: [{ field: "hostClientIds" }] },
+    })
+    expect((await refusal("standalone_enable", { organizationId: newco.id, mcp: "Acme" })).code).toBe("INVALID_INPUT")
+    const narrow = id.entitlement(newco.id, { clientId: "claude-code-acme", scopes: ["openid"] })
+    expect(await refusal("standalone_enable", { organizationId: newco.id, mcp: "acme" })).toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: `Answerable ID already holds the login entitlement of claude-code-acme (${narrow.id}) with status active and scopes openid; give it at least openid offline_access, then prepare again`,
+    })
+    Object.assign(narrow, { scopes: signIn, status: "disabled" })
+    expect((await refusal("standalone_enable", { organizationId: newco.id, mcp: "acme" })).message).toContain("with status disabled and scopes openid offline_access; enable it, then prepare again")
+    const { refusal: unconfigured } = await setup({ standalone: false })
+    expect(await unconfigured("standalone_enable", { organizationId: newco.id, mcp: "acme" })).toMatchObject({
+      code: "PRECONDITION_FAILED", message: "The admin MCP does not know the standalone server: set ADMIN_STANDALONE_ORIGIN to its origin, such as http://localhost:47510, and restart it",
+      details: { preconditions: [{ variable: "ADMIN_STANDALONE_ORIGIN" }] },
+    })
+  })
+
+  test("a failure of ID other than a conflict ends the commit; preparing and committing again finishes it", async () => {
+    const { id, world: { newco }, prepare, commit, committed } = await setup()
+    registered(id)
+    const intent = await prepare("standalone_enable", { organizationId: newco.id, mcp: "acme" })
+    id.failWrite(3, 400)
+    expect(errorOf(await commit(intent))).toMatchObject({ code: "UPSTREAM_REJECTED" })
+    const again = await prepare("standalone_enable", { organizationId: newco.id, mcp: "acme" })
+    // The link and the first capability were made before the third write failed.
+    expect(again.preview.changes.map(change => change.path)).toEqual([
+      "capability claude-code-acme login refresh_token", "capability claude-code-acme acme authorization_code", "capability claude-code-acme acme refresh_token", "entitlement claude-code-acme login",
+    ])
+    expect((await committed(again)).results.created).toHaveLength(4)
+  })
 })
 
 test("toolbox_enable without the Toolbox's admin resource configured stays listed and answers PRECONDITION_FAILED saying what to set", async () => {

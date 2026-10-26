@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+
+- `standalone_enable`, an ordinary write for `admin` and above: what Answerable ID needs for an organisation's people to sign in to a standalone MCP, `<ADMIN_STANDALONE_ORIGIN>/<name>/mcp`, which the deploy's register Job registered. For each host client, `claude-code-<name>` unless named: its link to the MCP's resource, the organisation's sign-in and MCP capabilities for both grant kinds, and the sign-in entitlement; with `everyone: true`, the MCP's scopes for everyone through each host client. Prepare previews only what is missing and refuses when nothing is, or when a row of a target is disabled or short of scopes; commit writes each row under `<intent id>.<step>` and counts a conflict as found. Without `ADMIN_STANDALONE_ORIGIN` it stays listed and answers `PRECONDITION_FAILED`.
+- `ADMIN_STANDALONE_ORIGIN`, the standalone server's origin; `http://localhost:47510` outside production. The chart sets it from `hostnames.mcp`.
+- An admin lists 24 tools, an owner 28.
+
 ## 0.5.0
 
 No tool changes. Evidence, who is calling and `/health` come from `@answerable/mcp-platform`, which the Toolbox and the standalone server share.

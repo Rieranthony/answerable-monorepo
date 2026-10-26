@@ -246,18 +246,6 @@ async function applyIdEnv(session: Session, values: Record<string, string>): Pro
   session.deps.log(`id-env holds ${Object.keys(values).join(", ")}.\n`)
 }
 
-// The client Secrets that only `register` writes. The chart keeps the Toolbox, the admin MCP and the standalone server at zero
-// replicas until they exist.
-const CLIENT_SECRETS = ["toolbox-id-client", "admin-id-client", "standalone-id-client"]
-
-async function missingClientSecrets(session: Session): Promise<string[]> {
-  const result = await session.quiet(["kubectl", "get", "secret", ...CLIENT_SECRETS, "-n", NAMESPACE, "-o", "name", "--ignore-not-found"])
-  if (result.exitCode !== 0)
-    throw new PipelineError(`kubectl get secret failed with exit code ${result.exitCode}: ${result.stderr.trim()}`)
-  const found = result.stdout.split("\n").map((line) => line.trim().replace(/^secret\//, ""))
-  return CLIENT_SECRETS.filter((name) => !found.includes(name))
-}
-
 async function printJobDiagnostics(session: Session): Promise<void> {
   const listed = await session.show(["kubectl", "get", "jobs", "-n", NAMESPACE, "-o", "name"])
   const names = listed.stdout
@@ -326,9 +314,10 @@ export type DeployOptions = {
 /**
  * Deploy an image tag to an environment: pin each image of `images.json` by digest, log in with the deployer token, apply
  * the Secret `id-env` from the deploy's environment, then `helm upgrade --install --rollback-on-failure` with the ops
- * bootstrap switched on and `idEnvChecksum`, which rolls ID when a secret changed. The upgrade also runs `register` when
- * a server's client Secret does not exist yet: the first install, and the first deploy with the standalone server's. When
- * the upgrade fails the migration and ops Jobs' logs are printed.
+ * bootstrap and register switched on and `idEnvChecksum`, which rolls ID when a secret changed. Register runs on every
+ * upgrade, as its own machine client once its first run has minted it: it registers what the release's list of MCPs
+ * needs in ID. Like a migration, a failed register fails the upgrade, and Helm rolls the release back: a release is its
+ * images and what they need, ID's rows included. When the upgrade fails the migration and ops Jobs' logs are printed.
  */
 export async function deploy(options: DeployOptions, deps: Deps): Promise<void> {
   assertImageTag(options.imageTag)
@@ -339,16 +328,7 @@ export async function deploy(options: DeployOptions, deps: Deps): Promise<void> 
   const digests = options.digests ?? (await resolveDigests(options.imageTag, deps))
   await withSession(deps, cluster, async (session) => {
     await applyIdEnv(session, secrets)
-    // The first install has no client Secrets, so the servers would wait at zero replicas for ever: register them in this
-    // upgrade. Not otherwise: once a person holds platform:write, ID refuses the root secret that register would use.
-    const missing = await missingClientSecrets(session)
-    const jobs: OpsJob[] = ["bootstrap"]
-    if (missing.length > 0) {
-      deps.log(
-        `\n${missing.join(" and ")} ${missing.length === 1 ? "does" : "do"} not exist in ${NAMESPACE} yet, so this upgrade also runs register, which creates ${missing.length === 1 ? "it" : "them"} and starts the servers that wait for ${missing.length === 1 ? "it" : "them"}.\n`,
-      )
-      jobs.push("register")
-    }
+    const jobs: OpsJob[] = ["bootstrap", "register"]
     await upgrade(session, true, options.timeout ?? "10m", [
       "-f",
       valuesFile,

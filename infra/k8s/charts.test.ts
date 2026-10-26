@@ -16,10 +16,10 @@ const environments = {
   "values-civo-production.yaml": { id: "id.answerable.org", toolbox: "toolbox.answerable.org", adminMcp: "admin-mcp.answerable.org", mcp: "mcp.answerable.org", network: "10.20.0.0/24" },
 } as const
 
-/** An MCP as charts/answerable/mcps.json declares it, where it runs and its database mode. */
-type Declared = { name: string; serve: "toolbox" | "standalone" | "both"; database: "shared" | "own" }
+/** An MCP as charts/answerable/mcps.json declares it, where it runs, its database mode and its manifest's scopes. */
+type Declared = { name: string; serve: "toolbox" | "standalone" | "both"; database: "shared" | "own"; scopes: string[] }
 const declared = (JSON.parse(readFileSync(join(charts, "answerable/mcps.json"), "utf8")) as { mcps: Declared[] }).mcps
-const listed = (mcps: Declared[]) => mcps.map(({ name, serve, database }) => ({ name, serve, database }))
+const listed = (mcps: Declared[]) => mcps.map(({ name, serve, database, scopes }) => ({ name, serve, database, scopes }))
 const servedBy = (mcps: Declared[], server: "toolbox" | "standalone") => mcps.filter(mcp => mcp.serve === server || mcp.serve === "both")
 const standaloneRenders = servedBy(declared, "standalone").length > 0
 /** The Deployments the register Job starts, as the chart names them: the standalone server's only while it serves an MCP. */
@@ -234,6 +234,9 @@ describe("charts/answerable", () => {
         expect(env(register, "OPS_ID_URL").value).toBe(env(named(manifests, "Deployment", "toolbox")!, "TOOLBOX_ID_ISSUER").value)
         expect(env(register, "OPS_TOOLBOX_URL").value).toBe(env(named(manifests, "Deployment", "toolbox")!, "TOOLBOX_RESOURCE_URL").value.replace(/\/mcp$/, ""))
         expect(env(register, "OPS_ADMIN_MCP_URL").value).toBe(env(named(manifests, "Deployment", "admin-mcp")!, "ADMIN_RESOURCE_URL").value.replace(/\/mcp$/, ""))
+        // Each standalone MCP's resource is <OPS_MCP_URL>/<name>/mcp, the standalone server's origin; the list is the bootstrap's, scopes included.
+        if (standaloneRenders) expect(env(register, "OPS_MCP_URL").value).toBe(env(named(manifests, "Deployment", "standalone")!, "STANDALONE_ORIGIN").value)
+        expect(env(register, "OPS_MCPS").value).toBe(env(bootstrap, "OPS_MCPS").value)
         const replicas = name === "values-local.yaml" ? 1 : 2
         expect(env(register, "OPS_START_DEPLOYMENTS").value).toBe(registered(declared).map(server => `${server}=${replicas}`).join(","))
         // A staff directory only where the overlay names one: staging names the local ID setup's.
@@ -258,7 +261,7 @@ describe("charts/answerable", () => {
           { apiGroups: [""], resources: ["configmaps"], resourceNames: ["postgres-ca"], verbs: ["get", "patch"] },
           { apiGroups: [""], resources: ["configmaps"], verbs: ["create"] },
         ]
-        const clients = ["toolbox-id-client", "admin-id-client", "standalone-id-client"]
+        const clients = ["ops-id-client", "toolbox-id-client", "admin-id-client", "standalone-id-client"]
         const role = named(manifests, "Role", "ops")!
         expect(role.rules).toEqual([
           { apiGroups: [""], resources: ["secrets"], resourceNames: [...bootstrapSecrets(declared), ...clients], verbs: ["get", "patch"] },
@@ -323,6 +326,8 @@ describe("charts/answerable", () => {
       expect(env(admin, "ADMIN_ID_ISSUER").value).toBe(issuer)
       expect(env(admin, "ADMIN_RESOURCE_URL").value).toBe(`https://${expected.adminMcp}/mcp`)
       expect(env(admin, "ADMIN_TOOLBOX_ADMIN_RESOURCE").value).toBe(`https://${expected.toolbox}/admin`)
+      // standalone_enable's resources are <origin>/<name>/mcp, as register registers them.
+      expect(env(admin, "ADMIN_STANDALONE_ORIGIN").value).toBe(`https://${expected.mcp}`)
       if (standaloneRenders) {
         const standalone = named(manifests, "Deployment", "standalone")!
         expect(env(standalone, "STANDALONE_ORIGIN").value).toBe(`https://${expected.mcp}`)
@@ -487,9 +492,9 @@ describe("charts/answerable at 0, 1, 3 and 200 MCPs", () => {
       expect(ownVariables(named(manifests, "Deployment", "toolbox")!, /^TOOLBOX_MCP_/)).toEqual(own(toolboxMcps, "TOOLBOX_", "database", "DATABASE_URL"))
       if (standaloneMcps.length) expect(ownVariables(named(manifests, "Deployment", "standalone")!, /^STANDALONE_MCP_/)).toEqual(own(standaloneMcps, "STANDALONE_", "database", "DATABASE_URL"))
       expect(ownVariables(named(manifests, "Job", "mcps-migrate")!, /^MCP_/)).toEqual(own(mcps, "", "database-owner", "DATABASE_MIGRATION_URL"))
-      for (const [job, variable] of [["ops-bootstrap", "OPS_MCPS"], ["mcps-migrate", "MCPS_DECLARED"]]) expect(JSON.parse(env(named(manifests, "Job", job!)!, variable!).value), job).toEqual(listed(mcps))
+      for (const [job, variable] of [["ops-bootstrap", "OPS_MCPS"], ["ops-register", "OPS_MCPS"], ["mcps-migrate", "MCPS_DECLARED"]]) expect(JSON.parse(env(named(manifests, "Job", job!)!, variable!).value), job).toEqual(listed(mcps))
       const role = named(manifests, "Role", "ops")!
-      expect(role.rules[0].resourceNames).toEqual([...bootstrapSecrets(mcps), "toolbox-id-client", "admin-id-client", "standalone-id-client"])
+      expect(role.rules[0].resourceNames).toEqual([...bootstrapSecrets(mcps), "ops-id-client", "toolbox-id-client", "admin-id-client", "standalone-id-client"])
       expect(role.rules.at(-1).resourceNames).toEqual(registered(mcps))
       expect(env(named(manifests, "Job", "ops-register")!, "OPS_START_DEPLOYMENTS").value).toBe(registered(mcps).map(server => `${server}=2`).join(","))
       // Hooks in order, whatever the list: RBAC, bootstrap, the five migrations, then register and make-admin.

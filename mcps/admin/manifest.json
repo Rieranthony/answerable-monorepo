@@ -1,7 +1,7 @@
 {
   "id": "admin",
   "version": "2026-10-01",
-  "description": "Answerable's staff-only admin MCP: organisations, members, groups, access, single sign-on, the audit log and the Toolbox in Answerable ID, each tool behind a staff role.",
+  "description": "Answerable's staff-only admin MCP: organisations, members, groups, access, single sign-on, the audit log, the Toolbox and standalone MCPs in Answerable ID, each tool behind a staff role.",
   "tools": [
     {
       "identity": "admin/access.enable",
@@ -2897,6 +2897,91 @@
           "memberId",
           "groupIds",
           "operationIds"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "identity": "admin/standalone.enable",
+      "name": "standalone_enable",
+      "version": "2026-10-01",
+      "kind": "mutate",
+      "description": "Prepare giving an organisation access to a standalone MCP, which the standalone server serves at its own URL: for each host client (claude-code-<name> unless named) its link to the MCP, the organisation's sign-in and MCP capabilities for both grant kinds, and the sign-in entitlement for everyone in it. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. People then need the MCP's scopes through that host client: access_grant them with clientId set to it, to the organisation, a group or a person, or pass everyone: true to grant them to the whole organisation in the same intent. Undo it with access_revoke. Safe to repeat.",
+      "scopes": [
+        "admin"
+      ],
+      "errors": [
+        "ADMIN_REAUTHENTICATION_REQUIRED"
+      ],
+      "risk": "normal",
+      "effects": [
+        "permission_change"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "The organisation's id in Answerable ID, from organisations_list"
+          },
+          "mcp": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]{0,11}$",
+            "description": "The standalone MCP's name, as bun mcp list shows it, such as acme"
+          },
+          "hostClientIds": {
+            "description": "The OAuth clients people use the MCP from; omit it for claude-code-<name>, which the deploy registers",
+            "minItems": 1,
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "everyone": {
+            "description": "Also grant the MCP's scopes to everyone in the organisation, through each host client; omit it to grant them with access_grant",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "organizationId",
+          "mcp"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "created": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What the commit made in Answerable ID"
+          },
+          "existing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What it found already in place"
+          }
+        },
+        "required": [
+          "created",
+          "existing"
         ],
         "additionalProperties": false
       }

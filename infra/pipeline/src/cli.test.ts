@@ -33,10 +33,9 @@ async function fixture(
 ) {
   const root = await createRoot({ "charts/answerable/values-civo-staging.yaml": "", "charts/answerable/mcps.json": JSON.stringify(MCPS) })
   cleanups.push(root.remove)
-  // The registry answers the same digest for every image, every client Secret exists, the release runs REVISION and tar leaves its overlay.
+  // The registry answers the same digest for every image, the release runs REVISION and tar leaves its overlay.
   const runner = createFakeRunner((call) => {
     if (call.argv[0] === "docker") return { stdout: `${DIGEST}\n` }
-    if (call.argv.slice(0, 3).join(" ") === "kubectl get secret") return { stdout: "secret/toolbox-id-client\nsecret/admin-id-client\nsecret/standalone-id-client\n" }
     if (call.argv.slice(0, 3).join(" ") === "helm get values") return { stdout: JSON.stringify({ image: { tag: `sha-${REVISION}` } }) }
     if (call.argv[0] === "tar") {
       mkdirSync(join(call.argv[4]!, "charts/answerable"), { recursive: true })
@@ -66,8 +65,8 @@ describe("deploy", () => {
     const code = await main(["deploy", "--environment", "staging", "--image-tag", TAG], f.deps)
     expect(code).toBe(0)
     expect(f.runner.commands().filter((command) => command.startsWith("docker buildx imagetools inspect"))).toHaveLength(3)
-    expect(f.runner.commands()).toHaveLength(6)
-    expect(f.runner.commands().at(-1)).toContain("--set ops.bootstrap=true")
+    expect(f.runner.commands()).toHaveLength(5)
+    expect(f.runner.commands().at(-1)).toContain("--set ops.bootstrap=true --set ops.register=true")
     expect(f.err()).toContain(`Deployed ${TAG} to staging.`)
     expect(f.out()).toBe("")
   })
@@ -76,9 +75,9 @@ describe("deploy", () => {
     const f = await fixture()
     const code = await main(["deploy", "--environment", "staging", "--image-tag", TAG, ...PAIRS, "--timeout", "15m"], f.deps)
     expect(code).toBe(0)
-    expect(f.runner.commands()).toHaveLength(3)
-    expect(f.runner.commands()[2]).toContain("--timeout 15m -f charts/answerable/values-civo-staging.yaml")
-    expect(f.runner.commands()[2]).toContain(`--set images.mcps.digest=${DIGEST}`)
+    expect(f.runner.commands()).toHaveLength(2)
+    expect(f.runner.commands()[1]).toContain("--timeout 15m -f charts/answerable/values-civo-staging.yaml")
+    expect(f.runner.commands()[1]).toContain(`--set images.mcps.digest=${DIGEST}`)
   })
 
   test("exits 1 and names the failing step", async () => {

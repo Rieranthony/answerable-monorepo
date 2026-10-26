@@ -40,7 +40,9 @@ async function run(argv: string[], env: Record<string, string>, extra: { kube?: 
 
 const adminUrl = "postgres://dbadmin:pw@db.internal:6432/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem"
 const OPS_MCPS = JSON.stringify([{ name: "e2e", serve: "both", database: "shared" }, { name: "acme", serve: "toolbox", database: "own" }])
-const registerEnv = { OPS_ID_URL: "https://id.example", OPS_ID_TOKEN: "root-secret", OPS_TOOLBOX_URL: "https://toolbox.example", OPS_ADMIN_MCP_URL: "https://admin-mcp.example" }
+// The chart's list as register reads it: with each MCP's scopes.
+const registerMcps = JSON.stringify([{ name: "e2e", serve: "both", database: "shared", scopes: ["e2e:read"] }, { name: "acme", serve: "toolbox", database: "own", scopes: ["acme:read"] }])
+const registerEnv = { OPS_ID_URL: "https://id.example", OPS_ID_TOKEN: "root-secret", OPS_TOOLBOX_URL: "https://toolbox.example", OPS_ADMIN_MCP_URL: "https://admin-mcp.example", OPS_MCP_URL: "https://mcp.example/", OPS_MCPS: registerMcps }
 
 test("bootstrap fetches the database's authority on first use, writes it to postgres-ca, and verifies the database against it", async () => {
   const { code, connections, kube, statements, fetched, out } = await run(["bootstrap"], { OPS_DATABASE_ADMIN_URL: adminUrl, OPS_MCPS })
@@ -87,11 +89,13 @@ test("bootstrap stops before the database when the fetch fails, and removes the 
   expect(existsSync(new URL(broken.connections[0]!.url).searchParams.get("sslrootcert")!)).toBe(false)
 })
 
-test("register registers in ID, stores the client secrets, then starts the servers that were waiting at zero replicas", async () => {
+test("register registers in ID, with each standalone MCP of the list, stores the client secrets, then starts the servers that were waiting at zero replicas", async () => {
   const kube = fakeKubernetes({ deployments: { toolbox: 0, "admin-mcp": 0, standalone: 0, other: 3 } })
   const { code, out, id } = await run(["register"], { ...registerEnv, OPS_START_DEPLOYMENTS: "toolbox=2, admin-mcp=1,standalone=2,other=1,missing=1" }, { kube })
   expect(code).toBe(0)
-  expect(Object.keys(kube.secrets).sort()).toEqual(["admin-id-client", "standalone-id-client", "toolbox-id-client"])
+  expect(Object.keys(kube.secrets).sort()).toEqual(["admin-id-client", "ops-id-client", "standalone-id-client", "toolbox-id-client"])
+  expect(id.state.resources.get("https://mcp.example/e2e/mcp")!.allowedScopes).toEqual(["e2e:read", "offline_access"])
+  expect(id.state.clients.has("claude-code-acme")).toBe(false)
   expect(kube.deployments).toEqual({ toolbox: 2, "admin-mcp": 1, standalone: 2, other: 3 })
   expect(out).toContain("toolbox: scaled from 0 to 2")
   expect(out).toContain("other: already running")
@@ -107,14 +111,20 @@ test("register uses the platform slug, the callback port and the staff directory
   expect(id.state.ssoProvider).toEqual({ issuer: "https://login.microsoftonline.com/0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0/v2.0", domain: "answerable.org" })
 })
 
-test("register takes ID's root secret when no staff token is given, and the staff token over it when both are", async () => {
+test("register mints its client with ID's root secret when no staff token is given, with the staff token over it when both are, and then with neither", async () => {
   const { OPS_ID_TOKEN: root, ...withoutToken } = registerEnv
-  const fromRoot = await run(["register"], { ...withoutToken, OPS_ID_ROOT_SECRET: root })
+  const callers = (result: Awaited<ReturnType<typeof run>>) => new Set(result.id.state.calls.map(call => result.id.caller(call)))
+  const kube = fakeKubernetes()
+  const fromRoot = await run(["register"], { ...withoutToken, OPS_ID_ROOT_SECRET: root }, { kube })
   expect(fromRoot.code).toBe(0)
-  expect(new Set(fromRoot.id.state.calls.map(call => call.token))).toEqual(new Set([root]))
+  expect(callers(fromRoot)).toEqual(new Set(["root", "ops-register"]))
   const fromStaff = await run(["register"], { ...registerEnv, OPS_ID_TOKEN: "a-staff-token", OPS_ID_ROOT_SECRET: root })
   expect(fromStaff.code).toBe(0)
-  expect(new Set(fromStaff.id.state.calls.map(call => call.token))).toEqual(new Set(["a-staff-token"]))
+  expect(callers(fromStaff)).toEqual(new Set(["a-staff-token", "ops-register"]))
+  // Its client's secret is in ops-id-client now: neither is needed.
+  const alone = await run(["register"], withoutToken, { kube, id: fromRoot.id })
+  expect(alone.code).toBe(0)
+  expect(alone.out).toContain("Registering as ops-register, register's own machine client")
 })
 
 test("make-admin puts the member with the email in the owner and platform-admins groups with the root secret", async () => {
@@ -138,9 +148,11 @@ test("a missing or invalid variable is named, with exit code 2, before anything 
   const unverified = await run(["bootstrap"], { OPS_DATABASE_ADMIN_URL: "postgres://a:b@db/postgres?sslmode=require", OPS_MCPS })
   expect(unverified).toMatchObject({ code: 2, err: "Invalid ops configuration: OPS_DATABASE_ADMIN_URL: Must ask for sslmode=verify-full" })
   expect(unverified.fetched.calls).toEqual([])
-  const noToken = await run(["register"], { ...registerEnv, OPS_ID_TOKEN: "" })
-  expect(noToken.code).toBe(2)
-  expect(noToken.err).toBe("Invalid ops configuration: OPS_ID_TOKEN: Required: a staff token, or ID's root secret as OPS_ID_ROOT_SECRET")
+  const noList = await run(["register"], { ...registerEnv, OPS_MCPS: '[{"name":"e2e","serve":"both"}]' })
+  expect(noList.code).toBe(2)
+  expect(noList.err).toContain("OPS_MCPS: ")
+  const notJson = await run(["register"], { ...registerEnv, OPS_MCPS: "e2e" })
+  expect(notJson.err).toContain("OPS_MCPS: Expected the chart's list of MCPs as JSON")
   const badStart = await run(["register"], { ...registerEnv, OPS_START_DEPLOYMENTS: "toolbox" })
   expect(badStart.err).toContain("OPS_START_DEPLOYMENTS")
   const halfStaff = await run(["register"], { ...registerEnv, OPS_STAFF_DOMAIN: "answerable.org" })
@@ -161,7 +173,11 @@ test("a missing or invalid variable is named, with exit code 2, before anything 
 test("a failure is printed without its stack and exits 1", async () => {
   const { code, err } = await run(["register"], registerEnv, { id: fakeIdAdmin({ rootLocked: true }) })
   expect(code).toBe(1)
-  expect(err).toBe("register failed: ID refused the root secret (root_locked): a platform administrator exists. Pass a staff token as OPS_ID_TOKEN (docs/id/onboard#get-a-staff-token)")
+  expect(err).toStartWith("register failed: register has no machine client of its own yet (the Secret ops-id-client is empty), and ID refuses the root secret (root_locked)")
+  // An empty value is unset: no staff token, and no root secret either.
+  const nothing = await run(["register"], { ...registerEnv, OPS_ID_TOKEN: "" })
+  expect(nothing).toMatchObject({ code: 1 })
+  expect(nothing.err).toContain("and no root secret or staff token to mint one")
   const signedOut = await run(["make-admin"], { OPS_ID_URL: "https://id.example", OPS_ID_ROOT_SECRET: "root-secret", OPS_ADMIN_EMAIL: "you@answerable.org" })
   expect(signedOut.code).toBe(1)
   expect(signedOut.err).toStartWith("make-admin failed: No member of the platform organisation has the email you@answerable.org")

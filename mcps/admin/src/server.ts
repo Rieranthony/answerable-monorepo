@@ -5,7 +5,7 @@ import { createAdminMcp } from "./admin"
 import { readAdminEnvironment } from "./environment"
 import { readPlatform } from "./platform"
 
-const { auth, hostname, port, databaseUrl, id: idConfig, toolboxAdminResource, freshSeconds } = readAdminEnvironment(process.env)
+const { auth, hostname, port, databaseUrl, id: idConfig, toolboxAdminResource, standaloneOrigin, freshSeconds } = readAdminEnvironment(process.env)
 const id = createIdAdmin(idConfig)
 const platform = await readPlatform(id).catch((error: Error) => {
   console.error(`The admin MCP cannot start: ${error.message}`)
@@ -18,7 +18,7 @@ await assertRuntimeRole(db).catch(async (error: Error) => {
   console.error(`The admin MCP cannot start: ${error.message}`)
   process.exit(1)
 })
-const admin = createAdminMcp({ auth, db, id, platform, freshSeconds, toolbox: toolboxAdminResource ? { resource: toolboxAdminResource } : undefined })
+const admin = createAdminMcp({ auth, db, id, platform, freshSeconds, toolbox: toolboxAdminResource ? { resource: toolboxAdminResource } : undefined, standaloneOrigin })
 const poller = startAuditPoller({ id, caches: [admin.profiles] })
 const server = Bun.serve({ hostname, port, fetch: admin.fetch })
 console.log(`Admin MCP serving ${auth.resource} for platform organisation ${platform}`)

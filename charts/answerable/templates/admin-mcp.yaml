@@ -8,6 +8,8 @@
   value: {{ printf "%s/api/admin" (include "answerable.idUrl" .) | quote }}
 - name: ADMIN_TOOLBOX_ADMIN_RESOURCE
   value: {{ printf "%s/admin" (include "answerable.toolboxUrl" .) | quote }}
+- name: ADMIN_STANDALONE_ORIGIN
+  value: {{ include "answerable.origin" (dict "root" . "host" .Values.hostnames.mcp) | quote }}
 - name: ADMIN_ID_CLIENT_ID
   value: {{ .Values.adminMcp.clientId | quote }}
 {{ include "answerable.secretEnv" (dict "name" "ADMIN_ID_CLIENT_SECRET" "secret" "admin-id-client" "key" "ADMIN_ID_CLIENT_SECRET") }}

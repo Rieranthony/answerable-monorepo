@@ -1,6 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { generatedFiles } from "../../../scripts/mcp/generate"
 import pipelineImages from "../../pipeline/images.json"
 import { buildDependencies, charts, helmEnv, repo } from "../helm"
 
@@ -16,16 +17,19 @@ export const origin = (host: string) => `https://${host}:48443`
 export const images = pipelineImages
 export const image = (name: string) => `ghcr.io/rieranthony/answerable/${name}:local`
 
+/** An MCP of charts/answerable/mcps.json: where it runs, its database mode and its manifest's scopes. */
+type Declared = { name: string; serve: "toolbox" | "standalone" | "both"; database: "shared" | "own"; scopes: string[] }
 /** The MCPs the chart renders from charts/answerable/mcps.json, which every proof below reads rather than naming one. */
-export const declared = (JSON.parse(readFileSync(join(charts, "answerable/mcps.json"), "utf8")) as { mcps: { name: string; serve: "toolbox" | "standalone" | "both"; database: "shared" | "own" }[] }).mcps
+export const declared = (JSON.parse(readFileSync(join(charts, "answerable/mcps.json"), "utf8")) as { mcps: Declared[] }).mcps
 /** The MCPs the Toolbox mounts and those the standalone server serves. */
 export const mounted = declared.filter(mcp => mcp.serve !== "standalone")
 export const servedAlone = declared.filter(mcp => mcp.serve !== "toolbox")
 /** The servers the register Job starts: the standalone server's only while it serves an MCP. */
 export const registered = ["toolbox", "admin-mcp", ...(servedAlone.length ? ["standalone"] : [])]
 
-/** The company directory's port on the host (apps/id/scripts/stack-directories.ts). */
+/** The company directories' ports on the host (apps/id/scripts/stack-directories.ts): the platform organisation's, then a client organisation's. */
 const directoryPort = 47_710
+const directoryPorts = [directoryPort, directoryPort + 1]
 
 /** The Entra tenant register is given: ID has no Microsoft client in the stack, so it never reaches Entra. */
 const entraTenant = "00000000-0000-4000-8000-0000000000e1"
@@ -142,28 +146,31 @@ async function hostFromPods(gateway: string | undefined) {
 }
 
 /**
- * The platform organisation's company directory, on this host (apps/id/scripts/stack-directories.ts): the browser reaches
- * its authorisation endpoint at 127.0.0.1, ID's pods its token endpoint and keys at `podHost`. Its one person signs in up to
- * three times. Returns the directory and how to stop it.
+ * The company directories, on this host (apps/id/scripts/stack-directories.ts): the browser reaches their authorisation
+ * endpoints at 127.0.0.1, ID's pods their token endpoints and keys at `podHost`. The platform organisation's one person, the
+ * staff member, signs in up to three times; a client organisation's, `tenant`, once. Returns both and how to stop them.
  */
 async function startDirectory(workdir: string, podHost: string) {
   const plan = join(workdir, "directories-plan.json")
   const manifest = join(workdir, "directories.json")
-  await Bun.write(plan, JSON.stringify({ hostname: "0.0.0.0", port: directoryPort, browserHost: "http://127.0.0.1", podHost: `http://${podHost}`, directories: [{ slug: "answerable", person: "staff", signIns: 3 }] }))
+  await Bun.write(plan, JSON.stringify({
+    hostname: "0.0.0.0", port: directoryPort, browserHost: "http://127.0.0.1", podHost: `http://${podHost}`,
+    directories: [{ slug: "answerable", person: "staff", signIns: 3 }, { slug: "tenant", person: "ada", signIns: 1 }],
+  }))
   const child = Bun.spawn([process.execPath, "apps/id/scripts/stack-directories.ts", plan, manifest], { cwd: repo, stdout: "ignore", stderr: "inherit" })
   const stop = async () => {
     child.kill()
     await child.exited
   }
   for (const deadline = Date.now() + 30_000; !(await Bun.file(manifest).exists()); await Bun.sleep(200)) {
-    if (child.exitCode !== null) throw new Error(`The company directory stopped with ${child.exitCode}; is port ${directoryPort} free?`)
+    if (child.exitCode !== null) throw new Error(`The company directories stopped with ${child.exitCode}; are ports ${directoryPorts.join(" and ")} free?`)
     if (Date.now() > deadline) {
       await stop()
       throw new Error("Timed out after 30 seconds waiting for the company directory")
     }
   }
   const { directories } = (await Bun.file(manifest).json()) as { directories: Directory[] }
-  return { directory: directories[0]!, stop }
+  return { directory: directories[0]!, tenant: directories[1]!, stop }
 }
 
 /**
@@ -202,6 +209,36 @@ export function startBrowserEdge({ stackCa, originPullCert, serverCert }: { stac
     },
   })
   return { hostResolverRules: [...names].map(name => `MAP ${name} [::1]`).join(","), stop: () => server.stop(true) }
+}
+
+/** The second release's image of the MCPs: a throwaway name, removed by this name when the stack stops. */
+const nextImage = "ghcr.io/rieranthony/answerable/mcps-next:local"
+
+/**
+ * A next release, as a commit that adds an MCP to the standalone server ships it: `change` applied to the MCPs' declarations, then bun mcp's
+ * generator (scripts/mcp/generate.ts) writes the chart's list and the standalone server's, as `bun mcp` does in the tree. Returns a copy of
+ * charts/answerable with that list, the list, and a Dockerfile directory for the mcps image with the standalone server's new list.
+ */
+async function nextRelease(workdir: string, change: (declaration: { name: string; serve: string }) => void) {
+  const root = join(workdir, "next")
+  for (const file of ["mcps/retired.json", "mcps/toolbox/package.json", "mcps/standalone/package.json"]) {
+    mkdirSync(join(root, file, ".."), { recursive: true })
+    cpSync(join(repo, file), join(root, file))
+  }
+  for await (const file of new Bun.Glob("mcps/*/{mcp,manifest}.json").scan(repo)) {
+    mkdirSync(join(root, file, ".."), { recursive: true })
+    const text = await Bun.file(join(repo, file)).json()
+    if (file.endsWith("mcp.json")) change(text)
+    await Bun.write(join(root, file), JSON.stringify(text))
+  }
+  const files = await generatedFiles(root)
+  const chart = join(workdir, "next-chart", "answerable")
+  cpSync(join(charts, "answerable"), chart, { recursive: true })
+  await Bun.write(join(chart, "mcps.json"), files["charts/answerable/mcps.json"]!)
+  const dockerfile = join(workdir, "next-image")
+  await Bun.write(join(dockerfile, "served.generated.ts"), files["mcps/standalone/src/served.generated.ts"]!)
+  await Bun.write(join(dockerfile, "Dockerfile"), `FROM ${image("mcps")}\nCOPY served.generated.ts /app/mcps/standalone/src/served.generated.ts\n`)
+  return { chart, image: dockerfile, declared: (JSON.parse(files["charts/answerable/mcps.json"]!) as { mcps: Declared[] }).mcps }
 }
 
 /** How long any Helm call may wait: well inside the 10 minutes of the slowest test, so that a hang fails with its diagnosis. */
@@ -292,10 +329,12 @@ export async function startStack() {
   }
   const secrets = generateSecrets()
   let created = false
+  let nextBuilt = false
   let directory: Awaited<ReturnType<typeof startDirectory>> | undefined
   const stop = async () => {
     await directory?.stop()
     if (created && !process.env.INFRA_STACK_KEEP) await exec(["kind", "delete", "cluster", "--name", cluster, "--kubeconfig", kubeconfig], { allowFailure: true })
+    if (nextBuilt) await exec(["docker", "image", "rm", nextImage], { allowFailure: true })
     rmSync(workdir, { recursive: true, force: true })
   }
 
@@ -346,16 +385,16 @@ export async function startStack() {
 
     // ID trusts the directory's two origins and may reach it on this host: what an operator configures for a company directory on a private network.
     const localValues = Bun.YAML.parse(readFileSync(join(charts, "answerable/values-local.yaml"), "utf8")) as { id: { trustedOrigins: string[] } }
-    const trustedOrigins = [...localValues.id.trustedOrigins, directory.directory.issuer, new URL(directory.directory.tokenEndpoint).origin]
-    const extraEgress = [{ to: [{ ipBlock: { cidr: `${podHost}/32` } }], ports: [{ port: directoryPort, protocol: "TCP" }] }]
+    const trustedOrigins = [...localValues.id.trustedOrigins, ...[directory.directory, directory.tenant].flatMap(({ issuer, tokenEndpoint }) => [issuer, new URL(tokenEndpoint).origin])]
+    const extraEgress = [{ to: [{ ipBlock: { cidr: `${podHost}/32` } }], ports: directoryPorts.map(port => ({ port, protocol: "TCP" })) }]
     const staffDomain = directory.directory.domain
     /**
-     * `helm upgrade --install` of charts/answerable as the pipeline runs it, with the local values, the directory's
-     * settings, the staff domain and an Entra tenant for register (ID has no Microsoft client here, so register adds the
-     * domain and skips the provider), and `sets`.
+     * `helm upgrade --install` of charts/answerable, or of `chart`, as the pipeline runs it, with the local values, the
+     * directories' settings, the staff domain and an Entra tenant for register (ID has no Microsoft client here, so register
+     * adds the domain and skips the provider), and `sets`.
      */
-    const release = (sets: string[], timeout = helmTimeout) => helm([
-      "upgrade", "--install", "answerable", join(charts, "answerable"), "--namespace", "answerable", "--values", join(charts, "answerable/values-local.yaml"),
+    const release = (sets: string[], { timeout = helmTimeout, chart = join(charts, "answerable") } = {}) => helm([
+      "upgrade", "--install", "answerable", chart, "--namespace", "answerable", "--values", join(charts, "answerable/values-local.yaml"),
       "--set-json", `id.trustedOrigins=${JSON.stringify(trustedOrigins)}`, "--set-json", `id.extraEgress=${JSON.stringify(extraEgress)}`,
       "--set", `id.staffDomain=${staffDomain}`, "--set", `id.entraTenant=${entraTenant}`,
       ...sets.flatMap(set => ["--set", set]), "--wait", "--wait-for-jobs", "--timeout", timeout,
@@ -378,7 +417,21 @@ export async function startStack() {
       await release(["ops.register=true"])
       for (const deployment of registered) await kubectl(["rollout", "status", "-n", "answerable", `deploy/${deployment}`, "--timeout=300s"])
     })
-    return { kubectl, helm, release, diagnose: (why: string) => diagnose(kubectl, helmOnly, why), kubeconfig, readSecret, secrets, stop, dockerGateway, podHost, directory: directory.directory, certificates, stackCa: certificates.stackCa, originPullCert: certificates.originPullClient, edgeCert: certificates.publicNames }
+    /**
+     * Build and load the next release (`nextRelease`): its chart, its list, and the sets that deploy its image, which `release` takes. The image
+     * is the stack's mcps image with the standalone server's new list, under {@link nextImage}.
+     */
+    async function next(change: Parameters<typeof nextRelease>[1]) {
+      const prepared = await nextRelease(workdir, change)
+      nextBuilt = true
+      await exec(["docker", "build", "-t", nextImage, prepared.image])
+      await exec(["kind", "load", "docker-image", nextImage, "--name", cluster])
+      return { ...prepared, sets: [`images.mcps.repository=${nextImage.split(":")[0]}`] }
+    }
+    return {
+      kubectl, helm, release, next, diagnose: (why: string) => diagnose(kubectl, helmOnly, why), kubeconfig, readSecret, secrets, stop, dockerGateway, podHost,
+      directory: directory.directory, tenant: directory.tenant, certificates, stackCa: certificates.stackCa, originPullCert: certificates.originPullClient, edgeCert: certificates.publicNames,
+    }
   } catch (error) {
     // Show what the cluster says before it goes.
     if (created && !diagnosed.has(error as object)) await diagnose(kubectl, helmOnly, `the stack failed to start: ${(error as Error).message.split("\n")[0]}`)

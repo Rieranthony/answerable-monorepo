@@ -329,7 +329,7 @@ The Toolbox, the admin MCP and ID keep the databases they have. The rest of this
 - **Changes.** It reads each row, compares, and patches with `If-Match`. It never narrows the Toolbox resource, which enable calls widen.
 - **The client's power.** The client holds `platform:read platform:write`, as the Toolbox's client already does; ID has no narrower scope. Not yet: a `platform:register` scope in ID.
 
-**Access per organisation.** For a standalone MCP, staff give an organisation access with the admin MCP's `standalone_enable`. It creates the pair capabilities and the login entitlement that sign-in needs, as `toolbox_enable` does for the Toolbox. People then get the MCP's scopes with `access_grant`, for the organisation, a group or a person; `everyone: true` on `standalone_enable` grants the whole organisation in the same step.
+**Access per organisation.** For a standalone MCP, staff give an organisation access with the admin MCP's `standalone_enable`. It creates the pair capabilities and the login entitlement that sign-in needs, as `toolbox_enable` does for the Toolbox. People then get the MCP's scopes with `access_grant`, for the organisation, a group or a person, always naming the host client (`clientId: claude-code-<name>`). ID counts an entitlement towards a person's token only when its `clientId` is the client signing in (`apps/id/src/auth/member-permission.ts:147`, found by M6), so a grant without one gives nothing. `everyone: true` on `standalone_enable` writes the scopes per host client in the same step. The Toolbox isn't affected, because it reads grants from ID's member access view rather than from the token.
 
 **The order of a deploy** (`staging/<name>`, then `production/<name>` on the same commit):
 1. Ops RBAC.
