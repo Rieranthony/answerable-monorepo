@@ -1,7 +1,8 @@
 import { afterAll, expect, test } from "bun:test"
 import { Pool } from "pg"
 import { ensureLocalMcpDatabases } from "./local"
-import { clusterUrl, localLogins } from "./test/mcps"
+import { sharedMcps } from "./names"
+import { clusterUrl } from "./test/mcps"
 
 const admin = new Pool({ connectionString: clusterUrl, max: 1 })
 afterAll(() => admin.end())
@@ -11,7 +12,7 @@ const standalone = ["answerable_standalone_owner", "answerable_standalone_runtim
 // The five logins; the shared databases, with PUBLIC's and the logins' privileges only, since a suite running beside this one has a login of its
 // own there; and the standalone server's databases with their owner, whose privileges the standalone server's suite changes.
 async function local() {
-  const rows = async (text: string) => (await admin.query(text, [[...Object.values(localLogins), ...standalone]])).rows
+  const rows = async (text: string) => (await admin.query(text, [[...Object.values(sharedMcps.logins), ...standalone]])).rows
   return {
     logins: await rows("select rolname, rolcanlogin, rolinherit, rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls from pg_roles where rolname = any($1) order by 1"),
     databases: await rows(`select d.datname, pg_get_userbyid(d.datdba) as owner, coalesce(acl.grantee::regrole::text, 'PUBLIC') as grantee, string_agg(acl.privilege_type, ', ' order by acl.privilege_type) as privileges

@@ -83,7 +83,7 @@ Ctrl-C stops the standalone server; an edit to acme reloads it.
 
 For an MCP in the Toolbox, it prints the Toolbox's command instead, `claude mcp add --transport http answerable-toolbox http://localhost:47400/mcp --client-id claude-code-toolbox --callback-port 47700`, and says that enabling and granting are local conveniences: in staging and production, staff do both with `toolbox_enable` and `access_grant` in [the admin MCP](/docs/admin). An MCP served both ways prints both.
 
-**Measured.** On a development machine with the stack running and four MCPs mounted by the standalone server, `bun mcp dev` printed its commands 1.9 seconds after it started for an MCP it had not run before, and 1.55, 1.57 and 1.60 seconds for one it had. The migrations are most of it: about 0.2 seconds for each MCP a started server mounts. `bun mcp setup` took 0.5 seconds. Ctrl-C takes about one second: a server run with `bun --hot` closes its port on SIGTERM and then stays alive to watch for changes, so `bun mcp dev` ends its process group one second after asking it to stop.
+**Measured.** On a development machine with the stack running and four MCPs mounted by the standalone server, `bun mcp dev` printed its commands 1.9 seconds after it started for an MCP it had not run before, and 1.55, 1.57 and 1.60 seconds for one it had. The migrations are most of it: about 0.2 seconds for each MCP a started server mounts. `bun mcp setup` took 0.5 seconds. On Ctrl-C each server closes its port and its connections, then exits; one that has not ended a second later is killed with its process group.
 
 **Claude Code.** Run the printed command, then `/mcp` in Claude Code, choose the connection and **Authenticate**. [Connect Claude Code](/docs/mcp/claude-code) covers what you see and the errors you can hit there. Signing in by hand through a browser, with your work account, is the one step that no command does for you.
 
@@ -246,11 +246,10 @@ The admin API's evidence check and host client rows are held by the Toolbox's ow
 
 1. Each organisation signs in to the Toolbox through `claude-code-toolbox` and to e2e at its path through `claude-code-e2e`, with a real browser. The e2e token is bound to the path and carries the three e2e scopes.
 2. `example`, made by the CLI and mounted in the Toolbox: `cli-alpha` prepares a note with `example_notes_add`, whose summary names its organisation as ID holds it, confirms it with `toolbox_commit_confirmed`, and `example_notes_list` returns it; `cli-beta` lists none.
-3. Who is calling reaches a tool as ID holds it: `example_example_status` answers the member's name and the organisation's name, as ID's admin API gives them. The preview of `example_notes_add` names the organisation; no tool of `example` puts the person in a preview.
-4. e2e at its path, served alone: its tools are named without the Toolbox's prefix, so `records_list` lists, `records_create` and `e2e_commit` add a record, and the other organisation sees none.
-5. A token that is valid for another resource, the Toolbox's, is refused at `/e2e/mcp` with `401` and its metadata, while e2e's own token is accepted there: the audience binding, proved with one standalone MCP.
-6. Registering again, as `bun mcp dev` does on every run, changes nothing in ID, and one secret opens both of `mcp-dev`'s admin APIs.
-7. A scope an MCP gains later, and a second MCP enabled in the Toolbox, widen the rows ID holds, a resource, a client, two capabilities and an entitlement, and the organisation's one entitlement on the Toolbox, instead of making second ones.
+3. e2e at its path, served alone: its tools are named without the Toolbox's prefix, so `records_list` lists, `records_create` and `e2e_commit` add a record, and the other organisation sees none.
+4. A token that is valid for another resource, the Toolbox's, is refused at `/e2e/mcp` with `401` and its metadata, while e2e's own token is accepted there: the audience binding, proved with one standalone MCP.
+5. Registering again, as `bun mcp dev` does on every run, changes nothing in ID, and one secret opens both of `mcp-dev`'s admin APIs.
+6. A scope an MCP gains later, and a second MCP enabled in the Toolbox, widen the rows ID holds, a resource, a client, two capabilities and an entitlement, and the organisation's one entitlement on the Toolbox, instead of making second ones.
 
 A third MCP, made by `bun mcp new` in a temporary checkout and served as a process of its own, is not in the acceptance: e2e is served both ways by the same standalone code, which the e2e and MCP journeys prove.
 

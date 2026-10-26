@@ -12,8 +12,8 @@ import { connect, type Executor } from "./connect"
 import { ensureLocalMcpDatabases } from "./local"
 import { mcpDatabase } from "./mcp-database"
 import { migrateMcp } from "./migrate-mcp"
-import { assertMcpName, roleLock } from "./names"
-import { provisionMcps } from "./provision"
+import { assertMcpName, roleLock, sharedMcps } from "./names"
+import { provisionMcps, sqlOf } from "./provision"
 import { configureRuntimeRole, type Grant } from "./runtime-role"
 
 /** The test databases this package's helpers reset: on their own, so that a process the tests start with `NODE_ENV=production` needs nothing else. */
@@ -153,8 +153,8 @@ export async function testMcpDatabase<Schema extends Record<string, unknown>>({ 
   await asSuperuser(async client => {
     // CREATE ROLE takes no parameters; the name and the password are generated here.
     await client.query(`drop schema if exists "${name}" cascade; create role ${login} login password '${password}' noinherit`)
-    await provisionMcps(async (text, params) => (await client.query(text, params)).rows, {
-      mcps: [{ name, servedBy: ["toolbox"] }], prefix: "mcp_test", logins: { migrator: "answerable_mcps_migrator", toolbox: login, standalone: "answerable_mcps_standalone" },
+    await provisionMcps(sqlOf(client), {
+      mcps: [{ name, servedBy: ["toolbox"] }], prefix: "mcp_test", logins: { ...sharedMcps.logins, toolbox: login },
     })
     await migrateMcp({ client, name, folder, mode: "shared", prefix: "mcp_test" })
   })

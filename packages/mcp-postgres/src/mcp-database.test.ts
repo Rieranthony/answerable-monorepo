@@ -5,11 +5,12 @@ import { Pool, type PoolClient } from "pg"
 import { ensureLocalMcpDatabases } from "./local"
 import { mcpDatabase } from "./mcp-database"
 import { migrateMcps } from "./migrate-mcp"
-import { provisionMcps } from "./provision"
+import { sharedMcps } from "./names"
+import { provisionMcps, sqlOf } from "./provision"
 import * as fixtureA from "./test/fixtures/mpgfixa"
 import { notes, projects } from "./test/fixtures/mpgfixa"
 import * as fixtureB from "./test/fixtures/mpgfixb"
-import { as, clientOf, clusterUrl, fixtureFolder, forget, localLogins, mcpsUrl, sqlOf, testLogin } from "./test/mcps"
+import { as, clientOf, clusterUrl, fixtureFolder, forget, mcpsUrl, testLogin } from "./test/mcps"
 import { refusalOf } from "./testing"
 
 // The Toolbox's shape: one serving login that holds both MCPs' runtime roles, one pool, and a database for each MCP over it.
@@ -26,8 +27,8 @@ beforeAll(async () => {
   await ensureLocalMcpDatabases(clusterUrl)
   await forget(admin, "mpgfixa", "mpgfixb")
   login = await testLogin(admin)
-  await provisionMcps(sqlOf(admin), { mcps: [{ name: "mpgfixa", servedBy: ["toolbox"] }, { name: "mpgfixb", servedBy: ["toolbox"] }], prefix: "mcp_test", logins: { ...localLogins, toolbox: login.name } })
-  const migrator = await clientOf(as(localLogins.migrator))
+  await provisionMcps(sqlOf(admin), { mcps: [{ name: "mpgfixa", servedBy: ["toolbox"] }, { name: "mpgfixb", servedBy: ["toolbox"] }], prefix: "mcp_test", logins: { ...sharedMcps.logins, toolbox: login.name } })
+  const migrator = await clientOf(as(sharedMcps.logins.migrator))
   try {
     await migrateMcps((["mpgfixa", "mpgfixb"] as const).map(name => ({ name, folder: fixtureFolder(name), mode: "shared", prefix: "mcp_test" })), () => migrator)
   } finally {

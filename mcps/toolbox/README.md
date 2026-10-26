@@ -31,7 +31,7 @@ It builds on three shared packages: `@answerable/mcp-platform` (the evidence and
 | `src/admin.ts` | The platform-tier admin API under `/admin/v1`: authentication (a machine client's token with `toolbox:admin`), routing, and the routes for providers, catalogue entries and host clients; `toolboxAdminResource` |
 | `src/admin-enable.ts` | The enable operation: what ID holds, what is missing, and the ID calls that make it |
 | `src/problem.ts` | `Problem`, the `{ error: { code, message } }` answer, and body parsing |
-| `src/catalogue.ts` | Manifest ingestion, one read and one write per provider (new capabilities stay disabled for organisations that have the provider enabled), each organisation's catalogue, and each host client's settings, their defaults and their rows; `bench/ingest.ts` measures it at 200 providers |
+| `src/catalogue.ts` | Manifest ingestion, one read and one write per provider (new capabilities stay disabled for organisations that have the provider enabled), each organisation's catalogue, and each host client's settings, their defaults and their rows; `bench/scale.ts` measures it, and calls through the Toolbox, at 200 providers |
 | `src/projection.ts` | `allowed`, policy classes, tool order and `projectionOf`, direct or meta |
 | `src/meta.ts` | The Toolbox's own provider, `toolbox`: `toolbox_whoami` and the meta tools `toolbox_search`, `toolbox_describe`, `toolbox_execute` and `toolbox_prepare` |
 | `src/search.ts` | Postgres full-text ranking over `capabilities.search` |

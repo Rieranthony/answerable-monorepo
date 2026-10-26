@@ -1,6 +1,6 @@
 # Standalone server
 
-One process that serves every MCP whose `mcp.json` says `"serve": "standalone"` or `"both"`, each at its own path, `<origin>/<name>/mcp`, with its own `createMcpServer`, resource and audience: a token for one MCP is refused by another. Development and test only until the deployment's M5. The page: [The standalone server](../../apps/web/content/docs/mcp/servers.mdx#the-standalone-server).
+One process that serves every MCP whose `mcp.json` says `"serve": "standalone"` or `"both"`, each at its own path, `<origin>/<name>/mcp`, with its own `createMcpServer`, resource and audience: a token for one MCP is refused by another. The chart runs it while at least one MCP is `standalone` or `both`. The page: [The standalone server](../../apps/web/content/docs/mcp/servers.mdx#the-standalone-server).
 
 ```sh
 bun mcp db e2e migrate                                                       # each served MCP's local schema, in answerable_mcps

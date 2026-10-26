@@ -1,11 +1,11 @@
 // The ops commands behind cli.ts, configured from OPS_* variables (infra/ops/README.md).
 import { defineConfig, type Field } from "@answerable/config"
-import { connect, declaredMcps } from "@answerable/mcp-postgres"
+import { connect, declaredMcps, type Sql } from "@answerable/mcp-postgres"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { z } from "zod"
-import { bootstrap, type Sql } from "./bootstrap"
+import { bootstrap } from "./bootstrap"
 import { databaseAuthority, type FetchChain } from "./database-ca"
 import type { Kubernetes } from "./kubernetes"
 import { makeAdmin } from "./make-admin"

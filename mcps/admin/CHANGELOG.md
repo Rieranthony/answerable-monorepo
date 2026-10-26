@@ -4,6 +4,7 @@
 
 - `access_grant` refuses, at prepare, a standalone MCP's resource (`<ADMIN_STANDALONE_ORIGIN>/<name>/mcp`) without a `clientId`: ID counts an entitlement towards a person's token only through the client signing in, so the grant gave nothing. The `INVALID_INPUT` names the client to pass, `claude-code-<name>`, and `standalone_enable` with `everyone: true` as the other way.
 - The plan of `standalone_enable`'s rows is `@answerable/mcp-admin/enablement`, which `bun mcp dev` runs too, so the rows it makes for your organisation are the ones staff make.
+- The entry point exits once it has closed on SIGINT or SIGTERM, so `bun run admin:dev` (`bun --hot`) leaves no process behind.
 
 ## 0.6.0
 

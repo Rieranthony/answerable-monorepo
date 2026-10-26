@@ -1,6 +1,6 @@
 // What bun mcp says about itself, as plain data: each command's usage, summary, flags, steps and example, its exit codes and the codes of its
 // errors. The file imports nothing and runs nothing, so the docs (apps/web, `<CliReference />`) read it when a page builds. The commands in
-// commands/*.ts spread their definition and add `run`; `bun mcp help` prints it; cli.test.ts holds every command, flag and step to it.
+// commands/*.ts spread their definition and add `run`; `bun mcp help` prints it; definitions.test.ts holds every command, flag and step to it.
 
 /** A flag of a command: a value's placeholder, `<…>`, for a flag that takes one, what it means, and what it is when left out. */
 export type Flag = { value?: string; description: string; default?: string }
@@ -17,6 +17,9 @@ export type Definition = {
   steps: readonly StepDefinition[]
   example: string
 }
+
+/** Every command's `--help`. */
+export const helpFlag: Record<"help", Flag> = { help: { description: "This text" } }
 
 /** Every command's `--json`. */
 const jsonFlag: Flag = { description: "Print one JSON object: { ok, steps, next }, or { ok: false, error: { code, message, fix, problems: [{ code, message }] } }, with every answer refused in problems" }

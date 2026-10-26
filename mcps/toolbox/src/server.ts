@@ -22,6 +22,7 @@ const poller = startAuditPoller({ id, caches: [toolbox.grants, toolbox.profiles]
 const server = Bun.serve({ hostname, port, fetch: toolbox.fetch })
 console.log(`Toolbox serving ${auth.resource}`)
 let closing = false
+// Stop serving, then exit: under bun --hot, as the dev script runs it, the process would otherwise stay alive with its port closed.
 async function close() {
   if (closing) return
   closing = true
@@ -29,6 +30,7 @@ async function close() {
   await server.stop()
   await telemetry.shutdown()
   await Promise.all([db.$client.end(), mcps.close()])
+  process.exit(0)
 }
 process.on("SIGINT", close)
 process.on("SIGTERM", close)

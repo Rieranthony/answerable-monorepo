@@ -1,11 +1,13 @@
 // bun mcp setup: connects bun mcp to the developer's local Answerable ID, once. It makes a machine client there, mcp-dev, and writes its id and secret,
 // with the developer's organisation, to the root .env. Run again, it finds the client working and does nothing.
 import { failure, findBySlug, RootLocked, type Call } from "../../../infra/ops/src/admin-api"
+import { cancelled } from "../ask"
+import { organisationSlug } from "../config"
 import { definitions } from "../definitions"
 import { readSettings, writeEnvironment } from "../environment"
-import { Refusal, runSteps, type Command, type Io } from "../io"
+import { Refusal, runSteps, valueOf, type Command, type Io } from "../io"
 import { local } from "../local"
-import { adminCall, createRegistrar, machine, machineToken, makeMcpDev, platformSlug, registerToolbox } from "../local-id"
+import { adminCall, counts, createRegistrar, machine, machineToken, makeMcpDev, platformSlug, registerToolbox } from "../local-id"
 import { findRoot } from "../workspace"
 
 const { usage } = definitions.setup
@@ -42,7 +44,7 @@ async function access(io: Io, staff: string | undefined, rootSecret: string): Pr
   const why = `${rooted.refused}, so bun mcp setup needs a staff token`
   if (!io.isTTY) throw new Refusal("staff-token-required", `${why}: pass it with --staff-token (get one at ${onboarding})`, withStaffToken)
   const answer = await io.prompts.password({ message: `${why}. Paste one (get it at ${onboarding}); it is not shown or stored`, input: io.stdin, output: io.stdout, validate: value => (value ? undefined : "A staff token is required") })
-  if (typeof answer === "symbol") throw new Refusal("cancelled", "Cancelled: nothing was written", "bun mcp setup")
+  if (typeof answer === "symbol") throw cancelled("bun mcp setup")
   return accepted(await tryToken(io, answer, "the staff token"))
 }
 
@@ -52,14 +54,14 @@ export const setup: Command = {
     if (positionals.length) throw new Refusal("unexpected-argument", `bun mcp setup takes no argument; it was given ${positionals.join(", ")}`, usage)
     const root = findRoot(io.cwd)
     const { settings } = await readSettings(root)
-    const organisation = typeof flags.organisation === "string" ? flags.organisation : settings.MCP_DEV_ORGANISATION
-    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(organisation)) throw new Refusal("invalid-organisation", `--organisation ${organisation} is not an organisation's slug: lowercase letters and digits, words joined by single hyphens`, usage)
+    const organisation = valueOf(flags.organisation) ?? settings.MCP_DEV_ORGANISATION
+    if (!organisationSlug.test(organisation)) throw new Refusal("invalid-organisation", `--organisation ${organisation} is not an organisation's slug: lowercase letters and digits, words joined by single hyphens`, usage)
     if (!(await io.fetch(`${local.id}/healthz`, { signal: AbortSignal.timeout(5000) }).then(answer => answer.ok, () => false))) {
       throw new Refusal("id-down", `Answerable ID does not answer on ${local.id}. Start it from the main checkout with bun dev, or with bun --filter @answerable/id dev; never bun dev from a worktree, where it runs env:up and recreates the shared Postgres. Then run bun mcp setup again`, "bun --filter @answerable/id dev")
     }
     const { MCP_DEV_ID_CLIENT_ID: clientId, MCP_DEV_ID_CLIENT_SECRET: clientSecret } = settings
     const token = clientId && clientSecret ? await machineToken(io.fetch, { clientId, clientSecret }, local.adminResource, "platform:read platform:write") : undefined
-    const staff = typeof flags["staff-token"] === "string" ? flags["staff-token"] : undefined
+    const staff = valueOf(flags["staff-token"])
     // A client that works is its own access and needs no platform organisation's id; otherwise a bearer is needed, which also gives the id.
     const { call, platform } = token ? { call: adminCall(io.fetch, token), platform: undefined } : await access(io, staff, settings.ROOT_ADMIN_SECRET ?? "")
     if (!(await findBySlug(call, "/organizations", organisation))) {
@@ -79,7 +81,7 @@ export const setup: Command = {
     return runSteps(io, json, [
       {
         name: "toolbox", fix: "bun mcp setup",
-        run: async () => (await registerToolbox(registrar), `${local.toolboxResource}, its admin resource and claude-code-toolbox: ${registrar.counts()}`),
+        run: async () => (await registerToolbox(registrar), `${local.toolboxResource}, its admin resource and claude-code-toolbox: ${counts(registrar)}`),
       },
       {
         name: "client", fix: "bun mcp setup",

@@ -2,8 +2,6 @@ import { defineConfig, locally } from "@answerable/config"
 import { declaredMcps, ownMcpDatabase, sharedMcps } from "@answerable/mcp-postgres"
 import { z } from "zod"
 
-const runtimeRole = "answerable_standalone_runtime"
-
 /** What the standalone server's migration, `scripts/migrate.ts`, reads besides the server's own variables. */
 export const standaloneMigrationConfig = defineConfig("standalone server migration", {
   STANDALONE_DATABASE_MIGRATION_URL: {
@@ -13,7 +11,7 @@ export const standaloneMigrationConfig = defineConfig("standalone server migrati
     doc: "The standalone server's Postgres URL as its owner, for the migration only",
     source: "cluster",
   },
-  STANDALONE_DATABASE_RUNTIME_ROLE: { schema: z.string().min(1), fallback: runtimeRole, doc: "The restricted role the migration provisions and the standalone server serves as", source: "chart" },
+  STANDALONE_DATABASE_RUNTIME_ROLE: { schema: z.string().min(1), fallback: "answerable_standalone_runtime", doc: "The restricted role the migration provisions and the standalone server serves as", source: "chart" },
 })
 
 /** What the MCPs' migration, `scripts/migrate-mcps.ts`, the Job mcps-migrate, reads: the shared database as its migrator, and the chart's list. */

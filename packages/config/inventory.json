@@ -879,7 +879,7 @@
   },
   {
     "name": "bun mcp",
-    "reader": "scripts/mcp/config.ts, read by bun mcp db migrate and bun mcp new",
+    "reader": "scripts/mcp/config.ts, read by bun mcp db migrate (which bun mcp new runs), bun mcp setup and bun mcp dev",
     "fields": [
       {
         "name": "NODE_ENV",
@@ -925,7 +925,7 @@
           "development": "development-only-root-admin-secret-never-for-production",
           "test": "development-only-root-admin-secret-never-for-production"
         },
-        "doc": "ID's root bearer, which bun mcp setup uses while ID's root is unlocked: the local default, as ID's own definition has it, unless .env sets another",
+        "doc": "ID's root bearer, which bun mcp setup uses while ID's root is unlocked: ID's own local default unless .env sets another",
         "optional": true
       }
     ]

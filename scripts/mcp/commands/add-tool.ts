@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { askTool, askToolDescription } from "../ask"
 import { definitions } from "../definitions"
 import { generate } from "../generate"
-import { cli, finishing, Refusal, refusal, runSteps, sh, shellWord, type Command, type Problem } from "../io"
+import { cli, finishing, Refusal, refusal, runSteps, sh, shellWord, valueOf, type Command, type Problem } from "../io"
 import { listed, toolDescriptionProblem, toolNameProblem } from "../rules"
 import { isolationImport, tableTs, toolBinding, toolFiles, toolModule, toolsMarker, type ToolAnswers } from "../templates"
 import { findRoot, manifestOf, resolveMcp } from "../workspace"
@@ -36,7 +36,7 @@ export const addTool: Command = {
   ...definitions["add tool"],
   async run(io, { positionals, flags }) {
     const options = { mutation: flags.mutation === true, noCheck: flags["no-check"] === true, json: flags.json === true }
-    const given = { description: typeof flags.description === "string" ? flags.description : undefined }
+    const given = { description: valueOf(flags.description) }
     const [tools, others] = [positionals.filter(word => word.includes(".")), positionals.filter(word => !word.includes("."))]
     if (tools.length > 1 || others.length > 1) {
       throw new Refusal("unexpected-argument", `bun mcp add tool takes an MCP and one tool, <domain.operation>; it was given ${positionals.join(", ")}`, commandFor(others[0], tools[0], given.description, options))

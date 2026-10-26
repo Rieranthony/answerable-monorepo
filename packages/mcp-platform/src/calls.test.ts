@@ -1,14 +1,20 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test"
+import { fileURLToPath } from "node:url"
 import { createMcpServer, defineMutation, defineProvider, defineTool, ToolError, type ToolCall } from "@answerable/mcp"
 import { createTestMcp, errorOf, testPrincipal } from "@answerable/mcp/testing"
-import { rowsOf } from "@answerable/mcp-postgres/testing"
+import { migrate } from "@answerable/mcp-postgres"
+import { mcpPostgresTestConfig, rowsOf, testDatabase } from "@answerable/mcp-postgres/testing"
 import { z } from "zod"
 import { createCalls, type Decide } from "./calls"
 import { createMemoryTracer } from "./spans"
-import { hubDatabase } from "./test/hub"
 
-let hub: Awaited<ReturnType<typeof hubDatabase>>
-beforeAll(async () => { hub = await hubDatabase() })
+// A server's own database, with the tables every server has (evidence and intents): answerable_mcps_test_platform, made beside the shared MCP test
+// database and migrated from @answerable/mcp-postgres's own folder.
+let hub: Awaited<ReturnType<ReturnType<typeof testDatabase>["scratch"]>>
+beforeAll(async () => {
+  hub = await testDatabase("answerable_mcps_test", mcpPostgresTestConfig.read(process.env).MCPS_TEST_DATABASE_URL).scratch("platform")
+  await migrate(hub.db, { folder: fileURLToPath(new URL("../drizzle", import.meta.resolve("@answerable/mcp-postgres"))) })
+})
 afterAll(() => hub.drop())
 
 const purpose = (text: string) => `${text}. A fixture for the tests of the platform's evidence.`

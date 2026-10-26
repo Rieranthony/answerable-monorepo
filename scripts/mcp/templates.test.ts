@@ -5,7 +5,10 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { checkDescription, checkToolName } from "@answerable/mcp"
 import { spawn } from "./io"
-import { isolationImport, mcpFiles, pins, schemaBinding, statusDescription, tableBinding, tableTs, toolBinding, toolFiles, unusable, type Answers } from "./templates"
+import { isolationImport, mcpFiles, schemaBinding, tableTs, toolBinding, toolFiles, type Answers } from "./templates"
+import { tableBinding, unusable } from "./templates/names"
+import { statusDescription } from "./templates/tool"
+import { pins } from "./templates/workspace"
 
 const repo = new URL("../../", import.meta.url).pathname
 const answers: Answers = { name: "acme", description: "Notes for construction projects: list, read and add notes on a project.", serve: "toolbox", database: "shared", date: "2026-10-25" }

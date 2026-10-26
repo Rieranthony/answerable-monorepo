@@ -4,6 +4,7 @@
 
 - `mcpDatabases(…).assert()` also checks each own MCP's login with `@answerable/mcp-postgres`'s `assertOwnLogin`, so the Toolbox and the standalone server refuse to start on an own MCP's URL that names another login.
 - `ownDatabases` names an own MCP's local database and login with `ownMcpDatabase`.
+- `traced`, `organisationActions` and `userActions` are no longer exported: nothing outside the package imported them, and `createCalls` and `startAuditPoller` still use them.
 
 ## 0.1.0
 

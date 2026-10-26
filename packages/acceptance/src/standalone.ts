@@ -1,6 +1,6 @@
 // The standalone server as the journeys start it: every MCP of its generated list, each on its own path, with its database on the acceptance's
 // PostgreSQL and the shared MCP database's serving login, as the entry point does.
-import { createIdAdmin, type IdConfig } from "@answerable/id-admin"
+import { createIdAdmin } from "@answerable/id-admin"
 import { createMemoryTracer, mcpDatabases, startAuditPoller } from "@answerable/mcp-platform"
 import { assertRuntimeRole, configureRuntimeRole, runtimeGrants } from "@answerable/mcp-postgres"
 import { migrate } from "@answerable/mcp-standalone/migrate"
@@ -20,13 +20,13 @@ import { step } from "./step"
  * `fetch`, and its `close()` stops it, as a process stopping does. `db` is the server's database as its owner, to read the evidence it wrote.
  * Each MCP's resource, `<origin>/<name>/mcp`, and its clients are the journey's to register.
  */
-export async function startStandaloneStack(id: Id, { fetch }: { fetch?: IdConfig["fetch"] } = {}) {
+export async function startStandaloneStack(id: Id) {
   const { admin, manifest } = id
   step(`Registering the standalone server's machine client, and creating and migrating its database, to serve ${served.map(({ provider }) => provider.id).join(" and ")}`)
   const organisations = z.object({ items: z.array(z.object({ id: z.uuid(), slug: z.string() })) }).parse(await admin("GET", "/organizations?q=answerable"))
   const platform = organisations.items.find(organisation => organisation.slug === "answerable")!
   const client = await registerMachine(admin, platform.id, "standalone-hub", { [manifest.adminResource]: ["platform:read"] })
-  const machine = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...client, fetch })
+  const machine = createIdAdmin({ issuer: manifest.idOrigin, adminResource: manifest.adminResource, ...client })
   const { owner, runtime, role } = await createDatabase("answerable_standalone_acceptance")
   await migrate(owner)
   await configureRuntimeRole(owner, role, runtimeGrants)

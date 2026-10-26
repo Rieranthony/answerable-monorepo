@@ -3,9 +3,16 @@
 // standalone_enable and access_grant in the admin MCP).
 import { enablementSteps, RowConflict, type Row } from "@answerable/mcp-admin/enablement"
 import type { Call } from "../../infra/ops/src/admin-api"
+import type { Registrar } from "../../infra/ops/src/registrar"
 import { local, type Stack } from "./local"
 import type { Fetch } from "./io"
 import { all, createRegistrar, machineToken } from "./local-id"
+
+// Widen the scopes of a capability or an entitlement ID holds at `path` to carry `needed` as well, with If-Match under `<key>-r<revision>`.
+async function widen(registrar: Registrar, path: string, key: string, needed: readonly string[]) {
+  const held = (await registrar.read(path))!
+  await registrar.update(path, key, held, { scopes: [...new Set([...(held.body.scopes as string[]), ...needed])].sort() })
+}
 
 /**
  * Give organisation `organization` access to standalone MCP `name`, whose resource and `claude-code-<name>` client are registered: the rows
@@ -23,7 +30,7 @@ export async function giveStandaloneAccess(call: Call, organization: string, nam
   const lacking = (row: Row) => row.clientId === hostClientId && row.resource === resource && row.status === "active" && mcpScopes.some(scope => !row.scopes.includes(scope))
   for (const [kind, rows] of [["capabilities", capabilities], ["entitlements", entitlements]] as const) {
     for (const row of rows.filter(lacking)) {
-      await registrar.widen(`/organizations/${organization}/${kind}/${row.id}`, `${name}-${row.id}`, mcpScopes)
+      await widen(registrar, `/organizations/${organization}/${kind}/${row.id}`, `${name}-${row.id}`, mcpScopes)
       row.scopes = [...new Set([...row.scopes, ...mcpScopes])].sort()
     }
   }
@@ -53,7 +60,7 @@ export async function enableInToolbox(io: { fetch: Fetch }, call: Call, mcpDev: 
   const path = `/organizations/${organization}/entitlements`
   const held = (await all<Row & { clientId: string | null }>(call, `${path}?resource=${encodeURIComponent(stack.toolboxResource)}`)).find(row => !row.clientId && !row.memberId && !row.groupId)
   if (held && held.status !== "active") throw new Error(`Answerable ID holds the organisation's entitlement on the Toolbox (${held.id}) with status ${held.status}; enable it with access_enable in the admin MCP, then run bun mcp dev ${name} again`)
-  if (held) await registrar.widen(`${path}/${held.id}`, `${name}-toolbox`, [name])
+  if (held) await widen(registrar, `${path}/${held.id}`, `${name}-toolbox`, [name])
   else await registrar.write("POST", path, crypto.randomUUID(), { resource: stack.toolboxResource, scopes: [name] }, { create: true })
   return `${enabled.created?.length ?? 0} rows made in ID and the catalogue; ${registrar.tally.made + registrar.tally.changed ? `${name} granted to the organisation` : `${name} was granted already`}`
 }

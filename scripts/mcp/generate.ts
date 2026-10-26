@@ -5,6 +5,7 @@
 // bun mcp new, add tool and check write them; generate.test.ts fails when a committed file differs. Never edit them by hand.
 import { existsSync } from "node:fs"
 import { join } from "node:path"
+import { json } from "./templates/workspace"
 import { declarations, manifestOf, retired, type Declaration, type Manifest } from "./workspace"
 
 /** The file the chart reads, with an object root: Helm's `fromJson` turns an array into an error map. */
@@ -17,7 +18,6 @@ const servers = [
 ] as const
 type Server = (typeof servers)[number]
 
-const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
 const packageOf = (name: string) => `@answerable/mcp-${name}`
 
 // A server's list: each MCP it serves, its provider imported from its workspace, and where its tables live; an own MCP's, from the variable

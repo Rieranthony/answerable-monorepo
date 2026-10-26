@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { existsSync, readFileSync, statSync } from "node:fs"
 import { X509Certificate } from "node:crypto"
-import type { Sql } from "./bootstrap"
+import type { Sql } from "@answerable/mcp-postgres"
 import { main, pgSql } from "./commands"
 import { INTERMEDIATE, LEAF, ROOT } from "./test-certificates"
 import { fakeFetchChain, fakeIdAdmin, fakeKubernetes } from "./testing"

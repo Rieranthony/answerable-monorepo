@@ -1,9 +1,13 @@
 // Provisioning of MCP schemas and roles. It imports values from nothing outside this package, never from @answerable/mcp, so that the
 // ops image, which copies only this package (infra/ops/Dockerfile), can run it.
+import type { Client, Pool } from "pg"
 import { assertMcpName, identifier, mcpRoles, quote, roleLock } from "./names"
 
 /** A statement on one administrative connection: `text` with `$1`… bound to `params`, returning its rows, as `infra/ops`'s `pgSql` gives it. */
 export type Sql = (text: string, params?: unknown[]) => Promise<Record<string, unknown>[]>
+
+/** The `Sql` of a connected pg client, or of a pool. */
+export const sqlOf = (client: Pick<Client, "query"> | Pick<Pool, "query">): Sql => async (text, params) => (await client.query(text, params)).rows
 
 /** The serving logins that may take an MCP's runtime role: `toolbox`, `standalone`, or both. */
 export type ServedBy = "toolbox" | "standalone"

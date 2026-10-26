@@ -123,15 +123,13 @@ The file holds the tools sorted by identity, with their wire names, schemas, sco
 
 ## Check a workspace
 
-For an MCP made with `bun mcp`, run `bun mcp check <name>`: [Make an MCP](/docs/mcp/create#check-it) says what it does. The rest of this section is the form CI runs.
+For an MCP made with `bun mcp`, run `bun mcp check <name>`: it runs the same typecheck, lint and tests as below, then rewrites a stale manifest and the generated files instead of failing, and says to commit them ([Make an MCP](/docs/mcp/create#check-it)). The rest of this section is the form CI runs, which fails on either.
 
 ```sh
 bun run mcp:check @answerable/mcp-e2e
 ```
 
 Run this from the repository root with a workspace name. It runs the workspace's typecheck, lint and tests with Turborepo (`turbo run typecheck lint test --filter <workspace>`); the conformance checks and the manifest drift test are tests, so they run too. The `@answerable/auth`, `@answerable/mcp`, e2e and Toolbox suites, and every MCP that `bun mcp new` makes, enforce 100% line and function coverage; `@answerable/acceptance` is test support and has no coverage gate. `bun run mcp:test` runs the auth, SDK, e2e, Toolbox and every other MCP's suites, and `bun mcp`'s, together.
-
-For an MCP that `bun mcp new` made, `bun mcp check <name>` runs the same typecheck, lint and tests, then rewrites a stale manifest and the generated files instead of failing, and says to commit them; CI runs `mcp:check`, which fails on either.
 
 ## Not yet
 

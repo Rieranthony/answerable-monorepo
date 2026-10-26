@@ -90,14 +90,16 @@ type CommitRequest = {
 
 const strictness: Record<PolicyClass, number> = { agent: 0, controlled: 1, human: 2 }
 
+/** Whether `intent` was prepared by this caller: the same person, membership and client. */
+export const ownedBy = ({ principal: owner }: Intent, principal: UserPrincipal) =>
+  owner.user_id === principal.userId && owner.membership_id === principal.membershipId && owner.client_id === principal.clientId
+
 /** Commit an intent: check it can be committed by this caller through this tool, claim it, then apply it. */
 export async function commitIntent(request: CommitRequest): Promise<Receipt> {
   const { id, tool, input, intent, principal, contextOf, store, mutations, permitted, policyClass } = request
   if (!intent) throw new ToolError("INTENT_NOT_FOUND", `No intent ${input.intent_id} exists; prepare the mutation again`)
-  const { intent_id, principal: owner } = intent
-  if (owner.user_id !== principal.userId || owner.membership_id !== principal.membershipId || owner.client_id !== principal.clientId) {
-    throw new ToolError("PRINCIPAL_MISMATCH", `Intent ${intent_id} belongs to another person, membership or client; prepare your own`)
-  }
+  const { intent_id } = intent
+  if (!ownedBy(intent, principal)) throw new ToolError("PRINCIPAL_MISMATCH", `Intent ${intent_id} belongs to another person, membership or client; prepare your own`)
   // The token before the status, so that a replay, and what became of the intent, needs it too.
   if (hashToken(input.commit_token) !== intent.commit_token_hash) throw new ToolError("COMMIT_TOKEN_INVALID", `The commit token does not match intent ${intent_id}`)
   if (intent.status !== "prepared") return settled(intent, id)

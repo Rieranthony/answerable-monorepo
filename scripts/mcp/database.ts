@@ -2,7 +2,7 @@
 // provisioned and migrated as the deployment does it (@answerable/mcp-postgres).
 import { existsSync, readdirSync } from "node:fs"
 import { dirname, join } from "node:path"
-import { ensureLocalMcpDatabases, migrateMcp, ownMcpDatabase, provisionMcps, provisionOwnMcp, sharedMcps, withoutSchemaCreation, type Grant, type ServedBy } from "@answerable/mcp-postgres"
+import { ensureLocalMcpDatabases, migrateMcp, ownMcpDatabase, provisionMcps, provisionOwnMcp, servedBy, sharedMcps, sqlOf, withoutSchemaCreation, type Grant } from "@answerable/mcp-postgres"
 import { is } from "drizzle-orm"
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core"
 import { Client } from "pg"
@@ -40,8 +40,6 @@ export async function generateMigration(exec: Exec, root: string, name: string, 
   return written.map(file => `drizzle/${file}`)
 }
 
-const servedBy = { toolbox: ["toolbox"], standalone: ["standalone"], both: ["toolbox", "standalone"] } satisfies Record<Declaration["serve"], ServedBy[]>
-
 // A Postgres that does not answer, named, with how to start it.
 const unreachable = (url: URL) => (error: Error & { code?: string }) => {
   throw error.code === "ECONNREFUSED" ? new Error(`the development Postgres does not answer on ${url.host}; start it with bun run env:up from the main checkout`, { cause: error }) : error
@@ -57,7 +55,6 @@ async function connected(url: URL, work: (client: Client) => Promise<unknown>) {
     await client.end()
   }
 }
-const sqlOf = (client: Client) => async (text: string, params?: unknown[]) => (await client.query(text, params)).rows
 
 /**
  * Provision and migrate the MCP's local development schema, as the deployment does: the local databases first when missing, then, shared, its

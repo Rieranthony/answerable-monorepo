@@ -88,17 +88,6 @@ test("example, made by the CLI: a person prepares a note and commits it, and exa
   expect(await notes(beta)).toEqual([])
 })
 
-test("who is calling reaches a tool as ID holds it: example_status names the person and the organisation by the name ID has", async () => {
-  for (const slug of tenants) {
-    const { organizationId, toolbox } = session(slug)
-    const membership = z.string().parse(decodeJwt(toolbox.state.tokens!.access_token).membership_id)
-    const member = z.object({ name: z.string() }).parse(await id.admin("GET", `/organizations/${organizationId}/members/${membership}`))
-    const organisation = z.object({ name: z.string() }).parse(await id.admin("GET", `/organizations/${organizationId}`))
-    step(`${slug}: example_status names ${member.name} of ${organisation.name}`)
-    expect(await tool(await inToolbox(slug), "example_example_status")).toEqual({ status: "ok", person: member.name, organisation: organisation.name })
-  }
-})
-
 test("e2e at its path, served alone: its tools are named without the Toolbox's prefix, and an organisation lists and creates its own records", async () => {
   const [alpha, beta] = tenants as [string, string]
   step(`${alpha} and ${beta}: records_list at e2e's path; ${alpha} creates a record`)

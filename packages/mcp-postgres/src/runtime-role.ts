@@ -17,7 +17,8 @@ export const runtimeGrants: readonly Grant[] = [
   { table: "intents", privileges: ["select", "insert", "update", "delete"] },
 ]
 
-const privileges = new Set<string>(["select", "insert", "update", "delete"])
+/** Every `Privilege`, to check a grant read from a file. */
+export const privileges: ReadonlySet<string> = new Set<Privilege>(["select", "insert", "update", "delete"])
 const rows = async <T extends Record<string, unknown>>(db: Executor, query: ReturnType<typeof sql>) => (await db.execute<T>(query)).rows
 
 // What makes `role` unfit to run a server whatever it is granted: an attribute beyond login, a role it belongs to, or an object it owns.

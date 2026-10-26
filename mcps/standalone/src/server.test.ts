@@ -18,8 +18,9 @@ afterAll(async () => {
   await Promise.all(owned.map(({ database }) => database.close()))
 })
 
-// The entry point on a free port against `databaseUrl`, with a fake ID served over HTTP, as it would reach the real one.
-function start(databaseUrl: string, overrides: Record<string, string> = {}) {
+// The entry point on a free port against `databaseUrl`, with a fake ID served over HTTP, as it would reach the real one; under `bun --hot`, as
+// `bun run standalone:dev` runs it, when `hot`.
+function start(databaseUrl: string, overrides: Record<string, string> = {}, hot = false) {
   const fake = createFakeId({ clientId: "standalone-hub" })
   const id = Bun.serve({ port: 0, fetch: request => fake.config.fetch(request) })
   const probe = Bun.serve({ port: 0, fetch: () => new Response() })
@@ -31,13 +32,13 @@ function start(databaseUrl: string, overrides: Record<string, string> = {}) {
     STANDALONE_ID_ISSUER: `http://127.0.0.1:${id.port}`, STANDALONE_PORT: String(port), STANDALONE_ID_CLIENT_ID: "standalone-hub",
     STANDALONE_ID_CLIENT_SECRET: fake.config.clientSecret, STANDALONE_ID_ADMIN_RESOURCE: fake.config.adminResource, ...ownUrls, ...overrides,
   }
-  const server = Bun.spawn([process.execPath, "src/server.ts"], { cwd: directory, env, stdout: "pipe", stderr: "pipe" })
+  const server = Bun.spawn([process.execPath, ...(hot ? ["--hot"] : []), "src/server.ts"], { cwd: directory, env, stdout: "pipe", stderr: "pipe" })
   return { origin, server, stop: () => { server.kill(); id.stop(true) } }
 }
 
-test("the entry point serves each MCP at its path as the runtime login, answers /health with them and stops on SIGTERM", async () => {
+test("the entry point serves each MCP at its path as the runtime login, answers /health with them and exits on SIGTERM, even under bun --hot", async () => {
   const login = await database.runtimeLogin(runtimeGrants)
-  const { origin, server, stop } = start(login.url)
+  const { origin, server, stop } = start(login.url, {}, true)
   try {
     expect(new TextDecoder().decode((await server.stdout.getReader().read()).value)).toBe(`Standalone server serving ${served.map(({ provider }) => `${origin}/${provider.id}/mcp`).join(", ")}\n`)
     expect(await (await fetch(`${origin}/health`)).json()).toEqual({
@@ -46,8 +47,11 @@ test("the entry point serves each MCP at its path as the runtime login, answers 
     })
     expect((await (await fetch(`${origin}/.well-known/oauth-protected-resource/e2e/mcp`)).json()).resource).toBe(`${origin}/e2e/mcp`)
     server.kill("SIGTERM")
-    expect(await server.exited).toBe(0)
+    // bun --hot keeps a process alive once its server stops, watching for changes: the entry point ends it.
+    expect(await Promise.race([server.exited, Bun.sleep(5000).then(() => "still running")])).toBe(0)
   } finally {
+    // SIGKILL first, which a process left alive by bun --hot does not outlive.
+    server.kill("SIGKILL")
     stop()
     await server.exited
     await login.drop()

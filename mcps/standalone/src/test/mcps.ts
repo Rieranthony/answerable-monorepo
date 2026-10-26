@@ -5,4 +5,6 @@ import { provider as example } from "@answerable/mcp-example/provider"
 import { testSharedMcps } from "@answerable/mcp-platform/testing"
 
 export const prefix = "mcp_std"
-export const databases = await testSharedMcps({ name: "answerable_standalone_test_mcps", prefix, mcps: [e2e, example] })
+/** The providers the suite serves. */
+export const providers = [e2e, example]
+export const databases = await testSharedMcps({ name: "answerable_standalone_test_mcps", prefix, mcps: providers })

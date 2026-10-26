@@ -5,7 +5,8 @@ import { rowsOf } from "@answerable/mcp-postgres/testing"
 import { z } from "zod"
 import { writeCatalogue, writeHostClient } from "./catalogue"
 import { serving } from "./test/database"
-import { createHub, e2e, names, type Client, type Hub } from "./test/hub"
+import { createHub, names, type Client, type Hub } from "./test/hub"
+import { e2e } from "./test/mcps"
 
 const purpose = "A fixture provider for the Toolbox's tests: it serves the tools each test gives it."
 

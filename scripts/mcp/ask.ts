@@ -2,7 +2,8 @@
 import { Refusal, type Io, type Problem } from "./io"
 import { toolDescriptionProblem, toolNameProblem } from "./rules"
 
-const cancelled = (command: string) => new Refusal("cancelled", "Cancelled: nothing was written", command)
+/** The refusal of a cancelled prompt, with the command to run instead. */
+export const cancelled = (command: string) => new Refusal("cancelled", "Cancelled: nothing was written", command)
 
 /** Ask a line of text, checked by `problem`. With `optional`, Enter answers `undefined`. `command` is what a cancel prints to run instead. */
 export async function ask(io: Io, command: string, message: string, problem: (value: string) => Problem | undefined, { placeholder, optional = false }: { placeholder?: string; optional?: boolean } = {}) {

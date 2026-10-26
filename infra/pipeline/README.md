@@ -100,7 +100,7 @@ cosign verify ghcr.io/rieranthony/answerable/id@sha256:<64 hex> \
 - Release `answerable` of `charts/answerable` in namespace `answerable`, which Terraform creates (the deployer cannot create namespaces). Values overlays at `charts/answerable/values-civo-<environment>.yaml`.
 - The release pins each image by digest. For every image of `images.json` the value `images.<image>.digest` is `sha256:` and 64 hex characters, and the chart renders the image as `<repository>@<digest>`. `image.tag` is the same commit as a label for people.
 - `idEnvChecksum` is an annotation of ID's pod template.
-- `ops.bootstrap`, `ops.register` and `ops.makeAdmin` (with `ops.adminEmail`) switch the three ops Jobs on; `bootstrap` runs before the migrations. The Secrets `toolbox-id-client`, `admin-id-client` and `standalone-id-client` are what `register` creates, and `deploy` reads their existence to decide whether to switch `register` on.
+- `ops.bootstrap`, `ops.register` and `ops.makeAdmin` (with `ops.adminEmail`) switch the three ops Jobs on; `bootstrap` runs before the migrations. `deploy` switches `bootstrap` and `register` on every time; `register` writes the Secrets `ops-id-client`, `toolbox-id-client`, `admin-id-client` and `standalone-id-client`.
 - The Jobs are named `ops-<job>`, and the migration Jobs' names contain `migrate`; the Deployments' names end in `toolbox`, `admin-mcp` and, while it serves an MCP, `standalone`.
 - `charts/answerable/mcps.json` is the list of MCPs, `{ "mcps": [{ name, serve, database, … }] }`, which `smoke` reads.
 

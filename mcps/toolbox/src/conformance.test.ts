@@ -1,6 +1,6 @@
 import { assertProviderConformance } from "@answerable/mcp/testing"
 import { createToolboxProvider } from "./meta"
-import { e2e } from "./test/hub"
+import { e2e } from "./test/mcps"
 
 // The Toolbox's own tools against a hub that grants the e2e records list and create, and runs nothing.
 const provider = e2e.provider

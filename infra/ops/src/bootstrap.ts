@@ -1,21 +1,17 @@
-import { ownMcpDatabase, provisionMcps, provisionOwnMcp, sharedMcps, type DeclaredMcp, type ServedBy } from "@answerable/mcp-postgres"
+import { ownMcpDatabase, provisionMcps, provisionOwnMcp, servedBy, sharedMcps, type DeclaredMcp, type Sql } from "@answerable/mcp-postgres"
 import type { SecretRef, SecretStore } from "./secret-store"
-
-/** A statement on the administrative connection: `text` with `$1`… bound to `params`, returning its rows. */
-export type Sql = (text: string, params?: unknown[]) => Promise<Record<string, unknown>[]>
 
 type Login = { name: string; ref: SecretRef }
 /** A database, owned by its owner login, which migrates it, and served by restricted runtime logins. */
 type Database = { name: string; owner: Login; runtime: Login[] }
 
 const login = (name: string, secret: string, key: string): Login => ({ name, ref: { secret, key } })
-/** A server's own database: `answerable_<name>`, its owner's URL in `<secret>-database-owner`, its runtime login's in `<secret>-database`. */
-const server = (name: string, secret: string, prefix: string): Database => ({
+/** A server's own database: `answerable_<name>`, its owner's URL in `<name>-database-owner`, its runtime login's in `<name>-database`. */
+const server = (name: string, prefix: string): Database => ({
   name: `answerable_${name}`,
-  owner: login(`answerable_${name}_owner`, `${secret}-database-owner`, `${prefix}DATABASE_MIGRATION_URL`),
-  runtime: [login(`answerable_${name}_runtime`, `${secret}-database`, `${prefix}DATABASE_URL`)],
+  owner: login(`answerable_${name}_owner`, `${name}-database-owner`, `${prefix}DATABASE_MIGRATION_URL`),
+  runtime: [login(`answerable_${name}_runtime`, `${name}-database`, `${prefix}DATABASE_URL`)],
 })
-const servedBy: Record<DeclaredMcp["serve"], ServedBy[]> = { toolbox: ["toolbox"], standalone: ["standalone"], both: ["toolbox", "standalone"] }
 
 /**
  * Every database the release runs on (D4, B1), each login's URL a key of a Secret the chart reads: the owners' in the Secrets the migration
@@ -29,10 +25,10 @@ const servedBy: Record<DeclaredMcp["serve"], ServedBy[]> = { toolbox: ["toolbox"
 export function databasesFor(mcps: readonly DeclaredMcp[]): Database[] {
   const { database, logins } = sharedMcps
   return [
-    server("id", "id", ""),
-    server("toolbox", "toolbox", "TOOLBOX_"),
-    server("admin", "admin", "ADMIN_"),
-    server("standalone", "standalone", "STANDALONE_"),
+    server("id", ""),
+    server("toolbox", "TOOLBOX_"),
+    server("admin", "ADMIN_"),
+    server("standalone", "STANDALONE_"),
     {
       name: database,
       owner: login(logins.migrator, "mcps-database-owner", "MCPS_DATABASE_MIGRATION_URL"),

@@ -7,7 +7,8 @@ export const pins = {
   devDependencies: { "@eslint/js": "9.39.5", "@types/bun": "1.3.1", eslint: "9.39.5", typescript: "5.9.3", "typescript-eslint": "8.48.1" },
 }
 
-const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
+/** A JSON file as bun mcp writes one: two spaces, and a newline at the end. */
+export const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
 
 /** `mcp.json`, the declaration: where the MCP runs and its database mode, which the generator turns into the deployment's list. */
 export const mcpJson = ({ name, serve, database }: Answers) => json({ $schema: "../../scripts/mcp/mcp.schema.json", name, serve, database })
@@ -23,7 +24,6 @@ export const packageJson = ({ name }: Answers) => json({
   ...pins,
 })
 
-/** `tsconfig.json`. */
 export const tsconfig = () => json({
   compilerOptions: {
     target: "ES2022",
@@ -41,7 +41,6 @@ export const tsconfig = () => json({
   include: ["src/**/*.ts"],
 })
 
-/** `eslint.config.mjs`. */
 export const eslintConfig = () => `import eslint from "@eslint/js"
 import tseslint from "typescript-eslint"
 

@@ -2,9 +2,9 @@
 import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { checkDescription, checkMutationDescription, checkProviderId, checkToolName } from "@answerable/mcp"
-import { importedBindings, toolBinding, toolPath, wireName } from "./templates"
-
 import type { Problem } from "./io"
+import { importedBindings, toolBinding, toolPath, wireName } from "./templates"
+import { declaration } from "./workspace"
 
 /**
  * Names no MCP may take: the platform's own services, hosts and schemas, and the names whose workspace, `@answerable/mcp-<name>`, would be one of
@@ -13,7 +13,7 @@ import type { Problem } from "./io"
 const reservedNames = ["toolbox", "admin", "id", "mcp", "mcps", "standalone", "api", "www", "test", "ops", "public", "drizzle", "platform", "postgres"]
 
 /** The values of `--serve` and `--database`, the default first where there is one. */
-export const choices = { serve: ["toolbox", "standalone", "both"], database: ["shared", "own"] } as const
+export const choices = { serve: declaration.shape.serve.options, database: declaration.shape.database.options }
 
 /** An MCP's name: the provider id's rule, then not reserved, not retired (`retired`) and not taken by a directory of `mcps/` under `root`. */
 export function nameProblem(name: string, root: string, retired: readonly string[]): Problem | undefined {

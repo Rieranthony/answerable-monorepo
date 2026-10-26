@@ -4,7 +4,7 @@
 
 `src/journeys/mcp-cli.journeys.test.ts` registers real ID with the code of `bun mcp setup` and `bun mcp dev` (`@answerable/scripts/local-id` and `local-access`, on the acceptance's addresses) and proves a CLI-made MCP end to end:
 
-- `example`, in the Toolbox: a person prepares a note, confirms it, and lists it; another organisation lists none; who is calling reaches `example_status` as ID holds it.
+- `example`, in the Toolbox: a person prepares a note, whose preview names the organisation as ID holds it, confirms it, and lists it; another organisation lists none.
 - e2e at its path on the standalone server: sign-in through the SDK's OAuth client, `records_list` and a record created and listed, and a Toolbox token refused at `/e2e/mcp` with `401`.
 - Registering again changes nothing; a scope an MCP gains later and a second MCP in the Toolbox widen the rows ID holds.
 

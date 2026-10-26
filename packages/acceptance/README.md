@@ -8,7 +8,7 @@ bun install
 bun run mcp:test:e2e
 ```
 
-Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL 17 in a Compose project on port `47532` and ID on `47600`, the standalone server on `47602` and the Toolbox on `47604`, runs every `*.journeys.test.ts` in `src/journeys` one after another, and removes both afterwards, including after Ctrl-C. The kit's own unit tests (`cleanup.test.ts`, `id.test.ts`) run in the same command. The kit is test support: no coverage gate.
+Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL 17 in a Compose project on port `47532` and ID on `47600`, the standalone server on `47602` and the Toolbox on `47604`, runs every `*.journeys.test.ts` in `src/journeys` one after another, and removes PostgreSQL and ID afterwards, including after Ctrl-C. The kit's own unit tests (`cleanup.test.ts`, `id.test.ts`) run in the same command. The kit is test support: no coverage gate.
 
 | File | Job |
 | --- | --- |

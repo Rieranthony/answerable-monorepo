@@ -137,5 +137,8 @@ export const say = (io: Io, json: boolean, text: string) => json || write(io.std
 /** What a command was given: its positional arguments, and its flags, each a value or `true`. */
 export type Args = { positionals: string[]; flags: Record<string, string | true> }
 
+/** A flag's value, or `undefined` when it was left out. */
+export const valueOf = (flag: string | true | undefined) => (typeof flag === "string" ? flag : undefined)
+
 /** A command of bun mcp: its definition (definitions.ts), which `bun mcp help` and the docs read, and what runs it. */
 export type Command = Definition & { run(io: Io, args: Args): Promise<number> }

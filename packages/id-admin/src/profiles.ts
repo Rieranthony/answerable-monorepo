@@ -20,6 +20,12 @@ export type IdProfiles = ((principal: UserPrincipal) => Promise<Profile>) & {
   invalidate(organisationIds: Iterable<string>, userIds?: Iterable<string>): void
 }
 
+// ID answered that the member or the organisation does not exist: the token outlived them, so the call is refused, never retried.
+function known<Value>(read: Value | undefined): Value {
+  if (read === undefined) throw new ToolError("PERMISSION_DENIED", "Answerable ID has no such member of this organisation any more; ask an administrator of the organisation")
+  return read
+}
+
 /**
  * Who is calling, for `createMcpServer`'s `profiles`: the member (`GET /organizations/{org}/members/{membershipId}`, the token's membership id is
  * the member id) and the organisation (`GET /organizations/{org}`), read from ID's admin API in parallel with the server's `platform:read` client.
@@ -36,12 +42,6 @@ export type IdProfiles = ((principal: UserPrincipal) => Promise<Profile>) & {
  * const server = createMcpServer({ provider, auth, profiles })
  * ```
  */
-// ID answered that the member or the organisation does not exist: the token outlived them, so the call is refused, never retried.
-function known<Value>(read: Value | undefined): Value {
-  if (read === undefined) throw new ToolError("PERMISSION_DENIED", "Answerable ID has no such member of this organisation any more; ask an administrator of the organisation")
-  return read
-}
-
 export function createIdProfiles(id: IdAdmin, { ttlMs = 60_000, staleMs = 3_600_000, now = Date.now }: { ttlMs?: number; staleMs?: number; now?: () => number } = {}): IdProfiles {
   const members = new Map<string, Entry<Member>>()
   const organisations = new Map<string, Entry<z.output<typeof organisationRead>>>()

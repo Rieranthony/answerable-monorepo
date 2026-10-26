@@ -7,8 +7,9 @@ const directory = new URL("../", import.meta.url).pathname
 // The mounted MCPs' databases as the suite serves them, with the shared one's role prefix.
 const mcps = { TOOLBOX_MCPS_DATABASE_URL: databases.url, TOOLBOX_MCPS_ROLE_PREFIX: prefix, ...ownUrls }
 
-// The entry point on a free port against `databaseUrl`. ID is not there: the poller logs that it failed, and nothing here reads grants.
-function start(databaseUrl: string, overrides: Record<string, string> = {}) {
+// The entry point on a free port against `databaseUrl`, under `bun --hot` as `bun run toolbox:dev` runs it when `hot`. ID is not there: the poller
+// logs that it failed, and nothing here reads grants.
+function start(databaseUrl: string, overrides: Record<string, string> = {}, hot = false) {
   const probe = Bun.serve({ port: 0, fetch: () => new Response() })
   const { port } = probe
   probe.stop(true)
@@ -18,20 +19,22 @@ function start(databaseUrl: string, overrides: Record<string, string> = {}) {
     ...process.env, ...mcps, TOOLBOX_DATABASE_URL: databaseUrl, TOOLBOX_ID_ISSUER: id, TOOLBOX_RESOURCE_URL: `${origin}/mcp`, TOOLBOX_PORT: String(port),
     TOOLBOX_ID_CLIENT_ID: "toolbox-hub", TOOLBOX_ID_CLIENT_SECRET: "secret", TOOLBOX_ID_ADMIN_RESOURCE: `${id}/api/admin`, ...overrides,
   }
-  const server = Bun.spawn([process.execPath, "src/server.ts"], { cwd: directory, env, stdout: "pipe", stderr: "pipe" })
+  const server = Bun.spawn([process.execPath, ...(hot ? ["--hot"] : []), "src/server.ts"], { cwd: directory, env, stdout: "pipe", stderr: "pipe" })
   return { origin, server }
 }
 
-test("the entry point serves as the runtime login, answers /health with the mounted providers and stops on SIGTERM", async () => {
+test("the entry point serves as the runtime login, answers /health with the mounted providers and exits on SIGTERM, even under bun --hot", async () => {
   const login = await database.runtimeLogin(runtimeGrants)
-  const { origin, server } = start(login.url)
+  const { origin, server } = start(login.url, {}, true)
   try {
     expect(new TextDecoder().decode((await server.stdout.getReader().read()).value)).toContain(`Toolbox serving ${origin}/mcp`)
     expect(await (await fetch(`${origin}/health`)).json()).toEqual(healthy)
     server.kill("SIGTERM")
-    expect(await server.exited).toBe(0)
+    // bun --hot keeps a process alive once its server stops, watching for changes: the entry point ends it.
+    expect(await Promise.race([server.exited, Bun.sleep(5000).then(() => "still running")])).toBe(0)
   } finally {
-    server.kill()
+    // SIGKILL, which a process left alive by bun --hot does not outlive.
+    server.kill("SIGKILL")
     await server.exited
     await login.drop()
   }

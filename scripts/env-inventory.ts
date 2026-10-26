@@ -39,7 +39,7 @@ const groups: Group[] = [
   defined(standaloneTestDatabaseConfig, "mcps/standalone/src/test/database.ts, for the standalone server's tests"),
   defined(opsConfig, "infra/ops/src/commands.ts, set by charts/answerable for the bootstrap, register and make-admin Jobs (infra/ops/README.md)"),
   defined(mcpPostgresTestConfig, "packages/mcp-postgres/src/testing.ts, for the package's own tests and every MCP's (testMcpDatabase)"),
-  defined(mcpCliConfig, "scripts/mcp/config.ts, read by bun mcp db migrate and bun mcp new"),
+  defined(mcpCliConfig, "scripts/mcp/config.ts, read by bun mcp db migrate (which bun mcp new runs), bun mcp setup and bun mcp dev"),
   {
     name: "web",
     reader: "apps/web, read from apps/web/.env.local by Next.js (apps/web/.env.example)",

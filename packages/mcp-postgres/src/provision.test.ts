@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { Pool } from "pg"
 import { ensureLocalMcpDatabases } from "./local"
-import { ownMcpDatabase } from "./names"
-import { provisionMcps, provisionOwnMcp, type ServedBy, type Sql } from "./provision"
+import { ownMcpDatabase, sharedMcps } from "./names"
+import { provisionMcps, provisionOwnMcp, sqlOf, type ServedBy, type Sql } from "./provision"
 import { database } from "./test/database"
-import { clientOf, clusterUrl, forget, localLogins, mcpsUrl, sqlOf, testLogin } from "./test/mcps"
+import { clientOf, clusterUrl, forget, mcpsUrl, testLogin } from "./test/mcps"
 
 const admin = new Pool({ connectionString: mcpsUrl, max: 1 })
 const sql = sqlOf(admin)
@@ -30,13 +30,13 @@ async function catalogue() {
     schemas: await rows(`select nspname, pg_get_userbyid(nspowner) as owner, nspacl::text as acl from pg_namespace where nspname = any($1) order by 1`, [names]),
     // PUBLIC's and the three logins' privileges only: a suite running beside this one has a login of its own there.
     database: await rows(`select pg_get_userbyid(d.datdba) as owner, coalesce(acl.grantee::regrole::text, 'PUBLIC') as grantee, string_agg(acl.privilege_type, ', ' order by acl.privilege_type) as privileges
-      from pg_database d, aclexplode(d.datacl) acl where d.datname = current_database() and (acl.grantee = 0 or acl.grantee::regrole::text = any($1)) group by 1, 2 order by 2`, [Object.values(localLogins)]),
+      from pg_database d, aclexplode(d.datacl) acl where d.datname = current_database() and (acl.grantee = 0 or acl.grantee::regrole::text = any($1)) group by 1, 2 order by 2`, [Object.values(sharedMcps.logins)]),
   }
 }
 const membership = (role: string, member: string, grantor = "answerable") => ({ role, member, grantor, inherit_option: false, set_option: true, admin_option: false })
 
 test("each MCP gets its owner and runtime roles, its schema and the memberships its servers need, and a second run changes nothing", async () => {
-  await provisionMcps(sql, { mcps: [{ name: "mpgprova", servedBy: ["toolbox"] }, { name: "mpgprovb", servedBy: ["toolbox", "standalone"] }], prefix: "mcp_test", logins: localLogins })
+  await provisionMcps(sql, { mcps: [{ name: "mpgprova", servedBy: ["toolbox"] }, { name: "mpgprovb", servedBy: ["toolbox", "standalone"] }], prefix: "mcp_test", logins: sharedMcps.logins })
   const after = await catalogue()
   const role = (rolname: string) => ({ rolname, rolcanlogin: false, rolinherit: false, rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolreplication: false, rolbypassrls: false })
   expect(after.roles).toEqual(["mcp_test_mpgprova", "mcp_test_mpgprova_owner", "mcp_test_mpgprovb", "mcp_test_mpgprovb_owner"].map(role))
@@ -50,12 +50,12 @@ test("each MCP gets its owner and runtime roles, its schema and the memberships 
     membership("mcp_test_mpgprovb_owner", "answerable_mcps_migrator"),
   ])
   expect(after.schemas).toEqual(["mpgprova", "mpgprovb"].map(name => ({ nspname: name, owner: `mcp_test_${name}_owner`, acl: `{mcp_test_${name}_owner=UC/mcp_test_${name}_owner,mcp_test_${name}=U/mcp_test_${name}_owner}` })))
-  await provisionMcps(sql, { mcps: [{ name: "mpgprova", servedBy: ["toolbox"] }, { name: "mpgprovb", servedBy: ["toolbox", "standalone"] }], prefix: "mcp_test", logins: localLogins })
+  await provisionMcps(sql, { mcps: [{ name: "mpgprova", servedBy: ["toolbox"] }, { name: "mpgprovb", servedBy: ["toolbox", "standalone"] }], prefix: "mcp_test", logins: sharedMcps.logins })
   expect(await catalogue()).toEqual(after)
 })
 
 test("answerable_mcps is owned by the migrator; PUBLIC holds nothing on it, the three logins may connect, and the serving logins may not create temporary tables", async () => {
-  await provisionMcps(sql, { mcps: [], prefix: "mcp_test", logins: localLogins })
+  await provisionMcps(sql, { mcps: [], prefix: "mcp_test", logins: sharedMcps.logins })
   expect((await catalogue()).database).toEqual([
     { owner: "answerable_mcps_migrator", grantee: "answerable_mcps_migrator", privileges: "CONNECT, CREATE, TEMPORARY" },
     { owner: "answerable_mcps_migrator", grantee: "answerable_mcps_standalone", privileges: "CONNECT" },
@@ -63,7 +63,7 @@ test("answerable_mcps is owned by the migrator; PUBLIC holds nothing on it, the 
   ])
   const scratch = await database.scratch("owned")
   try {
-    await expect(provisionMcps(sqlOf(scratch.db.$client), { mcps: [], logins: localLogins }))
+    await expect(provisionMcps(sqlOf(scratch.db.$client), { mcps: [], logins: sharedMcps.logins }))
       .rejects.toThrow("Database answerable_mcp_postgres_test_owned is owned by answerable; the migrator login, answerable_mcps_migrator, must own it")
   } finally {
     await scratch.drop()
@@ -71,7 +71,7 @@ test("answerable_mcps is owned by the migrator; PUBLIC holds nothing on it, the 
 })
 
 test("a role or membership changed by hand is brought back in line, and changing servedBy revokes what a server no longer needs", async () => {
-  const provision = (servedBy: ServedBy[]) => provisionMcps(sql, { mcps: [{ name: "mpgprova", servedBy }], prefix: "mcp_test", logins: localLogins })
+  const provision = (servedBy: ServedBy[]) => provisionMcps(sql, { mcps: [{ name: "mpgprova", servedBy }], prefix: "mcp_test", logins: sharedMcps.logins })
   const runtime = async () => {
     const { roles, memberships } = await catalogue()
     return { role: roles.find(row => row.rolname === "mcp_test_mpgprova"), memberships: memberships.filter(row => row.role === "mcp_test_mpgprova") }
@@ -98,7 +98,7 @@ test("a CREATEROLE login that is not a superuser provisions once it holds the da
   try {
     await client.query("create role mcp_test_mpgprovc_owner nologin")
     await expect(client.query("create schema mpgprovc authorization mcp_test_mpgprovc_owner")).rejects.toThrow('must be able to SET ROLE "mcp_test_mpgprovc_owner"')
-    await provisionMcps(sqlOf(client), { mcps: [{ name: "mpgprovc", servedBy: ["toolbox"] }], prefix: "mcp_test", logins: localLogins })
+    await provisionMcps(sqlOf(client), { mcps: [{ name: "mpgprovc", servedBy: ["toolbox"] }], prefix: "mcp_test", logins: sharedMcps.logins })
     const after = await catalogue()
     expect(after.schemas.find(row => row.nspname === "mpgprovc")).toEqual({ nspname: "mpgprovc", owner: "mcp_test_mpgprovc_owner", acl: "{mcp_test_mpgprovc_owner=UC/mcp_test_mpgprovc_owner,mcp_test_mpgprovc=U/mcp_test_mpgprovc_owner}" })
     expect(after.memberships.filter(row => row.grantor === civo.name && row.member !== civo.name)).toEqual([
@@ -123,7 +123,7 @@ test("an own MCP's database and logins are named after it, as the deployment and
 test("a bad name, prefix, server, login or a name listed twice is refused before any SQL runs", async () => {
   const sent: string[] = []
   const spy: Sql = async text => { sent.push(text); return [] }
-  const refused = (options: Partial<Parameters<typeof provisionMcps>[1]>) => provisionMcps(spy, { mcps: [], prefix: "mcp_test", logins: localLogins, ...options })
+  const refused = (options: Partial<Parameters<typeof provisionMcps>[1]>) => provisionMcps(spy, { mcps: [], prefix: "mcp_test", logins: sharedMcps.logins, ...options })
   await expect(refused({ mcps: [{ name: "Acme", servedBy: [] }] })).rejects.toThrow('MCP name "Acme" must be a lowercase letter then up to 11 lowercase letters or digits, for example acme')
   await expect(refused({ mcps: [{ name: "acme; drop", servedBy: [] }] })).rejects.toThrow('MCP name "acme; drop" must be')
   await expect(refused({ mcps: [{ name: "public", servedBy: [] }] })).rejects.toThrow("MCP name public is reserved: Postgres or drizzle owns a schema of that name")
@@ -132,7 +132,7 @@ test("a bad name, prefix, server, login or a name listed twice is refused before
   // @ts-expect-error a server that does not exist
   await expect(refused({ mcps: [{ name: "acme", servedBy: ["web"] }] })).rejects.toThrow('MCP acme is served by "web"; servedBy lists toolbox and standalone')
   await expect(refused({ mcps: [{ name: "acme", servedBy: [] }, { name: "acme", servedBy: ["toolbox"] }] })).rejects.toThrow("MCP acme is listed twice")
-  await expect(refused({ logins: { ...localLogins, toolbox: 'toolbox"; drop' } })).rejects.toThrow('Invalid login name "toolbox"; drop"')
+  await expect(refused({ logins: { ...sharedMcps.logins, toolbox: 'toolbox"; drop' } })).rejects.toThrow('Invalid login name "toolbox"; drop"')
   await expect(provisionOwnMcp(spy, { name: "Acme", owner: "o", runtime: "r" })).rejects.toThrow('MCP name "Acme" must be')
   expect(() => ownMcpDatabase("Acme")).toThrow('MCP name "Acme" must be')
   await expect(provisionOwnMcp(spy, { name: "acme", owner: "o; drop", runtime: "r" })).rejects.toThrow('Invalid login name "o; drop"')

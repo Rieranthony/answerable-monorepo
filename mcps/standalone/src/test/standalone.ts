@@ -5,11 +5,9 @@ import { createIdAdmin } from "@answerable/id-admin"
 import { createFakeId } from "@answerable/id-admin/testing"
 import { createMemoryTracer, mcpDatabases } from "@answerable/mcp-platform"
 import type { Database } from "@answerable/mcp-postgres"
-import { provider as e2e } from "@answerable/mcp-e2e/provider"
-import { provider as example } from "@answerable/mcp-example/provider"
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client"
 import { createStandalone } from "../standalone"
-import { databases, prefix } from "./mcps"
+import { databases, prefix, providers } from "./mcps"
 
 export const origin = "https://mcp.test"
 type FakeId = ReturnType<typeof createFakeId>
@@ -20,7 +18,7 @@ export type Who = { organizationId: string; membershipId: string; userId: string
 export async function startStandalone(db: Database, { issuer, id }: { issuer?: TestIssuer; id?: FakeId } = {}) {
   issuer ??= await createTestIssuer()
   id ??= createFakeId()
-  const mcps = mcpDatabases([{ provider: e2e, database: "shared" }, { provider: example, database: "shared" }], { shared: databases.url, own: {}, prefix })
+  const mcps = mcpDatabases(providers.map(provider => ({ provider, database: "shared" as const })), { shared: databases.url, own: {}, prefix })
   const { tracer, spans } = createMemoryTracer()
   const standalone = createStandalone({ serve: mcps.mount, pools: mcps.pools, origin, auth: { issuer: issuer.issuer, fetch: issuer.fetch }, db, id: createIdAdmin(id.config), spans: tracer })
   // As a host would send it: the Host header is the URL's.

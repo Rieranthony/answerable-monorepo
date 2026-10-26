@@ -8,11 +8,9 @@ import { createTestMcp } from "@answerable/mcp/testing"
 import { z } from "zod"
 import { writeCatalogue } from "../catalogue"
 import { createToolbox } from "../toolbox"
-import { e2e } from "./mcps"
 
 export const resource = "https://mcp.test/mcp"
 export const adminResource = "https://mcp.test/admin"
-export { e2e }
 
 /** A provider with a read (`records.list`, titled) and a mutation (`records.create`), and `extra` more reads, for the admin API's tests. */
 export function records(id: string, { version = "2026-09-29", extra = [] as string[] } = {}) {
@@ -32,13 +30,15 @@ export function records(id: string, { version = "2026-09-29", extra = [] as stri
 export const providerId = () => `a${crypto.randomUUID().slice(0, 8)}`
 
 /**
- * The Toolbox mounting `providers`, a provider alone or with its `db`, over the test database and a fake ID. `member` makes a person of a fresh
- * organisation in the fake ID, with the access view that grants them `grants`, the providers enabled in the catalogue, and a `connect` as them.
+ * The Toolbox mounting `providers` (the suite's e2e unless given), a provider alone or with its `db`, over the test database and a fake ID.
+ * `member` makes a person of a fresh organisation in the fake ID, with the access view that grants them `grants`, the providers enabled in the
+ * catalogue, and a `connect` as them.
  */
-export async function createHub(db: Database, providers: readonly (Provider | Mount)[] = [e2e], { secret, pageSize }: { secret?: string; pageSize?: number } = {}) {
+export async function createHub(db: Database, providers?: readonly (Provider | Mount)[], { secret, pageSize }: { secret?: string; pageSize?: number } = {}) {
   const id = createFakeId({ pageSize })
   const { tracer, spans } = createMemoryTracer()
-  const mount = providers.map(entry => ("provider" in entry ? entry : { provider: entry }))
+  // The suite's mounted e2e unless `providers` are given, imported only then: importing ./mcps makes the suite's MCP databases.
+  const mount = (providers ?? [(await import("./mcps")).e2e]).map(entry => ("provider" in entry ? entry : { provider: entry }))
   let toolbox!: Awaited<ReturnType<typeof createToolbox>>
   const mcp = await createTestMcp(async ({ auth }) => (toolbox = await createToolbox({
     mount, auth, db, id: createIdAdmin({ ...id.config, ...(secret ? { clientSecret: secret } : {}) }), spans: tracer,

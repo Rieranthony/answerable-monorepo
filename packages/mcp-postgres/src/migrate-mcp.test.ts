@@ -7,18 +7,19 @@ import { migrate } from "drizzle-orm/node-postgres/migrator"
 import { Client, Pool } from "pg"
 import { ensureLocalMcpDatabases } from "./local"
 import { migrateMcp, migrateMcps, withoutSchemaCreation, type McpMigration } from "./migrate-mcp"
-import { provisionMcps } from "./provision"
-import { as, clientOf, clusterUrl, fixtureFolder, forget, localLogins, mcpsUrl, sqlOf } from "./test/mcps"
+import { sharedMcps } from "./names"
+import { provisionMcps, sqlOf } from "./provision"
+import { as, clientOf, clusterUrl, fixtureFolder, forget, mcpsUrl } from "./test/mcps"
 import { refusalOf } from "./testing"
 
 const admin = new Pool({ connectionString: mcpsUrl, max: 1 })
 let migrator: Client
 const a: McpMigration = { name: "mpgfixa", folder: fixtureFolder("mpgfixa"), mode: "shared", prefix: "mcp_test" }
 const b: McpMigration = { name: "mpgfixb", folder: fixtureFolder("mpgfixb"), mode: "shared", prefix: "mcp_test" }
-const provision = () => provisionMcps(sqlOf(admin), { mcps: [{ name: "mpgfixa", servedBy: ["toolbox"] }, { name: "mpgfixb", servedBy: ["toolbox"] }], prefix: "mcp_test", logins: localLogins })
+const provision = () => provisionMcps(sqlOf(admin), { mcps: [{ name: "mpgfixa", servedBy: ["toolbox"] }, { name: "mpgfixb", servedBy: ["toolbox"] }], prefix: "mcp_test", logins: sharedMcps.logins })
 beforeAll(async () => {
   await ensureLocalMcpDatabases(clusterUrl)
-  migrator = await clientOf(as(localLogins.migrator))
+  migrator = await clientOf(as(sharedMcps.logins.migrator))
 })
 // Each test starts from freshly provisioned, empty schemas, as the migration Job finds a new MCP.
 beforeEach(async () => {

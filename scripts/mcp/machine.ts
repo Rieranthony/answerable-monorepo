@@ -7,7 +7,7 @@ import type { Start } from "./io"
 /**
  * A `Start` for `bun mcp dev`: it runs the command in `cwd` with exactly `env` as its environment, its output going to the terminal, as the leader of a
  * process group of its own, which is `bun run dev`'s process and the server it runs. `stop()` asks the group to end with SIGTERM, and kills what is
- * left of it after `graceMs`: a server run with `bun --hot` closes its port on SIGTERM and then stays alive to watch for changes, so it never ends alone.
+ * left of it after `graceMs`: under `bun --hot` a process outlives its server unless the server exits itself, as the Toolbox and the standalone server do.
  */
 export const processStarter = (graceMs: number): Start => (command, { cwd, env }) => {
   const [file, ...args] = command

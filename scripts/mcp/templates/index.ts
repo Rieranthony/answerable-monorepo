@@ -4,11 +4,9 @@ import { mcpTs, providerTest, providerTs, schemaTs } from "./sources"
 import { toolTest, toolTs } from "./tool"
 import { bunfig, eslintConfig, mcpJson, packageJson, readme, tsconfig } from "./workspace"
 
-export { importedBindings, schemaBinding, tableBinding, toolBinding, toolModule, toolPath, unusable, wireName } from "./names"
+export { importedBindings, schemaBinding, toolBinding, toolModule, toolPath, wireName } from "./names"
 export type { Answers, DatabaseMode, Serve, ToolAnswers } from "./names"
 export { isolationImport, tableTs, toolsMarker } from "./sources"
-export { statusDescription } from "./tool"
-export { pins } from "./workspace"
 
 /** A tool's file and its test, by path; without `tool`, the status tool of MCP `name`. */
 export function toolFiles(name: string, tool?: ToolAnswers): Record<string, string> {

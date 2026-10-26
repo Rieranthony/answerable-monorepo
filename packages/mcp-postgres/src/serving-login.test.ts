@@ -3,10 +3,10 @@ import { Pool } from "pg"
 import { connect } from "./connect"
 import { ensureLocalMcpDatabases } from "./local"
 import { migrateMcp } from "./migrate-mcp"
-import { roleLock } from "./names"
-import { provisionMcps } from "./provision"
+import { roleLock, sharedMcps } from "./names"
+import { provisionMcps, sqlOf } from "./provision"
 import { assertServingLogin } from "./serving-login"
-import { as, clientOf, clusterUrl, fixtureFolder, forget, localLogins, mcpsUrl, sqlOf, testLogin } from "./test/mcps"
+import { as, clientOf, clusterUrl, fixtureFolder, forget, mcpsUrl, testLogin } from "./test/mcps"
 
 const admin = new Pool({ connectionString: mcpsUrl, max: 1 })
 // Under the lock every role statement takes: provisioning in another suite grants on answerable_mcps_test's own catalogue row meanwhile.
@@ -17,8 +17,8 @@ beforeAll(async () => {
   await ensureLocalMcpDatabases(clusterUrl)
   await forget(admin, "mpgfixa", "mpgfixb")
   login = await testLogin(admin)
-  await provisionMcps(sqlOf(admin), { mcps: [{ name: "mpgfixa", servedBy: ["toolbox"] }, { name: "mpgfixb", servedBy: ["toolbox"] }], prefix: "mcp_test", logins: { ...localLogins, toolbox: login.name } })
-  const migrator = await clientOf(as(localLogins.migrator))
+  await provisionMcps(sqlOf(admin), { mcps: [{ name: "mpgfixa", servedBy: ["toolbox"] }, { name: "mpgfixb", servedBy: ["toolbox"] }], prefix: "mcp_test", logins: { ...sharedMcps.logins, toolbox: login.name } })
+  const migrator = await clientOf(as(sharedMcps.logins.migrator))
   try {
     await migrateMcp({ client: migrator, name: "mpgfixa", folder: fixtureFolder("mpgfixa"), mode: "shared", prefix: "mcp_test" })
   } finally {

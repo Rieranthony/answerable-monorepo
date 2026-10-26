@@ -11,6 +11,7 @@ import { dataTable } from "@/components/docs/table"
 import {
   definitions,
   exitCodes,
+  helpFlag,
   type Definition,
   type Flag,
 } from "../../../../scripts/mcp/definitions"
@@ -48,10 +49,7 @@ function described(text: string | undefined, what: string): string {
 
 /** Every flag of a command, with what it takes, what it is left out and what it does; `--help` is every command's. */
 export function flagRows(command: Definition): string[][] {
-  const flags: Record<string, Flag> = {
-    ...command.flags,
-    help: { description: "This text" },
-  }
+  const flags: Record<string, Flag> = { ...command.flags, ...helpFlag }
 
   return Object.entries(flags).map(
     ([flag, { value, description, default: fallback }]) => [

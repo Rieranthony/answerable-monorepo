@@ -6,6 +6,7 @@ What the deployment needs to provision, migrate and serve the MCPs of its list (
 
 - `provisionMcps` takes each owner role for its administrative login `WITH INHERIT FALSE, SET TRUE`, as it gives the migrator, and grants the runtime role `USAGE` as the owner role: a managed database's administrator no longer inherits every MCP's owner.
 - `assertOwnLogin(db, { name })` checks an own MCP's runtime login before a server listens, as `assertServingLogin` checks the shared one.
+- `servedBy`, the servers that serve an MCP of each `serve`, and `sqlOf(client)`, the `Sql` of a pg client or pool, which the bootstrap, `bun mcp` and the test helpers wrote each for themselves.
 - `sharedMcps` and `ownMcpDatabase(name)` name the shared database, its logins, and an own MCP's database and logins, for the ops bootstrap, the migration Job and `bun mcp`.
 - `declaredMcps`, the zod schema of the chart's list held in a variable.
 

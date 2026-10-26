@@ -283,3 +283,46 @@
   - knip clean;
   - frozen install unchanged;
   - `infra:check` passed.
+- **M9, the cleanup pass, the benchmark and the evidence,** by Opus.
+  - **What it changed:**
+    - one registrar, `infra/ops/src/registrar.ts`, for the register Job and `bun mcp setup` and `dev`, with the conformance test deleted;
+    - `process.exit(0)` at the end of `close()` in the Toolbox, the standalone server and the admin MCP, each proven under `bun --hot`;
+    - `ROOT_ADMIN_SECRET`'s local default read from ID's definition;
+    - duplicates merged (`servedBy`, `sqlOf`, the privilege set, the ownership check, the CLI's flag and refusal helpers);
+    - unused exports and options removed, and stale lines fixed;
+    - the evidence section in `reports/mcp-foundation-evidence.md`, and the status paragraph and register rows in `docs/02-plan.md`.
+  - **The 200-MCP benchmark** (`packages/mcp-postgres/bench/mcp-database.ts`, `mcps/toolbox/bench/scale.ts`):
+    - provisioning in 0.70 to 0.73 s;
+    - the first migration in 1.96 to 2.16 s, and with nothing pending 1.16 to 1.36 s;
+    - 1,000 queries on 10 connections in 192 to 198 ms;
+    - the Toolbox's ingest in 0.35 to 0.61 s;
+    - 1,000 tool calls at once in 5.18 to 5.94 s, with no error and at most 10 connections;
+    - a call's median of 10.7 to 12.3 ms for a caller of 1,000 tools;
+    - the Helm release at 60.2 KiB.
+  - **The end-to-end proof from a clean copy:** `demo`, served `both`, made, given two tools, checked and committed with no hand edit. Then the kind stack from the copy: 125 pass. A person signed in at its path and through the Toolbox. Everything was removed afterwards.
+  - **The agent's gates:**
+    - ID: 1,491 pass, at 100%;
+    - `mcp:test`: 1,020;
+    - the acceptance: 69;
+    - kind: 123 (125 with the proof);
+    - web: 120;
+    - knip clean.
+  - **Left open, for the audit before merge:**
+    - the Toolbox's per-call cost grows with the tools a caller holds;
+    - `migrateLocal` reads `process.env`, not `readSettings`;
+    - the chart-list entry is typed four times;
+    - three stale status lines outside the goal;
+    - two hubs build the same test databases;
+    - the kind stack's sign-in budget.
+- **The coordinator's review of M9:**
+  - the register Job's idempotency keys and rows are unchanged, and `register.test.ts` passes untouched;
+  - the CLI's relative imports of ID's config and the registrar follow `scripts/env-inventory.ts`, and the scripts suite is uncached.
+- **The coordinator's gates on M9:**
+  - frozen install unchanged;
+  - typecheck and lint forced: 21 of 21;
+  - build: 2 of 2;
+  - `mcp:test`: 1,020 pass, 0 fail, 29 s;
+  - web: 120;
+  - knip clean;
+  - `infra:check` passed;
+  - the acceptance, alone: 69 pass, 0 fail, 150 s, nothing left behind.

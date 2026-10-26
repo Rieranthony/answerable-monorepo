@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import { readMigrationFiles } from "drizzle-orm/migrator"
 import type { Client } from "pg"
 import { assertMcpName, identifier, mcpRoles, quote } from "./names"
-import type { Grant } from "./runtime-role"
+import { privileges, type Grant } from "./runtime-role"
 
 /** An MCP to migrate: shared, as its owner role through the migrator login; or own, as its own database's owner login, granting `runtime`. */
 export type McpMigration = {
@@ -19,7 +19,6 @@ export type McpMigration = {
 const journal = "__drizzle_migrations"
 // drizzle-kit writes this after each statement, and drizzle's readMigrationFiles splits a file on it without the newline.
 const breakpoint = "--> statement-breakpoint"
-const privileges = new Set(["select", "insert", "update", "delete"])
 // What only the platform does to an MCP's database: create its schema, grant, and take a role.
 const forbidden = /\b(?:create\s+schema|alter\s+default\s+privileges|grant|revoke|set\s+(?:session\s+|local\s+)?role|reset\s+role|set\s+(?:session\s+|local\s+)?session\s+authorization)\b/gi
 const tokens = /"(?:[^"]|"")*"|[a-z_][a-z0-9_$]*|\S/gi

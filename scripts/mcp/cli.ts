@@ -5,22 +5,22 @@ import { addTool } from "./commands/add-tool"
 import { check } from "./commands/check"
 import { db } from "./commands/db"
 import { dev } from "./commands/dev"
-import { help, helpText } from "./commands/help"
+import { help, helpText, unknownCommand } from "./commands/help"
 import { list } from "./commands/list"
 import { newMcp } from "./commands/new"
 import { setup } from "./commands/setup"
-import type { Flag } from "./definitions"
+import { helpFlag, type Flag } from "./definitions"
 import { printError, Refusal, spawn, type Args, type Command, type Io } from "./io"
 import { interrupt, listening, processStarter } from "./machine"
 
 const made = [newMcp, addTool, list, check, db, setup, dev]
 
-/** Every command of bun mcp, as data: `bun mcp help` prints them, and the docs read them. */
+/** Every command of bun mcp: its definition with what runs it. `bun mcp help` prints them. */
 export const commands: readonly Command[] = [...made, help(made)]
 
 /** The flags and positional arguments of `argv` for `command`: an unknown flag, a flag given twice or a value missing is refused. */
 export function parse(command: Command, argv: readonly string[]): Args {
-  const known: Record<string, Flag> = { ...command.flags, help: { description: "This text" } }
+  const known: Record<string, Flag> = { ...command.flags, ...helpFlag }
   const args: Args = { positionals: [], flags: {} }
   for (let index = 0; index < argv.length; index += 1) {
     const word = argv[index]!
@@ -55,10 +55,7 @@ export async function main(io: Io): Promise<number> {
     if (first === undefined || first === "--help") return (io.stdout.write(helpText(commands)), 0)
     const named = first === "add" && second === "tool" ? "add tool" : first
     const command = commands.find(candidate => candidate.name === named)
-    if (!command) {
-      const known = commands.map(candidate => candidate.name).join(", ")
-      throw new Refusal("unknown-command", `bun mcp has no command ${first === "add" ? `add ${second ?? ""}`.trim() : first}; its commands are ${known}`, "bun mcp help")
-    }
+    if (!command) throw unknownCommand(first === "add" ? `add ${second ?? ""}`.trim() : first, commands)
     const args = parse(command, io.argv.slice(named.split(" ").length))
     if (args.flags.help) return (io.stdout.write(helpText(commands, command.name)), 0)
     return await command.run(io, args)

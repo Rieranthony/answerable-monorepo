@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { ensureLocalMcpDatabases, provisionMcps, provisionOwnMcp, sharedMcps } from "@answerable/mcp-postgres"
+import { ensureLocalMcpDatabases, provisionMcps, provisionOwnMcp, sharedMcps, sqlOf } from "@answerable/mcp-postgres"
 import { mcpPostgresTestConfig } from "@answerable/mcp-postgres/testing"
 import { Client } from "pg"
 import { migrateDeclared } from "./migrate-mcps"
@@ -31,7 +31,6 @@ async function on(database: string, ...statements: string[]) {
     await client.end()
   }
 }
-const sqlOf = (client: Client) => async (text: string, params?: unknown[]) => (await client.query(text, params)).rows
 
 /** Write an MCP's drizzle folder of one migration, `statements` joined as drizzle-kit joins them, and its grants file when given. */
 async function mcp(name: string, statements: string[], grants?: string) {

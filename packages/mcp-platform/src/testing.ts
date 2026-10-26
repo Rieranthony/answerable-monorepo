@@ -1,7 +1,7 @@
 // Databases for the tests of a server that serves MCPs, on the development Postgres, each a suite's own, as the deployment makes them.
 import { fileURLToPath } from "node:url"
 import type { Provider } from "@answerable/mcp"
-import { ensureLocalMcpDatabases, migrateMcp, provisionMcps, provisionOwnMcp } from "@answerable/mcp-postgres"
+import { ensureLocalMcpDatabases, migrateMcp, provisionMcps, provisionOwnMcp, sharedMcps, sqlOf } from "@answerable/mcp-postgres"
 import { mcpPostgresTestConfig } from "@answerable/mcp-postgres/testing"
 import { Client } from "pg"
 
@@ -30,7 +30,6 @@ function login(name: string) {
   Object.assign(url, { username: role, password })
   return { role, password, url: url.href }
 }
-const sqlOf = (client: Client) => async (text: string, params?: unknown[]) => (await client.query(text, params)).rows
 const folderOf = (provider: Provider) => fileURLToPath(provider.database!.migrations)
 function assertDisposable(name: string) {
   if (!/^answerable_[a-z0-9_]*_test(_[a-z0-9_]+)?$/.test(name)) throw new Error(`Refusing to make ${name}: a suite's database is answerable_<suite>_test, or that and a suffix`)
@@ -46,9 +45,9 @@ export async function testSharedMcps({ name, prefix, mcps }: { name: string; pre
   assertDisposable(name)
   await ensureLocalMcpDatabases(cluster("postgres").href)
   const serving = login(name)
-  await statements(`drop database if exists ${name} with (force)`, `create database ${name} owner answerable_mcps_migrator`, `create role ${serving.role} login password '${serving.password}' noinherit`)
+  await statements(`drop database if exists ${name} with (force)`, `create database ${name} owner ${sharedMcps.logins.migrator}`, `create role ${serving.role} login password '${serving.password}' noinherit`)
   await asSuperuser(name, async client => {
-    await provisionMcps(sqlOf(client), { mcps: mcps.map(({ id }) => ({ name: id, servedBy: ["toolbox", "standalone"] })), prefix, logins: { migrator: "answerable_mcps_migrator", toolbox: serving.role, standalone: serving.role } })
+    await provisionMcps(sqlOf(client), { mcps: mcps.map(({ id }) => ({ name: id, servedBy: ["toolbox", "standalone"] })), prefix, logins: { migrator: sharedMcps.logins.migrator, toolbox: serving.role, standalone: serving.role } })
     for (const provider of mcps) await migrateMcp({ client, name: provider.id, folder: folderOf(provider), mode: "shared", prefix })
   })
   return {

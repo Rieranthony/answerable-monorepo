@@ -4,6 +4,7 @@
 
 - `scripts/migrate-mcps.ts` and `migrateDeclared`: every MCP of the chart's list, migrated in turn by the deployment's Job `mcps-migrate`, a failure naming the MCP.
 - It runs from the `mcps` image, with the Toolbox and the admin MCP (`mcps/Dockerfile`); `pg` is a runtime dependency.
+- The entry point exits once it has closed on SIGINT or SIGTERM, so `bun run standalone:dev` (`bun --hot`) leaves no process behind.
 
 ## 0.1.0
 

@@ -3,6 +3,7 @@
 // (both, for `both`) with hot reload and waits for each to list the MCP, registers a standalone MCP in the local ID, and gives the developer's organisation
 // access, then runs until Ctrl-C and stops what it started.
 import { join } from "node:path"
+import { servedBy } from "@answerable/mcp-postgres"
 import { findBySlug } from "../../../infra/ops/src/admin-api"
 import { definitions } from "../definitions"
 import { readSettings } from "../environment"
@@ -10,13 +11,12 @@ import { scopesOf } from "../generate"
 import { cli, refusal, Refusal, runSteps, sh, type Command, type Io, type Problem, type Running, type Step } from "../io"
 import { local } from "../local"
 import { enableInToolbox, giveStandaloneAccess } from "../local-access"
-import { adminCall, createRegistrar, machineToken, registerStandalone } from "../local-id"
+import { adminCall, counts, createRegistrar, machineToken, registerStandalone } from "../local-id"
 import { listed } from "../rules"
 import { servers, startServer, type ServerName } from "../servers"
 import { declarations, findRoot, manifestOf, resolveMcp, type Declaration } from "../workspace"
 
 const { usage } = definitions.dev
-const servedBy: Record<Declaration["serve"], readonly ServerName[]> = { toolbox: ["toolbox"], standalone: ["standalone"], both: ["toolbox", "standalone"] }
 type Settings = Awaited<ReturnType<typeof readSettings>>["settings"]
 
 // What stops bun mcp dev before it starts anything: each, with the command that fixes it, and mcp-dev's token and the developer's organisation id when
@@ -87,7 +87,7 @@ export const dev: Command = {
           run: async () => {
             const registrar = createRegistrar(call)
             await registerStandalone(registrar, { name, scopes: scopesOf(manifest!) })
-            return `${address.standalone} and claude-code-${name}: ${registrar.counts()}`
+            return `${address.standalone} and claude-code-${name}: ${counts(registrar)}`
           },
         },
         { name: "access", fix: again, run: async () => `organisation ${settings.MCP_DEV_ORGANISATION}: ${await giveStandaloneAccess(call, organisation!, name)}` },

@@ -1,7 +1,7 @@
 // bun mcp db [mcp] generate|migrate: an MCP's migration for a change to its schema, or its local development schema provisioned and migrated.
 import { assertTablesInSchema, generateMigration, migrateLocal } from "../database"
 import { definitions } from "../definitions"
-import { Refusal, runSteps, type Command } from "../io"
+import { Refusal, runSteps, valueOf, type Command } from "../io"
 import { findRoot, resolveMcp } from "../workspace"
 
 const { usage } = definitions.db
@@ -24,7 +24,7 @@ export const db: Command = {
       name: "migration",
       fix: `bun mcp db ${mcp.name} generate`,
       run: async () => {
-        written = await generateMigration(io.exec, root, mcp.name, typeof flags.name === "string" ? flags.name : undefined)
+        written = await generateMigration(io.exec, root, mcp.name, valueOf(flags.name))
         return written.join(", ") || "no change to src/db/schema.ts"
       },
     }], () => (written.length ? [`bun mcp db ${mcp.name} migrate`, `git add mcps/${mcp.name}/drizzle`] : []))

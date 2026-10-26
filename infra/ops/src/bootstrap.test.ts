@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
-import type { DeclaredMcp } from "@answerable/mcp-postgres"
-import { bootstrap, databasesFor, type Sql } from "./bootstrap"
+import type { DeclaredMcp, Sql } from "@answerable/mcp-postgres"
+import { bootstrap, databasesFor } from "./bootstrap"
 import { memoryStore } from "./testing"
 
 type Role = { password: string; rolsuper: boolean; rolreplication: boolean; rolbypassrls: boolean; restricted: boolean; login: boolean }

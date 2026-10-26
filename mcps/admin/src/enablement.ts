@@ -5,7 +5,7 @@
 export type Row = { id: string; clientId: string | null; resource: string | null; grantKind?: string; memberId?: string | null; groupId?: string | null; scopes: string[]; status: string }
 
 /** One row to make, in order: a host client's link to the resource (`PUT`), or a capability or an entitlement (`POST` with its `body`). */
-export type Step = { what: string; method: "PUT" | "POST"; path: string; body?: Record<string, unknown> }
+type Step = { what: string; method: "PUT" | "POST"; path: string; body?: Record<string, unknown> }
 
 /** A row ID holds for a target that does not fit: not active, or lacking scopes. The message says what to do to it; `details` say which row. */
 export class RowConflict extends Error {
@@ -18,7 +18,7 @@ export class RowConflict extends Error {
 // What ID needs to sign a person in through a host client: the login and the MCP's resource, each for both grant kinds.
 const grantKinds = ["authorization_code", "refresh_token"] as const
 /** The scopes of the login every host client needs. */
-export const signIn = ["openid", "offline_access"]
+const signIn = ["openid", "offline_access"]
 
 /** A row ID holds counts when it is active and carries what is needed; any other row of the same target stops the plan, naming it. */
 function held(row: Row | undefined, needed: readonly string[], label: string) {

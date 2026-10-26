@@ -5,7 +5,7 @@ import { dirname, join } from "node:path"
 import { ask, askTool, askToolDescription, choose } from "../ask"
 import { definitions } from "../definitions"
 import { generate } from "../generate"
-import { cli, finishing, Refusal, refusal, runSteps, say, sh, shellWord, type Command, type Io, type Problem } from "../io"
+import { cli, finishing, Refusal, refusal, runSteps, say, sh, shellWord, valueOf, type Command, type Io, type Problem } from "../io"
 import { choices, choiceProblem, descriptionProblem, nameProblem, toolDescriptionProblem, toolNameProblem } from "../rules"
 import { mcpFiles, type DatabaseMode, type Serve, type ToolAnswers } from "../templates"
 import { findRoot, retired } from "../workspace"
@@ -25,7 +25,6 @@ function commandFor({ name, description, serve, database, tool, toolDescription,
   return words.map(shellWord).join(" ")
 }
 
-const text = (value: string | true | undefined) => (typeof value === "string" ? value : undefined)
 
 export const newMcp: Command = {
   ...definitions.new,
@@ -34,8 +33,8 @@ export const newMcp: Command = {
     const interactive = io.isTTY && !options.json
     if (positionals.length > 1) throw new Refusal("unexpected-argument", `bun mcp new takes one name; it was given ${positionals.join(", ")}`, commandFor({ name: positionals[0], mutation: false }, options))
     const given: Given = {
-      name: positionals[0], description: text(flags.description), serve: text(flags.serve), database: text(flags.database),
-      tool: text(flags.tool), toolDescription: text(flags["tool-description"]), mutation: flags.mutation === true,
+      name: positionals[0], description: valueOf(flags.description), serve: valueOf(flags.serve), database: valueOf(flags.database),
+      tool: valueOf(flags.tool), toolDescription: valueOf(flags["tool-description"]), mutation: flags.mutation === true,
     }
     const root = findRoot(io.cwd)
     const retiredNames = await retired(root)

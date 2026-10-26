@@ -1,9 +1,11 @@
 // The names the templates give an MCP's files and TypeScript bindings, chosen so that every legal MCP and tool name makes code that compiles.
 
+import type { Declaration } from "../workspace"
+
 /** Where an MCP runs: in the Toolbox, on its own URL in the standalone server, or both. */
-export type Serve = "toolbox" | "standalone" | "both"
+export type Serve = Declaration["serve"]
 /** Where an MCP's tables live: a schema in the shared database, or a database of its own. */
-export type DatabaseMode = "shared" | "own"
+export type DatabaseMode = Declaration["database"]
 /** A tool to write: its name, `<domain>.<operation>`, its description, and whether it is a mutation. */
 export type ToolAnswers = { name: string; description: string; mutation: boolean }
 /** Every answer `bun mcp new` needs. Without `tool`, the first tool is `<name>.status`, which reports who is calling. */

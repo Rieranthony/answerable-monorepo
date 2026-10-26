@@ -23,12 +23,14 @@ const poller = startAuditPoller({ id, caches: [admin.profiles] })
 const server = Bun.serve({ hostname, port, fetch: admin.fetch })
 console.log(`Admin MCP serving ${auth.resource} for platform organisation ${platform}`)
 let closing = false
+// Stop serving, then exit: under bun --hot, as the dev script runs it, the process would otherwise stay alive with its port closed.
 async function close() {
   if (closing) return
   closing = true
   poller.stop()
   await server.stop()
   await db.$client.end()
+  process.exit(0)
 }
 process.on("SIGINT", close)
 process.on("SIGTERM", close)

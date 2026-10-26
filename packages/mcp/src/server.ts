@@ -6,7 +6,7 @@ import {
 import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server"
 import { z } from "zod"
 import { advertised, answer, bounded, parseArguments } from "./call"
-import { commitIntent } from "./commit"
+import { commitIntent, ownedBy } from "./commit"
 import { commitToolName, commitTools, receipt } from "./commit-tools"
 import { permits, type Profile, type ToolContext, type View } from "./definitions"
 import { ToolError } from "./errors"
@@ -312,7 +312,7 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
       const executionId = Bun.randomUUIDv7()
       return answer(tool.kind === "commit" ? name : tool.name, executionId, async () => {
         const intent = tool.kind === "commit" && intentId.safeParse(args.intent_id).success ? await intents.get(args.intent_id as string) : undefined
-        const own = intent && intent.principal.user_id === principal.userId && intent.principal.membership_id === principal.membershipId && intent.principal.client_id === principal.clientId
+        const own = intent && ownedBy(intent, principal)
         return wrapCall(Object.freeze({
           tool, name, principal, executionId, requestId: mcpReq.id, meta: mcpReq._meta ?? {},
           ...(own ? { intent: Object.freeze({ id: intent.intent_id, identity: intent.capability_identity, version: intent.capability_version }) } : {}),
