@@ -92,7 +92,7 @@ Before M9, it held 14 commits, 488 files, +22,726 and −3,494 lines. [`findings
 | 4. Verification | complete |
 | 5. Report and decisions | complete |
 | 6. The owner decides | complete (`decisions.md`) |
-| 7. Changes, gates, the final pass | R1 to R6 (`briefs/`); R1 started |
+| 7. Changes, gates, the final pass | complete: R1 to R6b committed (03e926b3 and this record); C9 moved to a follow-up |
 
 ## Errors
 

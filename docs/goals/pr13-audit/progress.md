@@ -354,3 +354,4 @@
     - `infra:check` passed.
   - **Written:** the dated evidence section in `reports/mcp-foundation-evidence.md`, and the table above.
 - **The audit's diff** outside the planning files: 323 files, +4,183 and −9,176, net 4,993 lines fewer. In code: +3,339 and −5,037.
+- **PR 13** has a new title and description covering typed configuration, the MCP CLI goal and the audit. The audit is complete.
