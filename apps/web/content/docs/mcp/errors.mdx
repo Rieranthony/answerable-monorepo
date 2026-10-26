@@ -133,7 +133,7 @@ These throw when the module loads, so the server never starts with a broken defi
 | `Invalid Toolbox configuration: TOOLBOX_ID_CLIENT_ID: …` at start | The Toolbox reads who is calling from ID, for its hub and every MCP it serves alone, and has no machine client | Run `bun mcp setup` and start it with `bun mcp dev <name>`, or set the client's id and secret; see [the Toolbox's environment](/docs/toolbox#environment) |
 | `Invalid MCP configuration: …` at start | A missing or invalid variable | Set the named variable; see [Configure](/docs/mcp/servers#configure) |
 | A message from `bun mcp` | A refusal before anything was written, or a step that failed after | [The bun mcp command](/docs/mcp/cli#errors) lists every message, with what to do |
-| `…/manifest.json is out of date; regenerate it with UPDATE_MANIFEST=1…` | The manifest differs from the code, or has not been written yet | Run `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-<name> test`, review the diff and commit |
+| `…/manifest.json is out of date; regenerate it with UPDATE_MANIFEST=1…` | The manifest differs from the code, or has not been written yet | Run `bun mcp check <name>`, or for a hub the command in the message ([the manifest snapshot](/docs/mcp/testing#the-manifest-snapshot)); review the diff and commit |
 
 ## Limits
 

@@ -15,7 +15,7 @@ An **MCP** (Model Context Protocol) server gives an AI app, such as Claude Code 
 | --- | --- | --- |
 | **A database, linked to your MCP** | Its own Postgres schema, made and migrated for you on your machine and on every deploy. Every table is limited to the caller's organisation by Postgres. [Your MCP's database](/docs/mcp/database) | Your tables |
 | **Sign-in with Answerable ID** | Who is calling, and their organisation, checked on every call. Your tool receives `person` and `organisation`. [Your MCP's sign-in](/docs/mcp/sign-in) | Nothing |
-| **Deployment to staging, then production** | A tag ships the commit: the database, the migrations, the registration in Answerable ID, and a test that the MCP answers. [Ship an MCP](/docs/mcp/deploy) | Two `git tag` commands |
+| **Deployment to staging, then production** | A tag ships the commit: the database, the migrations, the registration in Answerable ID, and a test that the MCP answers. [Ship an MCP](/docs/mcp/deploy) | A `git tag` and a `git push` for each environment |
 
 ## Where an MCP runs
 
@@ -32,14 +32,15 @@ The `<zone>` is `answerable-staging.uk` in staging and `answerable.org` in produ
 ## Reading order
 
 1. [Make an MCP](/docs/mcp/create): `bun mcp new`, and trying it in Claude Code.
-2. [Add a tool](/docs/mcp/add-a-tool): naming it, describing it, reads and changes, testing it.
-3. [Your MCP's database](/docs/mcp/database): tables, migrations, tests and the two modes.
-4. [Your MCP's sign-in](/docs/mcp/sign-in): what Answerable ID does, and what staff do for each organisation.
-5. [Ship an MCP](/docs/mcp/deploy): staging, then production.
-6. [The bun mcp command](/docs/mcp/cli): every command, flag and error.
-7. Reference: [Read tools](/docs/mcp/tools), [Mutations](/docs/mcp/mutations), [Providers and servers](/docs/mcp/servers), [Test an MCP](/docs/mcp/testing), [MCP errors](/docs/mcp/errors), [the design standard](/docs/mcp/standard), [Test MCPs locally](/docs/mcp/local-testing), [Connect Claude Code](/docs/mcp/claude-code) and [the API reference](/docs/mcp/reference).
+2. [Add a tool](/docs/mcp/add-a-tool): naming it, describing it, reads and changes, testing it, changing it after it ships.
+3. [Run an MCP on your machine](/docs/mcp/run-locally): `bun mcp setup` and `bun mcp dev`, what they need first, and signing in from Claude Code.
+4. [Your MCP's database](/docs/mcp/database): tables, migrations, tests and the two modes.
+5. [Your MCP's sign-in](/docs/mcp/sign-in): what Answerable ID does, and what staff do for each organisation.
+6. [Ship an MCP](/docs/mcp/deploy): staging, then production.
+7. [The bun mcp command](/docs/mcp/cli): every command, flag and error.
+8. Reference: [Read tools](/docs/mcp/tools), [Mutations](/docs/mcp/mutations), [Providers and servers](/docs/mcp/servers), [Test an MCP](/docs/mcp/testing), [MCP errors](/docs/mcp/errors), [the design standard](/docs/mcp/standard), [Test MCPs locally](/docs/mcp/local-testing), [Connect Claude Code](/docs/mcp/claude-code) and [the API reference](/docs/mcp/reference).
 
-A coding agent can do the first five: [Build with an AI agent](/docs/agents) has a prompt for each.
+A coding agent can make an MCP, add a tool and prepare a ship: [Build with an AI agent](/docs/agents) has a prompt for each. Signing in from Claude Code is a person's, and tagging is the owner's.
 
 ## How it works
 
@@ -78,9 +79,9 @@ The server never sees a password, never runs Better Auth and never reads ID's da
 
 ## Status
 
-**Built.** `@answerable/mcp` defines read tools, [prepared mutations](/docs/mcp/mutations) and providers, serves them on the official MCP TypeScript SDK, answers every tool failure with one [error envelope](/docs/mcp/errors), exports each provider's contract as a manifest, and checks a provider against [the standard](/docs/mcp/standard) with [the conformance kit](/docs/mcp/testing). `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference MCP, served both in the Toolbox and on its own URL, and `mcps/example` the finished example; `mcps/admin` is [the admin MCP](/docs/admin), for Answerable staff. [The Toolbox](/docs/toolbox) mounts every MCP whose `serve` is `toolbox` or `both` in its hub, and [serves every one](/docs/mcp/servers#served-alone) whose `serve` is `standalone` or `both` at its own path. `bun mcp new` makes an MCP, `bun mcp add tool` adds a tool and `bun mcp dev` runs one on your machine, [a tag ships it](/docs/mcp/deploy) to staging, which has run, and to production, which has not, and [the acceptance](/docs/mcp/local-testing) signs organisations into the reference server, the Toolbox and the admin MCP through real ID with a browser and the official MCP OAuth client.
+**Built.** `@answerable/mcp` defines read tools, [prepared mutations](/docs/mcp/mutations) and providers, serves them on the official MCP TypeScript SDK, answers every tool failure with one [error envelope](/docs/mcp/errors), exports each provider's contract as a manifest, and checks a provider against [the standard](/docs/mcp/standard) with [the conformance kit](/docs/mcp/testing). `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference MCP, served both in the Toolbox and on its own URL, and `mcps/example` the finished example; `mcps/admin` is [the admin MCP](/docs/admin), for Answerable staff. [The Toolbox](/docs/toolbox) mounts every MCP whose `serve` is `toolbox` or `both` in its hub, and [serves every one](/docs/mcp/servers#served-alone) whose `serve` is `standalone` or `both` at its own path. `bun mcp new` makes an MCP, `bun mcp add tool` adds a tool and `bun mcp dev` runs one on your machine. [A tag ships it](/docs/mcp/deploy): the whole sequence has run in the local Kubernetes stack, and on Civo, staging has run the release before this one ([where things stand](/docs/mcp/deploy#where-things-stand)). [The acceptance](/docs/mcp/local-testing) signs organisations into the reference server, the Toolbox and the admin MCP through real ID with a browser and the official MCP OAuth client.
 
-**Not yet.** Human approvals (a human-class intent waits and answers `APPROVAL_REQUIRED`), operations for long work, `toolbox_run`, the OpenAPI adapter, administration by an organisation's own administrators, remote providers, a production deployment and a public npm release. [The standard](/docs/mcp/standard#not-yet) lists the rules nothing enforces yet.
+**Not yet.** Human approvals (a human-class intent waits and answers `APPROVAL_REQUIRED`), operations for long work, `toolbox_run`, the OpenAPI adapter, administration by an organisation's own administrators, remote providers, the first staging ship of the `mcps` image (the one that holds every MCP), a production deployment and a public npm release. [The standard](/docs/mcp/standard#not-yet) lists the rules nothing enforces yet.
 
 **External hosts.** [Connect Claude Code](/docs/mcp/claude-code) registers a client for the Toolbox or the e2e server. LibreChat signs a person into the Toolbox in the [host lane](/docs/mcp/local-testing#host-lane). Claude Code with a model against the Toolbox or the [admin MCP](/docs/admin), and Claude.ai: Not yet tested.
 

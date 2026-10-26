@@ -212,23 +212,39 @@ test("from inside the MCP's directory it needs no name", async () => {
 
 const refused = async (run: { finished: Promise<number>; stderr: () => string; stdout: () => string }) => ({ code: await run.finished, stdout: run.stdout(), stderr: run.stderr() })
 
-test("without bun mcp setup, with ID down, with Postgres down and with the Toolbox's port taken it refuses once, listing every problem each with its command, and starts nothing", async () => {
+test("without bun mcp setup, with ID down, with Postgres down and with the Toolbox's port taken it refuses once, listing every problem each with its command, ID's first, and starts nothing", async () => {
   repository = await tempRepository({ "mcps/acme/mcp.json": JSON.stringify({ serve: "both", database: "shared" }), "mcps/acme/manifest.json": manifest(["acme:read", "acme:write"]) })
   const id = localId()
   id.unreachable(true)
   const stack = localStack(id)
   const { code, stdout, stderr } = await refused(start(stack, ["acme"], { listening: async (_host, port) => port === 47400 }))
   expect([code, stdout]).toEqual([2, ""])
+  // bun mcp setup needs ID, so ID comes first, and the command to run next is setup's, not this one again.
   expect(stderr.split("\n")).toEqual([
-    "bun mcp setup has not run: MCP_DEV_ID_CLIENT_ID and MCP_DEV_ID_CLIENT_SECRET are not in .env. Run bun mcp setup",
     "Answerable ID does not answer on http://localhost:47300. Start it from the main checkout with bun dev, or with bun --filter @answerable/id dev; never bun dev from a worktree, where it runs env:up and recreates the shared Postgres",
+    "bun mcp setup has not run: MCP_DEV_ID_CLIENT_ID and MCP_DEV_ID_CLIENT_SECRET are not in .env. Run bun mcp setup",
     "The development Postgres does not answer on localhost:47432. Start it from the main checkout with bun run env:up; never from a worktree, where it recreates the running one",
     "Port 47400 is taken, and the Toolbox needs it: stop what listens there (lsof -nP -iTCP:47400 -sTCP:LISTEN names it)",
     "",
-    "  bun mcp dev acme",
+    "  bun mcp setup",
     "",
   ])
   expect(stack.started).toEqual([])
+})
+
+test("the command to run next is bun mcp setup when setup is what is wrong, and bun mcp dev again when only something it does not do is", async () => {
+  const { id, stack } = await prepare("toolbox")
+  const fixOf = async (options: Parameters<typeof start>[2] = {}) => (await refused(start(stack, ["acme"], options))).stderr.trim().split("\n").at(-1)!.trim()
+  const env = join(repository.root, ".env")
+  const ready = await Bun.file(env).text()
+  await Bun.write(env, ready.replace("MCP_DEV_ORGANISATION=answerable", "MCP_DEV_ORGANISATION=acme"))
+  expect(await fixOf()).toBe("bun mcp setup --organisation <slug>")
+  await Bun.write(env, "MCP_DEV_ID_CLIENT_ID=mcp-dev\nMCP_DEV_ID_CLIENT_SECRET=from-the-old-database\n")
+  expect(await fixOf()).toBe("bun mcp setup")
+  await Bun.write(env, ready)
+  expect(await fixOf({ listening: async () => false })).toBe("bun mcp dev acme")
+  id.unreachable(true)
+  expect(await fixOf()).toBe("bun mcp dev acme")
 })
 
 test("a Toolbox MCP needs no manifest, since only a standalone MCP's scopes in ID come from it", async () => {

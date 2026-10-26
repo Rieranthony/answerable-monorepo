@@ -131,7 +131,7 @@ async function make(io: Io, root: string, answers: Parameters<typeof mcpFiles>[0
   ])
   steps[0]!.fix = again
   return runSteps(io, steps, () => [
-    `bun mcp add tool ${name} <domain.operation> --description "<what it does, when to use it, its limits>"`,
+    `bun mcp add tool ${name} <${tool ? "another " : ""}domain.operation> --description "<what it does, when to use it, its limits>"`,
     ["git add", `mcps/${name}`, ...new Set([...rewritten, ...check.rewritten].filter(path => !path.startsWith(`mcps/${name}/`))), "bun.lock"].join(" "),
   ])
 }

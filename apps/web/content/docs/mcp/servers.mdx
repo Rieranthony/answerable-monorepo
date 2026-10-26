@@ -117,13 +117,7 @@ Register each MCP's resource, a client and its access in ID before the first sig
 
 **Mutations.** A mutation's entry adds `risk` and `effects`; its `input` is the definition's input, without `validate_only`, and its `output` is the schema of the receipt's `results`. A provider with mutations also lists the two commit tools, `kind: "commit"`, whose `scopes` are the union of the mutations' scopes.
 
-Commit the file next to the source and let the conformance kit's `manifest_matches_snapshot` fail on drift. A change to any definition fails the test until you regenerate the file and commit it, so every contract change shows in review:
-
-```sh
-UPDATE_MANIFEST=1 bun run test
-```
-
-Run it in the provider's workspace. [Test an MCP](/docs/mcp/testing#the-manifest-snapshot) has the details.
+Commit the file next to the source and let the conformance kit's `manifest_matches_snapshot` fail on drift. A change to any definition fails the test until you regenerate the file and commit it, so every contract change shows in review. [The manifest snapshot](/docs/mcp/testing#the-manifest-snapshot) says how: `bun mcp check <name>` for an MCP made with `bun mcp`, `UPDATE_MANIFEST=1` for a hub.
 
 ## Prompts and resources
 

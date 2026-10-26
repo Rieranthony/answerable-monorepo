@@ -114,10 +114,12 @@ An `errors` entry that is not a custom code is refused when the tool is defined,
 ## The manifest snapshot
 
 ```sh
-UPDATE_MANIFEST=1 bun run test
+bun mcp check acme
 ```
 
-Run it in the provider's workspace. With `UPDATE_MANIFEST=1`, `manifest_matches_snapshot` writes `manifest(provider)` to the fixture's `manifest` path instead of comparing, so the file appears the first time and changes with the code after that. Review the diff and commit the file with the change: every contract change shows in review. Without the variable, a difference fails the test, and the failure message gives this command.
+**One way for each kind of workspace.** For an MCP made with `bun mcp`, one with an `mcp.json`, `bun mcp check` rewrites a stale manifest and says to commit it. `UPDATE_MANIFEST=1` is for what `bun mcp` does not check, the hubs (the Toolbox and the admin MCP) and the packages' test fixtures: run `UPDATE_MANIFEST=1 bun run test` in the workspace, the command the failure message gives. Turborepo strips the variable, so `bun run mcp:check` cannot write it.
+
+With `UPDATE_MANIFEST=1`, which `bun mcp check` sets for its test run, `manifest_matches_snapshot` writes `manifest(provider)` to the fixture's `manifest` path instead of comparing, so the file appears the first time and changes with the code after that. Review the diff and commit the file with the change: every contract change shows in review. A change to a tool's kind, risk, input or output also needs a new version: [Change a tool after it ships](/docs/mcp/add-a-tool#change-a-tool-after-it-ships). Without the variable, a difference fails the test.
 
 The file holds the tools sorted by identity, with their wire names, schemas, scopes, declared `errors`, `risk` and `effects`, the two commit tools, the prompts and the resources. It holds no code, and no view HTML. `mcps/e2e/manifest.json` is the working example. Reference: [`manifest`](/docs/mcp/reference#manifest).
 
@@ -161,7 +163,7 @@ A failed check names the check in its test and the tool or mutation in its messa
 | `… returns an items array but does not declare …` | A list lacks part of the pagination contract | Add `limit`, `cursor`, `next_cursor` and `has_more`; see [pagination](/docs/mcp/tools#pagination) |
 | `… returned different results for the same input twice…` | A read changed state, or returned something that varies | Remove the side effect, or the varying field |
 | `… recorded an intent; only a mutation's prepare tool does that` | A read created an intent | Make it a mutation |
-| `… is out of date; regenerate it with UPDATE_MANIFEST=1…` | The manifest differs from the code | Run the command in the message, review the diff and commit |
+| `… is out of date; regenerate it with UPDATE_MANIFEST=1…` | The manifest differs from the code | Run `bun mcp check <name>`, or for a hub the command in the message ([the manifest snapshot](#the-manifest-snapshot)); review the diff and commit |
 | `… answered INVALID_INPUT: …`, `… answered NOT_FOUND: …` in any check | An example does not fit the tool, or names something the provider does not hold | Fix the example, or give an input under its name in `examples` whose function creates what it names first |
 | `…: preparing changed what the reads return…` | `prepare` changed state | Move the change into `commit` |
 | `…: the preview names no change and no effect…`, `…: the preview summary is blank` | The preview only echoes the arguments | Say what will change, from what, to what |

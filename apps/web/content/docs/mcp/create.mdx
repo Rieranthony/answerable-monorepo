@@ -44,7 +44,7 @@ It checks every answer, then runs these steps and prints a line for each. A step
 
 <CliSteps command="new" />
 
-It makes real objects in your development Postgres: [Undo a local MCP](#undo-a-local-mcp) removes them. It also rewrites the lists the deployment and the Toolbox read: `charts/answerable/mcps.json`, and the Toolbox's list and dependencies, which carry every MCP whatever its `serve`. Never edit them by hand. Commit them with the MCP, and with `bun.lock`, which `bun install` updates: CI and the image build install from it and refuse a stale one. The last line says which files to `git add`.
+It makes real objects in your development Postgres: [Undo a local MCP](#undo-a-local-mcp) removes them. It also rewrites the lists the deployment and the Toolbox read: `charts/answerable/mcps.json`, and the Toolbox's list and dependencies, which carry every MCP whatever its `serve`. Never edit them by hand. [What to commit](#what-to-commit) lists every file to commit.
 
 ## What it writes
 
@@ -88,6 +88,20 @@ bun mcp check acme
 <CliSteps command="check" />
 
 A stale `manifest.json`, generated list or inventory is rewritten, not failed. The last line says which to commit. CI fails on a stale one instead. The `guard` step fails on code that names `answerable.organisation_id`, the setting the platform sets to the caller's organisation on every query: [Limits](/docs/mcp/database#limits). [Test an MCP](/docs/mcp/testing) covers the conformance kit and `createTestMcp`.
+
+Once the MCP has a change that prepares no targets, such as `notes.add`, `bun test` shows two conformance checks skipped as not applicable, `targets_have_versions` and `commit_rejects_stale`, as [the checks](/docs/mcp/testing#the-checks) explain.
+
+## What to commit
+
+Commit every file `bun mcp` wrote or rewrote, with your change. `git status` shows them:
+
+- everything under `mcps/acme`;
+- `charts/answerable/mcps.json`, the deployment's list;
+- `mcps/toolbox/package.json` and `mcps/toolbox/src/mounted.generated.ts`, the Toolbox's dependencies and list;
+- `bun.lock`, which `bun install` updates: CI and the image build install from it and refuse a stale one;
+- `packages/config/inventory.json` or `.env.example`, when the check rewrites them: an MCP with a database of its own adds its variables to the inventory.
+
+The `git add` line under `Next:` lists only what that command changed, not the files an earlier command left. CI fails on a stale list or manifest. [Ship an MCP](/docs/mcp/deploy#before-you-tag) needs all of it on `main`.
 
 ## Run it and try it in Claude Code
 

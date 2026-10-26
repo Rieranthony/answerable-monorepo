@@ -144,11 +144,14 @@ test("it writes the templates, then the generated list, the install, the migrati
     "ok      database   schema acme in answerable_mcps: migrated",
     "ok      check      guard 6 files; none names answerable.organisation_id; typecheck 6 files; lint 6 files; test 3 pass, 0 fail; manifest rewritten: commit mcps/acme/manifest.json; generated current; budget no MCP has a database of its own",
   ])
+  // It has its first tool, so Next suggests another.
   expect(lines.slice(8).join("\n")).toBe(`
 Next:
-  bun mcp add tool acme <domain.operation> --description "<what it does, when to use it, its limits>"
+  bun mcp add tool acme <another domain.operation> --description "<what it does, when to use it, its limits>"
   git add mcps/acme charts/answerable/mcps.json bun.lock
 `)
+  const bare = await run(full("beta"), { exec, migrate })
+  expect(bare.stdout()).toContain(`\nNext:\n  bun mcp add tool beta <domain.operation> --description "<what it does, when to use it, its limits>"\n`)
 })
 
 test("an MCP of its own database says where its schema is", async () => {

@@ -27,7 +27,7 @@ From the repository root:
 ```bash
 bun install
 docker compose up -d --wait postgres
-bun --env-file=.env run --filter @answerable/id db:migrate
+bun --filter @answerable/id db:migrate
 bun --filter @answerable/id db:test:migrate
 bun --filter @answerable/id typecheck
 bun --filter @answerable/id lint

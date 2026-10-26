@@ -145,7 +145,7 @@ Pass an API client or any other dependency by closure: define the tools inside a
 
 <include lang="ts" meta='title="mcps/example/src/docs/deprecation.ts"'>../../../../../mcps/example/src/docs/deprecation.ts</include>
 
-**Version.** A date, `YYYY-MM-DD`; it defaults to the provider's version. The behaviour of one identity at one version never changes.
+**Version.** A date, `YYYY-MM-DD`; it defaults to the provider's version. The behaviour of one identity at one version never changes. A change to a tool's kind, risk, input or output needs a new version, or the Toolbox refuses to start: [Change a tool after it ships](/docs/mcp/add-a-tool#change-a-tool-after-it-ships).
 
 **Deprecation.** `since` and `sunset` are dates; `replacement` is optional and names another tool of the same provider that is not deprecated. The description sent to hosts ends with a sentence naming all three, for example `Deprecated since 2026-09-30; removed on 2027-09-30; use notes.list instead.`, and `_meta` carries the `deprecated` object.
 

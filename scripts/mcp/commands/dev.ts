@@ -18,15 +18,15 @@ import { declarations, findRoot, manifestOf, resolveMcp, type Declaration } from
 const { usage } = definitions.dev
 type Settings = Awaited<ReturnType<typeof readSettings>>["settings"]
 
-// What stops bun mcp dev before it starts anything: each, with the command that fixes it, and mcp-dev's token and the developer's organisation id when
-// ID gave them.
+// What stops bun mcp dev before it starts anything: each, with the command that fixes it, ID's first, since bun mcp setup needs it; and mcp-dev's
+// token and the developer's organisation id when ID gave them.
 async function preflight(io: Io, mcp: Declaration, settings: Settings, hasManifest: boolean) {
   const problems: Problem[] = []
   const { MCP_DEV_ID_CLIENT_ID: clientId, MCP_DEV_ID_CLIENT_SECRET: clientSecret } = settings
   const refuse = (code: Problem["code"], message: string) => problems.push({ code, message })
-  if (!clientId || !clientSecret) refuse("setup-required", "bun mcp setup has not run: MCP_DEV_ID_CLIENT_ID and MCP_DEV_ID_CLIENT_SECRET are not in .env. Run bun mcp setup")
   const up = await io.fetch(`${local.id}/healthz`, { signal: AbortSignal.timeout(5000) }).then(answer => answer.ok, () => false)
   if (!up) refuse("id-down", `Answerable ID does not answer on ${local.id}. Start it from the main checkout with bun dev, or with bun --filter @answerable/id dev; never bun dev from a worktree, where it runs env:up and recreates the shared Postgres`)
+  if (!clientId || !clientSecret) refuse("setup-required", "bun mcp setup has not run: MCP_DEV_ID_CLIENT_ID and MCP_DEV_ID_CLIENT_SECRET are not in .env. Run bun mcp setup")
   const token = up && clientId && clientSecret ? await machineToken(io.fetch, { clientId, clientSecret }, local.adminResource, "platform:read platform:write") : undefined
   if (up && clientId && !token) refuse("setup-stale", "ID refused the credentials of mcp-dev in .env, as after a reset of its database. Run bun mcp setup again")
   const organisation = token ? await findBySlug(adminCall(io.fetch, token), "/organizations", settings.MCP_DEV_ORGANISATION) : undefined
@@ -41,6 +41,13 @@ async function preflight(io: Io, mcp: Declaration, settings: Settings, hasManife
   return { problems, token, organisation, clientId: clientId!, clientSecret: clientSecret! }
 }
 
+// The one command to run next: bun mcp setup when what is wrong is setup's to fix, else bun mcp dev again, once what the messages say is done.
+function nextCommand(problems: readonly Problem[], again: string) {
+  const codes = new Set(problems.map(problem => problem.code))
+  if (codes.has("setup-required") || codes.has("setup-stale")) return "bun mcp setup"
+  return codes.has("organisation-not-found") ? "bun mcp setup --organisation <slug>" : again
+}
+
 export const dev: Command = {
   ...definitions.dev,
   async run(io, { positionals }) {
@@ -53,7 +60,7 @@ export const dev: Command = {
     const mounts = await declarations(root)
     const again = `bun mcp dev ${name}`
     const { problems, token, organisation, clientId, clientSecret } = await preflight(io, mcp, settings, manifest !== undefined)
-    if (problems.length) throw refusal(problems, again)
+    if (problems.length) throw refusal(problems, nextCommand(problems, again))
     const signal = io.interrupt()
     const call = adminCall(io.fetch, token!)
     const started: Running[] = []

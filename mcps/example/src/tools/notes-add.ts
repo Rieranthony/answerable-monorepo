@@ -10,7 +10,7 @@
 // input and output: Zod objects; describe every field with .describe("…"), which hosts show the model. output is the receipt's results.
 //
 // risk: low lets the agent commit on its own; normal, the default, shows the person the preview's summary first; high needs a person's
-//   approval.
+//   approval, which is Not yet: its commit answers APPROVAL_REQUIRED (https://www.answerable.org/docs/mcp/mutations#policy-classes).
 // prepare: checks the input, reads nothing that changes and changes nothing; its summary, which the person confirms, names their
 //   organisation.
 // commit: applies exactly what was prepared, from plan; a new row takes organisation_id from organisation.id.

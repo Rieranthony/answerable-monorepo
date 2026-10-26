@@ -131,7 +131,7 @@ e2e is served both ways, so this starts the Toolbox with e2e in its hub and at `
 bun packages/acceptance/scripts/host-lane.ts
 ```
 
-`bun mcp dev` is the everyday local loop; this lane checks a host. It tries the Toolbox from two real hosts. It starts real ID and the Toolbox on ports `47600` and `47604`, with one organisation entitled to `e2e/records` only, and keeps them up until Ctrl-C. It prints the email to type at ID's sign-in and the commands below, and logs each request the Toolbox answers and each OAuth event ID records. It is not part of `mcp:test:e2e` and cannot run beside it: the ports and the Compose project are the same. It starts the Toolbox from the same code as the Toolbox journeys (`startToolboxStack`), which prove what it serves.
+`bun mcp dev` is the everyday local loop; this lane checks a host. It tries the Toolbox from two real hosts. It is also the way to sign in from Claude Code without a company directory's credentials: [Signing in needs a company directory](/docs/mcp/run-locally#signing-in-needs-a-company-directory). It starts real ID and the Toolbox on ports `47600` and `47604`, with one organisation entitled to `e2e/records` only, and keeps them up until Ctrl-C. It prints the email to type at ID's sign-in and the commands below, and logs each request the Toolbox answers and each OAuth event ID records. It is not part of `mcp:test:e2e` and cannot run beside it: the ports and the Compose project are the same. It starts the Toolbox from the same code as the Toolbox journeys (`startToolboxStack`), which prove what it serves.
 
 **Claude Code.**
 

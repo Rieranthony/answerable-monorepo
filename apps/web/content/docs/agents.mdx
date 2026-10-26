@@ -17,7 +17,7 @@ In the Answerable monorepo, make an MCP named <name> that <what it does>, with b
 Read first: AGENTS.md, then https://www.answerable.org/docs/mcp/create.md and https://www.answerable.org/docs/mcp/database.md. mcps/example is a finished MCP made with the same commands.
 
 1. Run `bun mcp new <name> --description "<what it is for, 40 to 1,000 characters>" --serve toolbox`. Use --serve standalone only when it needs its own URL, and say why.
-2. Run `bun mcp check <name>` and commit what it rewrites: mcps/<name>, charts/answerable/mcps.json, and the list and dependencies of mcps/toolbox. Never edit a *.generated.* file or charts/answerable/mcps.json by hand.
+2. Run `bun mcp check <name>` and commit every file bun mcp wrote or rewrote, as "What to commit" in create.md lists them; git status shows them. Never edit a *.generated.* file or charts/answerable/mcps.json by hand.
 3. Run `bun mcp list` and check that <name> is listed with its URLs. It has no tool until you add one, as the next prompt does, unless step 1 named one with --tool.
 
 Its database and its sign-in through Answerable ID are made for you. Do not add a Better Auth instance, a database connection or a login, and do not read Answerable ID's database. Never run `bun run env:up` from a worktree.
@@ -25,7 +25,7 @@ Its database and its sign-in through Answerable ID are made for you. Do not add 
 Proof: the output of `bun mcp check <name>` (it passes, with 100% coverage) and the line `bun mcp list` prints for <name>.
 ```
 
-The guide it follows: [Make an MCP](/docs/mcp/create).
+The guide it follows: [Make an MCP](/docs/mcp/create); what to commit: [What to commit](/docs/mcp/create#what-to-commit).
 
 ## Add a tool
 
@@ -38,7 +38,7 @@ Read first: AGENTS.md and https://www.answerable.org/docs/mcp/add-a-tool.md.
 2. Change the generated file into the real tool: its input, its output, and its table in mcps/<name>/src/db/schema.ts. Every table keeps organisation_id and its organisationIsolation policy. Queries on those tables need no organisation filter, since Postgres adds it; data from anywhere else is constrained by organisation.id. prepare returns a preview and changes nothing; commit applies exactly that. Throw ToolError for expected failures.
 3. After a change to the schema, run `bun mcp db <name> generate`, review the migration and commit it. Never edit, regenerate or remove a migration that was applied.
 4. Keep the tool's test proving that each organisation sees only its own rows.
-5. Run `bun mcp check <name>` until it passes, and commit the manifest it rewrites.
+5. Run `bun mcp check <name>` until it passes, and commit what its Next: line lists.
 
 Proof: the output of `bun mcp check <name>`, the migration file, and the tool's manifest entry in mcps/<name>/manifest.json.
 ```
@@ -53,13 +53,13 @@ Prepare mcps/<name> to ship to staging, then production, and tell me the command
 Read first: AGENTS.md, https://www.answerable.org/docs/mcp/deploy.md and https://www.answerable.org/docs/mcp/sign-in.md.
 
 1. Run `bun mcp check <name>`. It must pass and leave nothing to commit.
-2. Commit mcps/<name> and the generated files on a branch.
-3. Tell me: the commit; the two commands for staging, `git tag staging/<name>-<change>` and `git push origin staging/<name>-<change>`, and the same two for production with `production/` on the same commit; the URLs `bun mcp list` prints for staging and production; and the two steps staff take in the admin MCP once it has shipped. For an MCP in the Toolbox: toolbox_enable, then access_grant. For one on its own URL: standalone_enable, then access_grant with clientId claude-code-<name>.
+2. On a branch, commit every file that "What to commit" in https://www.answerable.org/docs/mcp/create.md lists. If a tool's kind, risk, input or output changed since the last staging tag, check that its version changed too: "Change a tool after it ships" in https://www.answerable.org/docs/mcp/add-a-tool.md.
+3. Tell me: the branch and its last commit; the two tag names, `staging/<name>-<change>` and `production/<name>-<change>`, in lowercase letters, digits and hyphens with one slash; the URLs `bun mcp list` prints for staging and production; and the two steps staff take in the admin MCP once it has shipped. For an MCP in the Toolbox: toolbox_enable, then access_grant. For one on its own URL: standalone_enable, then access_grant with clientId claude-code-<name>.
 
-Proof: the commit hash, the output of `bun mcp check <name>` and `bun mcp list`, and the commands.
+Proof: the branch, the commit hash, the output of `bun mcp check <name>` and `bun mcp list`, and the two tag names.
 ```
 
-The guide it follows: [Ship an MCP](/docs/mcp/deploy).
+The guide it follows: [Ship an MCP](/docs/mcp/deploy), whose [hand-over](/docs/mcp/deploy#before-you-tag) the owner expects; what to commit: [What to commit](/docs/mcp/create#what-to-commit).
 
 ## Review a server against the standard
 

@@ -15,11 +15,21 @@ git tag production/acme-notes
 git push origin production/acme-notes
 ```
 
-A **tag** is a name attached to a commit. A tag that starts with `staging/` ships to staging, and one that starts with `production/` ships to production. What follows the slash is yours: use the MCP and what changed. A name works once: git refuses a tag that exists, so tag the next change `staging/acme-notes-2`.
+A **tag** is a name attached to a commit. A tag that starts with `staging/` ships to staging, and one that starts with `production/` ships to production. What follows the slash is yours: use the MCP and what changed, in lowercase letters, digits and hyphens. A name works once: git refuses a tag that exists, so tag the next change `staging/acme-notes-2`.
+
+**What a name may hold.** The workflows start on the patterns `staging/*` and `production/*`, where `*` matches anything but a `/`. So a tag with a second slash, such as `staging/acme/notes`, starts nothing, and git refuses spaces and `~ ^ : ? * [ \` in any tag.
 
 ## Before you tag
 
-Commit your MCP and land it on `main`: the folder `mcps/acme`, and the files `bun mcp` rewrote, `charts/answerable/mcps.json`, the Toolbox's list and `package.json`, and `bun.lock`. The last line of `bun mcp new` lists them. `bun mcp check acme` passes and has nothing left to commit. A tag on any other commit is refused. Only the owner pushes to `main` and pushes tags, because write access to `main` is access to every deploy secret. A coding agent commits to a branch and tells the owner the two tags, and the owner lands the branch.
+Commit your MCP and land it on `main`: every file [What to commit](/docs/mcp/create#what-to-commit) lists. `bun mcp check acme` passes and has nothing left to commit. A tool whose kind, risk, input or output changed since the last tag has a new version, or the deploy fails: [Change a tool after it ships](/docs/mcp/add-a-tool#change-a-tool-after-it-ships). A tag on a commit that is not on `main` is refused. Only the owner pushes to `main` and pushes tags, because write access to `main` is access to every deploy secret.
+
+**A coding agent hands over** a branch, never a tag. It commits on a branch, then tells the owner:
+
+- the branch and its last commit;
+- the output of `bun mcp check acme`;
+- the two tag names, such as `staging/acme-notes` and `production/acme-notes`.
+
+The owner lands the branch on `main`, then tags the commit as it is on `main`: the same one after a fast-forward, a new one after a rebase.
 
 ## What happens
 
@@ -99,13 +109,15 @@ When the smoke test passes, the MCP is reachable and signed in. **Nobody can use
 
 ## Errors
 
-The first two rows are in the workflow's log, as an error. The others are in the deploy's log and its summary.
+The first two rows are in the workflow's log, as an error. A tag that matches no pattern starts no run at all. The others are in the deploy's log and its summary, except the Toolbox's own message, which is in its log.
 
 | You see | Meaning | What to do |
 | --- | --- | --- |
 | `<tag> points at <commit>, which is not on main; tag a commit of main` | The tag is on a commit that is not on `main` | Land the commit on `main`, then tag it |
 | `<registry>/<image>:sha-<commit> does not exist: staging has not shipped <commit>; tag it staging/<name> first` | A production tag on a commit staging never shipped | Tag the commit `staging/<name>` first, and wait for it to pass |
-| `The upgrade failed. The logs of the migration and ops Jobs follow.` | A migration or an ops Job failed, or the pods did not become ready. Helm rolled the release back | Read the Job log printed below the message: `toolbox-migrate` names the MCP whose migration failed, and `ops-register` the row it could not make. Fix it, commit and tag again with a new name |
+| No run starts | The tag does not match `staging/*` or `production/*`, as with a second slash | Tag the commit again, with one slash, after `staging` or `production` |
+| `The upgrade failed. The logs of the migration and ops Jobs follow.` | A migration or an ops Job failed, or the pods did not become ready. Helm rolled the release back | Read the Job log printed below the message: `toolbox-migrate` names the MCP whose migration failed, and `ops-register` the row it could not make. Fix it, commit and tag again with a new name. When every Job's log is clean, a server did not become ready; for the Toolbox, one cause is a tool changed without a new version, the next row |
+| `Capability <identity> version <version> changed its <fields> without a new version; give the tool a new version (YYYY-MM-DD) in its definition or its provider`, in the Toolbox's log | A tool in the Toolbox changed its kind, risk, input or output under the version staging already holds, so the Toolbox refused to start and the upgrade failed as above | Give the tool a new version: [Change a tool after it ships](/docs/mcp/add-a-tool#change-a-tool-after-it-ships). Commit and tag again with a new name |
 | `helm upgrade failed with exit code <code>` | The last line of the same failure | As above |
 | `providers are <list>, expected <list>` | The Toolbox's smoke check: `/health` lists other MCPs than `charts/answerable/mcps.json` declares. The release that serves is not the one you shipped | Check the deploy finished. Run `bun mcp check <name>` and commit what it rewrites |
 | `HTTP <status>` on `<name> resource metadata` | The check got an answer other than 200. With 404, the Toolbox does not serve the MCP's path | Check that `serve` is `standalone` or `both` in `mcp.json` and that the generated lists are committed |

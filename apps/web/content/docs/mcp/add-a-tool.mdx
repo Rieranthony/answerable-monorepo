@@ -56,6 +56,18 @@ A change, with `--mutation`, writes this:
 
 Each file opens with guidance, each rule said once: its name, its description, its fields, what it receives and the organisation rule, and for a change its risk, prepare and commit. Edit the generated tool into the real one: its input, its output and its table. [Read tools](/docs/mcp/tools) and [Mutations](/docs/mcp/mutations) cover every field and rule.
 
+**Risk.** A change's `risk` is `low`, which the agent commits on its own, `normal`, the default, which shows the person the preview first, or `high`, which needs a person's approval. Approvals are Not yet: a `high` change is prepared, but its commit answers `APPROVAL_REQUIRED`. [Policy classes](/docs/mcp/mutations#policy-classes).
+
+**Changing its table.** After you edit `src/db/schema.ts`, run, in order:
+
+```sh
+bun mcp db acme generate --name notes_project
+bun mcp db acme migrate
+bun mcp check acme
+```
+
+`generate` writes the migration, `migrate` applies it to your local schema and `check` runs the tests on it. `--name` names the file, such as `drizzle/0002_notes_project.sql`; without it drizzle-kit picks a random name. Review the file and commit it. [Add a table](/docs/mcp/database#add-a-table) has each step.
+
 **A tool that needs no table.** For a domain with no table yet, the command adds one to `src/db/schema.ts`, the `notes` table above for `notes`, and writes its migration, such as `drizzle/0001_notes.sql`. A tool that reads from elsewhere, such as an upstream API, needs none. Drop it before the migration is applied anywhere, and nothing of it stays in the history:
 
 1. Delete the table from `src/db/schema.ts`, and the `organisationIsolation` import if no table uses it.
@@ -99,6 +111,41 @@ bun mcp check acme
 ```
 
 The tests need the development Postgres: each MCP's tests run against its own schema in `answerable_mcps_test`. [Test an MCP](/docs/mcp/testing) covers `createTestMcp`, every check and what each failure means.
+
+## Change a tool after it ships
+
+The Toolbox's catalogue holds each tool by its identity, `acme/notes.list`, and its **version**, a date `YYYY-MM-DD`. A tool's version is the provider's `version` in `src/provider.ts`, the day `bun mcp new` made the MCP, unless the tool's definition sets its own. One identity at one version is one contract, and the manifest holds it.
+
+**A contract change needs a new version.** That is any change to what the manifest holds under the tool's:
+
+| Field | A change such as |
+| --- | --- |
+| `kind` | A read made a change, or the reverse |
+| `risk` | A change's `risk` |
+| `input` | A field added, removed, renamed, retyped, made optional or required; a `.describe()` text, a default or a limit changed |
+| `output` | The same, for what it returns |
+
+**What changes freely.** The tool's `title` and `description`: the Toolbox updates them in place.
+
+**Give it a new version.** Add `version` to the tool's definition, set to the day of the change, such as `version: "2026-11-02"`. Or move the provider's `version`, which every tool that sets none follows. Run `bun mcp check acme`, which rewrites the manifest, and commit it. Grants name a tool without its version, so the new version keeps its name, its grants and whether each organisation may use it.
+
+**Nothing catches a missed version before staging.** `bun mcp check` rewrites the manifest without comparing it with what shipped, and CI's Toolbox starts from an empty catalogue. Before you tag, compare the manifest with the last staging tag:
+
+```sh
+git diff staging/acme-notes -- mcps/acme/manifest.json
+```
+
+A tool whose `kind`, `risk`, `input` or `output` changed while its `version` did not will fail the deploy.
+
+**What you see when it is missed.** For an MCP in its hub (`serve` `toolbox` or `both`), the Toolbox refuses to start, with this in its log:
+
+```text
+Capability <identity> version <version> changed its <fields> without a new version; give the tool a new version (YYYY-MM-DD) in its definition or its provider
+```
+
+`<fields>` names what changed, such as `input and output`. In a deploy, the new Toolbox never becomes ready, so Helm rolls the release back: the run ends with `The upgrade failed. The logs of the migration and ops Jobs follow.`, Job logs with nothing wrong, and `helm upgrade failed with exit code <code>`. The deploy prints the Jobs' logs, not the Toolbox's; while the run waits, up to 10 minutes, `kubectl -n answerable logs -l app.kubernetes.io/component=toolbox --prefix` shows it, with the kubeconfig of `infra/README.md`'s Break glass. On your machine, `bun mcp dev` stops the same way once an earlier run stored the tool: `toolbox failed`, with the message above it. The fix is the same: a new version. [Ship an MCP](/docs/mcp/deploy#errors) lists the deploy's errors.
+
+An MCP served only on its own URL is in no catalogue, so nothing refuses it. Its hosts meet the same change, so give it a new version all the same.
 
 ## By hand
 

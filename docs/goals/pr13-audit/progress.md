@@ -257,3 +257,100 @@
   - web: 117;
   - knip clean;
   - `infra:check` passed.
+- **R5 committed** as 33ed630d and pushed.
+- **R6:** the proof agent (gates, the end-to-end proof in kind, the numbers) and the newcomer agent started on 33ed630d.
+- **R6's newcomer read** (Sonnet), docs only, in a copy:
+  - **Every runnable command worked as documented:**
+    - `new` with a tool, in 4.2 s;
+    - `add tool` for a mutation;
+    - `db generate` and `migrate`;
+    - `check`, at 100%;
+    - six refusals, each matching its row.
+  - **It stopped, as expected, at the local sign-in.** ID was not running, and the refusals said why.
+  - **It found 14 docs problems and 2 CLI points.** The worst:
+    - local sign-in needs directory credentials no page explains;
+    - the root secret's development value is in no doc;
+    - the first-run steps use the deployed origin;
+    - shipping's status contradicts itself between `index.mdx` and `deploy.mdx`;
+    - what to commit is said three ways;
+    - nothing says what to do when changing a shipped tool. Verified by the coordinator: the Toolbox's ingest refuses a changed contract under the same version (`mcps/toolbox/src/catalogue.ts:42`), so a missed bump fails the staging deploy, and nothing catches it before;
+    - `bun mcp dev`'s refusal names itself as the fix.
+  - **All of it goes into brief R6b,** run after the proof agent, since both would use the shared test databases.
+  - **For the owner:** a check in `bun mcp check` comparing a tool's contract with `main`'s manifest would catch the version case before shipping. It is an addition, not a fix, so it is put to the owner.
+- **R6's proofs** (Opus), on 33ed630d. Each heavy run ran alone.
+  - **ID:** 1,493 pass, 100% lines and functions, 303 s.
+  - **The acceptance:** 65 pass, 166 s; nothing left behind.
+  - **The end-to-end proof from a clean copy, without a terminal:**
+    - `prooftb` (`toolbox`), `proofsa` (`standalone`) and `proofbo` (`both`, `own`), each with `items.list` and `items.add`, then `check`;
+    - 12 commands, all exit 0, each in 2.7 to 4.1 s; 62 files, +2,560 lines, nothing edited by hand.
+  - **The kind stack from the copy: 130 pass** (123 and 7 proofs), 209 s. Each proof held:
+    - the bootstrap provisioned both shared schemas, and `proofbo`'s database and two logins;
+    - `toolbox-migrate` migrated all three, as the migrator or `proofbo`'s owner, with row-level security on;
+    - the serving logins hold DML only;
+    - `/health` lists all five MCPs;
+    - `/proofsa/mcp` and `/proofbo/mcp` answer their metadata, and `/prooftb/mcp` answers 404;
+    - register made each standalone MCP's resource and client;
+    - a person signed in at each path after `standalone_enable`, in 0.5 s, and called `items_list`;
+    - the same person signed in through the Toolbox after `toolbox_enable` and `access_grant`, and saw only `prooftb_*` and `proofbo_*`;
+    - `proofbo_items_add` was committed and then listed, so a write reached `proofbo`'s own database.
+  - **Afterwards:** every MCP was forgotten, with no traces. The copy and the cluster are gone. Docker was restored to its earlier `:local` images, and the three images built from the copy were removed by ID.
+  - **The numbers at 200 MCPs,** against M9:
+
+    | What | R6 | M9 |
+    |---|---|---|
+    | Roles made | 0 | 400 |
+    | Provisioning | 108 to 122 ms | 0.70 to 0.73 s |
+    | First migration | 2.08 to 2.14 s | 1.96 to 2.16 s |
+    | Migration with nothing pending | 1.03 to 1.29 s | 1.16 to 1.36 s |
+    | One query through `mcpDatabase` | 0.38 ms | 0.47 to 0.51 ms |
+    | Burst of 1,000 queries | 126 to 137 ms | 192 to 198 ms |
+    | 1,000 tool calls at once | 5.05 to 5.14 s | 5.18 to 5.94 s |
+    | One call, median | 10.3 to 10.6 ms | 10.7 to 12.3 ms |
+    | Helm release | 50,672 bytes, 4.8% | 61,680 bytes, 5.9% |
+    | `mcp:test` with 200 MCPs | 2,144 pass in 39.3 s, peak 7 connections | broke before 100 MCPs |
+  - **Noted:**
+    - tool names at a standalone path are unprefixed (`items_list`), as the template says;
+    - one own MCP already takes the connection budget past PostgreSQL's default 100, which belongs with the owner's Civo `max_connections` item.
+- **R6b, the newcomer's findings,** by Opus. All 16 items are done:
+  - two routes to a local sign-in, the host lane checked by running it;
+  - the root secret's development value;
+  - `$ID` in the first-run steps;
+  - one local-start recipe;
+  - `run-locally` in the reading order;
+  - shipping's status;
+  - one rule for what to commit;
+  - "Change a tool after it ships". A field description counts as a contract change too, and the deploy shows only Helm's failure; the Toolbox pod's log has the reason;
+  - the migration workflow;
+  - one way to regenerate the manifest;
+  - the skipped tests;
+  - a Toolbox `bun mcp dev` output;
+  - `high` risk marked Not yet;
+  - tag names and the hand-off;
+  - `bun mcp dev`'s fix line, now `bun mcp setup`, test first;
+  - `Next:` after `new --tool`.
+
+  Size: 22 files, +225 / −75. The agent's gates passed, the acceptance (65) included.
+
+### Every finding the owner approved, accounted for
+
+| Audit | Done | Not done, and why |
+|---|---|---|
+| A, configuration (12) | A1–A8, A10–A12 (R1, R4); A9's inventory half (R4) | A9's deletion: D-2 keeps `own` |
+| B, database (11) | B2, B3, B6, B9 (R3); B4, B5, B8, B11 (R4); B7 (R2) | B1: D-2. B10: a keep, with Civo's `max_connections` the owner's item |
+| C, SDK and servers (17) | C2, C11 (R2); C3, C5 (R1, C5 in the Toolbox only); C7, C8, C12, C17 (R4); C13 (accepted, D-5, documented in R5) | C1: D-1 chose C2. C4: D-4. C6: kept, since standalone MCPs remain. C9: moved to a follow-up (R4). C10: D-2. C14, C15, C16: recommended against |
+| D, CLI (19) | D1 (docs in R1 and R6b, sign-in by hand is the owner's); D2, D3, D6–D10, D13, D14, D16–D19 (R5); D11 (R1) | D4: kept, the owner's ask. D5: the table kept, F4 and F15 taken. D12: D-2. D15: recommended against |
+| E, shipping (13) | E1, E6, E11 (R2); E4, E5 (bootstrap only), E8, E9, E10 (R4); E7 (R5); E12, E13 (R1, R2); E3 (accepted, D-5) | E2: moot after R2. E5's `chartAt` rewrite: recommended against |
+| F, tests and docs (18) | F1, F2, F3, F11's lockfile, F13, F18 (R1); F4–F9, F12, F14, F15 (R5); F10 (R4); F11's CHANGELOGs (D-7, R5) | F16: moot after R2 and R3. F17's call to `checkProviderId`: it would break the ops image |
+| M9's open items (6) | 2 = D11; 3 = A10; 4 (R1); 1, a register row (R5) | 5 = F16, moot. 6: raise the sign-in budget when a proof needs it |
+- **The coordinator, on R6b:**
+  - **Reviewed** the fix line's logic.
+  - **Gates:**
+    - frozen install unchanged;
+    - typecheck and lint forced: 20 of 20;
+    - build: 2 of 2;
+    - `mcp:test`: 13 of 13 tasks in 12 s;
+    - web: 117;
+    - knip clean;
+    - `infra:check` passed.
+  - **Written:** the dated evidence section in `reports/mcp-foundation-evidence.md`, and the table above.
+- **The audit's diff** outside the planning files: 323 files, +4,183 and −9,176, net 4,993 lines fewer. In code: +3,339 and −5,037.

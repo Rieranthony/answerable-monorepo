@@ -209,7 +209,7 @@ export const errors: readonly ErrorRow[] = [
     id: "setup-required", code: "setup-required", commands: ["dev"],
     see: "bun mcp setup has not run: MCP_DEV_ID_CLIENT_ID and MCP_DEV_ID_CLIENT_SECRET are not in .env. Run bun mcp setup",
     meaning: "`bun mcp dev` has no machine client in your local Answerable ID.",
-    action: "Run `bun mcp setup`.",
+    action: "Run `bun mcp setup`, the command the refusal ends with. It needs your local ID: when ID is down too, its row comes first, so start ID, then run it.",
   },
   {
     id: "setup-stale", code: "setup-stale", commands: ["dev"],

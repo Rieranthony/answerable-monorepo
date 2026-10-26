@@ -127,9 +127,9 @@ const scenarios: Record<string, { fix: string; run: () => Promise<Outcome> }> = 
       return outcome(["db", "acme", "generate"], (await installed(files)).root, { exec: spawn })
     },
   },
-  "setup-required": { fix: "bun mcp dev acme", run: async () => dev((await repository(toolboxMcp)).root, localStack(localId())) },
+  "setup-required": { fix: "bun mcp setup", run: async () => dev((await repository(toolboxMcp)).root, localStack(localId())) },
   "setup-stale": {
-    fix: "bun mcp dev acme",
+    fix: "bun mcp setup",
     run: async () => {
       const { root, local } = await developer(toolboxMcp)
       await Bun.write(join(root, ".env"), "MCP_DEV_ID_CLIENT_ID=mcp-dev\nMCP_DEV_ID_CLIENT_SECRET=from-the-old-database\n")
@@ -166,7 +166,7 @@ const scenarios: Record<string, { fix: string; run: () => Promise<Outcome> }> = 
     },
   },
   "organisation-not-found": {
-    fix: "bun mcp dev acme",
+    fix: "bun mcp setup --organisation <slug>",
     run: async () => {
       const { root, local } = await developer(toolboxMcp)
       await Bun.write(join(root, ".env"), (await Bun.file(join(root, ".env")).text()).replace("MCP_DEV_ORGANISATION=answerable", "MCP_DEV_ORGANISATION=acme"))
