@@ -2,7 +2,7 @@
 
 How to set up, ship, roll back, scale, rotate, restore and destroy Answerable's environments on Civo, from GitHub. Why each piece exists, and what runs where: [`docs/12-deployment.md`](../docs/12-deployment.md).
 
-**Status.** Built and proved locally; not yet applied to a Civo account. The first staging run is brief [B7a](../docs/goals/civo-deploy/briefs/b7.md), which runs this page for the first time and corrects it.
+**Status.** Built and proved locally. Staging has run on Civo (`staging/fourth`, 2026-10-23: [`reports/staging-evidence.md`](../reports/staging-evidence.md)); production has not. Brief [B7a](../docs/goals/civo-deploy/briefs/b7.md) runs this page and corrects it.
 
 **Conventions.** Nothing here is run from a laptop except `git tag`, `gh run watch` and the browser. Every secret lives in a GitHub environment or is generated where it is used; no command on this page prints one. Staging is shown; production is the same with `production`, the zone `answerable.org` and the owner's approval on each run.
 
@@ -116,7 +116,7 @@ Once per environment, the first tag of a commit that has the `mcps` image, the `
 
 ### Ship an MCP
 
-An MCP made with `bun mcp new` ships with its commit, by the same tags: nothing outside `mcps/<name>` changes, and `bun mcp` has rewritten `charts/answerable/mcps.json`, the Toolbox's and the standalone server's lists. The `mcps` image holds it. On the staging tag the deploy:
+An MCP made with `bun mcp new` ships with its commit, by the same tags: nothing outside `mcps/<name>` needs a hand edit, and `bun mcp` has rewritten `charts/answerable/mcps.json`, the Toolbox's and the standalone server's lists. The `mcps` image holds it. On the staging tag the deploy:
 
 1. **provisions it** (`ops-bootstrap`): a `shared` MCP gets schema `<name>` in `answerable_mcps` with its roles `mcp_<name>_owner` and `mcp_<name>`; an `own` MCP gets the database `answerable_mcp_<name>`, its two logins and their Secrets `mcp-<name>-database-owner` and `mcp-<name>-database`;
 2. **migrates it** (`mcps-migrate`, after the hubs' own migrations): its log names each MCP and the time the whole list took;
@@ -129,7 +129,7 @@ What to check when a new MCP ships:
 - `kubectl -n answerable logs job/mcps-migrate` (kept until the next deploy): `<name>: migrating in answerable_mcps as mcp_<name>_owner`, and `Migrated N MCPs in … s`.
 - The smoke table: `toolbox /health` names the providers it mounts; `<name> resource metadata` passes for a standalone MCP.
 - `kubectl -n answerable logs job/ops-register` (kept a day): `mcp-<name>-resource-v1: done`, `claude-code-<name>-v1: done` and the link the first time; afterwards the summary line counts it among what is as declared. A scope the manifest dropped is logged as its resource stops allowing it.
-- Giving an organisation access is a staff decision, not part of shipping: `standalone_enable` in the admin MCP ([the admin MCP](../apps/web/content/docs/admin/index.mdx)), then `access_grant` of the MCP's scopes with `clientId` `claude-code-<name>`, or `everyone: true`.
+- Giving an organisation access is a staff decision, not part of shipping ([Your MCP's sign-in](../apps/web/content/docs/mcp/sign-in.mdx)). For an MCP in the Toolbox: `toolbox_enable` in the admin MCP ([the admin MCP](../apps/web/content/docs/admin/index.mdx)), then `access_grant` of its grant string, such as `<name>`. For an MCP on its own URL: `standalone_enable`, then `access_grant` of the MCP's scopes with `clientId` `claude-code-<name>`, or `everyone: true`.
 
 Then tag `production/<name>` on the same commit. A failed migration fails the deploy and rolls the release back, as any migration does; each MCP migrates in one transaction, so the one that failed is left as it was, and those before it keep their migrations, which the previous image tolerates (expand, then contract).
 

@@ -3,14 +3,13 @@
 import { mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { ask, askTool, askToolDescription, choose } from "../ask"
+import { definitions } from "../definitions"
 import { generate } from "../generate"
-import { cli, finishing, jsonFlag, Refusal, refusal, runSteps, say, sh, shellWord, type Command, type Io, type Problem } from "../io"
+import { cli, finishing, Refusal, refusal, runSteps, say, sh, shellWord, type Command, type Io, type Problem } from "../io"
 import { choices, choiceProblem, descriptionProblem, nameProblem, toolDescriptionProblem, toolNameProblem } from "../rules"
 import { mcpFiles, type DatabaseMode, type Serve, type ToolAnswers } from "../templates"
 import { findRoot, retired } from "../workspace"
 import { checkStep } from "./check"
-
-const usage = "bun mcp new [name] [--description …] [--serve toolbox|standalone|both] [--database shared|own] [--tool <domain.operation> --tool-description … [--mutation]] [--no-check] [--json]"
 
 type Given = { name?: string; description?: string; serve?: string; database?: string; tool?: string; toolDescription?: string; mutation: boolean }
 type Field = keyof Omit<Given, "mutation">
@@ -29,20 +28,7 @@ function commandFor({ name, description, serve, database, tool, toolDescription,
 const text = (value: string | true | undefined) => (typeof value === "string" ? value : undefined)
 
 export const newMcp: Command = {
-  name: "new",
-  usage,
-  summary: "Make an MCP: write mcps/<name>, create its local schema, write its first migration and manifest, and check it. In a terminal it asks for what is missing; without one, name, --description and --serve are required",
-  flags: {
-    description: { value: "<text>", description: "What the MCP is for, in a sentence or two: 40 to 1,000 characters" },
-    serve: { value: "<toolbox|standalone|both>", description: "Where it runs: in the Toolbox (recommended), on its own URL, or both" },
-    database: { value: "<shared|own>", description: "Where its tables live: a schema in the shared database answerable_mcps (default), or a database of its own" },
-    tool: { value: "<domain.operation>", description: "Its first tool, such as notes.list; default: <name>.status, which reports who is calling" },
-    "tool-description": { value: "<text>", description: "What the first tool does, when to use it and its limits: 40 to 1,000 characters" },
-    mutation: { description: "The first tool is a change: prepared, then committed. Default: a read" },
-    "no-check": { description: "Skip the last step, bun mcp check" },
-    json: jsonFlag,
-  },
-  example: 'bun mcp new acme --description "Notes for construction projects: list, read and add notes on a project." --serve toolbox',
+  ...definitions.new,
   async run(io, { positionals, flags }) {
     const options = { noCheck: flags["no-check"] === true, json: flags.json === true }
     const interactive = io.isTTY && !options.json

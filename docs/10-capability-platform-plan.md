@@ -102,11 +102,13 @@ Each journey runs against real Answerable ID through `packages/acceptance` unles
 
 ## After the goal
 
-In order, each with the exit evidence the design names.
+**Done since this plan.** The admin MCP for Answerable staff ([`11-admin-mcp.md`](11-admin-mcp.md)). Hosted deployment on Civo ([`12-deployment.md`](12-deployment.md)): staging has run, and production: Not yet. The MCP CLI and shipping goal ([`goals/mcp-cli`](goals/mcp-cli/task_plan.md)): `bun mcp` makes, checks and runs an MCP, which gets a database schema of its own and its sign-in through Answerable ID automatically, the Toolbox mounts or the standalone server serves it from one declaration, `mcps/<name>/mcp.json`, and a tag ships it to staging and then production.
+
+Still to do, in order, each with the exit evidence the design names.
 
 1. Approval pages for the human class (the hub as an OIDC client of ID, `toolbox/approve`, `four_eyes`) and the operations table with the pg-boss worker.
 2. Tenant-tier writes for groups, group members and entitlements in ID; the OpenAPI adapter, for other OpenAPI sources. The admin MCP for Answerable staff is built, standalone and hand-written ([`11-admin-mcp.md`](11-admin-mcp.md)); an admin MCP for an organisation's own administrators needs the tenant-tier writes first.
-3. Hosts: CIMD and policy-gated DCR in ID with the Better Auth upgrade as its own commit; hosted deployment; Claude.ai on a public URL.
+3. Hosts: CIMD and policy-gated DCR in ID with the Better Auth upgrade as its own commit; production deployment; Claude.ai on a public URL.
 4. Programmatic composition: `toolbox_run` on QuickJS in a pool of secret-free Bun subprocesses (capped WebAssembly memory, host-side deadline, call budget, parent-side kill), typed handles, intents returned as a set.
 5. Remote providers and upstream identity: RFC 8693 token exchange in ID, the credential vault and per-person connect flows, the upstream-MCP adapter.
 6. Public SDK release and third-party providers.

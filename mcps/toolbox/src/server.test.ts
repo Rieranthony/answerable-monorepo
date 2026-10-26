@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test"
 import { runtimeGrants } from "./db/migrate"
 import { database } from "./test/database"
-import { databases, prefix } from "./test/mcps"
+import { databases, healthy, ownUrls, prefix } from "./test/mcps"
 
 const directory = new URL("../", import.meta.url).pathname
-// The mounted MCPs' database as the suite serves it, with its role prefix.
-const mcps = { TOOLBOX_MCPS_DATABASE_URL: databases.url, TOOLBOX_MCPS_ROLE_PREFIX: prefix }
+// The mounted MCPs' databases as the suite serves them, with the shared one's role prefix.
+const mcps = { TOOLBOX_MCPS_DATABASE_URL: databases.url, TOOLBOX_MCPS_ROLE_PREFIX: prefix, ...ownUrls }
 
 // The entry point on a free port against `databaseUrl`. ID is not there: the poller logs that it failed, and nothing here reads grants.
 function start(databaseUrl: string, overrides: Record<string, string> = {}) {
@@ -27,7 +27,7 @@ test("the entry point serves as the runtime login, answers /health with the moun
   const { origin, server } = start(login.url)
   try {
     expect(new TextDecoder().decode((await server.stdout.getReader().read()).value)).toContain(`Toolbox serving ${origin}/mcp`)
-    expect(await (await fetch(`${origin}/health`)).json()).toEqual({ status: "ok", databases: { toolbox: "ok", mcps: "ok" }, providers: ["e2e", "example"] })
+    expect(await (await fetch(`${origin}/health`)).json()).toEqual(healthy)
     server.kill("SIGTERM")
     expect(await server.exited).toBe(0)
   } finally {

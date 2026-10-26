@@ -3,14 +3,13 @@
 import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { askTool, askToolDescription } from "../ask"
+import { definitions } from "../definitions"
 import { generate } from "../generate"
-import { cli, finishing, jsonFlag, Refusal, refusal, runSteps, sh, shellWord, type Command, type Problem } from "../io"
+import { cli, finishing, Refusal, refusal, runSteps, sh, shellWord, type Command, type Problem } from "../io"
 import { listed, toolDescriptionProblem, toolNameProblem } from "../rules"
 import { isolationImport, tableTs, toolBinding, toolFiles, toolModule, toolsMarker, type ToolAnswers } from "../templates"
 import { findRoot, manifestOf, resolveMcp } from "../workspace"
 import { checkStep } from "./check"
-
-const usage = "bun mcp add tool [mcp] <domain.operation> --description … [--mutation] [--no-check] [--json]"
 
 // The command that adds this tool, a placeholder for each answer missing or refused.
 function commandFor(mcp: string | undefined, tool: string | undefined, description: string | undefined, { mutation, noCheck, json }: { mutation: boolean; noCheck: boolean; json: boolean }) {
@@ -34,16 +33,7 @@ async function assertMadeByNew(root: string, name: string) {
 const isolationImported = /^import \{[^}]*\borganisationIsolation\b[^}]*\} from "@answerable\/mcp-postgres"$/m
 
 export const addTool: Command = {
-  name: "add tool",
-  usage,
-  summary: "Add a tool to an MCP: a read, or with --mutation a change, with its test, its entry in src/provider.ts and its domain's table; then write the migration and the manifest, and check the MCP",
-  flags: {
-    description: { value: "<text>", description: "What the tool does, when to use it and its limits: 40 to 1,000 characters; a mutation's says it prepares an intent" },
-    mutation: { description: "The tool is a change: prepared, then committed. Default: a read" },
-    "no-check": { description: "Skip the last step, bun mcp check" },
-    json: jsonFlag,
-  },
-  example: 'bun mcp add tool acme notes.add --mutation --description "Prepare a new note on a project; commit it to save it. Use notes.list first to avoid duplicates."',
+  ...definitions["add tool"],
   async run(io, { positionals, flags }) {
     const options = { mutation: flags.mutation === true, noCheck: flags["no-check"] === true, json: flags.json === true }
     const given = { description: typeof flags.description === "string" ? flags.description : undefined }

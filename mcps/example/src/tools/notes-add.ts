@@ -17,7 +17,7 @@
 // prepare: computes the preview and changes nothing. It checks the input, reads nothing that changes, and returns the summary the
 //   person confirms, naming their organisation.
 //
-// commit: applies exactly what was prepared, from plan. Row-level security (D19) limits it to the caller's organisation, so it
+// commit: applies exactly what was prepared, from plan. Row-level security limits it to the caller's organisation, so it
 //   sets organisation_id from organisation.id and filters on nothing by hand. Throw ToolError for a failure the caller can fix.
 import { z } from "zod"
 import * as schema from "../db/schema"

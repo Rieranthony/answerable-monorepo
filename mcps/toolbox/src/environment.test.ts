@@ -1,5 +1,15 @@
 import { expect, test } from "bun:test"
+import { ownMcpDatabase } from "@answerable/mcp-postgres"
 import { readToolboxEnvironment } from "./environment"
+import { mounted } from "./mounted.generated"
+
+// Each own MCP the generated list names, so that a new MCP needs no edit here: the variable a deployment sets, and its local default.
+const own = mounted.flatMap(entry => entry.database === "own" ? [entry] : [])
+const ownSet: Record<string, string> = Object.fromEntries(own.map(entry => [entry.variable, `postgres://${entry.provider.id}:secret@localhost:47432/answerable_mcp_${entry.provider.id}`]))
+const ownLocal = Object.fromEntries(own.map(entry => {
+  const { database, runtime } = ownMcpDatabase(entry.provider.id)
+  return [entry.variable, `postgres://${runtime}:answerable@localhost:47432/${database}`]
+}))
 
 const complete = {
   TOOLBOX_DATABASE_URL: "postgres://answerable:answerable@localhost:47432/answerable_toolbox",
@@ -9,12 +19,13 @@ const complete = {
   TOOLBOX_ID_CLIENT_ID: "toolbox-hub",
   TOOLBOX_ID_CLIENT_SECRET: "secret",
   TOOLBOX_ID_ADMIN_RESOURCE: "http://localhost:47300/api/admin",
+  ...ownSet,
 }
 
 test("reads the databases, ID, the resource, the bind address, the port and the machine client, defaulting to 127.0.0.1, 47400 and the role prefix mcp", () => {
   expect(readToolboxEnvironment(complete)).toEqual({
     databaseUrl: complete.TOOLBOX_DATABASE_URL,
-    mcps: { shared: complete.TOOLBOX_MCPS_DATABASE_URL, own: {}, prefix: "mcp" },
+    mcps: { shared: complete.TOOLBOX_MCPS_DATABASE_URL, own: ownSet, prefix: "mcp" },
     auth: { issuer: "http://localhost:47300", resource: "http://localhost:47400/mcp" },
     hostname: "127.0.0.1",
     port: 47400,
@@ -32,7 +43,7 @@ test("outside production, everything but the client pair defaults to the local s
   for (const NODE_ENV of [undefined, "development", "test"])
     expect(readToolboxEnvironment({ NODE_ENV, TOOLBOX_ID_CLIENT_ID: "toolbox-hub", TOOLBOX_ID_CLIENT_SECRET: "secret" })).toEqual({
       databaseUrl: "postgres://answerable_toolbox_runtime:answerable@localhost:47432/answerable_toolbox",
-      mcps: { shared: "postgres://answerable_mcps_toolbox:answerable@localhost:47432/answerable_mcps", own: {}, prefix: "mcp" },
+      mcps: { shared: "postgres://answerable_mcps_toolbox:answerable@localhost:47432/answerable_mcps", own: ownLocal, prefix: "mcp" },
       auth: { issuer: "http://localhost:47300", resource: "http://localhost:47400/mcp" },
       hostname: "127.0.0.1",
       port: 47400,

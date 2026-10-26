@@ -94,6 +94,6 @@ bun mcp db ${name} migrate
 
 Run them from the repository root, or from \`mcps/${name}\` without the name. \`add tool\` writes a read tool, or with \`--mutation\` a change, with its test and its table, then checks the MCP. \`check\` runs the typecheck, the lint and the tests, with [the conformance kit](${docs}/mcp/testing.mdx) and a 100% coverage gate; it rewrites a stale \`manifest.json\` and says to commit it. After a change to \`src/db/schema.ts\`, \`db generate\` writes the migration into \`drizzle/\`: review and commit it. \`db migrate\` migrates the local development schema. \`bun mcp\` writes \`mcp.json\`; change \`serve\` and \`database\` there.
 
-Guides: [Build your first MCP](${docs}/mcp/quickstart.mdx), [Read tools](${docs}/mcp/tools.mdx), [Mutations](${docs}/mcp/mutations.mdx), [Test an MCP](${docs}/mcp/testing.mdx).
+Guides: [Make an MCP](${docs}/mcp/create.mdx), [Add a tool](${docs}/mcp/add-a-tool.mdx), [Your MCP's database](${docs}/mcp/database.mdx), [Sign-in](${docs}/mcp/sign-in.mdx), [Ship it](${docs}/mcp/deploy.mdx), [Test an MCP](${docs}/mcp/testing.mdx).
 `
 }

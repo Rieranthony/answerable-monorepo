@@ -1,23 +1,49 @@
 ---
 title: MCP kit
-description: "Build MCP servers on Answerable ID with @answerable/mcp: what an MCP server is, the building blocks, how a request is authorised, and what is built and not yet."
+description: "Build MCP servers on Answerable ID: what an MCP is, what every MCP gets without any work (a database, sign-in through Answerable ID, deployment from tags), the three places it runs, and what to read next."
 ---
 
 ```sh
 bun mcp new acme --description "Notes for construction projects: list, read and add notes on a project." --serve toolbox
 ```
 
-That makes a working MCP in `mcps/acme`, with its database schema, its first migration and its tests. [Build your first MCP](/docs/mcp/quickstart) takes it from there: a read tool and a mutation with `bun mcp add tool`, and their tests.
+An **MCP** (Model Context Protocol) server gives an AI app, such as Claude Code or Claude.ai, tools it can call: *list the notes of a project*, *add a note*. The app lists the tools, its model chooses one, and the server runs it and answers. Every tool works on one organisation's data, so a server must know who is calling and which organisation they act for. Answerable makes that automatic. You write the tools, each one a few lines. The platform supplies the rest.
 
-## What an MCP server is
+## What you get without doing anything
 
-An AI host, such as Claude Code, Claude.ai or LibreChat, connects to MCP servers to get tools it can call. The Model Context Protocol (MCP) is how it lists them and calls them. Servers built with the Answerable MCP kit:
+| You get | What it means | You write |
+| --- | --- | --- |
+| **A database, linked to your MCP** | Its own Postgres schema, made and migrated for you on your machine and on every deploy. Every table is limited to the caller's organisation by Postgres. [Your MCP's database](/docs/mcp/database) | Your tables |
+| **Sign-in with Answerable ID** | Who is calling, and their organisation, checked on every call. Your tool receives `person` and `organisation`. [Your MCP's sign-in](/docs/mcp/sign-in) | Nothing |
+| **Deployment to staging, then production** | A tag ships the commit: the database, the migrations, the registration in Answerable ID, and a test that the MCP answers. [Ship an MCP](/docs/mcp/deploy) | Two `git tag` commands |
 
-- **sign people in with [Answerable ID](/docs/id)**, so every call knows the person and the organisation they act for;
-- **show each person only the tools their organisation allows**, and refuse the rest as if they did not exist;
-- **never change data in one step**: a change is prepared as a preview the person can read, then committed.
+## Where an MCP runs
 
-## The building blocks
+You choose when you make the MCP, with `--serve`, and can change it in `mcps/acme/mcp.json`.
+
+| Where | `--serve` | Reached at | Who reaches it |
+| --- | --- | --- | --- |
+| **In the Toolbox** | `toolbox`, the default and the recommended choice | The Toolbox's one URL, `https://toolbox.<zone>/mcp`, as the tools `acme_<domain>_<operation>` | People whose organisation enabled the MCP, and who hold a grant that covers the tool. Staff decide both |
+| **On its own** | `standalone` | `https://mcp.<zone>/acme/mcp` | People whose token carries the MCP's scopes, `acme:read` and `acme:write`. Staff give an organisation the sign-in, then the scopes |
+| **Both** | `both` | Both | Each by its own rule |
+
+The `<zone>` is `answerable-staging.uk` in staging and `answerable.org` in production. On your machine the Toolbox is `http://localhost:47400/mcp` and the standalone server `http://localhost:47510/acme/mcp`. In the Toolbox one connection serves every MCP and every organisation, and staff govern each person's tools in one place. Run on its own when an MCP needs a sign-in of its own, and so a URL of its own. Both run in the same shared server process, so neither needs a deployment of its own.
+
+## Reading order
+
+1. [Make an MCP](/docs/mcp/create): `bun mcp new`, and trying it in Claude Code.
+2. [Add a tool](/docs/mcp/add-a-tool): naming it, describing it, reads and changes, testing it.
+3. [Your MCP's database](/docs/mcp/database): tables, migrations, tests and the two modes.
+4. [Your MCP's sign-in](/docs/mcp/sign-in): what Answerable ID does, and what staff do for each organisation.
+5. [Ship an MCP](/docs/mcp/deploy): staging, then production.
+6. [The bun mcp command](/docs/mcp/cli): every command, flag and error.
+7. Reference: [Read tools](/docs/mcp/tools), [Mutations](/docs/mcp/mutations), [Providers and servers](/docs/mcp/servers), [Test an MCP](/docs/mcp/testing), [MCP errors](/docs/mcp/errors), [the design standard](/docs/mcp/standard), [Test MCPs locally](/docs/mcp/local-testing), [Connect Claude Code](/docs/mcp/claude-code) and [the API reference](/docs/mcp/reference).
+
+A coding agent can do the first five: [Build with an AI agent](/docs/agents) has a prompt for each.
+
+## How it works
+
+### The building blocks
 
 | Block | What it is | Made with |
 | --- | --- | --- |
@@ -29,9 +55,9 @@ An AI host, such as Claude Code, Claude.ai or LibreChat, connects to MCP servers
 
 Each definition is plain data, checked when the module loads. A tool is five fields: `name`, `description`, `input`, `output` and `execute`. Everything else has a default.
 
-**Alone or in the Toolbox.** A server runs alone at its own URL. Or its provider is mounted in [the Toolbox](/docs/toolbox), one endpoint for every organisation, where staff decide who may use each tool: [Add tools to the Toolbox](/docs/toolbox/add-tools).
+**In the Toolbox, on its own, or both.** A server runs alone at its own path of the standalone server. Or its provider is mounted in [the Toolbox](/docs/toolbox), one endpoint for every organisation, where staff decide who may use each tool: [Add tools to the Toolbox](/docs/toolbox/add-tools).
 
-## How a request is authorised
+### How a request is authorised
 
 **A server served alone**
 
@@ -52,9 +78,9 @@ The server never sees a password, never runs Better Auth and never reads ID's da
 
 ## Status
 
-**Built.** `@answerable/mcp` defines read tools, [prepared mutations](/docs/mcp/mutations) and providers, serves them on the official MCP TypeScript SDK, answers every tool failure with one [error envelope](/docs/mcp/errors), exports each provider's contract as a manifest, and checks a provider against [the standard](/docs/mcp/standard) with [the conformance kit](/docs/mcp/testing). `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference MCP, served both in the Toolbox and on its own URL, and `mcps/example` the finished quickstart; `mcps/admin` is [the admin MCP](/docs/admin), for Answerable staff. [The Toolbox](/docs/toolbox) mounts every MCP whose `serve` is `toolbox` or `both`, and [the standalone server](/docs/mcp/servers#the-standalone-server) serves every one whose `serve` is `standalone` or `both` at its own path. `bun mcp new` makes an MCP and `bun mcp add tool` adds a tool, and [the acceptance](/docs/mcp/local-testing) signs organisations into the reference server, the Toolbox and the admin MCP through real ID with a browser and the official MCP OAuth client.
+**Built.** `@answerable/mcp` defines read tools, [prepared mutations](/docs/mcp/mutations) and providers, serves them on the official MCP TypeScript SDK, answers every tool failure with one [error envelope](/docs/mcp/errors), exports each provider's contract as a manifest, and checks a provider against [the standard](/docs/mcp/standard) with [the conformance kit](/docs/mcp/testing). `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference MCP, served both in the Toolbox and on its own URL, and `mcps/example` the finished example; `mcps/admin` is [the admin MCP](/docs/admin), for Answerable staff. [The Toolbox](/docs/toolbox) mounts every MCP whose `serve` is `toolbox` or `both`, and [the standalone server](/docs/mcp/servers#the-standalone-server) serves every one whose `serve` is `standalone` or `both` at its own path. `bun mcp new` makes an MCP, `bun mcp add tool` adds a tool and `bun mcp dev` runs one on your machine, [a tag ships it](/docs/mcp/deploy) to staging, which has run, and to production, which has not, and [the acceptance](/docs/mcp/local-testing) signs organisations into the reference server, the Toolbox and the admin MCP through real ID with a browser and the official MCP OAuth client.
 
-**Not yet.** Human approvals (a human-class intent waits and answers `APPROVAL_REQUIRED`), operations for long work, `toolbox_run`, the OpenAPI adapter, administration by an organisation's own administrators, remote providers, hosted deployment and a public npm release. [The standard](/docs/mcp/standard#not-yet) lists the rules nothing enforces yet.
+**Not yet.** Human approvals (a human-class intent waits and answers `APPROVAL_REQUIRED`), operations for long work, `toolbox_run`, the OpenAPI adapter, administration by an organisation's own administrators, remote providers, a production deployment and a public npm release. [The standard](/docs/mcp/standard#not-yet) lists the rules nothing enforces yet.
 
 **External hosts.** [Connect Claude Code](/docs/mcp/claude-code) registers a client for the Toolbox or the e2e server. LibreChat signs a person into the Toolbox in the [host lane](/docs/mcp/local-testing#host-lane). Claude Code with a model against the Toolbox or the [admin MCP](/docs/admin), and Claude.ai: Not yet tested.
 
@@ -69,12 +95,13 @@ The server never sees a password, never runs Better Auth and never reads ID's da
 | `@answerable/mcp/testing` | `createTestMcp`, `assertProviderConformance`, `errorOf` and `testPrincipal`; for an MCP with a database, `@answerable/mcp-postgres/testing` has its own `createTestMcp` and `assertProviderConformance` |
 | `@answerable/acceptance` | The kit that starts real ID, provisions it and signs a person in, and the journeys (`packages/acceptance`) |
 | `@answerable/mcp-e2e` | The reference MCP: five tools over its records in Postgres, a prompt, a resource and a view (`mcps/e2e`) |
-| `@answerable/mcp-example` | The finished quickstart, made with `bun mcp`: `example.status`, `notes.list` and `notes.add` over its database (`mcps/example`) |
+| `@answerable/mcp-example` | The finished example, made with `bun mcp`: `example.status`, `notes.list` and `notes.add` over its database (`mcps/example`) |
 | `@answerable/id-admin` | A server's machine client on Answerable ID's admin API: `createIdAdmin`, `IdError`, `found`, `createIdProfiles` (who is calling, for `createMcpServer`), and the fake ID in `@answerable/id-admin/testing` (`packages/id-admin`) |
 | `@answerable/mcp-postgres` | Postgres storage for MCP servers: the intent store, the evidence chain, the drizzle base schema, and a database for every MCP with `mcpDatabase` (`packages/mcp-postgres`) |
 | `@answerable/mcp-platform` | What every server Answerable runs shares: the evidence and spans of every call and refusal (`createCalls`), the audit-log poller, `/health`, each MCP's database from its server's generated list (`mcpDatabases`), and test databases in `@answerable/mcp-platform/testing` (`packages/mcp-platform`) |
 | `@answerable/mcp-toolbox` | The Toolbox: `createToolbox`, the grants reader, the catalogue and the admin API, mounting the MCPs of its generated list (`mcps/toolbox`) |
 | `@answerable/mcp-standalone` | The standalone server: `createStandalone`, every standalone MCP at its own path (`mcps/standalone`) |
+| `@answerable/scripts` | `bun mcp`: `new`, `add tool`, `list`, `check`, `db`, `setup` and `dev`, their templates and the generator of the lists the servers and the chart read (`scripts/mcp`). [The bun mcp command](/docs/mcp/cli) |
 
 The packages are private to the monorepo: a public npm release is Not yet. Views import the official MCP Apps browser API, `@modelcontextprotocol/ext-apps`, directly. Every export of `@answerable/auth` and `@answerable/mcp` is in the [API reference](/docs/mcp/reference).
 
@@ -85,14 +112,3 @@ The packages are private to the monorepo: a public npm release is Not yet. Views
 **Revocation.** A server verifies tokens offline, so a disabled organisation's issued access token works until it expires; refresh stops at once. Keep resource token lifetimes short.
 
 **Client registration.** Hosts use a client registered in ID ahead of time. Dynamic registration and client ID metadata documents: Not yet.
-
-## Reading order
-
-1. [Build your first MCP](/docs/mcp/quickstart): a working server in seven steps.
-2. [Read tools](/docs/mcp/tools), [Mutations](/docs/mcp/mutations) and [Providers and servers](/docs/mcp/servers): every field and rule.
-3. [Test an MCP](/docs/mcp/testing): `createTestMcp`, the conformance kit and the manifest snapshot.
-4. [MCP errors](/docs/mcp/errors): every code and what to do.
-5. [MCP design standard](/docs/mcp/standard): the rules and what enforces each.
-6. [Test MCPs locally](/docs/mcp/local-testing): the journeys against real ID.
-7. [Connect Claude Code](/docs/mcp/claude-code).
-8. [API reference](/docs/mcp/reference): every export.

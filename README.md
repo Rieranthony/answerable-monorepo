@@ -76,28 +76,39 @@ The development-only [OAuth test](apps/web/README.md#local-oauth-test) lets the 
 
 ### MCP kit
 
+```sh
+bun mcp new acme --description "Notes for construction projects: list, read and add notes on a project." --serve toolbox
+bun mcp add tool acme notes.add --mutation --description "Prepare a new note on a project; commit it to save it. Use notes.list first to avoid duplicates."
+bun mcp check acme
+bun mcp dev acme
+git tag staging/acme-notes && git push origin staging/acme-notes   # then production/acme-notes
+```
+
+Every MCP gets a database linked to it and its sign-in through Answerable ID, set up for you. Read [Make an MCP](apps/web/content/docs/mcp/create.mdx), [Add a tool](apps/web/content/docs/mcp/add-a-tool.mdx), [Ship an MCP](apps/web/content/docs/mcp/deploy.mdx) and [the `bun mcp` reference](apps/web/content/docs/mcp/cli.mdx).
+
 - [`packages/auth`](packages/auth/README.md) verifies Answerable ID access tokens.
 - [`packages/mcp`](packages/mcp/README.md) is the SDK: define tools, mutations and providers, serve them on the official MCP TypeScript SDK, check them with the conformance kit and test them in-process.
 - [`packages/id-admin`](packages/id-admin/README.md) is the machine client on ID's admin API, with the fake ID for tests.
-- [`packages/mcp-postgres`](packages/mcp-postgres/README.md) is the Postgres intent store, evidence chain and drizzle base schema that servers with a database share, on the model Answerable ID uses.
-- [`mcps/e2e`](mcps/e2e/README.md) is the reference server.
-- [`mcps/toolbox`](mcps/toolbox/README.md) is the Toolbox, with its own Postgres databases `answerable_toolbox` and `answerable_toolbox_test`.
-- [`mcps/admin`](mcps/admin/README.md) is the admin MCP for Answerable staff, with its own databases `answerable_admin` and `answerable_admin_test`.
+- [`packages/mcp-postgres`](packages/mcp-postgres/README.md) is the Postgres side of every MCP: the intent store, the evidence chain, the drizzle base schema and a database for each MCP.
+- [`packages/mcp-platform`](packages/mcp-platform/README.md) is what every server Answerable runs shares: evidence, spans, health and each MCP's database.
+- [`scripts`](scripts) holds `bun mcp`: `new`, `add tool`, `list`, `check`, `db`, `setup`, `dev` and the generator of the lists the servers and the chart read.
+- [`mcps/toolbox`](mcps/toolbox/README.md) is the Toolbox, `mcps/standalone` serves every MCP that runs on its own URL, and [`mcps/admin`](mcps/admin/README.md) is the admin MCP for Answerable staff, each with databases of its own.
+- [`mcps/e2e`](mcps/e2e/README.md) is the reference server and [`mcps/example`](mcps/example/README.md) the finished example.
 - [`packages/acceptance`](packages/acceptance/README.md) holds the real-ID acceptance kit and journeys.
 
 | Command | Does |
 | --- | --- |
-| `bun mcp new <name>` | Make `mcps/<name>`, with its local schema, first migration, manifest and tests, and check it; `bun mcp add tool <name> <domain.operation>` adds a tool, `bun mcp check <name>` checks it, `bun mcp list` lists every MCP, `bun mcp setup` connects the CLI to your local ID once, `bun mcp dev <name>` runs an MCP on your machine and prints the `claude mcp add` command for it, and `bun mcp help` says the rest |
+| `bun mcp help` | Every command; [the reference](apps/web/content/docs/mcp/cli.mdx) says the rest |
 | `bun run mcp:check <workspace>` | Typecheck, lint and test one workspace, such as `@answerable/mcp-e2e` |
 | `bun run mcp:test` | The suites of `packages/auth`, `packages/id-admin`, `packages/mcp`, `packages/mcp-postgres`, every server under `mcps/` and `bun mcp`'s; the Toolbox, the admin MCP, `packages/mcp-postgres`, `bun mcp` and every MCP with a database need the development Postgres |
 | `bun run mcp:test:e2e` | The journeys against real ID, a browser and the official MCP OAuth client (Docker) |
 | `bun run toolbox:dev` | Serve the Toolbox on 47400; `bun run standalone:dev` serves the standalone server on 47510 and `bun run admin:dev` the admin MCP on 47520 |
 
-Create an MCP with `bun mcp new` and [Build your first MCP](apps/web/content/docs/mcp/quickstart.mdx), and mount it in the Toolbox with [Add tools to the Toolbox](apps/web/content/docs/toolbox/add-tools.mdx); the [standard](apps/web/content/docs/mcp/standard.mdx) says which rules the SDK, the conformance kit and the Toolbox enforce. [Connect Claude Code](apps/web/content/docs/mcp/claude-code.mdx) covers a real host; [The admin MCP](apps/web/content/docs/admin/index.mdx) covers the server for Answerable staff. Decisions: [MCP foundation](docs/07-mcp-platform-draft.md), [the capability platform](docs/08-capability-platform.md) and [the admin MCP](docs/11-admin-mcp.md); results: [evidence](reports/mcp-foundation-evidence.md). `mcps/retired.json` lists the names of MCPs that were removed: `bun mcp new` refuses them for ever, because what a name had in the databases and in ID would come back with it. Normal `bun dev` starts apps only.
+The [standard](apps/web/content/docs/mcp/standard.mdx) says which rules the SDK, the conformance kit and the Toolbox enforce. [Connect Claude Code](apps/web/content/docs/mcp/claude-code.mdx) covers a real host; [The admin MCP](apps/web/content/docs/admin/index.mdx) covers the server for Answerable staff. Decisions: [MCP foundation](docs/07-mcp-platform-draft.md), [the capability platform](docs/08-capability-platform.md) and [the admin MCP](docs/11-admin-mcp.md); results: [evidence](reports/mcp-foundation-evidence.md). `mcps/retired.json` lists the names of MCPs that were removed: `bun mcp new` refuses them for ever, because what a name had in the databases and in ID would come back with it. Normal `bun dev` starts apps only.
 
 ### Deploying
 
-[`docs/12-deployment.md`](docs/12-deployment.md) says what runs where and why: Civo London, one account per environment, one Helm chart on Civo Kubernetes, Civo Database PostgreSQL 17, Cloudflare in front, every secret in a GitHub environment or generated where it is used, a tag `staging/<name>` shipping staging and a tag `production/<name>` shipping production behind the owner's approval, nothing done from a laptop. [`infra/README.md`](infra/README.md) is the runbook: the first run, every ship, rollback, scaling, rotation, restore and break glass. Not yet: the first staging run. `bun run infra:check` (charts, Terraform, workflows; no cloud, no Docker) and `bun run infra:test` (the kind stack; Docker) are the local gates, and CI runs both.
+[`docs/12-deployment.md`](docs/12-deployment.md) says what runs where and why: Civo London, one account per environment, one Helm chart on Civo Kubernetes, Civo Database PostgreSQL 17, Cloudflare in front, every secret in a GitHub environment or generated where it is used, a tag `staging/<name>` shipping staging and a tag `production/<name>` shipping production behind the owner's approval, nothing done from a laptop. Staging has run on Civo; production: Not yet. [`infra/README.md`](infra/README.md) is the runbook: the first run, every ship, rollback, scaling, rotation, restore and break glass. `bun run infra:check` (charts, Terraform, workflows; no cloud, no Docker) and `bun run infra:test` (the kind stack; Docker) are the local gates, and CI runs both.
 
 ### Repository principles
 

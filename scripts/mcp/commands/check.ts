@@ -2,8 +2,9 @@
 // connection budget.
 import { join } from "node:path"
 import { budget, connectionsAtCeilings } from "../connections"
+import { definitions } from "../definitions"
 import { generate } from "../generate"
-import { jsonFlag, Refusal, runSteps, sh, type Command, type Io, type Step } from "../io"
+import { Refusal, runSteps, sh, type Command, type Io, type Step } from "../io"
 import { roleSwitching } from "../role-switching"
 import { declarations, findRoot, resolveMcp } from "../workspace"
 
@@ -97,14 +98,10 @@ export const checkStep = (io: Io, root: string, name: string): Omit<Step, "fix">
   },
 })
 
-const usage = "bun mcp check [mcp] [--json]"
+const { usage } = definitions.check
 
 export const check: Command = {
-  name: "check",
-  usage,
-  summary: "Typecheck, lint and test an MCP, with the conformance kit and its coverage gate; rewrite a stale manifest, the generated files and the environment inventories, to commit; scan its code for role switches",
-  flags: { json: jsonFlag },
-  example: "bun mcp check acme",
+  ...definitions.check,
   async run(io, { positionals, flags }) {
     if (positionals.length > 1) throw new Refusal("unexpected-argument", `bun mcp check takes one MCP; it was given ${positionals.join(", ")}`, usage)
     const root = findRoot(io.cwd)

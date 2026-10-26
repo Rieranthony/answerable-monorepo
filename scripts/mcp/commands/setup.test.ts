@@ -3,6 +3,7 @@ import { stat } from "node:fs/promises"
 import { join } from "node:path"
 import { parseEnv } from "node:util"
 import { main } from "../cli"
+import { definitions } from "../definitions"
 import { onboarding } from "./setup"
 import { tempRepository, testIo } from "../test/io"
 import { isolateEnvironment, localId, writesTo, type LocalId } from "../test/id"
@@ -36,6 +37,7 @@ test("with the root secret unlocked it makes mcp-dev, the Toolbox's registration
     "  bun mcp dev <mcp>",
     "",
   ])
+  expect(lines(stdout()).filter(line => line.startsWith("ok")).map(line => line.split(/ +/)[1])).toEqual(definitions.setup.steps.map(step => step.name))
   expect(stdout()).not.toContain(secret!)
   expect((await stat(join(repository.root, ".env"))).mode & 0o777).toBe(0o600)
   expect(writesTo(id)).toEqual([

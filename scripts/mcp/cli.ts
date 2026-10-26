@@ -9,7 +9,8 @@ import { help, helpText } from "./commands/help"
 import { list } from "./commands/list"
 import { newMcp } from "./commands/new"
 import { setup } from "./commands/setup"
-import { printError, Refusal, spawn, type Args, type Command, type Flag, type Io } from "./io"
+import type { Flag } from "./definitions"
+import { printError, Refusal, spawn, type Args, type Command, type Io } from "./io"
 import { interrupt, listening, processStarter } from "./machine"
 
 const made = [newMcp, addTool, list, check, db, setup, dev]

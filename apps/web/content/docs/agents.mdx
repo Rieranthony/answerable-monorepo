@@ -1,49 +1,65 @@
 ---
 title: Build with an AI agent
-description: "Prompts to paste into a coding agent working in the Answerable monorepo: build an MCP server, add it to the Toolbox, review it against the standard. And how agents read these docs."
+description: "Prompts to paste into a coding agent working in the Answerable monorepo: make an MCP, add a tool, prepare it to ship, review it against the standard. Each has its commands and its proof. And how agents read these docs."
 ---
 
 ```sh
-curl -H "Accept: text/markdown" https://www.answerable.org/docs/mcp/quickstart
+curl -H "Accept: text/markdown" https://www.answerable.org/docs/mcp/create
 ```
 
-Every page of these docs is Markdown for agents, with the type tables and the code from the repository written out. The prompts below give a coding agent, such as Claude Code, a job, the pages to read and the commands that prove it is done. Replace the words in angle brackets.
+Every page of these docs is Markdown for agents, with the type tables and the code from the repository written out. The prompts below give a coding agent, such as Claude Code, a job, the pages to read, the commands to run and the proof that it is done. Replace the words in angle brackets. Every MCP gets a database and its sign-in through Answerable ID without any work, so no prompt asks for either.
 
-## Build an MCP server
+## Make an MCP
 
 ```text
-In the Answerable monorepo, build an MCP named <name> that <what it does>, with bun mcp and @answerable/mcp.
+In the Answerable monorepo, make an MCP named <name> that <what it does>, with bun mcp.
 
-Read first: AGENTS.md, then https://www.answerable.org/docs/mcp/quickstart.md, https://www.answerable.org/docs/mcp/tools.md and https://www.answerable.org/docs/mcp/mutations.md. mcps/example is a finished MCP made with the same commands.
+Read first: AGENTS.md, then https://www.answerable.org/docs/mcp/create.md and https://www.answerable.org/docs/mcp/database.md. mcps/example is a finished MCP made with the same commands.
 
-1. Run `bun mcp new <name> --description "<what it is for, 40 to 1,000 characters>" --serve toolbox`.
-2. For each read, run `bun mcp add tool <name> <domain.operation> --description "<what it does, when to use it, its limits>"`; for each change, add `--mutation` and say "prepare" in its description.
-3. Change each tool's file and its table in src/db/schema.ts to the real data, then run `bun mcp db <name> generate`. Every table keeps organisation_id and its organisationIsolation policy. prepare returns a preview and changes nothing; commit applies exactly that.
-4. Throw ToolError for expected failures, and list any custom code in the definition's errors.
-5. Keep each tool's test proving that each organisation sees only its rows. Commit a mutation with the tool its intent's commit_tool names.
-6. Run `bun mcp check <name>` until it passes with 100% coverage, and commit the manifest and the generated files it rewrites.
+1. Run `bun mcp new <name> --description "<what it is for, 40 to 1,000 characters>" --serve toolbox`. Use --serve standalone only when it needs its own URL, and say why.
+2. Run `bun mcp check <name>` and commit what it rewrites: mcps/<name>, charts/answerable/mcps.json, and the lists and dependencies of mcps/toolbox and mcps/standalone. Never edit a *.generated.* file or charts/answerable/mcps.json by hand.
+3. Run `bun mcp list` and check that <name> is listed with its tools and URLs.
 
-Do not add a Better Auth instance and do not read Answerable ID's database. Report the tools you made, the risk of each mutation, and the output of bun mcp check.
+Its database and its sign-in through Answerable ID are made for you. Do not add a Better Auth instance, a database connection or a login, and do not read Answerable ID's database. Never run `bun run env:up` from a worktree.
+
+Proof: the output of `bun mcp check <name>` (it passes, with 100% coverage) and the line `bun mcp list` prints for <name>.
 ```
 
-The guide it follows: [Build your first MCP](/docs/mcp/quickstart).
+The guide it follows: [Make an MCP](/docs/mcp/create).
 
-## Add tools to the Toolbox
+## Add a tool
 
 ```text
-In the Answerable monorepo, mount mcps/<name> in the Toolbox, mcps/toolbox.
+In the Answerable monorepo, add the tool <domain.operation> to the MCP <name>: <what the caller can do with it>.
 
-Read first: AGENTS.md and https://www.answerable.org/docs/toolbox/add-tools.md.
+Read first: AGENTS.md and https://www.answerable.org/docs/mcp/add-a-tool.md.
 
-1. Check that `bun mcp check <name>` passes.
-2. Set "serve" to "toolbox", or "both" to keep it on its own URL too, in mcps/<name>/mcp.json.
-3. Run `bun mcp check <name>`, which rewrites mcps/toolbox/src/mounted.generated.ts and the Toolbox's dependencies, then `bun install`, `bun mcp db <name> migrate` and `bun run mcp:check @answerable/mcp-toolbox`. The suites need the development PostgreSQL on port 47432; never run `bun run env:up` from a worktree.
-4. Write out, for staff, the enable call and the entitlement from the guide, filled in with the provider id.
+1. Run `bun mcp add tool <name> <domain.operation> --description "<what it does, when to use it, its limits>"`. For a change, add `--mutation` and say "prepare" in the description. Name the tool for what the caller can do, never for the vendor.
+2. Change the generated file into the real tool: its input, its output, and its table in mcps/<name>/src/db/schema.ts. Every table keeps organisation_id and its organisationIsolation policy. Do not filter queries by organisation: Postgres does. prepare returns a preview and changes nothing; commit applies exactly that. Throw ToolError for expected failures.
+3. After a change to the schema, run `bun mcp db <name> generate`, review the migration and commit it. Never edit, regenerate or remove a migration that was applied.
+4. Keep the tool's test proving that each organisation sees only its own rows.
+5. Run `bun mcp check <name>` until it passes, and commit the manifest it rewrites.
 
-Edit no generated file and nothing else in the Toolbox. Report the diff and the output of the checks.
+Proof: the output of `bun mcp check <name>`, the migration file, and the tool's manifest entry in mcps/<name>/manifest.json.
 ```
 
-The guide it follows: [Add tools to the Toolbox](/docs/toolbox/add-tools).
+The guide it follows: [Add a tool](/docs/mcp/add-a-tool).
+
+## Ship an MCP
+
+```text
+Prepare mcps/<name> to ship to staging, then production, and tell me the commands. Do not tag, do not push to main and do not deploy: only the owner does.
+
+Read first: AGENTS.md, https://www.answerable.org/docs/mcp/deploy.md and https://www.answerable.org/docs/mcp/sign-in.md.
+
+1. Run `bun mcp check <name>`. It must pass and leave nothing to commit.
+2. Commit mcps/<name> and the generated files on a branch.
+3. Tell me: the commit; the two commands for staging, `git tag staging/<name>-<change>` and `git push origin staging/<name>-<change>`, and the same two for production with `production/` on the same commit; the URLs `bun mcp list` prints for staging and production; and the two steps staff take in the admin MCP once it has shipped. For an MCP in the Toolbox: toolbox_enable, then access_grant. For one on its own URL: standalone_enable, then access_grant with clientId claude-code-<name>.
+
+Proof: the commit hash, the output of `bun mcp check <name>` and `bun mcp list`, and the commands.
+```
+
+The guide it follows: [Ship an MCP](/docs/mcp/deploy).
 
 ## Review a server against the standard
 
@@ -52,7 +68,7 @@ Review mcps/<name> against the Answerable MCP design standard.
 
 Read first: https://www.answerable.org/docs/mcp/standard.md and https://www.answerable.org/docs/mcp/tools.md.
 
-Run `bun run mcp:check @answerable/mcp-<name>`: the conformance kit checks the rules marked Kit and SDK. Then, for each rule marked Review, say whether the server meets it, with the file and line that shows it, and what to change if it does not. Change no code.
+Run `bun mcp check <name>`: the conformance kit checks the rules marked Kit and SDK. Then, for each rule marked Review, say whether the server meets it, with the file and line that shows it, and what to change if it does not. Change no code.
 ```
 
 The rules it checks: [MCP design standard](/docs/mcp/standard).
@@ -64,7 +80,7 @@ The rules it checks: [MCP design standard](/docs/mcp/standard).
 | `https://www.answerable.org/docs/<page>.md` | One page as Markdown |
 | Any docs URL with `Accept: text/markdown` | The same, at the page's own URL |
 | `https://www.answerable.org/llms.txt` | Where to start, then an index of every page with its description |
-| `https://www.answerable.org/llms-full.txt` | Every page in one file: 1.9 MB, most of it the API reference's operations |
+| `https://www.answerable.org/llms-full.txt` | Every page in one file: 2.1 MB, most of it the API reference's operations |
 
 **Give an agent the page for its job**, not the whole set: the pages above link to the ones they need. Each page on the site has **Copy Markdown** and **View as Markdown** buttons under its title.
 

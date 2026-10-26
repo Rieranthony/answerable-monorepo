@@ -37,7 +37,7 @@ export function checkToolName(name: string): string | undefined {
  */
 export function checkDescription(description: string): string | undefined {
   const { length } = description
-  if (length < 40 || length > 1000) return `is ${length} characters; write 40 to 1,000 saying what it does, when to use it and its limits`
+  if (length < 40 || length > 1000) return `is ${length} character${length === 1 ? "" : "s"}; write 40 to 1,000 saying what it does, when to use it and its limits`
 }
 
 /**

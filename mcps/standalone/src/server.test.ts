@@ -1,14 +1,22 @@
 import { afterAll, expect, test } from "bun:test"
 import { createFakeId } from "@answerable/id-admin/testing"
 import { runtimeGrants } from "@answerable/mcp-postgres"
-import { testSharedMcps } from "@answerable/mcp-platform/testing"
+import { type Declared } from "@answerable/mcp-platform"
+import { testOwnMcp, testSharedMcps } from "@answerable/mcp-platform/testing"
 import { served } from "./served.generated"
 import { database } from "./test/database"
 
 const directory = new URL("../", import.meta.url).pathname
-// The served MCPs' database as the entry point needs it: a serving login with exactly their roles.
-const mcps = await testSharedMcps({ name: "answerable_standalone_test_served", prefix: "mcp_sts", mcps: served.map(({ provider }) => provider) })
-afterAll(() => mcps.close())
+// The served MCPs' databases as the entry point needs them, read from the generated list so that a new MCP needs no edit here: the shared ones
+// through a serving login with exactly their roles, and each own one in a database of its own, as its runtime login.
+const mcps = await testSharedMcps({ name: "answerable_standalone_test_served", prefix: "mcp_sts", mcps: served.filter(entry => entry.database === "shared").map(({ provider }) => provider) })
+const owned = await Promise.all(served.filter((entry): entry is Extract<Declared, { database: "own" }> => entry.database === "own")
+  .map(async entry => ({ entry, database: await testOwnMcp({ name: `answerable_standalone_test_${entry.provider.id}`, provider: entry.provider }) })))
+const ownUrls = Object.fromEntries(owned.map(({ entry, database }) => [entry.variable, database.url]))
+afterAll(async () => {
+  await mcps.close()
+  await Promise.all(owned.map(({ database }) => database.close()))
+})
 
 // The entry point on a free port against `databaseUrl`, with a fake ID served over HTTP, as it would reach the real one.
 function start(databaseUrl: string, overrides: Record<string, string> = {}) {
@@ -21,7 +29,7 @@ function start(databaseUrl: string, overrides: Record<string, string> = {}) {
   const env = {
     ...process.env, STANDALONE_DATABASE_URL: databaseUrl, STANDALONE_MCPS_DATABASE_URL: mcps.url, STANDALONE_MCPS_ROLE_PREFIX: "mcp_sts", STANDALONE_ORIGIN: origin,
     STANDALONE_ID_ISSUER: `http://127.0.0.1:${id.port}`, STANDALONE_PORT: String(port), STANDALONE_ID_CLIENT_ID: "standalone-hub",
-    STANDALONE_ID_CLIENT_SECRET: fake.config.clientSecret, STANDALONE_ID_ADMIN_RESOURCE: fake.config.adminResource, ...overrides,
+    STANDALONE_ID_CLIENT_SECRET: fake.config.clientSecret, STANDALONE_ID_ADMIN_RESOURCE: fake.config.adminResource, ...ownUrls, ...overrides,
   }
   const server = Bun.spawn([process.execPath, "src/server.ts"], { cwd: directory, env, stdout: "pipe", stderr: "pipe" })
   return { origin, server, stop: () => { server.kill(); id.stop(true) } }
@@ -32,7 +40,10 @@ test("the entry point serves each MCP at its path as the runtime login, answers 
   const { origin, server, stop } = start(login.url)
   try {
     expect(new TextDecoder().decode((await server.stdout.getReader().read()).value)).toBe(`Standalone server serving ${served.map(({ provider }) => `${origin}/${provider.id}/mcp`).join(", ")}\n`)
-    expect(await (await fetch(`${origin}/health`)).json()).toEqual({ status: "ok", databases: { standalone: "ok", mcps: "ok" }, providers: served.map(({ provider }) => provider.id) })
+    expect(await (await fetch(`${origin}/health`)).json()).toEqual({
+      status: "ok", databases: Object.fromEntries([["standalone", "ok"], ["mcps", "ok"], ...owned.map(({ entry }) => [entry.provider.id, "ok"])]),
+      providers: served.map(({ provider }) => provider.id),
+    })
     expect((await (await fetch(`${origin}/.well-known/oauth-protected-resource/e2e/mcp`)).json()).resource).toBe(`${origin}/e2e/mcp`)
     server.kill("SIGTERM")
     expect(await server.exited).toBe(0)

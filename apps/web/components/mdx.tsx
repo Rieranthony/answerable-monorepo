@@ -2,6 +2,12 @@ import defaultMdxComponents from "fumadocs-ui/mdx"
 import type { MDXComponents } from "mdx/types"
 
 import {
+  CliErrors,
+  CliExitCodes,
+  CliReference,
+  CliSteps,
+} from "@/components/docs/cli"
+import {
   Configuration,
   ErrorCodes,
   GrantStrings,
@@ -25,6 +31,10 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
     Callout,
     Card,
     Cards,
+    CliErrors,
+    CliExitCodes,
+    CliReference,
+    CliSteps,
     Step,
     Steps,
     Configuration,

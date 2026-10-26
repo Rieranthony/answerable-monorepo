@@ -7,9 +7,9 @@ description: "Mount an MCP in the Toolbox with serve in its mcp.json, enable it 
 { "name": "acme", "serve": "toolbox", "database": "shared" }
 ```
 
-The Toolbox serves tools from **MCPs** mounted inside it: every MCP whose `mcp.json` says `"serve": "toolbox"` or `"both"`. To add tools, make an MCP with [the MCP kit](/docs/mcp), let the Toolbox mount it, then let organisations use it: staff enable it in an organisation's catalogue, and the organisation grants its capabilities to people. The steps below were run end to end against real Answerable ID with `mcps/example` in place of `acme`.
+The Toolbox serves tools from **MCPs** mounted inside it: every MCP whose `mcp.json` says `"serve": "toolbox"` or `"both"`. To add tools, make an MCP with `bun mcp new acme --serve toolbox`, let the Toolbox mount it, then let organisations use it: staff **enable** it in an organisation's catalogue, and **grant** its capabilities to people. On your machine `bun mcp dev acme` does all of this for you ([Make an MCP](/docs/mcp/create#run-it-and-try-it-in-claude-code)), and in staging and production a tag mounts it ([Ship an MCP](/docs/mcp/deploy)). The steps below do it by hand, against your local Toolbox, and were run end to end against real Answerable ID with `mcps/example` in place of `acme`.
 
-**Before you start.** An MCP that passes `bun mcp check`, such as the one [Build your first MCP](/docs/mcp/quickstart) ends with, and the Toolbox [running locally](/docs/toolbox#run-it-locally) with its registrations in ID. Handing this to a coding agent? Use the [prompt](/docs/agents#add-tools-to-the-toolbox).
+**Before you start.** An MCP that passes `bun mcp check`, such as the one [Make an MCP](/docs/mcp/create) ends with, and the Toolbox [running locally](/docs/toolbox#run-it-locally) with its registrations in ID. Handing this to a coding agent? Use the [prompts](/docs/agents#make-an-mcp).
 
 <Steps>
 <Step>
@@ -69,6 +69,8 @@ curl "$TOOLBOX/admin/v1/providers" -H "Authorization: Bearer $TOOLBOX_TOKEN"
 
 ### Enable it for an organisation
 
+In staging and production, staff run `toolbox_enable` in [the admin MCP](/docs/admin); this call is what it makes, and what you run against your local Toolbox.
+
 ```sh
 curl "$TOOLBOX/admin/v1/organisations/$ORG/enable" \
   -H "Authorization: Bearer $TOOLBOX_TOKEN" -H "Content-Type: application/json" \
@@ -81,6 +83,8 @@ The catalogue is the ceiling: an organisation uses only the providers enabled fo
 <Step>
 
 ### Grant it to people
+
+In staging and production, staff run `access_grant` in the admin MCP ([Your MCP's sign-in](/docs/mcp/sign-in#what-staff-do-for-each-organisation)). By hand:
 
 What each person may use is an entitlement in Answerable ID whose scopes are **grant strings**: the provider, a domain or one capability. For `mcps/example`, read from its manifest:
 

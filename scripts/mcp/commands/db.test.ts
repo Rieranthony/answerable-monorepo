@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { symlink } from "node:fs/promises"
 import { join } from "node:path"
 import { main } from "../cli"
+import { definitions } from "../definitions"
 import { spawn } from "../io"
 import { mcpFiles, tableTs } from "../templates"
 import { forget, query, randomName, traces } from "../test/postgres"
@@ -34,6 +35,7 @@ test("generate writes the first migration without drizzle-kit's schema line, the
   const first = await run([shared, "generate", "--name", "initial"])
   expect([first.code, lines(first.stdout())]).toEqual([0, ["ok      migration  drizzle/0000_initial.sql", "", "Next:", `  bun mcp db ${shared} migrate`, `  git add mcps/${shared}/drizzle`, ""]])
   expect(await file(shared, "drizzle/0000_initial.sql").text()).toBe("")
+  expect(lines(first.stdout())[0]!.split(/ +/)[1]).toBe(definitions.db.steps[0]!.name)
   await Bun.write(file(shared, "src/db/schema.ts"), `import { organisationIsolation } from "@answerable/mcp-postgres"\n${await file(shared, "src/db/schema.ts").text()}${tableTs(shared, "notes")}`)
   const second = await run([shared, "generate", "--json"])
   expect([second.code, JSON.parse(second.stdout()).next]).toEqual([0, [`bun mcp db ${shared} migrate`, `git add mcps/${shared}/drizzle`]])
@@ -58,6 +60,7 @@ test("migrate provisions the shared schema and its roles, applies the journal, a
   await Bun.write(file(shared, "src/db/grants.ts"), 'export const grants = [{ table: "notes", privileges: ["select"] }]\n')
   const { code, stdout } = await run([shared, "migrate"])
   expect([code, lines(stdout())[0]]).toEqual([0, `ok      database   schema ${shared} in answerable_mcps: migrated, with src/db/grants.ts`])
+  expect(lines(stdout())[0]!.split(/ +/)[1]).toBe(definitions.db.steps[1]!.name)
   expect(await traces(shared)).toEqual([`answerable_mcps.${shared}`, `mcp_${shared}`, `mcp_${shared}_owner`])
   expect(await query("answerable_mcps", "select privilege_type from information_schema.role_table_grants where grantee = $1 and table_name = 'notes'", [`mcp_${shared}`])).toEqual([{ privilege_type: "SELECT" }])
   expect((await run([shared, "migrate"])).code).toBe(0)

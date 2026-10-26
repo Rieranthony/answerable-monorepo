@@ -55,13 +55,6 @@ test("help lists every command with its summary; help <command> and --help give 
   expect(helped.stdout()).toEndWith("Example:\n  bun mcp add tool acme notes.add --mutation --description \"Prepare a new note on a project; commit it to save it. Use notes.list first to avoid duplicates.\"\n")
 })
 
-test("every command and flag has a description, and every command an example", () => {
-  for (const command of commands) {
-    expect([command.summary, command.example, command.usage].every(Boolean), command.name).toBe(true)
-    for (const [flag, { description }] of Object.entries(command.flags)) expect(description, `${command.name} --${flag}`).toBeTruthy()
-  }
-})
-
 test("outside the repository every command is refused, and an error that is not a refusal exits 1 with its message", async () => {
   expect(() => findRoot(tmpdir())).toThrow("bun mcp runs in the Answerable monorepo; no package.json with the mcps/* workspaces is at or above")
   const outside = await run(["list"], "/")

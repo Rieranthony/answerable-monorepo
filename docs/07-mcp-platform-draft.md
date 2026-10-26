@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Any MCP server we build signs people in with Answerable ID and needs almost no setup: two URLs, its tools and a port. These are the decisions that still hold under everything built on the foundation. The platform on top of it (the SDK's tool model, the conformance kit, the Toolbox) is designed in [`08-capability-platform.md`](08-capability-platform.md) and held to [`09-mcp-design-standard.md`](09-mcp-design-standard.md). How-to guides live at [`/docs/mcp`](../apps/web/content/docs/mcp/index.mdx); results live in the [evidence](../reports/mcp-foundation-evidence.md).
+Any MCP server we build signs people in with Answerable ID and needs no setup: `bun mcp new` makes it, with its database and its sign-in done for you, and a tag ships it. These are the decisions that still hold under everything built on the foundation. The platform on top of it (the SDK's tool model, the conformance kit, the Toolbox) is designed in [`08-capability-platform.md`](08-capability-platform.md) and held to [`09-mcp-design-standard.md`](09-mcp-design-standard.md). How-to guides live at [`/docs/mcp`](../apps/web/content/docs/mcp/index.mdx); results live in the [evidence](../reports/mcp-foundation-evidence.md).
 
 MCPs live in `mcps/*`. Better Auth stays in ID; an MCP never creates accounts or sessions, and never reads ID's database. Extract a shared package only when a second consumer needs it: the app sign-in client in `apps/web/lib/oauth-test` has one consumer, so it stays there.
 
@@ -22,7 +22,7 @@ MCPs live in `mcps/*`. Better Auth stays in ID; an MCP never creates accounts or
 
 **Structured output.** `execute` returns the output. The server sends it as `structuredContent` and as the same JSON in text, as the MCP specification asks of structured tools. Claude Code 2.1.282 shows the model only `structuredContent`, so a separate summary would never be read. The output schema drops undeclared fields before anything leaves the server.
 
-**Tests in-process.** `createTestMcp` drives the official MCP client against the server's fetch handler, and the verifier fetches keys from an in-process test issuer. MCP unit tests open no port, so they also run in sandboxes that cannot bind one, such as Codex's. The Toolbox's suite needs Postgres.
+**Tests in-process.** `createTestMcp` drives the official MCP client against the server's fetch handler, and the verifier fetches keys from an in-process test issuer. MCP unit tests open no port. An MCP with a database, as every MCP `bun mcp new` makes has, and the Toolbox, run against the development Postgres, so a sandbox that cannot reach it, such as Codex's, cannot run them.
 
 **Acceptance through the real product.** The acceptance runs ID from production migrations and its restricted runtime role, and the kit provisions everything through the admin API with the root secret, as an operator would. The journeys use the SDK's own OAuth client, as hosts do, and a real browser on ID's pages. Company directories are local test issuers.
 

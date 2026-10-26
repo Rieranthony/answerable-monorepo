@@ -1,13 +1,14 @@
 // bun mcp setup: connects bun mcp to the developer's local Answerable ID, once. It makes a machine client there, mcp-dev, and writes its id and secret,
 // with the developer's organisation, to the root .env. Run again, it finds the client working and does nothing.
 import { failure, findBySlug, RootLocked, type Call } from "../../../infra/ops/src/admin-api"
+import { definitions } from "../definitions"
 import { readSettings, writeEnvironment } from "../environment"
-import { jsonFlag, Refusal, runSteps, type Command, type Io } from "../io"
+import { Refusal, runSteps, type Command, type Io } from "../io"
 import { local } from "../local"
 import { adminCall, createRegistrar, machine, machineToken, makeMcpDev, platformSlug, registerToolbox } from "../local-id"
 import { findRoot } from "../workspace"
 
-const usage = "bun mcp setup [--organisation <slug>] [--staff-token <token>] [--json]"
+const { usage } = definitions.setup
 /** Where a staff token comes from. */
 export const onboarding = "https://www.answerable.org/docs/id/onboard#get-a-staff-token"
 const withStaffToken = "bun mcp setup --staff-token <token>"
@@ -46,15 +47,7 @@ async function access(io: Io, staff: string | undefined, rootSecret: string): Pr
 }
 
 export const setup: Command = {
-  name: "setup",
-  usage,
-  summary: "Connect bun mcp to your local Answerable ID, once: make its machine client, mcp-dev, there and write its id and secret, with your organisation, to the root .env. Run again, it finds the client working and does nothing",
-  flags: {
-    organisation: { value: "<slug>", description: "The organisation bun mcp dev gives access to the MCP it runs, so that you can sign in and call every tool; default: your local ID's platform organisation, answerable" },
-    "staff-token": { value: "<token>", description: `A staff token, for when ID's root secret is locked; without it, a terminal asks for one. Where to get one: ${onboarding}` },
-    json: jsonFlag,
-  },
-  example: "bun mcp setup --organisation acme",
+  ...definitions.setup,
   async run(io, { positionals, flags }) {
     if (positionals.length) throw new Refusal("unexpected-argument", `bun mcp setup takes no argument; it was given ${positionals.join(", ")}`, usage)
     const root = findRoot(io.cwd)

@@ -5,7 +5,7 @@
 > - **Rule:** only Cloudflare reaches the services, and only with the origin-pull certificate; no service holds a database owner login; the cluster runs images by digest, built from a commit that passed CI and shipped to staging first; no secret sits in plain text in git, in a Terraform variable or in a log.
 > - **Not here:** how to do each step ([`infra/README.md`](../infra/README.md), the runbook), what ID itself needs from any deployment ([`06-deploying-answerable-id.md`](06-deploying-answerable-id.md)), the decisions with the alternatives they rejected ([`goals/civo-deploy/decisions.md`](goals/civo-deploy/decisions.md), D-numbers below), the measured evidence from the first staging run (`reports/staging-evidence.md`, written by brief B7a: Not yet).
 
-**Status.** Everything below is code in this repository, proved locally (§ [Testing](#testing)). Nothing is applied to Civo yet: the first staging run is brief [B7a](goals/civo-deploy/briefs/b7.md), and production waits for it and for the rehearsal ([B7c](goals/civo-deploy/briefs/b7c.md)). The web app stays on Vercel.
+**Status.** Everything below is code in this repository, proved locally (§ [Testing](#testing)). Staging has run on Civo: `staging/fourth` passed its smoke test on 2026-10-23 ([`reports/staging-evidence.md`](../reports/staging-evidence.md)), as the release before the `mcps` image and the standalone server; the first tag that ships them has not been pushed. Production: Not yet. It waits for the rehearsal ([B7c](goals/civo-deploy/briefs/b7c.md)). The web app stays on Vercel.
 
 ## What runs where
 
@@ -248,7 +248,7 @@ Civo's list prices, measured on 10 October 2026 from its pricing page; USD a mon
 
 ## Not yet
 
-- **The first staging run and its evidence** (`reports/staging-evidence.md`), and the production rehearsal: [B7a](goals/civo-deploy/briefs/b7.md), [B7c](goals/civo-deploy/briefs/b7c.md).
+- **The rest of the staging evidence** (`reports/staging-evidence.md`, still being written) and the production rehearsal: [B7a](goals/civo-deploy/briefs/b7.md), [B7c](goals/civo-deploy/briefs/b7c.md).
 - **A metrics and logs agent, and alerts.**
 - **Image signature enforcement in the cluster** (an admission policy); today the signatures are checked by `promote-production.yml` only.
 - **GitOps** as the deploy model, and with it a Kubernetes API closed to the internet.

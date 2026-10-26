@@ -265,3 +265,21 @@
     - mcp-admin: 140;
     - id-admin: 28;
     - the acceptance: 70 pass in 154 s.
+- **M8, the documentation,** by Sonnet.
+  - **What it wrote:**
+    - six pages under `/docs/mcp`: create, add a tool, database, sign-in, deploy, and the CLI reference;
+    - the CLI reference rendered from `scripts/mcp/definitions.ts` and `errors.ts` (`<CliReference />`, `<CliSteps />`, `<CliExitCodes />`, `<CliErrors />`), and `errors.test.ts` runs the real command for every error row;
+    - `quickstart.mdx` removed, with redirects to `create`;
+    - the `AGENTS.md` block and the agents prompt.
+  - **The fresh agent,** working only from the docs, found a defect: the Toolbox's and the standalone server's tests listed the mounted MCPs by hand and assumed no own-database MCP, so a new `toolbox` or `both` MCP failed CI. M8 documented it as a known gap.
+- **The coordinator's fix:** both suites now read the generated lists. The test databases, the health answer and the expected environment come from `mounted.generated.ts` and `served.generated.ts`, and an own-database MCP gets a test database of its own (`answerable_toolbox_test_<name>`, `answerable_standalone_test_<name>`).
+  - **The proof:** in a copy of the working tree, `bun mcp new` made a shared MCP and an own-database MCP, both served `both`. With no other edit, `mcp:check` passed for the Toolbox (81) and the standalone server (17). The copy, the schemas, the roles and the database were then removed.
+  - The five known-gap notes are gone. A description of 1 character now reads "1 character".
+- **The coordinator's gates on M8:**
+  - typecheck and lint forced: 21 of 21;
+  - build: 2 of 2;
+  - web: 120;
+  - `mcp:test`: 1,022 pass, 0 fail (one test in `scripts` still expected "1 characters" and was updated);
+  - knip clean;
+  - frozen install unchanged;
+  - `infra:check` passed.

@@ -112,7 +112,7 @@ bun mcp db acme migrate
 
 Run them from the repository root, or from \`mcps/acme\` without the name. \`add tool\` writes a read tool, or with \`--mutation\` a change, with its test and its table, then checks the MCP. \`check\` runs the typecheck, the lint and the tests, with [the conformance kit](../../apps/web/content/docs/mcp/testing.mdx) and a 100% coverage gate; it rewrites a stale \`manifest.json\` and says to commit it. After a change to \`src/db/schema.ts\`, \`db generate\` writes the migration into \`drizzle/\`: review and commit it. \`db migrate\` migrates the local development schema. \`bun mcp\` writes \`mcp.json\`; change \`serve\` and \`database\` there.
 
-Guides: [Build your first MCP](../../apps/web/content/docs/mcp/quickstart.mdx), [Read tools](../../apps/web/content/docs/mcp/tools.mdx), [Mutations](../../apps/web/content/docs/mcp/mutations.mdx), [Test an MCP](../../apps/web/content/docs/mcp/testing.mdx).
+Guides: [Make an MCP](../../apps/web/content/docs/mcp/create.mdx), [Add a tool](../../apps/web/content/docs/mcp/add-a-tool.mdx), [Your MCP's database](../../apps/web/content/docs/mcp/database.mdx), [Sign-in](../../apps/web/content/docs/mcp/sign-in.mdx), [Ship it](../../apps/web/content/docs/mcp/deploy.mdx), [Test an MCP](../../apps/web/content/docs/mcp/testing.mdx).
 "
 `;
 
@@ -198,7 +198,7 @@ exports[`every file of a new MCP, for a fixed name and date, with the status too
 // input and output: Zod objects. Describe every field (.describe("…")): hosts show it to the model.
 //   A list takes limit and cursor and returns items, next_cursor and has_more (the conformance kit checks it).
 //
-// execute: gets the checked input and the caller: person, organisation and db. Row-level security (D19) limits every query to
+// execute: gets the checked input and the caller: person, organisation and db. Row-level security limits every query to
 //   the caller's organisation, so no query filters on it by hand. Throw ToolError for a failure the caller can fix.
 import { z } from "zod"
 import { defineTool } from "../mcp"
@@ -307,7 +307,7 @@ exports[`a new MCP whose first tool is a read has its domain's table; a mutation
 // input and output: Zod objects. Describe every field (.describe("…")): hosts show it to the model.
 //   A list takes limit and cursor and returns items, next_cursor and has_more (the conformance kit checks it).
 //
-// execute: gets the checked input and the caller: person, organisation and db. Row-level security (D19) limits every query to
+// execute: gets the checked input and the caller: person, organisation and db. Row-level security limits every query to
 //   the caller's organisation, so no query filters on it by hand. Throw ToolError for a failure the caller can fix.
 import { desc, lt } from "drizzle-orm"
 import { z } from "zod"
@@ -391,7 +391,7 @@ bun mcp db acme migrate
 
 Run them from the repository root, or from \`mcps/acme\` without the name. \`add tool\` writes a read tool, or with \`--mutation\` a change, with its test and its table, then checks the MCP. \`check\` runs the typecheck, the lint and the tests, with [the conformance kit](../../apps/web/content/docs/mcp/testing.mdx) and a 100% coverage gate; it rewrites a stale \`manifest.json\` and says to commit it. After a change to \`src/db/schema.ts\`, \`db generate\` writes the migration into \`drizzle/\`: review and commit it. \`db migrate\` migrates the local development schema. \`bun mcp\` writes \`mcp.json\`; change \`serve\` and \`database\` there.
 
-Guides: [Build your first MCP](../../apps/web/content/docs/mcp/quickstart.mdx), [Read tools](../../apps/web/content/docs/mcp/tools.mdx), [Mutations](../../apps/web/content/docs/mcp/mutations.mdx), [Test an MCP](../../apps/web/content/docs/mcp/testing.mdx).
+Guides: [Make an MCP](../../apps/web/content/docs/mcp/create.mdx), [Add a tool](../../apps/web/content/docs/mcp/add-a-tool.mdx), [Your MCP's database](../../apps/web/content/docs/mcp/database.mdx), [Sign-in](../../apps/web/content/docs/mcp/sign-in.mdx), [Ship it](../../apps/web/content/docs/mcp/deploy.mdx), [Test an MCP](../../apps/web/content/docs/mcp/testing.mdx).
 "
 `;
 
@@ -425,7 +425,7 @@ exports[`a new MCP whose first tool is a read has its domain's table; a mutation
 // prepare: computes the preview and changes nothing. It checks the input, reads nothing that changes, and returns the summary the
 //   person confirms, naming their organisation.
 //
-// commit: applies exactly what was prepared, from plan. Row-level security (D19) limits it to the caller's organisation, so it
+// commit: applies exactly what was prepared, from plan. Row-level security limits it to the caller's organisation, so it
 //   sets organisation_id from organisation.id and filters on nothing by hand. Throw ToolError for a failure the caller can fix.
 import { z } from "zod"
 import * as schema from "../db/schema"

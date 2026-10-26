@@ -29,7 +29,7 @@ type Workspace = keyof typeof manifests
 
 // Plain functions, not components: `asMarkdown()` opts in the component that calls it, so each exported block must call
 // it in its own render.
-function codeBlock({
+export function codeBlock({
   code,
   lang,
   title,

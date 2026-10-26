@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { rm } from "node:fs/promises"
 import { join } from "node:path"
 import { main } from "../cli"
+import { definitions } from "../definitions"
 import { cli } from "../io"
 import { isolateEnvironment, localId, writesTo } from "../test/id"
 import { recorder, tempRepository, testIo } from "../test/io"
@@ -195,7 +196,7 @@ test("an MCP served both ways starts the Toolbox and the standalone server, prin
   const { code, stdout } = await dev(stack)
   expect(code).toBe(0)
   expect(stack.started.map(server => server.cwd.split("/").slice(-2).join("/"))).toEqual(["mcps/toolbox", "mcps/standalone"])
-  expect(lines(stdout()).filter(line => line.startsWith("ok")).map(line => line.split(/ +/)[1])).toEqual(["database", "toolbox", "standalone", "register", "access", "enable"])
+  expect(lines(stdout()).filter(line => line.startsWith("ok")).map(line => line.split(/ +/)[1])).toEqual(definitions.dev.steps.map(step => step.name))
   expect(stdout()).toContain("acme runs in the Toolbox at http://localhost:47400/mcp, as the tools acme_*.")
   expect(stdout()).toContain("acme runs at http://localhost:47510/acme/mcp")
   expect(stdout()).toContain("Ctrl-C stops the Toolbox and the standalone server; an edit to acme reloads them.")

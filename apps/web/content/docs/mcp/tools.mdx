@@ -5,7 +5,7 @@ description: "Define a read tool with @answerable/mcp: its fields, its example, 
 
 <include lang="ts" meta='title="mcps/example/src/tools/notes-list.ts"'>../../../../../mcps/example/src/tools/notes-list.ts#list</include>
 
-A read tool answers a question and changes nothing. Define it with `defineTool`: five fields are required and everything else has a default. `defineTool` checks the definition when the module loads, and returns it as frozen data. A tool that changes data is a [mutation](/docs/mcp/mutations). New here? [Build your first MCP](/docs/mcp/quickstart) first.
+A read tool answers a question and changes nothing. Define it with `defineTool`: five fields are required and everything else has a default. `defineTool` checks the definition when the module loads, and returns it as frozen data. A tool that changes data is a [mutation](/docs/mcp/mutations). New here? [Make an MCP](/docs/mcp/create) and [add a tool](/docs/mcp/add-a-tool) first.
 
 ## Fields
 
@@ -76,7 +76,7 @@ An MCP with a database defines its tools with the `defineTool` and `defineMutati
 - **Each call is its caller's.** The server runs every handler inside its call, and `callerOrganisation()` gives that call's organisation. `mcpDatabase` sets it on each connection a query borrows, so a table with the `organisationIsolation` policy, as every table `bun mcp` writes has, returns and accepts only that organisation's rows.
 - **A plain `defineTool` has no `db`.** Its context type has none, so `context.db` fails the typecheck.
 
-`bun mcp new` writes an MCP's `src/mcp.ts`, `src/db/schema.ts` and first migration, and `bun mcp add tool` adds the table a new domain needs: [Build your first MCP](/docs/mcp/quickstart).
+`bun mcp new` writes an MCP's `src/mcp.ts`, `src/db/schema.ts` and first migration, and `bun mcp add tool` adds the table a new domain needs: [Make an MCP](/docs/mcp/create), [Your MCP's database](/docs/mcp/database).
 
 ## Pagination
 

@@ -9,7 +9,7 @@ import { notesAdd } from "./tools/notes-add"
 //#region provider
 export const provider = defineProvider({
   id: "example",
-  description: "Your organisation's notes: list them a page at a time, and add one. The finished quickstart of the MCP docs.",
+  description: "Your organisation's notes: list them a page at a time, and add one. The finished example of the MCP docs.",
   version: "2026-10-25",
   database,
   tools: [

@@ -1,6 +1,7 @@
 // What every command of bun mcp receives, how it refuses, and how it prints: one line per step, then Next, or one JSON object with --json.
 import type { Readable, Writable } from "node:stream"
 import type * as clack from "@clack/prompts"
+import type { Definition } from "./definitions"
 
 /** The prompts a command asks in a terminal: @clack/prompts' own, so a test passes stand-ins. A cancelled prompt answers a symbol. */
 export type Prompts = Pick<typeof clack, "text" | "select" | "password">
@@ -133,21 +134,8 @@ export function finishing(steps: (Omit<Step, "fix"> & { redo: string })[]): Step
 /** Print `text` on stdout, unless the command answers in JSON. */
 export const say = (io: Io, json: boolean, text: string) => json || write(io.stdout, `${text}\n`)
 
-/** A flag of a command: a value's placeholder, `<…>`, for a flag that takes one, and what it means. */
-export type Flag = { value?: string; description: string }
-
 /** What a command was given: its positional arguments, and its flags, each a value or `true`. */
 export type Args = { positionals: string[]; flags: Record<string, string | true> }
 
-/** A command of bun mcp, as data: `bun mcp help` and the docs read its name, usage, summary, flags and example. */
-export type Command = {
-  name: string
-  usage: string
-  summary: string
-  flags: Record<string, Flag>
-  example: string
-  run(io: Io, args: Args): Promise<number>
-}
-
-/** Every command's `--json`. */
-export const jsonFlag: Flag = { description: "Print one JSON object: { ok, steps, next }, or { ok: false, error: { code, message, fix, problems: [{ code, message }] } }, with every answer refused in problems" }
+/** A command of bun mcp: its definition (definitions.ts), which `bun mcp help` and the docs read, and what runs it. */
+export type Command = Definition & { run(io: Io, args: Args): Promise<number> }

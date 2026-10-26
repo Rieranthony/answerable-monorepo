@@ -1,16 +1,13 @@
 // bun mcp db [mcp] generate|migrate: an MCP's migration for a change to its schema, or its local development schema provisioned and migrated.
 import { assertTablesInSchema, generateMigration, migrateLocal } from "../database"
-import { jsonFlag, Refusal, runSteps, type Command } from "../io"
+import { definitions } from "../definitions"
+import { Refusal, runSteps, type Command } from "../io"
 import { findRoot, resolveMcp } from "../workspace"
 
-const usage = "bun mcp db [mcp] generate|migrate [--name <change>] [--json]"
+const { usage } = definitions.db
 
 export const db: Command = {
-  name: "db",
-  usage,
-  summary: "generate: write the migration for a change to an MCP's src/db/schema.ts, without drizzle-kit's schema line. migrate: provision and migrate its local development schema",
-  flags: { name: { value: "<change>", description: "generate only: the migration's name, drizzle/<number>_<change>.sql; default: drizzle-kit's" }, json: jsonFlag },
-  example: "bun mcp db acme generate --name notes",
+  ...definitions.db,
   async run(io, { positionals, flags }) {
     const action = positionals.at(-1)
     if (positionals.length > 2 || (action !== "generate" && action !== "migrate")) {

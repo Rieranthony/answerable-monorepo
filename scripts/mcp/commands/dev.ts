@@ -4,17 +4,18 @@
 // access, then runs until Ctrl-C and stops what it started.
 import { join } from "node:path"
 import { findBySlug } from "../../../infra/ops/src/admin-api"
+import { definitions } from "../definitions"
+import { readSettings } from "../environment"
 import { scopesOf } from "../generate"
 import { cli, refusal, Refusal, runSteps, sh, type Command, type Io, type Problem, type Running, type Step } from "../io"
-import { listed } from "../rules"
-import { readSettings } from "../environment"
 import { local } from "../local"
 import { enableInToolbox, giveStandaloneAccess } from "../local-access"
 import { adminCall, createRegistrar, machineToken, registerStandalone } from "../local-id"
+import { listed } from "../rules"
 import { servers, startServer, type ServerName } from "../servers"
 import { declarations, findRoot, manifestOf, resolveMcp, type Declaration } from "../workspace"
 
-const usage = "bun mcp dev [mcp]"
+const { usage } = definitions.dev
 const servedBy: Record<Declaration["serve"], readonly ServerName[]> = { toolbox: ["toolbox"], standalone: ["standalone"], both: ["toolbox", "standalone"] }
 type Settings = Awaited<ReturnType<typeof readSettings>>["settings"]
 
@@ -44,11 +45,7 @@ async function preflight(io: Io, mcp: Declaration, settings: Settings, wanted: r
 }
 
 export const dev: Command = {
-  name: "dev",
-  usage,
-  summary: "Run an MCP on this machine, migrated, in the Toolbox or the standalone server as its serve says, with hot reload; register it in your local ID, give your organisation access, and print the claude mcp add command that connects Claude Code. It runs until Ctrl-C, which stops what it started. Needs bun mcp setup once",
-  flags: {},
-  example: "bun mcp dev acme",
+  ...definitions.dev,
   async run(io, { positionals }) {
     if (positionals.length > 1) throw new Refusal("unexpected-argument", `bun mcp dev takes one MCP; it was given ${positionals.join(", ")}`, usage)
     const root = findRoot(io.cwd)

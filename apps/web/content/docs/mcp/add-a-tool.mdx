@@ -1,0 +1,111 @@
+---
+title: Add a tool
+description: "Add a read tool or a change to an MCP with bun mcp add tool: how to name it, how to write a description the model can use, what a tool receives, how to test it and what to do when the command refuses."
+---
+
+```sh
+bun mcp add tool acme notes.add --mutation --description "Prepare a new note on a project; commit it to save it. Use notes.list first to avoid duplicates."
+```
+
+A tool is one thing an AI app can ask your MCP to do. This command writes the tool's file and its test, adds it to the MCP, adds the table it needs, writes the migration and the manifest, and checks the MCP. Leave out `--mutation` for a tool that only reads. From inside `mcps/acme`, leave out the MCP's name.
+
+Your tool gets a database and the caller's identity without any code from you: the database is linked to your MCP, and sign-in through Answerable ID is already done. [Its database](/docs/mcp/database), [its sign-in](/docs/mcp/sign-in).
+
+## What the command does
+
+<CliSteps command="add tool" />
+
+In a terminal, leave out `--description` and the tool's name and it asks for them, then asks whether the tool reads or changes. Without a terminal, give both, and `--mutation` for a change: when a name or a description is missing, the command it prints does not guess whether the tool reads or changes. It refuses before it writes anything, and says what to change. [Errors](#errors) lists the refusals.
+
+## Choose a name
+
+A tool's name says what the caller can do, from the caller's side. It has two parts, `<domain>.<operation>`: what it is about, and what it does.
+
+| Good | Not this | Why |
+| --- | --- | --- |
+| `notes.list`, `projects.search`, `rfis.create` | `sharepoint_query` | Never the vendor or the transport. The caller wants notes, not SharePoint |
+| `notes.add`, `notes.archive` | `manage_notes` | Never a switch that does one of several jobs. Make a tool for each job |
+
+- **Rule.** Each part is a lowercase letter, then up to 15 lowercase letters or digits.
+- **Unique in the MCP.** The command refuses a second tool of the same name, and names the file.
+- **What hosts call it.** `notes_list`, with an underscore for the dot. In the Toolbox the MCP's name comes first: `acme_notes_list`.
+- **It never changes.** People grant access to a tool by its name, so do not rename one that has shipped. [Versions and deprecation](/docs/mcp/tools#versions-and-deprecation) says how to retire one.
+
+## Write a description the model can use
+
+The model reads the description, and nothing else of your code, to choose a tool. Say what it does, when to use it, what it cannot do, and what the ids mean. Write 40 to 1,000 characters.
+
+| | Example |
+| --- | --- |
+| **Good** | `List the notes of a project, newest first, 20 per page. Use projects.search first to find the project id.` |
+| **Bad** | `Gets notes.` |
+
+The good one says what comes back, in what order, how many, and what to call first. The bad one says nothing the name did not. A change's description must also say that it prepares: use the word `prepare` or `intent`, as the command's example does. Describe every field of the input and the output with `.describe("…")` as well: hosts show those words to the model.
+
+## Read or change
+
+A **read** answers a question and changes nothing. A **change** happens in two steps, so a person can see what will happen first. **Prepare** works out the change and returns a preview, and changes nothing. **Commit** applies exactly what was prepared, with a one-time token the preview came with.
+
+A read, `bun mcp add tool acme notes.list --description "…"`, writes this:
+
+<include lang="ts" meta='title="mcps/example/src/tools/notes-list.ts"'>../../../../../mcps/example/src/tools/notes-list.ts#list</include>
+
+A change, with `--mutation`, writes this:
+
+<include lang="ts" meta='title="mcps/example/src/tools/notes-add.ts"'>../../../../../mcps/example/src/tools/notes-add.ts#add</include>
+
+Each file opens with the same guidance as the first tool's, which [Make an MCP](/docs/mcp/create#what-it-writes) shows. Edit the generated tool into the real one: its input, its output and its table. [Read tools](/docs/mcp/tools) and [Mutations](/docs/mcp/mutations) cover every field and rule.
+
+## What every tool receives
+
+A tool's `execute`, or a change's `prepare` and `commit`, receives the checked input and a context with the caller and the MCP's database. There is nothing to create and nothing to wire.
+
+<AutoTypeTable path="../../packages/mcp/src/definitions.ts" name="ToolContext" />
+
+`db` is the MCP's own database, typed by `src/db/schema.ts`:
+
+<AutoTypeTable path="../../packages/mcp/src/database.ts" name="DatabaseFields" type="Pick<DatabaseContext<Record<string, unknown>>, 'db'>" />
+
+| Field | Where it comes from |
+| --- | --- |
+| `person` and `organisation`: the ids | The access token, checked on every call |
+| `person` and `organisation`: names, email and groups | Answerable ID, read for you and kept for 60 seconds. [The caller](/docs/mcp/tools#the-caller) |
+| `client` | The AI app the person signed in with, from the token |
+| `db` | Made once for the MCP when the server starts. Each query borrows a connection and returns it |
+
+<include lang="ts" meta='title="mcps/example/src/docs/caller.ts"'>../../../../../mcps/example/src/docs/caller.ts</include>
+
+**Do not filter by organisation.** Postgres limits every query on your tables to the caller's organisation, so another organisation's rows are never returned, even by a query that forgets. A change sets `organisation_id` from `organisation.id` when it adds a row, as `notes.add` does. [Why, and the one exception](/docs/mcp/database#add-a-table).
+
+## Test it
+
+`bun mcp add tool` writes a test beside the tool. It adds rows for two organisations, calls the tool as each of them, and checks that each sees only its own. A change's test prepares, commits with the tool the intent names, and checks the row:
+
+<include lang="ts" meta='title="mcps/example/src/tools/notes-list.test.ts"'>../../../../../mcps/example/src/tools/notes-list.test.ts</include>
+
+`src/provider.test.ts` runs the conformance kit over every tool, calling each with its `example` input:
+
+<include lang="ts" meta='title="mcps/example/src/provider.test.ts"'>../../../../../mcps/example/src/provider.test.ts</include>
+
+```sh
+bun mcp check acme
+```
+
+The tests need the development Postgres: each MCP's tests run against its own schema in `answerable_mcps_test`. [Test an MCP](/docs/mcp/testing) covers `createTestMcp`, every check and what each failure means.
+
+## By hand
+
+`bun mcp add tool` edits files that `bun mcp new` wrote. For an MCP that lacks one, it refuses and names what is missing. Add the tool yourself, in this order:
+
+1. **The tool's file,** `src/tools/<domain>-<operation>.ts`, importing `defineTool` or `defineMutation` from `../mcp`, and its test beside it.
+2. **`src/provider.ts`.** Import the tool above the first `// bun mcp: tools` line and list it above the second.
+3. **`src/db/schema.ts`.** Add the table, with `organisation_id` and `organisationIsolation(...)`, as [Your MCP's database](/docs/mcp/database#add-a-table) shows.
+4. **Then run** `bun mcp db acme generate`, and `bun mcp check acme`, which rewrites the manifest.
+
+## Errors
+
+A refusal exits with code 2 and writes nothing. A step that fails exits with code 1 and leaves what it wrote. [The bun mcp command](/docs/mcp/cli#errors) lists every error.
+
+<CliErrors ids={["mcp-required", "mcp-not-found", "not-made-by-new", "missing-tool", "missing-description", "invalid-tool-name", "tool-name-reserved", "tool-name-imported", "tool-exists", "invalid-tool-description", "mutation-description", "unexpected-argument", "check-failed"]} />
+
+A conformance test that fails, such as `list_paginates`, is not a refusal of the command: [Test an MCP](/docs/mcp/testing#errors) says what to change for each message.

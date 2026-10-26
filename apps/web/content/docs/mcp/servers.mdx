@@ -5,7 +5,7 @@ description: "Group tools in a provider and serve it with createMcpServer: its d
 
 <include lang="ts" meta='title="mcps/standalone/src/standalone.ts"'>../../../../../mcps/standalone/src/standalone.ts#servers</include>
 
-A **provider** is a named, dated set of tools, prompts and resources. A **server** serves one provider over HTTP: it signs callers in through Answerable ID, lists what their token allows and runs their calls. An MCP made by [`bun mcp new`](#make-an-mcp) has a provider, and its `mcp.json` says where it runs: [the Toolbox](/docs/toolbox) mounts it, [the standalone server](#the-standalone-server) serves it with `createMcpServer` on a path of its own, as above, or both do. `mcps/e2e` runs both ways.
+A **provider** is a named, dated set of tools, prompts and resources. A **server** serves one provider over HTTP: it signs callers in through Answerable ID, lists what their token allows and runs their calls. An MCP made by [`bun mcp new`](/docs/mcp/create) has a provider, and its `mcp.json` says where it runs: [the Toolbox](/docs/toolbox) mounts it, [the standalone server](#the-standalone-server) serves it with `createMcpServer` on a path of its own, as above, or both do. `mcps/e2e` runs both ways.
 
 ## The provider
 
@@ -76,19 +76,7 @@ Every server advertises `tools.listChanged: true`. `toolsChanged()` sends `notif
 bun mcp new acme --description "Notes for construction projects: list, read and add notes on a project." --serve toolbox
 ```
 
-Run it from the repository root. It refuses a name that is not a [provider id](#the-provider), a reserved or retired name and one a directory of `mcps/` has, before it writes anything; then it writes `mcps/acme`, installs it, creates its local schema, writes its first migration and its manifest, and checks it. [Build your first MCP](/docs/mcp/quickstart) walks through it.
-
-| File | Holds |
-| --- | --- |
-| `mcp.json` | Where it runs (`serve`: `toolbox`, `standalone` or `both`) and its database mode (`shared` or `own`) |
-| `package.json` | The workspace `@answerable/mcp-<name>`, its provider exported as `./provider`, and its versions pinned to the repository's |
-| `tsconfig.json`, `eslint.config.mjs`, `bunfig.toml` | The compiler and lint settings, and the gate of 100% line and function coverage over `src` |
-| `src/mcp.ts` | `defineTool` and `defineMutation` bound to its database |
-| `src/provider.ts` | `defineProvider` with its description, version, database and tools |
-| `src/tools/` | One file per tool, each with its test; the first is `<name>.status` unless `--tool` names another |
-| `src/db/schema.ts` | Its tables, in schema `<name>` |
-| `src/provider.test.ts` | The conformance kit |
-| `README.md` | What it is, where it runs, its commands and the guides |
+[Make an MCP](/docs/mcp/create) walks through the questions and the files it writes, and [the bun mcp command](/docs/mcp/cli#bun-mcp-new) lists every flag.
 
 It writes no server. `bun mcp` generates the list each server reads: `mcps/toolbox/src/mounted.generated.ts`, every MCP whose `serve` is `toolbox` or `both`, which the Toolbox mounts, and `mcps/standalone/src/served.generated.ts`, every one whose `serve` is `standalone` or `both`, which the standalone server serves; and each server's dependencies on those workspaces. Never edit them by hand: change `serve` in `mcp.json` and run `bun mcp check <name>`. `bun run mcp:test` runs every MCP under `mcps/`.
 

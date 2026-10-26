@@ -21,7 +21,7 @@ const readGuidance = (name: string, tool: string) => `${naming(name, tool)}
 // input and output: Zod objects. Describe every field (.describe("…")): hosts show it to the model.
 //   A list takes limit and cursor and returns items, next_cursor and has_more (the conformance kit checks it).
 //
-// execute: gets the checked input and the caller: person, organisation and db. Row-level security (D19) limits every query to
+// execute: gets the checked input and the caller: person, organisation and db. Row-level security limits every query to
 //   the caller's organisation, so no query filters on it by hand. Throw ToolError for a failure the caller can fix.
 `
 
@@ -39,7 +39,7 @@ const mutationGuidance = (name: string, tool: string) => `${naming(name, tool)}
 // prepare: computes the preview and changes nothing. It checks the input, reads nothing that changes, and returns the summary the
 //   person confirms, naming their organisation.
 //
-// commit: applies exactly what was prepared, from plan. Row-level security (D19) limits it to the caller's organisation, so it
+// commit: applies exactly what was prepared, from plan. Row-level security limits it to the caller's organisation, so it
 //   sets organisation_id from organisation.id and filters on nothing by hand. Throw ToolError for a failure the caller can fix.
 `
 

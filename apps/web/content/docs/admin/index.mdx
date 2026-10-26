@@ -108,6 +108,8 @@ Each write is a prepare tool: it changes nothing and returns an intent, which `a
 
 ### A standalone MCP
 
+[Your MCP's sign-in](/docs/mcp/sign-in#what-staff-do-for-each-organisation) says why each step is needed and what the person then sees.
+
 A `standalone` or `both` MCP is its own resource, `https://mcp.<zone>/<name>/mcp`, which the deploy's register Job puts in ID, on every deploy, with its Claude Code client, `claude-code-<name>`, and their link. Nobody can sign in to it until staff give their organisation access:
 
 1. `standalone_enable` with the organisation and the MCP's name. Its preview lists each row it would make; commit it.

@@ -1,0 +1,103 @@
+---
+title: Your MCP's sign-in
+description: "Every MCP is signed in through Answerable ID automatically: what ID checks on every call, who sees which tool in the Toolbox and on its own URL, the two steps staff take for each organisation, what person and organisation give your tool, and how to connect Claude Code."
+---
+
+```sh
+claude mcp add --transport http answerable-toolbox https://toolbox.answerable-staging.uk/mcp --client-id claude-code-toolbox --callback-port 47700
+```
+
+**Sign-in is done for you.** You write no login page, no token check and no accounts. Answerable ID signs the person in with their own organisation's directory, and every call to your MCP arrives with who is calling and which organisation they act for, checked. The command above connects Claude Code to the Toolbox on staging. Then `/mcp`, your connection, **Authenticate**.
+
+What you do not get for free is a decision about who may use your MCP. Shipping makes it reachable. Answerable staff then decide, for each organisation, whether it may use the MCP, and for each person, which tools. [Staff steps](#what-staff-do-for-each-organisation) shows the two commands.
+
+## What Answerable ID checks on every call
+
+1. **The person signs in** with their organisation's directory, at Answerable ID. Your MCP never sees a password.
+2. **The AI app gets a token for your MCP's own URL.** The token says who the person is, which organisation they chose, which AI app they use and which scopes they hold. A token for another MCP is refused with `401`.
+3. **Your server checks the token on every call,** against Answerable ID's published keys: its issuer, its audience (your MCP's URL), its type, its expiry, and its person and organisation. It does not call Answerable ID for this.
+4. **It lists only what the person may use.** A tool they may not use is absent from the list, and calling it answers as if it did not exist.
+5. **A change commits only for the person who prepared it,** with its one-time token, before it expires.
+
+None of this is code of yours. [How Answerable ID works](/docs/id) explains the token, and [Providers and servers](/docs/mcp/servers#the-server) what the server does with it.
+
+**One limit.** A server checks tokens without calling Answerable ID, so a token already issued to a disabled organisation works until it expires. Refresh stops at once. Tokens for an MCP last 900 seconds.
+
+## Who sees which tool
+
+| Where the MCP runs | A person sees a tool when | Staff decide this with |
+| --- | --- | --- |
+| **In the Toolbox** (`toolbox` or `both`) | Their organisation has the MCP enabled, and one of their **grant strings** covers the tool | `toolbox_enable`, then `access_grant` |
+| **On its own URL** (`standalone` or `both`) | Their token carries the scope the tool needs: `acme:read` for a read and `acme:write` for a change | `standalone_enable`, then `access_grant` |
+
+A **grant string** names what a person may use in the Toolbox: the whole MCP, one domain of it, or one tool. For `mcps/example`:
+
+<GrantStrings workspace="example" />
+
+An MCP that runs `both` follows each rule on its own path.
+
+## What staff do for each organisation
+
+These are the only manual steps, and they are deliberate: a business decision, not part of shipping. Staff take them in [the admin MCP](/docs/admin), once the MCP has shipped to the environment. `admin` is the least role that may. Locally, `bun mcp dev` does both for your own organisation.
+
+**For an MCP in the Toolbox:**
+
+1. **`toolbox_enable`** for the organisation, with `providers` `["acme"]` and `hostClientIds` `["claude-code-toolbox"]`. It lets the organisation use the MCP at all, and teaches Answerable ID to accept its grant strings.
+2. **`access_grant`** to the organisation, a group or a person, on the Toolbox's resource, `https://toolbox.<zone>/mcp`, with `scopes` `["acme"]`, or `["acme/notes"]` or `["acme/notes.list"]` for less. In the Toolbox the entries of `scopes` are grant strings.
+
+**For an MCP on its own URL:**
+
+1. **`standalone_enable`** for the organisation, with `mcp` `"acme"`. It lets the organisation sign in to the MCP.
+2. **`access_grant`** of the MCP's scopes, `["acme:read", "acme:write"]`, on its resource, `https://mcp.<zone>/acme/mcp`, to the organisation, a group or a person, with `clientId` `claude-code-acme`. Or pass `everyone: true` to step 1, which grants every scope to the whole organisation in the same change.
+
+**Why `clientId`.** Answerable ID puts a scope into a person's token only for the AI app they sign in with, so a grant must name the app: `claude-code-<name>`. A grant without it gives nothing, and `access_grant` refuses a standalone MCP's resource without it.
+
+In words, to the admin MCP in Claude Code:
+
+```text
+Enable acme in the Toolbox for newco from claude-code-toolbox, and grant everyone in newco acme on the Toolbox.
+```
+
+Each change is prepared, shown to the person for confirmation and then committed. [The admin MCP](/docs/admin#a-standalone-mcp) has every field and every error. Before an organisation is enabled, its people see `Access is unavailable for this organisation` when they sign in.
+
+## What your tool receives
+
+Your tool receives `person` and `organisation` in its context, and nothing to ask for them:
+
+| Field | Where it comes from |
+| --- | --- |
+| `person.id`, `person.membershipId`, `organisation.id`, `client.id` | The token, checked on every call |
+| `person.name`, `person.email`, `person.groups`, `organisation.name`, `organisation.slug` | Answerable ID's admin API, read for you before your code runs and kept for 60 seconds. The Toolbox and the standalone server each have a machine client of their own for this |
+
+If Answerable ID cannot be read, the call answers `UPSTREAM_UNAVAILABLE` and your code does not run. A person whose membership is no longer in force is refused with `PERMISSION_DENIED`. [The caller](/docs/mcp/tools#the-caller) has the fields and an example, and [Add a tool](/docs/mcp/add-a-tool#what-every-tool-receives) the whole context.
+
+## Connect Claude Code
+
+**On your machine,** `bun mcp dev acme` registers everything and prints the command ([Make an MCP](/docs/mcp/create#run-it-and-try-it-in-claude-code)). **In staging or production,** the deploy's register Job registers the Toolbox and each standalone MCP, with a Claude Code client for each, and ends its log with the commands. In staging:
+
+```sh
+claude mcp add --transport http answerable-toolbox https://toolbox.answerable-staging.uk/mcp --client-id claude-code-toolbox --callback-port 47700
+claude mcp add --transport http acme https://mcp.answerable-staging.uk/acme/mcp --client-id claude-code-acme --callback-port 47700
+```
+
+The first reaches an MCP that runs in the Toolbox, the second one that runs on its own URL. In production the hosts are `toolbox.answerable.org` and `mcp.answerable.org`. Open Claude Code, run `/mcp`, choose the connection and **Authenticate**, then sign in with your work account. If the staff steps above are done for your organisation, Claude lists the tools you may use. [Connect Claude Code](/docs/mcp/claude-code) has the registration by hand and every error.
+
+## Not yet
+
+- **A host that registers itself.** Claude Code and Claude.ai could register as clients when an authorisation server supports dynamic registration or client ID metadata documents. Answerable ID supports neither: Not yet. Trigger: a host that cannot be registered ahead of time.
+- **Claude.ai and Claude Desktop connectors.** They connect from Anthropic's servers: Not yet tested.
+- **Administration by an organisation's own administrators.** Staff take the steps above for every organisation: Not yet.
+
+## Errors
+
+| You see | Meaning | What to do |
+| --- | --- | --- |
+| `Access is unavailable for this organisation. Sign in again or ask its administrator to check your access.` | The organisation has not been enabled for the MCP, or has no entitlement for your AI app | Ask staff for the two steps above |
+| `Tool <name> not found` | No grant string covers the tool, the MCP is not enabled for your organisation, or the tool is disabled. On its own URL: your token lacks the scope | In the Toolbox, ask for `access_grant`. On its own URL, ask for the scopes with `clientId`, then choose **Authenticate** again |
+| `invalid_target` | The MCP's resource is not registered, or is not linked to your AI app, or the URL is written differently | A standalone MCP is registered by the deploy that ships it. The Toolbox links an AI app when staff run `toolbox_enable`. Use the URL exactly as registered |
+| `invalid_redirect` | `--callback-port` differs from the port registered for the client | Use `--callback-port 47700`, as the commands above do |
+| `401` after signing in | The server's issuer or resource differs from Answerable ID's | Use the exact URL the register Job printed |
+| `INVALID_INPUT`: `<resource> is a standalone MCP's resource, and Answerable ID counts an entitlement…` | `access_grant` named a standalone MCP's resource without `clientId` | Prepare again with `clientId` `claude-code-<name>`, or use `standalone_enable` with `everyone: true` |
+| `PRECONDITION_FAILED`: `Organisation <name> can already sign in to <mcp>…` | `standalone_enable` found every row already in place | Nothing is needed. Grant the scopes with `access_grant` |
+
+[The admin MCP's errors](/docs/admin#errors), [Connect Claude Code](/docs/mcp/claude-code#errors) and [The Toolbox's errors](/docs/toolbox#errors) cover the rest.

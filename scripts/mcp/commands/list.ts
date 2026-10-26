@@ -1,6 +1,7 @@
 // bun mcp list: one line per MCP, sorted by name: where it runs, its database mode, its tools, what it is for and its local URL, then its
 // staging and production URLs.
 import { hostsFor } from "../../../infra/pipeline/src/environments"
+import { definitions } from "../definitions"
 import { Refusal, type Command } from "../io"
 import { local } from "../local"
 import { declarations, findRoot, manifestOf, type Declaration } from "../workspace"
@@ -20,11 +21,7 @@ const deployed = (environment: "staging" | "production") => {
 const firstSentence = (text: string) => text.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? text
 
 export const list: Command = {
-  name: "list",
-  usage: "bun mcp list [--json]",
-  summary: "Every MCP with an mcp.json, sorted by name: where it runs, its database mode, its tools, the first sentence of its description and its local URL, then its staging and production URLs",
-  flags: { json: { description: "Print one JSON object: { ok, mcps: [{ name, serve, database, description, tools, urls: { local, staging, production } }] }" } },
-  example: "bun mcp list --json",
+  ...definitions.list,
   async run(io, { positionals, flags }) {
     if (positionals.length) throw new Refusal("unexpected-argument", `bun mcp list takes no argument; it was given ${positionals.join(", ")}`, "bun mcp list")
     const root = findRoot(io.cwd)

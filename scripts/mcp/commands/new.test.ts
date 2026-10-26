@@ -49,7 +49,7 @@ test("three wrong answers are refused at once, a line each in the order of the q
   const { code, stderr, wrote } = await run(["Acme", "--description", "x", "--serve", "cloud"])
   expect([code, wrote]).toEqual([2, []])
   expect(stderr()).toBe(`MCP name "Acme" must be a lowercase letter then up to 11 lowercase letters or digits, for example acme
-An MCP's description is 1 characters; write 40 to 1,000 saying what it does, when to use it and its limits
+An MCP's description is 1 character; write 40 to 1,000 saying what it does, when to use it and its limits
 --serve must be toolbox, standalone or both, not "cloud"
 
   bun mcp new <name> --description "<what the MCP is for, 40 to 1,000 characters>" --serve <toolbox|standalone|both>
@@ -57,7 +57,7 @@ An MCP's description is 1 characters; write 40 to 1,000 saying what it does, whe
   const json = await run(["Acme", "--description", "x", "--serve", "cloud", "--json"])
   const problems = [
     { code: "invalid-name", message: 'MCP name "Acme" must be a lowercase letter then up to 11 lowercase letters or digits, for example acme' },
-    { code: "invalid-description", message: "An MCP's description is 1 characters; write 40 to 1,000 saying what it does, when to use it and its limits" },
+    { code: "invalid-description", message: "An MCP's description is 1 character; write 40 to 1,000 saying what it does, when to use it and its limits" },
     { code: "invalid-serve", message: '--serve must be toolbox, standalone or both, not "cloud"' },
   ]
   expect(JSON.parse(json.stdout())).toEqual({
