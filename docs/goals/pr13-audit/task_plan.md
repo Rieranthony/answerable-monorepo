@@ -88,13 +88,14 @@ Before M9, it held 14 commits, 488 files, +22,726 and −3,494 lines. [`findings
 |---|---|
 | 1. Plan (this file, `findings.md`, `progress.md`) | complete |
 | 2. M9 lands; baseline counts and gate timings | complete |
-| 3. Six audits | pending |
-| 4. Verification | pending |
-| 5. Report and decisions | pending |
-| 6. The owner decides | pending |
+| 3. Six audits | complete |
+| 4. Verification | complete |
+| 5. Report and decisions | report published; decisions asked |
+| 6. The owner decides | waiting |
 | 7. Changes, gates, the final pass | pending |
 
 ## Errors
 
 | Error | Attempt | Resolution |
 |---|---|---|
+| The harness refused the auditors' `report.md` files ("Subagents should return findings as text") | 1 | Each report was extracted from the agent's transcript into `pr13-audit/<letter>/report.md` with `pr13-audit/save.py` |
