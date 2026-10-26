@@ -58,7 +58,7 @@ test("bootstrap fetches the database's authority on first use, writes it to post
   for (const connection of connections) expect(connection).toMatchObject({ ca: ROOT, mode: 0o600 })
   expect(existsSync(urls[0]!.searchParams.get("sslrootcert")!)).toBe(false)
   expect(statements.some(statement => statement.startsWith('create database "answerable_id"'))).toBe(true)
-  expect(statements).toContain('create schema if not exists "e2e" authorization "mcp_e2e_owner"')
+  expect(statements).toContain('create schema if not exists "e2e" authorization "answerable_mcps_migrator"')
   expect(statements).toContain('create schema if not exists "acme" authorization "answerable_mcp_acme_owner"')
   expect(kube.secrets["mcp-acme-database"]!.DATABASE_URL).toStartWith("postgres://answerable_mcp_acme_runtime:")
   // The services' URLs name the address of the administrative URL and the authority where the chart mounts it.

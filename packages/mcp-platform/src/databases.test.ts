@@ -11,8 +11,8 @@ let empty: Awaited<ReturnType<typeof testSharedMcps>>
 let own: Awaited<ReturnType<typeof testOwnMcp>>
 beforeAll(async () => {
   ;[shared, empty, own] = await Promise.all([
-    testSharedMcps({ name: "answerable_mcp_platform_test", prefix: "mcp_plt", mcps: [pltfix] }),
-    testSharedMcps({ name: "answerable_mcp_platform_test_empty", prefix: "mcp_plte", mcps: [] }),
+    testSharedMcps({ name: "answerable_mcp_platform_test", mcps: [pltfix] }),
+    testSharedMcps({ name: "answerable_mcp_platform_test_empty", mcps: [] }),
     testOwnMcp({ name: "answerable_mcp_platform_test_own", provider: pltfix }),
   ])
 })
@@ -30,8 +30,8 @@ async function counts(mount: Mount) {
     await mcp.close()
   }
 }
-async function opened(declared: Declared[], sharedUrl: string, prefix: string) {
-  const mcps = mcpDatabases(declared, { shared: sharedUrl, own: { PLTFIX_DATABASE_URL: own.url }, prefix })
+async function opened(declared: Declared[], sharedUrl: string) {
+  const mcps = mcpDatabases(declared, { shared: sharedUrl, own: { PLTFIX_DATABASE_URL: own.url } })
   try {
     await mcps.assert()
     return { counts: await counts(mcps.mount[0]!), pools: Object.keys(mcps.pools) }
@@ -40,20 +40,21 @@ async function opened(declared: Declared[], sharedUrl: string, prefix: string) {
   }
 }
 
-test("a shared MCP's db borrows from the one pool to the shared database, as its runtime role, limited to the caller's organisation", async () => {
-  const { counts: [first, second], pools } = await opened([{ provider: pltfix, serve: "toolbox", database: "shared" }], shared.url, "mcp_plt")
-  expect([first, second]).toEqual([{ notes: 1, role: "mcp_plt_pltfix" }, { notes: 0, role: "mcp_plt_pltfix" }])
+test("a shared MCP's db borrows from the one pool to the shared database, as the serving login, limited to the caller's organisation", async () => {
+  const { counts: [first, second], pools } = await opened([{ provider: pltfix, serve: "toolbox", database: "shared" }], shared.url)
+  expect([first!.notes, second!.notes]).toEqual([1, 0])
+  expect([first!.role, second!.role]).toEqual([new URL(shared.url).username, new URL(shared.url).username])
   expect(pools).toEqual(["mcps"])
 })
 
 test("an own MCP's db borrows from a pool of its own, as its own runtime login, with the same isolation", async () => {
-  const { counts: [first, second], pools } = await opened([{ provider: pltfix, serve: "toolbox", database: "own", variable: "PLTFIX_DATABASE_URL" }], empty.url, "mcp_plte")
+  const { counts: [first, second], pools } = await opened([{ provider: pltfix, serve: "toolbox", database: "own", variable: "PLTFIX_DATABASE_URL" }], empty.url)
   expect([first!.notes, second!.notes]).toEqual([1, 0])
-  expect(first!.role).toStartWith("mcp_test_login_")
+  expect(first!.role).toBe(new URL(own.url).username)
   expect(pools).toEqual(["mcps", "pltfix"])
 })
 
-test("a provider without a database is mounted with no db; an own MCP without its URL is refused; a serving login missing a role, or an own MCP's login that is not its runtime login, does not serve", async () => {
+test("a provider without a database is mounted with no db; an own MCP without its URL is refused; a login without USAGE on an MCP's schema, shared or own, does not serve", async () => {
   const plain = defineProvider({
     id: "plain", description: "A fixture MCP with no database, which its server mounts with no db.", version: "2026-10-25",
     tools: [defineTool({ name: "plain.ping", description: "Answer nothing; a fixture MCP with no database, mounted with no db.", input: z.object({}), output: z.object({}), async execute() { return {} } })],
@@ -62,17 +63,17 @@ test("a provider without a database is mounted with no db; an own MCP without it
   expect(without.mount).toEqual([{ provider: plain, serve: "standalone" }])
   await without.close()
   expect(() => mcpDatabases([{ provider: pltfix, serve: "toolbox", database: "own", variable: "PLTFIX_DATABASE_URL" }], { shared: empty.url, own: {} })).toThrow("Set PLTFIX_DATABASE_URL to the database of pltfix, as its runtime login")
-  const missing = mcpDatabases([{ provider: pltfix, serve: "toolbox", database: "shared" }], { shared: empty.url, own: {}, prefix: "mcp_plt" })
+  const missing = mcpDatabases([{ provider: pltfix, serve: "toolbox", database: "shared" }], { shared: empty.url, own: {} })
   try {
-    await expect(missing.assert()).rejects.toThrow("is not a member of mcp_plt_pltfix")
+    await expect(missing.assert()).rejects.toThrow("may not serve MCPs: lacks USAGE on schema pltfix")
   } finally {
     await missing.close()
   }
-  // The shared database's serving login, named as the own MCP's: it takes pltfix's role rather than holding USAGE on its schema itself.
-  const borrowed = mcpDatabases([{ provider: pltfix, serve: "toolbox", database: "own", variable: "PLTFIX_DATABASE_URL" }], { shared: empty.url, own: { PLTFIX_DATABASE_URL: shared.url }, prefix: "mcp_plte" })
+  // The empty shared database's serving login, named as the own MCP's: its database has no schema pltfix.
+  const elsewhere = mcpDatabases([{ provider: pltfix, serve: "toolbox", database: "own", variable: "PLTFIX_DATABASE_URL" }], { shared: shared.url, own: { PLTFIX_DATABASE_URL: empty.url } })
   try {
-    await expect(borrowed.assert()).rejects.toThrow(/may not serve the own MCP pltfix: is a member of mcp_plt_pltfix; lacks USAGE on schema pltfix/)
+    await expect(elsewhere.assert()).rejects.toThrow("may not serve MCPs: lacks USAGE on schema pltfix")
   } finally {
-    await borrowed.close()
+    await elsewhere.close()
   }
 })

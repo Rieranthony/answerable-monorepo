@@ -58,9 +58,10 @@ async function connected(url: URL, work: (client: Client) => Promise<unknown>) {
 
 /**
  * Provision and migrate the MCP's local development schema, as the deployment does: the local databases first when missing, then, shared, its
- * schema and roles in `answerable_mcps`, or, own, its database `answerable_mcp_<name>` and its two logins, with the development password.
- * The grants are those `src/db/grants.ts` exports as `grants`, else every table read and written. The admin URL is the root `.env`'s, wherever
- * it runs (`readSettings`). What it did, in words.
+ * schema in `answerable_mcps`, provisioned as the administrator and migrated as the migrator login, granting the Toolbox's serving login; or,
+ * own, its database `answerable_mcp_<name>` and its two logins, migrated as its owner login, granting its runtime login. The logins have the
+ * development password. The grants are those `src/db/grants.ts` exports as `grants`, else every table read and written. The admin URL is the root
+ * `.env`'s, wherever it runs (`readSettings`). What it did, in words.
  */
 export async function migrateLocal(root: string, { name, database }: Declaration): Promise<string> {
   const admin = new URL((await readSettings(root)).settings.MCPS_DATABASE_ADMIN_URL)
@@ -73,11 +74,12 @@ export async function migrateLocal(root: string, { name, database }: Declaration
   const grantsFile = join(dir, "src/db/grants.ts")
   const grants = existsSync(grantsFile) ? ((await import(grantsFile)) as { grants?: readonly Grant[] }).grants : undefined
   const done = `${migrations ? "migrated" : "provisioned; no migration yet"}${grants ? ", with src/db/grants.ts" : ""}`
+  // `admin`'s server and database as `login`, with the development password.
+  const as = (login: string, pathname = admin.pathname) => Object.assign(new URL(admin), { username: login, password: "answerable", pathname })
   if (database === "shared") {
-    await connected(admin, async client => {
-      await provisionMcps(sqlOf(client), { mcps: [{ name }], logins: sharedMcps.logins })
-      if (migrations) await migrateMcp({ client, name, folder, mode: "shared", grants })
-    })
+    const { migrator, toolbox } = sharedMcps.logins
+    await connected(admin, client => provisionMcps(sqlOf(client), { mcps: [{ name }], logins: sharedMcps.logins }))
+    if (migrations) await connected(as(migrator), client => migrateMcp({ client, name, folder, serving: toolbox, grants }))
     return `schema ${name} in ${admin.pathname.slice(1)}: ${done}`
   }
   const { database: own, owner, runtime } = ownMcpDatabase(name)
@@ -88,11 +90,9 @@ export async function migrateLocal(root: string, { name, database }: Declaration
     if (!(await client.query("select 1 from pg_database where datname = $1", [own])).rowCount) await client.query(`create database ${own} owner ${owner}`)
     await client.query(`revoke all on database ${own} from public; grant connect on database ${own} to ${owner}, ${runtime}`)
   })
-  const asOwner = new URL(cluster)
-  Object.assign(asOwner, { username: owner, password: "answerable", pathname: `/${own}` })
-  await connected(asOwner, async client => {
+  await connected(as(owner, `/${own}`), async client => {
     await provisionOwnMcp(sqlOf(client), { name, owner, runtime })
-    if (migrations) await migrateMcp({ client, name, folder, mode: "own", runtime, grants })
+    if (migrations) await migrateMcp({ client, name, folder, serving: runtime, grants })
   })
   return `schema ${name} in ${own}: ${done}`
 }

@@ -10,7 +10,7 @@ import { refusalOf, testDatabase, testMcpDatabase } from "./testing"
 
 const admin = new Pool({ connectionString: mcpsUrl, max: 1 })
 afterAll(async () => {
-  // The helper never drops an MCP's roles; this suite's fixtures are its own to remove.
+  // The helper leaves an MCP's schema for its next run to reset; this suite's fixtures are its own to remove.
   await forget(admin, "mpgfixa", "mpgfixb")
   await admin.end()
 })
@@ -43,7 +43,7 @@ test("two MCPs' suites run at once, each in its own schema as a login of its own
   expect(await first.asOrganisation(id, async () => await first.db.select({ name: projects.name }).from(projects))).toEqual([{ name: "Tower" }])
   expect(await second.asOrganisation(crypto.randomUUID(), async () => await second.db.select().from(secrets))).toEqual([])
   const [a, b] = await Promise.all([first, second].map(async suite => (await suite.asOrganisation(id, async () => await suite.db.execute(who))).rows[0]!))
-  expect([a!.role, b!.role, a!.organisation]).toEqual(["mcp_test_mpgfixa", "mcp_test_mpgfixb", id])
+  expect([a!.role, b!.role, a!.organisation]).toEqual([a!.login, b!.login, id])
   expect([a!.login, b!.login].every(login => String(login).startsWith("mcp_test_login_"))).toBe(true)
   expect(a!.login).not.toBe(b!.login)
   await Promise.all([first.close(), second.close()])

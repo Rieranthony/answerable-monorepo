@@ -88,3 +88,60 @@
     - knip clean;
     - `infra:check` passed.
   - **The kind stack** runs in CI on the push, on a clean runner.
+- **CI on R2 (c9834a88):** passed.
+  - `containers`, the kind stack: 4 min 2 s.
+  - `validate`: 9 min 51 s. It covers typecheck, lint, build, web, `mcp:test`, the acceptance and ID.
+  - `infra-check`: passed.
+
+  So the kind stack proves D-1 on a clean runner.
+- **R3, grants instead of per-MCP roles (D-3),** by Opus.
+  - **Provisioning:** each MCP gets a schema owned by the migrator, and `USAGE` for the Toolbox's login. It makes no role. The role lock stays, because concurrent grants on one database fail with "tuple concurrently updated" (measured).
+  - **Migration:** drizzle's own migrator runs as the migrator login, with the journal in the MCP's schema. After each migration, the serving login gets DML on the MCP's tables and every other privilege is revoked.
+  - **Deleted:**
+    - the hand-written loop and the scanner (B3);
+    - `role-switching.ts` and `check`'s scan;
+    - the role prefixes and `TOOLBOX_MCPS_ROLE_PREFIX`;
+    - the reset on release (B6).
+  - **The serving-login check** refuses:
+    - any attribute beyond `LOGIN`;
+    - any membership;
+    - anything owned;
+    - `CREATE` on a schema;
+    - `CREATE` or `TEMPORARY` on the database;
+    - a missing `USAGE`.
+
+    `assertOwnLogin` is merged into it.
+  - **Row-level security** is proved again: a serving login that owns nothing sees only its organisation's rows, and none with the setting reset.
+  - **The 200-MCP benchmark,** against M9:
+
+    | What | R3 | M9 |
+    |---|---|---|
+    | Roles made | 0 | 400 |
+    | Provisioning | 102 to 121 ms | 0.70 to 0.73 s |
+    | First migration | 2.41 to 2.62 s | 1.96 to 2.16 s |
+    | Migration with nothing pending | 1.12 to 1.24 s | 1.16 to 1.36 s |
+    | One query | 0.40 to 0.43 ms | 0.47 to 0.51 ms |
+    | Burst of 1,000 | 139 to 243 ms | 192 to 198 ms |
+  - **Size:** 81 files, +534 / −806.
+  - **The agent's gates:**
+    - `mcp:test`: 1,007 pass;
+    - the acceptance: 69;
+    - charts: 92;
+    - web: 120;
+    - knip clean.
+
+    `infra:test` was not run (Docker's disk); CI runs it.
+  - **For the owner:**
+    - **The development Postgres** still holds the old model: schemas `e2e` and `example` owned by `mcp_*_owner`, and eight old roles. The serving-login check refuses to start the Toolbox there until they go. The permission check refused the agent's drop as irreversible, so it is left to the owner.
+    - **The deleted scan** also flagged `answerable.organisation_id` in an MCP's `src`. Nothing replaces that lint.
+- **The coordinator, on R3:**
+  - **Reviewed** provisioning, the grant step and the serving-login check.
+  - **Gates:**
+    - frozen install unchanged;
+    - typecheck and lint forced: 20 of 20;
+    - build: 2 of 2;
+    - `mcp:test`: 13 of 13 tasks in 33 s;
+    - web: 120;
+    - knip clean;
+    - `infra:check` passed.
+  - **The kind stack** runs in CI on the push.

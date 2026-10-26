@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url"
-import { configureRuntimeRole, connect } from "@answerable/mcp-postgres"
+import { configureRuntimeRole, connect, sharedMcps } from "@answerable/mcp-postgres"
 import { sql } from "drizzle-orm"
 import { migrate, runtimeGrants } from "../src/db/migrate"
 import { migrateDeclared } from "../src/db/migrate-mcps"
@@ -8,9 +8,10 @@ import { ownMigrationConfig, ownMigrationVariable, toolboxMigrationConfig } from
 
 // bun scripts/migrate.ts migrates TOOLBOX_DATABASE_MIGRATION_URL, the schema owner, then provisions TOOLBOX_DATABASE_RUNTIME_ROLE
 // (answerable_toolbox_runtime by default), the restricted role the Toolbox serves as; then every MCP of MCPS_DECLARED, the chart's list, from
-// its folder in this image, each shared MCP through MCPS_DATABASE_MIGRATION_URL as its owner role and each own MCP as its owner login, from
-// MCP_<NAME>_DATABASE_MIGRATION_URL. The deployment's hook Job toolbox-migrate runs it; the bootstrap provisioned each MCP's schema and roles from
-// the same list. Locally the list is empty: bun mcp db <name> migrate migrates each MCP. --test resets the test database first.
+// its folder in this image, each shared MCP as the migrator login, MCPS_DATABASE_MIGRATION_URL, granting the Toolbox's serving login its tables,
+// and each own MCP as its owner login, from MCP_<NAME>_DATABASE_MIGRATION_URL. The deployment's hook Job toolbox-migrate runs it; the bootstrap
+// provisioned each MCP's schema from the same list. Locally the list is empty: bun mcp db <name> migrate migrates each MCP. --test resets the
+// test database first.
 const test = process.argv.includes("--test")
 const { TOOLBOX_DATABASE_MIGRATION_URL, TOOLBOX_DATABASE_RUNTIME_ROLE: role, MCPS_DATABASE_MIGRATION_URL, MCPS_DECLARED } = toolboxMigrationConfig.read(Bun.env)
 const url = test ? database.url : TOOLBOX_DATABASE_MIGRATION_URL
@@ -34,8 +35,8 @@ if (mcps.length) {
     root: fileURLToPath(new URL("../../..", import.meta.url)),
     mcps,
     shared: MCPS_DATABASE_MIGRATION_URL,
+    serving: sharedMcps.logins.toolbox,
     own: name => own[ownMigrationVariable(name)]!,
-    prefix: "mcp",
     log: line => console.log(line),
   })
   console.log(`Migrated ${mcps.length} MCP${mcps.length === 1 ? "" : "s"} in ${((performance.now() - started) / 1000).toFixed(1)} s`)

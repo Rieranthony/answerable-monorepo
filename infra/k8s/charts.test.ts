@@ -111,14 +111,13 @@ describe("charts/answerable", () => {
         }
       })
 
-      test("the servers of the mcps image each run their own entry point, and the chart never sets the role prefixes only tests use", () => {
+      test("the servers of the mcps image each run their own entry point", () => {
         const commands = Object.fromEntries(manifests.filter(manifest => manifest.kind === "Deployment").map(deployment => [deployment.metadata.name, containersOf(deployment)[0].command]))
         expect(commands).toEqual({
           id: undefined,
           toolbox: ["bun", "mcps/toolbox/src/server.ts"],
           "admin-mcp": ["bun", "mcps/admin/src/server.ts"],
         })
-        for (const workload of workloads(manifests)) expect(env(workload, "TOOLBOX_MCPS_ROLE_PREFIX"), workload.metadata.name).toBeUndefined()
       })
 
       test("no secret value is written in the manifests: every secret-looking variable comes from a Secret", () => {

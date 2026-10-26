@@ -29,7 +29,7 @@ Answerable ID, the Toolbox, which serves every MCP of `mcps.json`, the admin MCP
 | `ops.bootstrap`, `ops.register`, `ops.makeAdmin` with `ops.adminEmail` | The deploy (`bootstrap` and `register` every time), `deploy.ts run-job` for one upgrade | No ops Job. `ops.makeAdmin` without `ops.adminEmail` fails the render |
 | `id.staffDomain`, `id.entraTenant` | The overlay | `register` connects no staff directory |
 
-The Toolbox and the admin MCP render at zero replicas until their client Secret exists; `ops register` writes it and scales them up. The chart never sets `TOOLBOX_MCPS_ROLE_PREFIX`, which only tests use. `helm template` has no cluster to look in, so it always shows them at zero.
+The Toolbox and the admin MCP render at zero replicas until their client Secret exists; `ops register` writes it and scales them up. `helm template` has no cluster to look in, so it always shows them at zero.
 
 ## Tests
 

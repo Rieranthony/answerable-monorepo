@@ -22,7 +22,7 @@ async function connected<T>(url: string, work: (client: Client) => Promise<T>) {
 }
 
 async function make(): Promise<Logins> {
-  step("Creating answerable_mcps_acceptance, its migrator and serving logins, and every MCP's schema and roles, migrated")
+  step("Creating answerable_mcps_acceptance, its migrator and serving logins, and every MCP's schema, migrated")
   const { logins } = sharedMcps
   const passwords = Object.fromEntries(Object.keys(logins).map(login => [login, crypto.randomUUID().replaceAll("-", "")]))
   const login = (name: string) => logins[name as keyof typeof logins]
@@ -34,7 +34,7 @@ async function make(): Promise<Logins> {
   await connected(`${postgres}/answerable_mcps_acceptance`, client => provisionMcps(sqlOf(client), { mcps: mounted.map(({ provider }) => ({ name: provider.id })), logins }))
   const as = (name: string) => `postgres://${login(name)}:${passwords[name]}@127.0.0.1:47532/answerable_mcps_acceptance`
   for (const { provider } of mounted) {
-    await connected(as("migrator"), client => migrateMcp({ client, name: provider.id, folder: fileURLToPath(provider.database!.migrations), mode: "shared" }))
+    await connected(as("migrator"), client => migrateMcp({ client, name: provider.id, folder: fileURLToPath(provider.database!.migrations), serving: logins.toolbox }))
   }
   return { toolbox: as("toolbox") }
 }

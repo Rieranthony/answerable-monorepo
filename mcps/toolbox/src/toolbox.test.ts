@@ -12,7 +12,7 @@ import { createMemoryTracer } from "@answerable/mcp-platform"
 import { serving } from "./test/database"
 import { createHub, names, resource, type Client as McpClient, type Hub } from "./test/hub"
 import { e2e } from "./test/mcps"
-import { databases, opened, prefix } from "./test/mcps"
+import { databases, opened } from "./test/mcps"
 import { mcpDatabases } from "@answerable/mcp-platform"
 import { testOwnMcp } from "@answerable/mcp-platform/testing"
 import { createToolbox } from "./toolbox"
@@ -288,7 +288,7 @@ test("a database-backed mounted provider runs through its own db, and each organ
 
 test("an own MCP runs through a pool of its own", async () => {
   const database = await testOwnMcp({ name: "answerable_toolbox_test_own", provider: e2e.provider })
-  const own = mcpDatabases([{ provider: e2e.provider, serve: "toolbox", database: "own", variable: "TOOLBOX_MCP_E2E_DATABASE_URL" }], { shared: databases.url, own: { TOOLBOX_MCP_E2E_DATABASE_URL: database.url }, prefix })
+  const own = mcpDatabases([{ provider: e2e.provider, serve: "toolbox", database: "own", variable: "TOOLBOX_MCP_E2E_DATABASE_URL" }], { shared: databases.url, own: { TOOLBOX_MCP_E2E_DATABASE_URL: database.url } })
   try {
     expect(Object.keys(own.pools)).toEqual(["mcps", "e2e"])
     const { lists, organisation } = await createdAndListed(await hub(own.mount))

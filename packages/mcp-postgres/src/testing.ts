@@ -122,10 +122,10 @@ export function testDatabase(name: string, url = `postgres://answerable:answerab
 
 /**
  * An MCP's test database, served as production serves it: its schema `name` in `answerable_mcps_test` (`MCPS_TEST_DATABASE_URL`), dropped and
- * recreated, provisioned with the `mcp_test` prefix and migrated from `folder`, then reached through `mcpDatabase` as a fresh serving login with
- * a generated name. The local databases are created first when missing. `db` takes its organisation from `asOrganisation(id, fn)`, which
- * awaits `fn` as that organisation, and otherwise from the `organisation` getter; `close()` drops the login. It never drops a role an MCP has,
- * so suites for different MCPs run at once.
+ * recreated, provisioned, then migrated from `folder` as the migrator login, with the development password, and reached through `mcpDatabase`
+ * as a fresh serving login with a generated name. The local databases are created first when missing. `db` takes its organisation from
+ * `asOrganisation(id, fn)`, which awaits `fn` as that organisation, and otherwise from the `organisation` getter; `close()` drops the login.
+ * Suites for different MCPs run at once, each in its own schema as a login of its own.
  */
 export async function testMcpDatabase<Schema extends Record<string, unknown>>({ name, schema, folder, organisation }: {
   name: string
@@ -141,8 +141,8 @@ export async function testMcpDatabase<Schema extends Record<string, unknown>>({ 
   await ensureLocalMcpDatabases(cluster.href)
   const login = `mcp_test_login_${crypto.randomUUID().replaceAll("-", "")}`
   const password = crypto.randomUUID().replaceAll("-", "")
-  const asSuperuser = async (work: (client: Client) => Promise<void>) => {
-    const client = new Client({ connectionString: url.href })
+  const as = async (location: URL, work: (client: Client) => Promise<unknown>) => {
+    const client = new Client({ connectionString: location.href })
     await client.connect()
     try {
       await work(client)
@@ -150,26 +150,24 @@ export async function testMcpDatabase<Schema extends Record<string, unknown>>({ 
       await client.end()
     }
   }
-  await asSuperuser(async client => {
+  await as(url, async client => {
     // CREATE ROLE takes no parameters; the name and the password are generated here.
     await client.query(`drop schema if exists "${name}" cascade; create role ${login} login password '${password}' noinherit`)
-    await provisionMcps(sqlOf(client), {
-      mcps: [{ name }], prefix: "mcp_test", logins: { ...sharedMcps.logins, toolbox: login },
-    })
-    await migrateMcp({ client, name, folder, mode: "shared", prefix: "mcp_test" })
+    await provisionMcps(sqlOf(client), { mcps: [{ name }], logins: { ...sharedMcps.logins, toolbox: login } })
   })
+  await as(Object.assign(new URL(url), { username: sharedMcps.logins.migrator, password: "answerable" }), client => migrateMcp({ client, name, folder, serving: login }))
   const served = new URL(url)
   served.username = login
   served.password = password
   const pool = new Pool({ connectionString: served.href, max: 4 })
   const organisations = new AsyncLocalStorage<string>()
   return {
-    db: mcpDatabase(pool, { name, prefix: "mcp_test", schema, mode: "shared", organisation: () => organisations.getStore() ?? organisation?.() }),
+    db: mcpDatabase(pool, { name, schema, organisation: () => organisations.getStore() ?? organisation?.() }),
     asOrganisation: <T>(id: string, fn: () => T) => organisations.run(id, async (): Promise<Awaited<T>> => await fn()),
     async close() {
       await pool.end()
-      // Under the role lock: dropping what the login was granted rewrites the database's privileges, which provisioning beside it rewrites too.
-      await asSuperuser(client => client.query(`begin; select pg_advisory_xact_lock(${roleLock}); drop owned by ${login}; drop role ${login}; commit`).then(() => undefined))
+      // Under the lock: dropping what the login was granted rewrites the database's privileges, which provisioning beside it rewrites too.
+      await as(url, client => client.query(`begin; select pg_advisory_xact_lock(${roleLock}); drop owned by ${login}; drop role ${login}; commit`))
     },
   }
 }

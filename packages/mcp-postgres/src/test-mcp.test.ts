@@ -10,7 +10,7 @@ import { assertProviderConformance, createTestMcp } from "./testing"
 
 const admin = new Pool({ connectionString: mcpsUrl, max: 1 })
 afterAll(async () => {
-  // The helpers never drop an MCP's roles; this suite's fixture is its own to remove.
+  // The helpers leave an MCP's schema for their next run to reset; this suite's fixture is its own to remove.
   await forget(admin, "mpgfixa")
   await admin.end()
 })

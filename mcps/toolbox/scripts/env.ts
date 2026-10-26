@@ -20,7 +20,7 @@ export const toolboxMigrationConfig = defineConfig("Toolbox migration", {
     schema: z.url({ message: "Set MCPS_DATABASE_MIGRATION_URL to the shared MCP database's Postgres URL as its migrator login" }),
     secret: true,
     defaults: locally(`postgres://${sharedMcps.logins.migrator}:answerable@localhost:47432/${sharedMcps.database}`),
-    doc: "The shared MCP database, answerable_mcps, as its migrator login, answerable_mcps_migrator, which takes each shared MCP's owner role; for the migration only",
+    doc: "The shared MCP database, answerable_mcps, as its migrator login, answerable_mcps_migrator, which owns every shared MCP's schema; for the migration only",
     source: "cluster",
   },
   MCPS_DECLARED: {

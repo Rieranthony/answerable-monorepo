@@ -10,10 +10,11 @@ import { provisionMcps, sqlOf } from "./provision"
 import * as fixtureA from "./test/fixtures/mpgfixa"
 import { notes, projects } from "./test/fixtures/mpgfixa"
 import * as fixtureB from "./test/fixtures/mpgfixb"
+import { secrets } from "./test/fixtures/mpgfixb"
 import { as, clientOf, clusterUrl, fixtureFolder, forget, mcpsUrl, testLogin } from "./test/mcps"
 import { refusalOf } from "./testing"
 
-// The Toolbox's shape: one serving login that holds both MCPs' runtime roles, one pool, and a database for each MCP over it.
+// The Toolbox's shape: one serving login granted both MCPs' schemas, one pool, and a database for each MCP over it.
 const admin = new Pool({ connectionString: mcpsUrl, max: 1 })
 const organisations = new AsyncLocalStorage<string | undefined>()
 const organisation = () => organisations.getStore()
@@ -27,16 +28,16 @@ beforeAll(async () => {
   await ensureLocalMcpDatabases(clusterUrl)
   await forget(admin, "mpgfixa", "mpgfixb")
   login = await testLogin(admin)
-  await provisionMcps(sqlOf(admin), { mcps: [{ name: "mpgfixa" }, { name: "mpgfixb" }], prefix: "mcp_test", logins: { ...sharedMcps.logins, toolbox: login.name } })
+  await provisionMcps(sqlOf(admin), { mcps: [{ name: "mpgfixa" }, { name: "mpgfixb" }], logins: { ...sharedMcps.logins, toolbox: login.name } })
   const migrator = await clientOf(as(sharedMcps.logins.migrator))
   try {
-    await migrateMcps((["mpgfixa", "mpgfixb"] as const).map(name => ({ name, folder: fixtureFolder(name), mode: "shared", prefix: "mcp_test" })), () => migrator)
+    await migrateMcps((["mpgfixa", "mpgfixb"] as const).map(name => ({ name, folder: fixtureFolder(name), serving: login.name })), () => migrator)
   } finally {
     await migrator.end()
   }
   pool = new Pool({ connectionString: login.url, max: 4 })
-  a = mcpDatabase(pool, { name: "mpgfixa", prefix: "mcp_test", schema: fixtureA, mode: "shared", organisation })
-  b = mcpDatabase(pool, { name: "mpgfixb", prefix: "mcp_test", schema: fixtureB, mode: "shared", organisation })
+  a = mcpDatabase(pool, { name: "mpgfixa", schema: fixtureA, organisation })
+  b = mcpDatabase(pool, { name: "mpgfixb", schema: fixtureB, organisation })
 })
 afterAll(async () => {
   await pool.end()
@@ -45,17 +46,16 @@ afterAll(async () => {
   await admin.end()
 })
 
-const whoText = "select current_user::text as role, current_setting('search_path') as path, nullif(current_setting('answerable.organisation_id', true), '') as organisation"
-const who = sql.raw(whoText)
-const state = async (client: Pool | PoolClient) => (await client.query(whoText)).rows[0]
-const clean = () => ({ role: login.name, path: '"$user", public', organisation: null })
+const who = sql.raw("select current_user::text as role, current_setting('search_path') as path, nullif(current_setting('answerable.organisation_id', true), '') as organisation")
 const project = (id: string) => asOrganisation(id, () => a.insert(projects).values({ organisation_id: id, name: "Tower" }).returning().then(([row]) => row!))
 
-test("queries and drizzle transactions run as the MCP's runtime role, in its schema, for the caller's organisation", async () => {
+test("queries and drizzle transactions run as the serving login itself, which owns no table, in the MCP's schema, for the caller's organisation", async () => {
   const id = crypto.randomUUID()
-  expect((await asOrganisation(id, () => a.execute(who))).rows).toEqual([{ role: "mcp_test_mpgfixa", path: "mpgfixa", organisation: id }])
-  expect(await asOrganisation(id, () => a.transaction(async tx => (await tx.execute(who)).rows))).toEqual([{ role: "mcp_test_mpgfixa", path: "mpgfixa", organisation: id }])
-  expect((await asOrganisation(id, () => b.execute(who))).rows).toEqual([{ role: "mcp_test_mpgfixb", path: "mpgfixb", organisation: id }])
+  expect((await asOrganisation(id, () => a.execute(who))).rows).toEqual([{ role: login.name, path: "mpgfixa", organisation: id }])
+  expect(await asOrganisation(id, () => a.transaction(async tx => (await tx.execute(who)).rows))).toEqual([{ role: login.name, path: "mpgfixa", organisation: id }])
+  expect((await asOrganisation(id, () => b.execute(who))).rows).toEqual([{ role: login.name, path: "mpgfixb", organisation: id }])
+  // Row-level security binds every login but a table's owner: the migrator owns them all.
+  expect((await admin.query("select distinct tableowner from pg_tables where schemaname in ('mpgfixa', 'mpgfixb')")).rows).toEqual([{ tableowner: "answerable_mcps_migrator" }])
   // The search path makes an unqualified name the MCP's own.
   expect((await asOrganisation(id, () => a.execute(sql`select count(*)::int as notes from notes`))).rows).toEqual([{ notes: 0 }])
 })
@@ -90,46 +90,45 @@ test("a thrown transaction rolls back", async () => {
   expect(await asOrganisation(id, () => a.select().from(projects))).toEqual([])
 })
 
-test("an MCP cannot read another MCP's schema, nor the journal of its own", async () => {
-  const id = crypto.randomUUID()
-  expect(await refusalOf(asOrganisation(id, () => a.execute(sql`select * from mpgfixb.secrets`)))).toBe("permission denied for schema mpgfixb")
-  expect(await refusalOf(asOrganisation(id, () => b.execute(sql`select * from mpgfixa.projects`)))).toBe("permission denied for schema mpgfixa")
-  expect(await refusalOf(asOrganisation(id, () => a.execute(sql`select * from __drizzle_migrations`)))).toBe("permission denied for table __drizzle_migrations")
+test("a query naming another MCP's schema reaches it, since one login serves both, and still sees only the caller's organisation; the journal stays out of reach", async () => {
+  const [first, second] = [crypto.randomUUID(), crypto.randomUUID()]
+  for (const id of [first, second]) await asOrganisation(id, () => b.insert(secrets).values({ organisation_id: id, value: `Of ${id}` }))
+  expect((await asOrganisation(first, () => a.execute(sql`select value from mpgfixb.secrets`))).rows).toEqual([{ value: `Of ${first}` }])
+  expect((await asOrganisation(undefined, () => a.execute(sql`select value from mpgfixb.secrets`))).rows).toEqual([])
+  expect(await refusalOf(asOrganisation(first, () => a.execute(sql`select * from __drizzle_migrations`)))).toBe("permission denied for table __drizzle_migrations")
 })
 
-test("after a query succeeds or fails, a transaction throws or one is left open, every connection of the shared pool is the serving login again", async () => {
+test("a borrow never keeps the last one's organisation or schema: on one connection, after a call of one organisation, a call of none sees no row", async () => {
+  const single = new Pool({ connectionString: login.url, max: 1 })
+  try {
+    const [one, none] = [mcpDatabase(single, { name: "mpgfixa", schema: fixtureA, organisation }), mcpDatabase(single, { name: "mpgfixb", schema: fixtureB, organisation })]
+    const id = crypto.randomUUID()
+    await asOrganisation(id, () => one.insert(projects).values({ organisation_id: id, name: "Kept" }))
+    expect((await asOrganisation(undefined, () => none.execute(who))).rows).toEqual([{ role: login.name, path: "mpgfixb", organisation: null }])
+    expect(await asOrganisation(undefined, () => one.select().from(projects))).toEqual([])
+    expect(single.totalCount).toBe(1)
+  } finally {
+    await single.end()
+  }
+})
+
+test("a connection released inside a transaction, or whose setup fails, is destroyed rather than returned", async () => {
   const id = crypto.randomUUID()
   await asOrganisation(id, () => a.execute(sql`select 1`))
   expect(await refusalOf(asOrganisation(id, () => a.execute(sql`select nonsense`)))).toBe('column "nonsense" does not exist')
   await expect(asOrganisation(id, () => a.transaction(async tx => { await tx.execute(sql`select 1`); throw new Error("thrown") }))).rejects.toThrow("thrown")
   expect(await refusalOf(asOrganisation(id, () => a.transaction(tx => tx.execute(sql`select nonsense`))))).toBe('column "nonsense" does not exist')
-  // A connection released inside a transaction block is destroyed, not reset inside it.
-  const removed = new Promise(resolve => pool.once("remove", resolve))
+  const removed = () => new Promise(resolve => pool.once("remove", resolve))
+  const inside = removed()
   await asOrganisation(id, () => a.execute(sql`begin`))
-  await removed
-  // A role the login cannot take fails the borrow, and that connection goes too.
-  const unknown = mcpDatabase(pool, { name: "mpgfixc", prefix: "mcp_test", schema: {}, mode: "shared", organisation })
-  expect(await refusalOf(asOrganisation(id, () => unknown.execute(sql`select 1`)))).toBe('role "mcp_test_mpgfixc" does not exist')
-  const clients = await Promise.all(Array.from({ length: 4 }, () => pool.connect()))
-  try {
-    for (const client of clients) expect(await state(client)).toEqual(clean())
-  } finally {
-    for (const client of clients) client.release()
-  }
-})
-
-test("a connection whose reset fails is destroyed, not returned with its role, and the next borrow is clean", async () => {
-  const id = crypto.randomUUID()
-  const client = await organisations.run(id, () => (a as unknown as { $client: Pool }).$client.connect())
-  expect(await state(client)).toEqual({ role: "mcp_test_mpgfixa", path: "mpgfixa", organisation: id })
-  const query = client.query.bind(client) as (text: string) => Promise<unknown>
-  Object.assign(client, { query: (text: string) => (text.startsWith("reset role") ? Promise.reject(new Error("injected")) : query(text)) })
-  const removed = new Promise(resolve => pool.once("remove", resolve))
-  const open = pool.totalCount
-  client.release()
-  await removed
-  expect(pool.totalCount).toBe(open - 1)
-  expect(await state(pool)).toEqual(clean())
+  await inside
+  // A setup that fails, here injected on the next connection the pool hands out, fails the borrow, and that connection goes too.
+  pool.once("acquire", (client: PoolClient) => Object.assign(client, { query: () => Promise.reject(new Error("injected")) }))
+  const failed = removed()
+  expect(await refusalOf(asOrganisation(id, () => a.execute(sql`select 1`)))).toBe("injected")
+  await failed
+  // The pool still serves.
+  expect((await asOrganisation(id, () => a.execute(who))).rows).toEqual([{ role: login.name, path: "mpgfixa", organisation: id }])
 })
 
 test("200 interleaved calls for two organisations on one database never see each other's rows", async () => {

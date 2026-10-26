@@ -17,8 +17,8 @@ const server = (name: string, prefix: string): Database => ({
  * Every database the release runs on (D4, B1), each login's URL a key of a Secret the chart reads: the owners' in the Secrets the migration
  * Jobs mount, the runtime logins' in those the services mount.
  * - ID's, the Toolbox's and the admin MCP's, each with its owner and one runtime login;
- * - the shared MCP database, owned by its migrator, which the toolbox-migrate Job mounts, and served by the Toolbox's login, which takes each
- *   MCP's runtime role;
+ * - the shared MCP database, owned by its migrator, which the toolbox-migrate Job mounts, and served by the Toolbox's login, which is granted
+ *   each MCP's schema and tables;
  * - for each own MCP of the chart's list, `answerable_mcp_<name>`, with its owner and runtime logins in `mcp-<name>-database-owner` and
  *   `mcp-<name>-database`.
  */
@@ -79,8 +79,8 @@ async function bounded(sql: Sql) {
  * Create, or bring back in line, every database of {@link databasesFor} and their logins with an administrative login that may create databases
  * and roles (a managed database's administrator, not necessarily a superuser), and write each login's URL to the store. A login whose Secret
  * holds a URL gets that URL's password; one whose Secret is empty gets a new password, written. Then, on a connection to each, `@answerable/mcp-
- * postgres` provisions the MCPs of `mcps`: in the shared database, each shared MCP's schema and roles for the Toolbox, which serves it; in each own
- * MCP's database, its schema. Running it again changes nothing. Never prints a password.
+ * postgres` provisions the MCPs of `mcps`: in the shared database, each shared MCP's schema, owned by the migrator, with `USAGE` for the Toolbox,
+ * which serves it; in each own MCP's database, its schema. Running it again changes nothing. Never prints a password.
  */
 export async function bootstrap({ sql, database: connect, mcps, store, host, port, sslRootCert, password = generatePassword, log = console.log }: Options) {
   const address = host.includes(":") ? `[${host}]` : host

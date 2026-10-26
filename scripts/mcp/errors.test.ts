@@ -170,18 +170,6 @@ const scenarios: Record<string, () => Promise<Printed>> = {
       delete process.env.MCPS_DATABASE_ADMIN_URL
     }
   },
-  "migration-refused": async () => {
-    const name = randomName()
-    removals.push(() => forget(name))
-    const { root } = await installed(made(name))
-    const generated = testIo(["db", name, "generate", "--name", "initial"], root, { exec: spawn })
-    expect(await main(generated.io), generated.stderr()).toBe(0)
-    await Bun.write(join(root, "mcps", name, "drizzle/0000_initial.sql"), 'GRANT SELECT ON "x"."y" TO PUBLIC;\n')
-    const io = testIo(["db", name, "migrate", "--json"], root, { exec: spawn })
-    const exit = await main(io.io)
-    const { error } = JSON.parse(io.stdout())
-    return { exit, lines: (error.message as string).replaceAll(name, "acme").split("\n"), code: error.code }
-  },
   "migration-edited": async () => {
     const name = randomName()
     removals.push(() => forget(name))

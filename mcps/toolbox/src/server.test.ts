@@ -2,11 +2,11 @@ import { expect, test } from "bun:test"
 import { runtimeGrants } from "./db/migrate"
 import { database } from "./test/database"
 import { mounted } from "./mounted.generated"
-import { databases, healthy, ownUrls, prefix } from "./test/mcps"
+import { databases, healthy, ownUrls } from "./test/mcps"
 
 const directory = new URL("../", import.meta.url).pathname
-// The mounted MCPs' databases as the suite serves them, with the shared one's role prefix.
-const mcps = { TOOLBOX_MCPS_DATABASE_URL: databases.url, TOOLBOX_MCPS_ROLE_PREFIX: prefix, ...ownUrls }
+// The mounted MCPs' databases as the suite serves them.
+const mcps = { TOOLBOX_MCPS_DATABASE_URL: databases.url, ...ownUrls }
 
 // The entry point on a free port against `databaseUrl`, under `bun --hot` as `bun run toolbox:dev` runs it when `hot`. ID is not there: the poller
 // logs that it failed, and nothing here reads grants.
@@ -77,12 +77,13 @@ test("the entry point listens on TOOLBOX_HOST", async () => {
   }
 }, 30_000)
 
-test("the entry point refuses a serving login that cannot take a mounted MCP's role, naming it, before it listens", async () => {
+test("the entry point refuses a serving login without USAGE on a mounted MCP's schema, naming it, before it listens", async () => {
   const login = await database.runtimeLogin(runtimeGrants)
-  const { server } = start(login.url, { TOOLBOX_MCPS_ROLE_PREFIX: "mcp_tbxnone" })
+  // The Toolbox's own runtime login, in its own database, where no MCP has a schema.
+  const { server } = start(login.url, { TOOLBOX_MCPS_DATABASE_URL: login.url })
   try {
     expect(await server.exited).toBe(1)
-    expect(await new Response(server.stderr).text()).toContain("is not a member of mcp_tbxnone_e2e")
+    expect(await new Response(server.stderr).text()).toContain("lacks USAGE on schema e2e")
   } finally {
     server.kill()
     await login.drop()

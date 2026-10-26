@@ -347,7 +347,7 @@ Copy `e2e.journeys.test.ts` for a fuller one: several organisations, a partial e
 bun run mcp:test
 ```
 
-This runs the `@answerable/auth`, `@answerable/id-admin`, `@answerable/mcp`, `@answerable/mcp-postgres`, `@answerable/mcp-platform`, e2e, Toolbox and admin MCP suites and `bun mcp`'s with a local test issuer, including Chromium rendering the real MCP Apps view through the official host bridge. It also runs every MCP that `bun mcp new` has added under `mcps/`. These suites need the development PostgreSQL on port `47432` (`bun run env:up`): the servers' reset their own test databases first, each MCP's resets its own schema in `answerable_mcps_test`, and the Toolbox's and `@answerable/mcp-platform`'s make shared MCP databases of their own, with role prefixes of their own, and drop them at the end. It does not include the acceptance.
+This runs the `@answerable/auth`, `@answerable/id-admin`, `@answerable/mcp`, `@answerable/mcp-postgres`, `@answerable/mcp-platform`, e2e, Toolbox and admin MCP suites and `bun mcp`'s with a local test issuer, including Chromium rendering the real MCP Apps view through the official host bridge. It also runs every MCP that `bun mcp new` has added under `mcps/`. These suites need the development PostgreSQL on port `47432` (`bun run env:up`): the servers' reset their own test databases first, each MCP's resets its own schema in `answerable_mcps_test`, and the Toolbox's and `@answerable/mcp-platform`'s make shared MCP databases of their own, with logins of their own, and drop them at the end. It does not include the acceptance.
 
 ## Run the e2e MCP by hand
 

@@ -20,6 +20,7 @@ The shared mode in detail:
   - `@answerable/mcp-postgres` learns schemas: the migrator's journal, runtime grants and the hub assertion (F4);
   - each MCP's tables are `pgSchema` tables;
   - mounted provider code is trusted not to switch role itself, guarded by a lint rule and a test.
+- **Reversed in part on 2026-10-26** by D-3 of the pull request 13 audit ([decisions](../pr13-audit/decisions.md)): the per-MCP owner and runtime roles are gone. The migrator login owns every MCP's schema and tables and migrates them with drizzle's migrator, the journal in the MCP's schema; the serving login is granted `USAGE` on each schema it serves and read and write on its tables, and a borrow sets the search path and the organisation only. The role prefixes, the role scans and the migration scanner went with them. The schema per MCP, the one shared database, one pool per serving process, row-level security by organisation and the `own` mode stay. The cost: one MCP's code or migration can reach another's tables; organisation isolation does not depend on the roles.
 
 **D2. Standalone MCPs run in one shared standalone server, at `https://mcp.<zone>/<name>/mcp`.** Owner.
 - **Why:** one Deployment and one hostname, whatever the number of MCPs. The SDK already serves path resources, and ID accepts them (F3). One process serving two MCPs by path was proved locally.

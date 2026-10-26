@@ -174,7 +174,7 @@ exports[`every file of a new MCP, for a fixed name and date, with the status too
 //     name: pg.text().notNull(),
 //   }, table => [organisationIsolation(table.organisation_id)]).enableRLS()
 //
-// The runtime role reads and writes every table here. To narrow that, export grants from src/db/grants.ts, which
+// The serving login reads and writes every table here. To narrow that, export grants from src/db/grants.ts, which
 // bun mcp db acme migrate reads:
 //
 //   import type { Grant } from "@answerable/mcp-postgres"
@@ -256,7 +256,7 @@ import * as pg from "drizzle-orm/pg-core"
 //     name: pg.text().notNull(),
 //   }, table => [organisationIsolation(table.organisation_id)]).enableRLS()
 //
-// The runtime role reads and writes every table here. To narrow that, export grants from src/db/grants.ts, which
+// The serving login reads and writes every table here. To narrow that, export grants from src/db/grants.ts, which
 // bun mcp db acme migrate reads:
 //
 //   import type { Grant } from "@answerable/mcp-postgres"

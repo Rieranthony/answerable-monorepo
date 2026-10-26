@@ -2,7 +2,7 @@
 The ops image's Jobs (infra/ops/README.md), each switched on for one upgrade by the pipeline (deploy.ts):
 - bootstrap, before the migrations, writes the database's certificate authority to the ConfigMap postgres-ca on first
   use, creates the databases and their logins with the postgres-admin login, provisions each MCP of mcps.json (OPS_MCPS):
-  its schema and roles in answerable_mcps, or its own database and logins, and writes the URL Secrets the migrations and
+  its schema in answerable_mcps, or its own database and logins, and writes the URL Secrets the migrations and
   the services read;
 - register, on every deploy after the release and once ID is up, as its own machine client, ops-register, which its first
   run mints with ID's root secret (or, once, a staff token from ops-staff-token) and keeps in ops-id-client: registers the

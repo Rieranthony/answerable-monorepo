@@ -34,7 +34,7 @@ bun install
 
 <include lang="ts" meta='title="mcps/toolbox/src/mounted.generated.ts"'>../../../../../mcps/toolbox/src/mounted.generated.ts</include>
 
-The Toolbox mounts each MCP of the list with its database: its schema in the shared database `answerable_mcps`, which the Toolbox reaches as its serving login, `answerable_mcps_toolbox`, taking the MCP's runtime role for each query, or the MCP's own database, from the variable the list names.
+The Toolbox mounts each MCP of the list with its database: its schema in the shared database `answerable_mcps`, which the Toolbox reaches as its serving login, `answerable_mcps_toolbox`, granted the MCP's schema and tables, or the MCP's own database, from the variable the list names.
 
 </Step>
 <Step>
@@ -45,7 +45,7 @@ The Toolbox mounts each MCP of the list with its database: its schema in the sha
 bun mcp db acme migrate
 ```
 
-It makes the MCP's schema and roles in your local `answerable_mcps` and migrates it, and gives the Toolbox's serving login its runtime role. `bun mcp new` ran it once; run it again after `bun mcp db acme generate` writes a migration. In staging and production the deployment does it.
+It makes the MCP's schema in your local `answerable_mcps` and migrates it, and grants the Toolbox's serving login the schema and its tables. `bun mcp new` ran it once; run it again after `bun mcp db acme generate` writes a migration. In staging and production the deployment does it.
 
 </Step>
 <Step>
@@ -56,7 +56,7 @@ It makes the MCP's schema and roles in your local `answerable_mcps` and migrates
 bun run toolbox:dev
 ```
 
-At boot the Toolbox checks that its serving login holds the runtime role of every mounted MCP, then reads every provider's manifest into its catalogue. `GET /health` lists the mounted MCPs in `providers`. Staff see the new provider and its capabilities in the admin API:
+At boot the Toolbox checks that its serving login has `USAGE` on the schema of every mounted MCP, and nothing more than provisioning gave it, then reads every provider's manifest into its catalogue. `GET /health` lists the mounted MCPs in `providers`. Staff see the new provider and its capabilities in the admin API:
 
 ```sh
 curl "$TOOLBOX/admin/v1/providers" -H "Authorization: Bearer $TOOLBOX_TOKEN"
@@ -150,7 +150,7 @@ Remote providers: the Toolbox mounts MCPs in its own process, so adding one is a
 | You see | Meaning | What to do |
 | --- | --- | --- |
 | `Cannot find module '@answerable/mcp-acme/provider'` | The Toolbox's dependencies were rewritten and not installed, or the workspace has no `exports` entry | `bun install`; `bun mcp new` writes the `exports` entry |
-| `The Toolbox cannot start: Database role answerable_mcps_toolbox may not serve MCPs: is not a member of mcp_acme…` | The MCP's schema and roles are not made in the shared database, or the serving login was not given its runtime role | Locally, `bun mcp db acme migrate` |
+| `The Toolbox cannot start: Database role answerable_mcps_toolbox may not serve MCPs: lacks USAGE on schema acme…` | The MCP's schema is not made in the shared database, or the serving login was not granted it | Locally, `bun mcp db acme migrate` |
 | `mounted.generated.ts` or the Toolbox's `package.json` is stale in `bun mcp check` | `mcp.json` changed without the generated files | `bun mcp check acme` rewrites them: commit them |
 | `Provider … is mounted twice…` at start | Two providers share an id, or a provider is the Toolbox's own | Rename the provider's id |
 | `Capability <identity> version <date> changed its input without a new version…` at start | A contract changed under an old version | Give the tool or the provider a new version |

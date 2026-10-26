@@ -121,7 +121,7 @@ migrations:
   activeDeadlineSeconds: 600
 
 # The ops image's Jobs (infra/ops/README.md): bootstrap writes the database's certificate authority on first use, creates
-# the databases and their logins, the MCPs' schemas and roles from mcps.json, and writes their Secrets before the migrations;
+# the databases and their logins, the MCPs' schemas from mcps.json, and writes their Secrets before the migrations;
 # register, as its own machine client (ops-register, kept in ops-id-client), registers the Toolbox, the admin MCP and each
 # standalone MCP of mcps.json in ID after the release, writes the client Secrets and starts the servers; make-admin makes
 # adminEmail's member, who has signed in once, an owner and a platform administrator, which locks ID's root secret. The

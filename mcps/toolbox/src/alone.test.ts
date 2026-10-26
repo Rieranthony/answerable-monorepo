@@ -9,7 +9,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { z } from "zod"
 import { serving } from "./test/database"
 import { createHub, names, type Hub } from "./test/hub"
-import { databases, opened, prefix } from "./test/mcps"
+import { databases, opened } from "./test/mcps"
 
 const origin = "https://mcp.test"
 const login = await serving()
@@ -148,7 +148,7 @@ test("e2e served both ways shares its rows: a record made at its path is listed 
 })
 
 test("the records survive a restart: a Toolbox started again on fresh pools lists at e2e's path what the first one wrote", async () => {
-  const fresh = () => mcpDatabases([{ provider: opened.mount.find(entry => entry.provider.id === "e2e")!.provider, serve: "standalone", database: "shared" }], { shared: databases.url, own: {}, prefix })
+  const fresh = () => mcpDatabases([{ provider: opened.mount.find(entry => entry.provider.id === "e2e")!.provider, serve: "standalone", database: "shared" }], { shared: databases.url, own: {} })
   const first = fresh()
   let ada: Who
   try {

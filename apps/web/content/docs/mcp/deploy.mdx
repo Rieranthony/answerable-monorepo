@@ -30,7 +30,7 @@ On a `staging/` tag, in this order. Each step stops the run when it fails.
 3. **Staging's infrastructure is applied.** It changes nothing unless Terraform or a chart for it changed.
 4. **The images are built once** for the commit, signed, and named `sha-<commit>`. One image, `mcps`, holds the Toolbox, the admin MCP and every MCP, so a new MCP needs no image of its own.
 5. **The release is deployed,** by the digest of each image. Before the servers start, these Jobs run one after another:
-   1. **`ops-bootstrap` makes your MCP's database.** It makes the schema and roles of an MCP that is new, from `charts/answerable/mcps.json`. It changes nothing when everything exists.
+   1. **`ops-bootstrap` makes your MCP's database.** It makes the schema of an MCP that is new, from `charts/answerable/mcps.json`, with `USAGE` on it for the Toolbox. It changes nothing when everything exists.
    2. **The migrations run.** `id-migrate`, then `toolbox-migrate`, which migrates the Toolbox's database and applies your MCP's pending migrations, then `admin-migrate`. [Your MCP's database](/docs/mcp/database#migrations-ship-by-themselves).
 6. **The servers roll.** The Toolbox starts with your MCP mounted in its hub, if it runs in the Toolbox, and with its new path, `/acme/mcp`, if it runs on its own URL. The deploy waits until the servers are ready.
 7. **`ops-register` registers your MCP in Answerable ID,** on every deploy. For an MCP on its own URL it makes the resource `https://mcp.<zone>/acme/mcp`, its Claude Code client `claude-code-acme` and their link. An MCP in the Toolbox registers nothing: the Toolbox's resource covers it, and staff enable it later. [Its sign-in](/docs/mcp/sign-in).
@@ -94,7 +94,7 @@ When the smoke test passes, the MCP is reachable and signed in. **Nobody can use
 ## What is not automatic
 
 - **Enabling an organisation and granting people.** [Staff do it](/docs/mcp/sign-in#what-staff-do-for-each-organisation), in the admin MCP, after the MCP ships.
-- **Removing an MCP.** Its name goes into `mcps/retired.json` and its folder is deleted. Its schema, its roles and its rows in Answerable ID stay. A command that removes them: Not yet. Trigger: the first MCP that is removed.
+- **Removing an MCP.** Its name goes into `mcps/retired.json` and its folder is deleted. Its schema and its rows in Answerable ID stay. A command that removes them: Not yet. Trigger: the first MCP that is removed.
 - **Holding one MCP back from production** while its commit ships: Not yet. A tag ships every MCP of the commit. Trigger: the first MCP that must stay out of production while its commit ships.
 
 ## Errors

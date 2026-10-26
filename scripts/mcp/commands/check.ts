@@ -1,11 +1,9 @@
-// bun mcp check [mcp]: the MCP's typecheck, lint and tests, then its manifest, the generated files, the role-switching scan and the
-// connection budget.
+// bun mcp check [mcp]: the MCP's typecheck, lint and tests, then its manifest, the generated files and the connection budget.
 import { join } from "node:path"
 import { budget, connectionsAtCeilings } from "../connections"
 import { definitions } from "../definitions"
 import { generate } from "../generate"
 import { Refusal, runSteps, sh, type Command, type Io, type Step } from "../io"
-import { roleSwitching } from "../role-switching"
 import { declarations, findRoot, resolveMcp } from "../workspace"
 
 // The files `bun run env:inventory` writes (scripts/env-inventory.ts), from every service's configuration, which a generated list can change.
@@ -56,13 +54,6 @@ function checkSteps(io: Io, root: string, name: string): { steps: Step[]; next: 
           stale.push(...inventories.filter((_, index) => held[index] !== written[index]))
           rewritten.push(...stale)
           return stale.length ? `rewritten: commit ${stale.join(", ")}` : "current"
-        },
-      },
-      {
-        name: "scan", fix, run: async () => {
-          const { files, found } = await roleSwitching(root, `mcps/${name}/src/**/*.ts`)
-          if (found.length) throw new Error(`an MCP's code may not switch role or set the caller's organisation; mcpDatabase does both:\n${found.join("\n")}`)
-          return `${files} files, no role switch`
         },
       },
       { name: "budget", fix, run: async () => budgetOf(io, await declarations(root)) },

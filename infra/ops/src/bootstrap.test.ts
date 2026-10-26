@@ -7,15 +7,15 @@ type Role = { password: string; rolsuper: boolean; rolreplication: boolean; rolb
 
 /**
  * A PostgreSQL that understands the statements bootstrap sends, and those `@answerable/mcp-postgres`'s provisioning sends on a connection to
- * another database: roles, databases and their owners, memberships, schemas, and a log of every statement, prefixed by its database when it
- * is not the administrative connection's.
+ * another database: roles, databases and their owners, schemas and their owners, `USAGE` on them, and a log of every statement, prefixed by its
+ * database when it is not the administrative connection's.
  */
 function fakePostgres({ roles = {}, owners = {} }: { roles?: Record<string, Partial<Role>>; owners?: Record<string, string> } = {}) {
   const state = {
     roles: Object.fromEntries(Object.entries(roles).map(([name, role]) => [name, { password: "", rolsuper: false, rolreplication: false, rolbypassrls: false, restricted: false, login: true, ...role }])) as Record<string, Role>,
     owners: { ...owners },
-    memberships: new Set<string>(),
     schemas: new Set<string>(),
+    usage: new Set<string>(),
     statements: [] as string[],
     connections: [] as string[],
   }
@@ -26,10 +26,6 @@ function fakePostgres({ roles = {}, owners = {} }: { roles?: Record<string, Part
       const role = state.roles[String(params[0])]
       return role ? [role] : []
     }
-    if (text.startsWith("select rolcanlogin")) {
-      const role = state.roles[String(params[0])]
-      return role ? [{ rolcanlogin: role.login, rolinherit: false, rolcreatedb: false, rolcreaterole: false, ...role }] : []
-    }
     if (text.startsWith("select pg_get_userbyid(datdba)")) {
       const owner = state.owners[String(params[0])]
       return owner ? [{ owner }] : []
@@ -39,15 +35,14 @@ function fakePostgres({ roles = {}, owners = {} }: { roles?: Record<string, Part
       state.roles[match[1]!] = { password: match[2]!, rolsuper: false, rolreplication: false, rolbypassrls: false, restricted: match[3]!.includes("nobypassrls"), login: true }
       return []
     }
-    if ((match = text.match(/^create role "(\w+)" nologin noinherit$/))) state.roles[match[1]!] = { password: "", rolsuper: false, rolreplication: false, rolbypassrls: false, restricted: true, login: false }
     if ((match = text.match(/^alter role "(\w+)" with login password '((?:[^']|'')*)'(.*)$/))) {
       const role = state.roles[match[1]!]!
       role.password = match[2]!
       if (match[3]!.includes("noinherit")) role.restricted = true
       return []
     }
-    if ((match = text.match(/^grant "(\w+)" to "?(\w+)"? with inherit false, set true$/))) state.memberships.add(`${match[1]}>${match[2]}`)
-    if ((match = text.match(/^create schema if not exists "(\w+)" authorization "(\w+)"$/))) state.schemas.add(`${database}.${match[1]}`)
+    if ((match = text.match(/^create schema if not exists "(\w+)" authorization "(\w+)"$/))) state.schemas.add(`${database}.${match[1]} ${match[2]}`)
+    if ((match = text.match(/^grant usage on schema "(\w+)" to "(\w+)"$/))) state.usage.add(`${database}.${match[1]}>${match[2]}`)
     if ((match = text.match(/^create database "(\w+)" owner "(\w+)"$/))) state.owners[match[1]!] = match[2]!
     if ((match = text.match(/^alter database "(\w+)" owner to "(\w+)"$/))) state.owners[match[1]!] = match[2]!
     return []
@@ -111,7 +106,7 @@ test("on an empty cluster: four databases owned by their owners, their logins, t
   for (const line of lines) for (const value of passwords) expect(line).not.toContain(value)
 })
 
-test("with the chart's list: each shared MCP's schema and roles in answerable_mcps, for the Toolbox, which serves every one; a database and two logins for each own one", async () => {
+test("with the chart's list: each shared MCP's schema in answerable_mcps, owned by the migrator, with USAGE for the Toolbox, which serves every one, and no role; a database and two logins for each own one", async () => {
   const pg = fakePostgres()
   const { store, values, writes } = memoryStore()
   const lines: string[] = []
@@ -121,14 +116,11 @@ test("with the chart's list: each shared MCP's schema and roles in answerable_mc
   expect(pg.state.roles.answerable_mcp_acme_runtime!.restricted).toBe(true)
   expect(new URL(values["mcp-acme-database/DATABASE_URL"]!).pathname).toBe("/answerable_mcp_acme")
   expect(pg.state.connections).toEqual(["answerable_mcps", "answerable_mcp_acme"])
-  // provisionMcps for the shared ones, as the administrative login, which takes each owner role without inheriting it.
-  expect([...pg.state.schemas].sort()).toEqual(["answerable_mcp_acme.acme", "answerable_mcps.e2e", "answerable_mcps.example"])
-  expect([...pg.state.memberships].sort()).toEqual([
-    "mcp_e2e>answerable_mcps_toolbox", "mcp_e2e_owner>answerable_mcps_migrator", "mcp_e2e_owner>current_user",
-    "mcp_example>answerable_mcps_toolbox", "mcp_example_owner>answerable_mcps_migrator", "mcp_example_owner>current_user",
-  ])
-  // provisionOwnMcp in the own MCP's database: its schema, owned by its owner login, USAGE for its runtime login.
-  expect(pg.state.statements).toContain('answerable_mcp_acme: grant usage on schema "acme" to "answerable_mcp_acme_runtime"')
+  // provisionMcps for the shared ones; provisionOwnMcp in the own MCP's database: its schema, owned by its owner login, USAGE for its runtime login.
+  expect([...pg.state.schemas].sort()).toEqual(["answerable_mcp_acme.acme answerable_mcp_acme_owner", "answerable_mcps.e2e answerable_mcps_migrator", "answerable_mcps.example answerable_mcps_migrator"])
+  expect([...pg.state.usage].sort()).toEqual(["answerable_mcp_acme.acme>answerable_mcp_acme_runtime", "answerable_mcps.e2e>answerable_mcps_toolbox", "answerable_mcps.example>answerable_mcps_toolbox"])
+  // The logins are the eight services' and the own MCP's two: no role for an MCP.
+  expect(Object.keys(pg.state.roles).filter(role => role.startsWith("mcp_"))).toEqual([])
   expect(lines).toContain("answerable_mcps: e2e, example provisioned")
   expect(lines).toContain("answerable_mcp_acme: schema acme provisioned")
 })
@@ -137,23 +129,23 @@ test("a second run writes nothing and creates nothing: each password is set to t
   const pg = fakePostgres()
   const memory = memoryStore()
   await run(pg, memory.store, { mcps })
-  const before = { roles: structuredClone(pg.state.roles), memberships: [...pg.state.memberships], schemas: [...pg.state.schemas] }
+  const before = { roles: structuredClone(pg.state.roles), schemas: [...pg.state.schemas], usage: [...pg.state.usage] }
   memory.writes.length = 0
   pg.state.statements.length = 0
   await run(pg, memory.store, { mcps })
   expect(memory.writes).toEqual([])
   expect(pg.state.statements.filter(statement => /^(\w+: )?create (role|database)/.test(statement))).toEqual([])
   expect(pg.state.statements.filter(statement => statement.startsWith("alter role"))).toHaveLength(10)
-  expect({ roles: pg.state.roles, memberships: [...pg.state.memberships], schemas: [...pg.state.schemas] }).toEqual(before)
+  expect({ roles: pg.state.roles, schemas: [...pg.state.schemas], usage: [...pg.state.usage] }).toEqual(before)
 })
 
-test("an MCP whose serve changed keeps its schema and its role for the Toolbox, which serves it in its hub and alone alike", async () => {
+test("an MCP whose serve changed keeps its schema and the Toolbox's USAGE on it, since the Toolbox serves it in its hub and alone alike", async () => {
   const pg = fakePostgres()
   const memory = memoryStore()
   await run(pg, memory.store, { mcps })
   await run(pg, memory.store, { mcps: [{ name: "e2e", serve: "standalone", database: "shared" }, { name: "example", serve: "both", database: "shared" }] })
-  expect([...pg.state.memberships].filter(membership => !membership.includes("_owner>")).sort()).toEqual(["mcp_e2e>answerable_mcps_toolbox", "mcp_example>answerable_mcps_toolbox"])
-  expect(pg.state.statements.filter(statement => statement.includes("revoke \"mcp_"))).toEqual([])
+  expect([...pg.state.usage].filter(usage => usage.startsWith("answerable_mcps.")).sort()).toEqual(["answerable_mcps.e2e>answerable_mcps_toolbox", "answerable_mcps.example>answerable_mcps_toolbox"])
+  expect(pg.state.statements.filter(statement => statement.includes("revoke usage"))).toEqual([])
 })
 
 test("the Secrets of the list's own MCPs are named after them, as the chart names them for the ops Role", () => {

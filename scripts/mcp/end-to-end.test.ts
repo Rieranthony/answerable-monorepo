@@ -1,5 +1,5 @@
 // bun mcp end to end, as a coding agent runs it: in a copy of the working tree as it is (untracked files included, never HEAD), without a
-// terminal, with a random name, against the development Postgres. Whatever happens, the MCP's schemas and roles and the copy are removed.
+// terminal, with a random name, against the development Postgres. Whatever happens, the MCP's schemas and the copy are removed.
 import { expect, test } from "bun:test"
 import { existsSync, lstatSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
@@ -26,7 +26,7 @@ async function copyWorkingTree() {
   const install = await bun("install", "--frozen-lockfile")
   if (install.code) throw new Error(`bun install --frozen-lockfile failed in the copy:\n${install.output}`)
 }
-// The clean-up runs inside the test, under its timeout: removing an installed copy and the MCP's roles under the role lock can outlast Bun's
+// The clean-up runs inside the test, under its timeout: removing an installed copy and the MCP's schemas can outlast Bun's
 // 5-second hook timeout when other suites share the machine, and Bun 1.3.1 gives a hook no timeout of its own.
 async function forgetAll() {
   await forget(name)
@@ -51,7 +51,7 @@ async function run() {
 
   const checked = await bun("mcp", "check", name)
   expect(checked.code, checked.output).toBe(0)
-  expect(steps(checked.output)).toEqual(["ok typecheck", "ok lint", "ok test", "ok manifest", "ok generated", "ok scan", "ok budget"])
+  expect(steps(checked.output)).toEqual(["ok typecheck", "ok lint", "ok test", "ok manifest", "ok generated", "ok budget"])
 
   const listed = await bun("mcp", "add", "tool", name, "notes.list", "--description", "List the notes of the caller's organisation, newest first, 20 per page.")
   expect(listed.code, listed.output).toBe(0)
@@ -69,6 +69,6 @@ async function run() {
   const again = await bun("mcp", "new", name, "--description", description, "--serve", "toolbox")
   expect(again.code).toBe(2)
   expect(again.output).toContain(`${name} is taken by mcps/${name}; choose another name`)
-  // Sorted here: Postgres's collation puts mcp_test_<name> first when the random name's second character is f.
-  expect((await traces(name)).toSorted()).toEqual([`answerable_mcps.${name}`, `answerable_mcps_test.${name}`, `mcp_${name}`, `mcp_${name}_owner`, `mcp_test_${name}`, `mcp_test_${name}_owner`].toSorted())
+  // Its schema in the shared database and in the test database, and no role.
+  expect(await traces(name)).toEqual([`answerable_mcps.${name}`, `answerable_mcps_test.${name}`])
 }

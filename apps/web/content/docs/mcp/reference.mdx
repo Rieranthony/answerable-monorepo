@@ -717,7 +717,7 @@ prompt and resource handler inside its call, so a database reached from one sees
 import { callerOrganisation } from "@answerable/mcp"
 import { mcpDatabase } from "@answerable/mcp-postgres"
 
-const db = mcpDatabase(pool, { name: "acme", schema, mode: "shared", organisation: callerOrganisation })
+const db = mcpDatabase(pool, { name: "acme", schema, organisation: callerOrganisation })
 ```
 
 ### createMemoryIntentStore

@@ -14,7 +14,7 @@ import * as pg from "drizzle-orm/pg-core"
 //     name: pg.text().notNull(),
 //   }, table => [organisationIsolation(table.organisation_id)]).enableRLS()
 //
-// The runtime role reads and writes every table here. To narrow that, export grants from src/db/grants.ts, which
+// The serving login reads and writes every table here. To narrow that, export grants from src/db/grants.ts, which
 // bun mcp db example migrate reads:
 //
 //   import type { Grant } from "@answerable/mcp-postgres"

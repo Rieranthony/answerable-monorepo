@@ -11,7 +11,7 @@ import { mounted } from "./mounted.generated"
 
 const db = connect(process.env.MY_SERVER_DATABASE_URL!)                            // the server's own database: intents and evidence
 const mcps = mcpDatabases(mounted, { shared: process.env.MY_SERVER_MCPS_DATABASE_URL!, own: {} })
-await mcps.assert()                                                                // the serving login holds its MCPs' runtime roles, and nothing more; each own MCP's login is its runtime login
+await mcps.assert()                                                                // each pool's login has USAGE on its MCPs' schemas, and nothing more than provisioning gave it
 const calls = createCalls({ db, spans: createTracer("my-server").tracer, salt: resource })
 const profiles = createIdProfiles(id)
 startAuditPoller({ id, caches: [profiles] })
@@ -29,14 +29,14 @@ const healthy = health({ server: db.$client }, [provider.id], mcps.pools)      /
 - **`startAuditPoller({ id, caches, intervalMs? })`.** Reads ID's audit log of successes every 15 seconds and calls `invalidate(organisationIds, userIds)` on every cache, the Toolbox's grants and every server's `createIdProfiles`, for the organisations and the users the events name. One poll at a time; a failed poll is logged as `[poller] reading ID's audit log failed`, and the next one catches up.
 - **`perRequest(read)`.** `read`, once per request: every decision of a request shares one read for its principal.
 - **`health(own, providers, mcps?)`.** `GET /health`, the readiness check: `200` with `{ status: "ok", databases, providers }` while each of the server's own databases answers `select 1`, else `503` with `status: "unavailable"`. `databases` names each `ok` or `unavailable`, the MCP databases of `mcps` too: one that fails, or takes more than 250 ms, is `unavailable` and never fails the check, since a busy MCP pool is load, not a fault of the pod.
-- **`mcpDatabases(declared, { shared, own, prefix? })`.** From the Toolbox's generated list (`Declared`: a provider, where it is served, `toolbox`, `standalone` or `both`, and `shared`, or `own` with the `variable` its URL comes from): one pool to the shared database as the serving login, one per own MCP, and each MCP's `db` through `mcpDatabase`, with the call's organisation (`callerOrganisation`). `mount`, each MCP with its `serve`, for `createToolbox` or, one entry at a time, `createMcpServer`, `pools` for `/health`, `assert()` (`assertServingLogin` on the shared pool and `assertOwnLogin` on each own MCP's, to await before listening) and `close()`. `prefix` is `mcp`; a test that serves a database of its own names its own.
+- **`mcpDatabases(declared, { shared, own })`.** From the Toolbox's generated list (`Declared`: a provider, where it is served, `toolbox`, `standalone` or `both`, and `shared`, or `own` with the `variable` its URL comes from): one pool to the shared database as the serving login, one per own MCP, and each MCP's `db` through `mcpDatabase`, with the call's organisation (`callerOrganisation`). `mount`, each MCP with its `serve`, for `createToolbox` or, one entry at a time, `createMcpServer`, `pools` for `/health`, `assert()` (`assertServingLogin` on the shared pool for the shared MCPs, and on each own MCP's pool for that MCP, to await before listening) and `close()`.
 - **`ownDatabases(declared)`.** The configuration fields of the own MCPs of a generated list, for `defineConfig`, and `urls(data)`, their parsed values by variable.
 
-`@answerable/mcp-platform/testing` makes the databases a server's suite serves, on the development Postgres, each its own: `testSharedMcps({ name, prefix, mcps })`, a shared MCP database owned by the migrator login with each provider provisioned under the suite's role `prefix` and migrated, and a fresh serving login (`url`); and `testOwnMcp({ name, provider })`, an own MCP's database with its owner and runtime logins (`url`). `close()` drops the database, the logins and the roles the prefix made, so suites with different prefixes run at once.
+`@answerable/mcp-platform/testing` makes the databases a server's suite serves, on the development Postgres, each its own: `testSharedMcps({ name, mcps })`, a shared MCP database owned by the migrator login with each provider provisioned for a fresh serving login (`url`) and migrated as the migrator; and `testOwnMcp({ name, provider })`, an own MCP's database with its owner and runtime logins (`url`). `close()` drops the database and the logins, so suites run at once.
 
 ```sh
 bun run --filter @answerable/mcp-platform test
 bun run mcp:check @answerable/mcp-platform
 ```
 
-The suite needs the development PostgreSQL 17 on port 47432: it makes `answerable_mcp_platform_test`, `answerable_mcp_platform_test_empty`, `answerable_mcp_platform_test_own` and `answerable_mcps_test_platform` with the role prefixes `mcp_plt` and `mcp_plte`, and drops them. `bunfig.toml` gates 100% line and function coverage over `src`. Changes: [CHANGELOG](CHANGELOG.md).
+The suite needs the development PostgreSQL 17 on port 47432: it makes `answerable_mcp_platform_test`, `answerable_mcp_platform_test_empty`, `answerable_mcp_platform_test_own` and `answerable_mcps_test_platform`, each with logins of its own, and drops them. `bunfig.toml` gates 100% line and function coverage over `src`. Changes: [CHANGELOG](CHANGELOG.md).

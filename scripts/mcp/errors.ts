@@ -296,21 +296,15 @@ export const errors: readonly ErrorRow[] = [
     action: "Run `bun run env:up` from the main checkout, then the command under `Finish the job with:`.",
   },
   {
-    id: "migration-refused", code: "database-failed", commands: ["new", "db", "dev"],
-    see: "database failed: Refusing to migrate acme: 0000_initial.sql line 1: GRANT. A migration creates no schema, grants nothing, takes no role and names no schema but acme",
-    meaning: "A migration that has not been applied yet does something only the platform may do: create a schema, grant or revoke, take a role, or name a schema other than the MCP's own. The message names the file and the line. Nothing was applied.",
-    action: "Take the statement out of the migration file. The platform makes the schema and the grants.",
-  },
-  {
     id: "migration-edited", code: "database-failed", commands: ["new", "db", "dev"],
-    see: "database failed: Refusing to migrate acme: 0000_initial.sql is not the migration this database applied. Restore the applied file, or recreate a disposable database.",
+    see: "database failed: Refusing to migrate acme: drizzle/0000_initial.sql is not the migration this database applied. Restore the applied file, or recreate a disposable database.",
     meaning: "A migration that was already applied has changed since, or was removed. An applied migration is never edited, regenerated or removed: the database kept a receipt of its text.",
     action: "Restore the file with `git checkout`. To change the tables, write a new migration with `bun mcp db <name> generate`. A local database that holds nothing you need can be dropped and migrated again.",
   },
   {
     id: "check-failed", code: "check-failed", commands: ["new", "add tool"],
     see: "check failed: typecheck: …",
-    meaning: "The last step, `bun mcp check`, failed in the check it names: `typecheck`, `lint`, `test`, `scan` or `budget`. The message ends with what the check printed.",
+    meaning: "The last step, `bun mcp check`, failed in the check it names: `typecheck`, `lint`, `test` or `budget`. The message ends with what the check printed.",
     action: "Fix what it printed, then run `bun mcp check <name>`.",
   },
   {

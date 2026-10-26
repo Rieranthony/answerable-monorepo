@@ -9,7 +9,7 @@ const { databaseUrl, mcps: databases, auth, origin, hostname, port, id: idConfig
 const db = connect(databaseUrl)
 const mcps = mcpDatabases(mounted, databases)
 // Serve as the restricted logins only, both checked before the boot's ingest writes anything: the owner could drop the evidence triggers, and a
-// serving login with more than the mounted MCPs' runtime roles could reach another schema.
+// serving login that owns the MCPs' tables would not be bound by their row-level security.
 await Promise.all([assertRuntimeRole(db), mcps.assert()]).catch(async (error: Error) => {
   await Promise.all([db.$client.end(), mcps.close()])
   console.error(`The Toolbox cannot start: ${error.message}`)

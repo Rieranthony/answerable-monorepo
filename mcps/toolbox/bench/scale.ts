@@ -1,6 +1,6 @@
 // The Toolbox at 200 MCPs. A recorded benchmark, not a gate: `bun bench/scale.ts [runs] [mcps]` from this workspace, on the development Postgres.
 // 200 synthetic MCPs unless `mcps` says another number, bench000 on, each with one table limited to the caller's organisation (items) and 5 tools in 2 domains:
-// items.list, items.get, items.add and items.remove, and stats.count. On databases of its own, dropped with their roles afterwards, it measures:
+// items.list, items.get, items.add and items.remove, and stats.count. On databases of its own, dropped with their logins afterwards, it measures:
 // - boot ingest of them all, first and unchanged, on a fresh Toolbox database for each of `runs`;
 // - a burst of 1,000 tool calls over every MCP, from 20 organisations at once, through the Toolbox in process and its one pool to the shared MCP
 //   database: the time, the most connections that pool held, and the errors;
@@ -25,7 +25,6 @@ import { createHub } from "../src/test/hub"
 
 const runs = Number(process.argv[2] ?? 3)
 const names = Array.from({ length: Number(process.argv[3] ?? 200) }, (_, index) => `bench${String(index).padStart(3, "0")}`)
-const prefix = "mcp_tbench"
 const sharedName = "answerable_toolbox_test_benchmcps"
 
 // The migration bun mcp db generate would write for the table below.
@@ -113,9 +112,9 @@ try {
     }
   }
 
-  const shared = await testSharedMcps({ name: sharedName, prefix, mcps: providers })
+  const shared = await testSharedMcps({ name: sharedName, mcps: providers })
   const toolboxDb = await database.scratch("bench")
-  const opened = mcpDatabases(providers.map(provider => ({ provider, serve: "toolbox" as const, database: "shared" as const })), { shared: shared.url, own: {}, prefix })
+  const opened = mcpDatabases(providers.map(provider => ({ provider, serve: "toolbox" as const, database: "shared" as const })), { shared: shared.url, own: {} })
   try {
     await migrate(toolboxDb.db)
     const pool = opened.pools.mcps!

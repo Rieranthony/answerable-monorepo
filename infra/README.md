@@ -52,7 +52,7 @@ git push origin staging/first
 gh run watch
 ```
 
-In the deploy, `ops-bootstrap` records the database's certificate (its log names the SHA-256 fingerprint: record it with the date), creates the databases and their logins, and each MCP's schema and roles, then the migrations run and ID starts. Then `ops-register` runs, as it does on every deploy. This first time it holds only the root secret, before anyone is a platform administrator, so it first mints its own machine client, `ops-register`, and keeps its secret in the Secret `ops-id-client`; it goes on as that client. The Toolbox and the admin MCP are registered in ID, each `standalone` or `both` MCP is registered, the two servers start by themselves, and the staff domain and the Entra provider are put on the platform organisation.
+In the deploy, `ops-bootstrap` records the database's certificate (its log names the SHA-256 fingerprint: record it with the date), creates the databases and their logins, and each MCP's schema, then the migrations run and ID starts. Then `ops-register` runs, as it does on every deploy. This first time it holds only the root secret, before anyone is a platform administrator, so it first mints its own machine client, `ops-register`, and keeps its secret in the Secret `ops-id-client`; it goes on as that client. The Toolbox and the admin MCP are registered in ID, each `standalone` or `both` MCP is registered, the two servers start by themselves, and the staff domain and the Entra provider are put on the platform organisation.
 
 **5. Make the images public.** New GHCR packages are private, and the cluster pulls without credentials. If the deploy failed on pulling an image, open each package of [`pipeline/images.json`](pipeline/images.json) (`answerable/id`, `answerable/mcps`, `answerable/ops`) on GitHub under your profile's Packages, choose Package settings > Change visibility > Public, then rerun the failed jobs:
 
@@ -118,15 +118,15 @@ Once per environment, the first tag of a commit that has the `mcps` image, the `
 
 An MCP made with `bun mcp new` ships with its commit, by the same tags: nothing outside `mcps/<name>` needs a hand edit, and `bun mcp` has rewritten `charts/answerable/mcps.json` and the Toolbox's list. The `mcps` image holds it. On the staging tag the deploy:
 
-1. **provisions it** (`ops-bootstrap`): a `shared` MCP gets schema `<name>` in `answerable_mcps` with its roles `mcp_<name>_owner` and `mcp_<name>`; an `own` MCP gets the database `answerable_mcp_<name>`, its two logins and their Secrets `mcp-<name>-database-owner` and `mcp-<name>-database`;
-2. **migrates it** (`toolbox-migrate`, after the Toolbox's own database): its log names each MCP and the time the whole list took;
+1. **provisions it** (`ops-bootstrap`): a `shared` MCP gets schema `<name>` in `answerable_mcps`, owned by `answerable_mcps_migrator`, with `USAGE` for the Toolbox's `answerable_mcps_toolbox`; an `own` MCP gets the database `answerable_mcp_<name>`, its two logins and their Secrets `mcp-<name>-database-owner` and `mcp-<name>-database`;
+2. **migrates it** (`toolbox-migrate`, after the Toolbox's own database), as the schema's owner, and grants the serving login its tables: its log names each MCP and the time the whole list took;
 3. **serves it**: the Toolbox mounts a `toolbox` or `both` MCP in its hub, and serves a `standalone` or `both` MCP at `https://mcp.<zone>/<name>/mcp`;
 4. **registers it** (`ops-register`): a `standalone` or `both` MCP gets its resource `https://mcp.<zone>/<name>/mcp` in ID, allowing its manifest's scopes and `offline_access`, its Claude Code client `claude-code-<name>` and their link;
 5. **checks it** (`Smoke test staging`): a standalone MCP's metadata names its resource; the Toolbox's `/health` lists every MCP it serves.
 
 What to check when a new MCP ships:
 
-- `kubectl -n answerable logs job/toolbox-migrate` (kept until the next deploy): `<name>: migrating in answerable_mcps as mcp_<name>_owner`, and `Migrated N MCPs in … s`.
+- `kubectl -n answerable logs job/toolbox-migrate` (kept until the next deploy): `<name>: migrating in answerable_mcps as answerable_mcps_migrator`, and `Migrated N MCPs in … s`.
 - The smoke table: `toolbox /health` names the MCPs it serves; `<name> resource metadata` passes for a standalone MCP.
 - `kubectl -n answerable logs job/ops-register` (kept a day): `mcp-<name>-resource-v1: done`, `claude-code-<name>-v1: done` and the link the first time; afterwards the summary line counts it among what is as declared. A scope the manifest dropped is logged as its resource stops allowing it.
 - Giving an organisation access is a staff decision, not part of shipping ([Your MCP's sign-in](../apps/web/content/docs/mcp/sign-in.mdx)). For an MCP in the Toolbox: `toolbox_enable` in the admin MCP ([the admin MCP](../apps/web/content/docs/admin/index.mdx)), then `access_grant` of its grant string, such as `<name>`. For an MCP on its own URL: `standalone_enable`, then `access_grant` of the MCP's scopes with `clientId` `claude-code-<name>`, or `everyone: true`.

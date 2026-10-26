@@ -1,7 +1,7 @@
 import { sql, type SQL } from "drizzle-orm"
 import { pgPolicy, type PgColumn, type PgPolicy } from "drizzle-orm/pg-core"
 
-/** The setting that carries the caller's organisation on a borrowed connection: `mcpDatabase` sets it on every borrow and resets it on release. */
+/** The setting that carries the caller's organisation on a borrowed connection: `mcpDatabase` sets it, or resets it, on every borrow. */
 export const organisationSetting = "answerable.organisation_id"
 
 /**

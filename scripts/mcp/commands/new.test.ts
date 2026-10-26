@@ -191,7 +191,7 @@ test("it writes the templates, then runs each step in order, one line each, then
     "ok      migration  mcps/acme/drizzle/0000_initial.sql",
     "ok      manifest   mcps/acme/manifest.json: 3 tests pass",
     "ok      generate   charts/answerable/mcps.json current",
-    "ok      check      typecheck 6 files; lint 6 files; test 3 pass, 0 fail; manifest current; generated current; scan 6 files, no role switch; budget no MCP has a database of its own",
+    "ok      check      typecheck 6 files; lint 6 files; test 3 pass, 0 fail; manifest current; generated current; budget no MCP has a database of its own",
   ])
   expect(lines.slice(10).join("\n")).toBe(`
 Next:

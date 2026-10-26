@@ -6,7 +6,7 @@ import { Client, Pool } from "pg"
 import { mcpDatabase } from "./mcp-database"
 import { migrateMcp } from "./migrate-mcp"
 import { provisionOwnMcp, sqlOf } from "./provision"
-import { assertOwnLogin } from "./serving-login"
+import { assertServingLogin } from "./serving-login"
 import { database } from "./test/database"
 import * as fixtureA from "./test/fixtures/mpgfixa"
 import { projects } from "./test/fixtures/mpgfixa"
@@ -31,7 +31,7 @@ const asOwner = async (work: (client: Client) => Promise<unknown>) => {
   }
 }
 const provision = () => asOwner(client => provisionOwnMcp(sqlOf(client), { name: "mpgfixa", owner: owner.name, runtime: runtime.name }))
-const migrateAsOwner = () => asOwner(client => migrateMcp({ client, name: "mpgfixa", folder: fixtureFolder("mpgfixa"), mode: "own", runtime: runtime.name }))
+const migrateAsOwner = () => asOwner(client => migrateMcp({ client, name: "mpgfixa", folder: fixtureFolder("mpgfixa"), serving: runtime.name }))
 const relations = async () => (await scratch.db.$client.query("select relname, pg_get_userbyid(relowner) as owner, relacl::text as acl from pg_class where relnamespace = 'mpgfixa'::regnamespace order by 1")).rows
 beforeAll(async () => {
   scratch = await database.scratch("ownmode")
@@ -75,9 +75,9 @@ test("the owner login migrates its schema with the journal in it, grants the run
   expect(await relations()).toEqual(migrated)
 })
 
-test("served as the runtime login itself, with no role taken, in the MCP's schema, with the same organisation isolation", async () => {
+test("served as the runtime login itself, in the MCP's schema, with the same organisation isolation", async () => {
   const [first, second] = [crypto.randomUUID(), crypto.randomUUID()]
-  const db = mcpDatabase(pool, { name: "mpgfixa", schema: fixtureA, mode: "own", organisation: () => organisations.getStore() })
+  const db = mcpDatabase(pool, { name: "mpgfixa", schema: fixtureA, organisation: () => organisations.getStore() })
   expect((await asOrganisation(first, () => db.execute(sql`select current_user::text as role, current_setting('search_path') as path`))).rows).toEqual([{ role: runtime.name, path: "mpgfixa" }])
   await asOrganisation(first, () => db.insert(projects).values({ organisation_id: first, name: "Tower" }))
   expect(await asOrganisation(first, () => db.select({ name: projects.name }).from(projects))).toEqual([{ name: "Tower" }])
@@ -87,24 +87,31 @@ test("served as the runtime login itself, with no role taken, in the MCP's schem
 })
 
 test("its runtime login may serve it: no attribute but login, no membership, owns nothing, no CREATE or TEMPORARY on the database, USAGE on its schema", async () => {
-  const db = drizzle({ client: pool })
-  await assertOwnLogin(db, { name: "mpgfixa" })
-  const refusal = (problems: string) => `Database role ${runtime.name} may not serve the own MCP mpgfixa: ${problems}. Serve as its runtime login, which provisioning made`
-  const database = "answerable_mcp_postgres_test_ownmode"
-  /** Make `change`, expect the assertion to refuse with `problems`, then `undo`, and expect it to pass again. */
-  async function refused(change: string, problems: string, undo: string, on: Pool | Client = admin) {
-    await on.query(change)
-    try {
-      await expect(assertOwnLogin(db, { name: "mpgfixa" })).rejects.toThrow(refusal(problems))
-    } finally {
-      await on.query(undo)
+  // A connection no borrow has used, as a server's is when it asserts before listening: what it owns is named in the default search path.
+  const fresh = new Pool({ connectionString: runtime.url, max: 1 })
+  try {
+    const db = drizzle({ client: fresh })
+    const served = { names: ["mpgfixa"] }
+    await assertServingLogin(db, served)
+    const refusal = (problems: string) => `Database role ${runtime.name} may not serve MCPs: ${problems}. Serve as the login provisioning made to serve them`
+    const database = "answerable_mcp_postgres_test_ownmode"
+    /** Make `change`, expect the assertion to refuse with `problems`, then `undo`, and expect it to pass again. */
+    async function refused(change: string, problems: string, undo: string, on: Pool | Client = admin) {
+      await on.query(change)
+      try {
+        await expect(assertServingLogin(db, served)).rejects.toThrow(refusal(problems))
+      } finally {
+        await on.query(undo)
+      }
+      await assertServingLogin(db, served)
     }
-    await assertOwnLogin(db, { name: "mpgfixa" })
+    await refused(`alter role ${runtime.name} createdb`, "has CREATEDB", `alter role ${runtime.name} nocreatedb`)
+    await refused(`grant pg_read_all_data to ${runtime.name}`, "is a member of pg_read_all_data", `revoke pg_read_all_data from ${runtime.name}`)
+    await refused(`grant create, temporary on database ${database} to ${runtime.name}`, `holds CREATE on database ${database}; holds TEMPORARY on database ${database}`, `revoke create, temporary on database ${database} from ${runtime.name}`)
+    await asOwner(client => refused(`revoke usage on schema mpgfixa from ${runtime.name}`, "lacks USAGE on schema mpgfixa", `grant usage on schema mpgfixa to ${runtime.name}`, client))
+    await asOwner(client => refused(`grant create on schema mpgfixa to ${runtime.name}`, "holds CREATE on schema mpgfixa", `revoke create on schema mpgfixa from ${runtime.name}`, client))
+    await refused(`create table mpgfix_owned (id int); alter table mpgfix_owned owner to ${runtime.name}`, "owns table mpgfix_owned", "drop table mpgfix_owned", scratch.db.$client)
+  } finally {
+    await fresh.end()
   }
-  await refused(`alter role ${runtime.name} createdb`, "has CREATEDB", `alter role ${runtime.name} nocreatedb`)
-  await refused(`grant pg_read_all_data to ${runtime.name}`, "is a member of pg_read_all_data", `revoke pg_read_all_data from ${runtime.name}`)
-  await refused(`grant create, temporary on database ${database} to ${runtime.name}`, `holds CREATE on database ${database}; holds TEMPORARY on database ${database}`, `revoke create, temporary on database ${database} from ${runtime.name}`)
-  await asOwner(client => refused(`revoke usage on schema mpgfixa from ${runtime.name}`, "lacks USAGE on schema mpgfixa", `grant usage on schema mpgfixa to ${runtime.name}`, client))
-  await asOwner(client => refused(`grant create on schema mpgfixa to ${runtime.name}`, "holds CREATE on schema mpgfixa", `revoke create on schema mpgfixa from ${runtime.name}`, client))
-  await refused(`create table mpgfix_owned (id int); alter table mpgfix_owned owner to ${runtime.name}`, "owns table mpgfix_owned", "drop table mpgfix_owned", scratch.db.$client)
 })

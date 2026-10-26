@@ -61,7 +61,7 @@ export const dev: Command = {
     const addresses = [...(mcp.serve === "standalone" ? [] : [local.toolboxResource]), ...(mcp.serve === "toolbox" ? [] : [alone])]
     const steps: Step[] = [
       {
-        // Every MCP the Toolbox serves must have its schema and roles, or it refuses to start; and its own database its tables.
+        // Every MCP the Toolbox serves must have its schema, granted to the serving login, or it refuses to start; and its own database its tables.
         name: "database", fix: again,
         run: async () => {
           for (const { name: mounted } of mounts) await sh(io, [process.execPath, cli, "db", mounted, "migrate"], root, env)

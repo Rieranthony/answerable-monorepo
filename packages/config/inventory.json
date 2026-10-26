@@ -223,16 +223,9 @@
           "development": "postgres://answerable_mcps_toolbox:answerable@localhost:47432/answerable_mcps",
           "test": "postgres://answerable_mcps_toolbox:answerable@localhost:47432/answerable_mcps"
         },
-        "doc": "The shared MCP database, answerable_mcps, as the Toolbox's serving login, answerable_mcps_toolbox, which takes each mounted MCP's runtime role",
+        "doc": "The shared MCP database, answerable_mcps, as the Toolbox's serving login, answerable_mcps_toolbox, which is granted each mounted MCP's schema and tables",
         "source": "cluster",
         "optional": false
-      },
-      {
-        "name": "TOOLBOX_MCPS_ROLE_PREFIX",
-        "secret": false,
-        "fallback": "mcp",
-        "doc": "The prefix of the MCPs' roles in the shared database: mcp; a test that serves its own database names its own",
-        "optional": true
       },
       {
         "name": "TOOLBOX_ID_ISSUER",
@@ -354,7 +347,7 @@
           "development": "postgres://answerable_mcps_migrator:answerable@localhost:47432/answerable_mcps",
           "test": "postgres://answerable_mcps_migrator:answerable@localhost:47432/answerable_mcps"
         },
-        "doc": "The shared MCP database, answerable_mcps, as its migrator login, answerable_mcps_migrator, which takes each shared MCP's owner role; for the migration only",
+        "doc": "The shared MCP database, answerable_mcps, as its migrator login, answerable_mcps_migrator, which owns every shared MCP's schema; for the migration only",
         "source": "cluster",
         "optional": false
       },

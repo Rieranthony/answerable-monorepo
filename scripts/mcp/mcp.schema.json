@@ -7,7 +7,7 @@
     },
     "name": {
       "type": "string",
-      "description": "The MCP's name: its provider id and the name of its directory, schema and roles"
+      "description": "The MCP's name: its provider id and the name of its directory and schema"
     },
     "serve": {
       "type": "string",

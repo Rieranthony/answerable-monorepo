@@ -111,12 +111,11 @@ For `--serve standalone` the command is `claude mcp add --transport http acme ht
 
 ## Undo a local MCP
 
-A command that removes an MCP: Not yet. Trigger: the first MCP that is removed. To undo one you made while trying this out, delete `mcps/acme`, run `bun mcp check <another MCP>` to rewrite the lists without it, then `bun install`. The schema and the roles stay in your development Postgres until you drop them:
+A command that removes an MCP: Not yet. Trigger: the first MCP that is removed. To undo one you made while trying this out, delete `mcps/acme`, run `bun mcp check <another MCP>` to rewrite the lists without it, then `bun install`. The schema stays in your development Postgres until you drop it:
 
 ```sh
 psql postgres://answerable:answerable@localhost:47432/answerable_mcps -c 'drop schema if exists acme cascade'
 psql postgres://answerable:answerable@localhost:47432/answerable_mcps_test -c 'drop schema if exists acme cascade'
-psql postgres://answerable:answerable@localhost:47432/postgres -c 'drop role if exists mcp_acme; drop role if exists mcp_acme_owner; drop role if exists mcp_test_acme; drop role if exists mcp_test_acme_owner'
 ```
 
 Do this only for a name that has never shipped. A name that has shipped goes into `mcps/retired.json` instead, which `bun mcp new` refuses for ever.

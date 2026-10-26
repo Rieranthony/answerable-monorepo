@@ -23,7 +23,7 @@ const run = async (argv: string[], exec = recorder(() => ({ code: 0, output: pas
 }
 const lines = (text: string) => text.split("\n").map(line => line.replace(/ \(\d+ ms\)$/, ""))
 
-test("it runs the typecheck, lint and tests in the workspace, the manifest, the generated files, the scan and the budget, one line each with counts", async () => {
+test("it runs the typecheck, lint and tests in the workspace, the manifest, the generated files and the budget, one line each with counts", async () => {
   const { exec, ran } = recorder(() => ({ code: 0, output: passing }))
   const { code, stdout } = await run(["acme"], exec)
   expect(code).toBe(0)
@@ -37,7 +37,6 @@ test("it runs the typecheck, lint and tests in the workspace, the manifest, the 
     "ok      test       6 pass, 0 fail, 100% functions, 98.5% lines",
     "ok      manifest   current",
     "ok      generated  current",
-    "ok      scan       6 files, no role switch",
     "ok      budget     no MCP has a database of its own",
     "",
   ])
@@ -84,13 +83,6 @@ test("from inside the MCP's directory it needs no name; a failing step stops the
   expect(code).toBe(1)
   expect(lines(stdout())).toEqual(["ok      typecheck  6 files", "failed  lint      ", ""])
   expect(stderr()).toBe("lint failed: src/provider.ts\n  1:1  error  no-unused-vars\n\nFinish the job with:\n  bun mcp check acme\n")
-})
-
-test("the scan refuses a role switch in the MCP's code, naming its line", async () => {
-  await Bun.write(join(repository.root, "mcps/acme/src/tools/sneaky.ts"), "export const sneaky = 'set role mcp_beta'\n")
-  const { code, stderr } = await run(["acme"])
-  expect(code).toBe(1)
-  expect(stderr()).toStartWith("scan failed: an MCP's code may not switch role or set the caller's organisation; mcpDatabase does both:\nmcps/acme/src/tools/sneaky.ts:1: set role")
 })
 
 test("a test run without a coverage table still reports its counts, and check takes one MCP at most", async () => {

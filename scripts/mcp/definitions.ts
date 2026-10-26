@@ -84,7 +84,7 @@ export const definitions = {
   check: {
     name: "check",
     usage: "bun mcp check [mcp] [--json]",
-    summary: "Typecheck, lint and test an MCP, with the conformance kit and its coverage gate; rewrite a stale manifest, the generated files and the environment inventories, to commit; scan its code for role switches",
+    summary: "Typecheck, lint and test an MCP, with the conformance kit and its coverage gate; rewrite a stale manifest, the generated files and the environment inventories, to commit",
     flags: { json: jsonFlag },
     steps: [
       { name: "typecheck", does: "Runs tsc over the MCP" },
@@ -92,7 +92,6 @@ export const definitions = {
       { name: "test", does: "Runs its tests, the conformance kit included, with the 100% coverage gate" },
       { name: "manifest", does: "Says whether the tests rewrote `manifest.json`; commit it when they did" },
       { name: "generated", does: "Rewrites the generated lists and the environment inventories when they are stale; commit them when they are" },
-      { name: "scan", does: "Refuses code in the MCP that switches the database role or sets the caller's organisation itself" },
       { name: "budget", does: "Warns when MCPs with a database of their own would pass the connection budget" },
     ],
     example: "bun mcp check acme",
@@ -107,7 +106,7 @@ export const definitions = {
     },
     steps: [
       { name: "migration", does: "`generate`: writes the migration for a change to `src/db/schema.ts`" },
-      { name: "database", does: "`migrate`: creates the MCP's local schema and roles when missing, then applies its migrations" },
+      { name: "database", does: "`migrate`: creates the MCP's local schema when missing, then applies its migrations" },
     ],
     example: "bun mcp db acme generate --name notes",
   },

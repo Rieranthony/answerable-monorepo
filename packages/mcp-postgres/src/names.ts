@@ -5,8 +5,9 @@ export const identifier = /^[a-z_][a-z0-9_]{0,62}$/
 export const quote = (name: string) => `"${name.replaceAll('"', '""')}"`
 
 /**
- * The advisory lock every statement on the cluster's roles takes, transaction-scoped or for a session, so that concurrent suites and
- * processes never race on `pg_authid` or `pg_auth_members`.
+ * The advisory lock every statement on the cluster's roles or on a database's own privileges takes, transaction-scoped or for a session, so
+ * that concurrent suites and processes never race on `pg_authid`, `pg_auth_members` or a `pg_database` row: of two grants on one database at
+ * once, the second waits for the first, then fails with "tuple concurrently updated".
  */
 export const roleLock = "hashtext('answerable:mcp-runtime-role')"
 
@@ -19,15 +20,10 @@ export function assertMcpName(name: string): void {
   if (name === "public" || name === "drizzle") throw new Error(`MCP name ${name} is reserved: Postgres or drizzle owns a schema of that name`)
 }
 
-/** An MCP's two roles in the shared database: its owner, `<prefix>_<name>_owner`, and its runtime role, `<prefix>_<name>`. */
-export function mcpRoles(prefix: string, name: string): { owner: string; runtime: string } {
-  assertMcpName(name)
-  const roles = { owner: `${prefix}_${name}_owner`, runtime: `${prefix}_${name}` }
-  if (!/^[a-z][a-z0-9_]*$/.test(prefix) || !identifier.test(roles.owner)) throw new Error(`Role prefix "${prefix}" must be lowercase letters, digits and underscores, short enough for ${roles.owner} to be a role name`)
-  return roles
-}
-
-/** The shared MCP database and its two logins, as the deployment's bootstrap and the development Postgres name them. */
+/**
+ * The shared MCP database and its two logins, as the deployment's bootstrap and the development Postgres name them: the migrator, which owns
+ * the database and every MCP's schema and migrates them, and the Toolbox's serving login, granted every MCP's schema and tables.
+ */
 export const sharedMcps = {
   database: "answerable_mcps",
   logins: { migrator: "answerable_mcps_migrator", toolbox: "answerable_mcps_toolbox" },

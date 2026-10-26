@@ -447,21 +447,19 @@ describe("the ops Jobs", () => {
 describe("the MCPs of charts/answerable/mcps.json", () => {
   const shared = declared.filter(mcp => mcp.database === "shared")
 
-  test("bootstrap provisioned each one's schema and roles for the Toolbox, which serves every one, and toolbox-migrate migrated each in turn, as its owner role", async () => {
-    expect(await psql("select nspname || ' ' || pg_get_userbyid(nspowner) from pg_namespace where nspname !~ '^pg_' and nspname not in ('public', 'information_schema') order by 1", "answerable_mcps"))
-      .toEqual(shared.map(({ name }) => `${name} mcp_${name}_owner`).sort())
+  test("bootstrap provisioned each one's schema, owned by the migrator, for the Toolbox, which serves every one, and toolbox-migrate migrated each in turn, as the migrator, making no role", async () => {
+    expect(await psql("select nspname || ' ' || pg_get_userbyid(nspowner) || ' ' || has_schema_privilege('answerable_mcps_toolbox', oid, 'USAGE') from pg_namespace where nspname !~ '^pg_' and nspname not in ('public', 'information_schema') order by 1", "answerable_mcps"))
+      .toEqual(shared.map(({ name }) => `${name} answerable_mcps_migrator true`).sort())
+    // The Toolbox's serving login is a member of nothing, and no role is named after an MCP.
+    expect(await psql("select count(*) from pg_auth_members where member = 'answerable_mcps_toolbox'::regrole")).toEqual(["0"])
+    expect(await psql("select count(*) from pg_roles where rolname like 'mcp\\_%'")).toEqual(["0"])
     for (const { name } of shared) {
-      // inherit, set, admin: the serving login may take the role and inherits nothing; the administrative login, which created it, holds it
-      // with ADMIN OPTION alone, as PostgreSQL 16 and later give a role's creator.
-      const members = await psql(`select m.rolname || ' ' || a.inherit_option || ' ' || a.set_option || ' ' || a.admin_option from pg_auth_members a join pg_roles m on m.oid = a.member where a.roleid = 'mcp_${name}'::regrole order by 1`)
-      expect(members, name).toEqual(["answerable_mcps_toolbox false true false", `${databaseAdmin} false false true`])
-      // The administrative login may take each owner role, which giving it the schema needs, and inherits none.
-      expect(await psql(`select bool_or(a.inherit_option) from pg_auth_members a where a.roleid = 'mcp_${name}_owner'::regrole and a.member = '${databaseAdmin}'::regrole`), name).toEqual(["f"])
+      expect(await psql(`select distinct tableowner from pg_tables where schemaname = '${name}'`, "answerable_mcps"), name).toEqual(["answerable_mcps_migrator"])
       expect(Number((await psql(`select count(*) from "${name}".__drizzle_migrations`, "answerable_mcps"))[0]), name).toBeGreaterThan(0)
     }
     const log = await jobLog("toolbox-migrate")
     expect(log).toContain("Migrated answerable_toolbox; provisioned answerable_toolbox_runtime")
-    for (const { name } of shared) expect(log).toContain(`${name}: migrating in answerable_mcps as mcp_${name}_owner`)
+    for (const { name } of shared) expect(log).toContain(`${name}: migrating in answerable_mcps as answerable_mcps_migrator`)
     const took = log.match(/Migrated (\d+) MCPs? in ([\d.]+) s/)
     expect(Number(took?.[1])).toBe(declared.length)
     console.log(`toolbox-migrate migrated ${took?.[1]} MCPs in ${took?.[2]} s, as its log says`)

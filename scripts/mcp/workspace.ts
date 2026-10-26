@@ -7,7 +7,7 @@ import { Refusal } from "./io"
 /** `mcp.json`: an MCP's declaration, which `mcp.schema.json` publishes for editors and a test keeps equal to this. */
 export const declaration = z.strictObject({
   $schema: z.string().optional(),
-  name: z.string().describe("The MCP's name: its provider id and the name of its directory, schema and roles"),
+  name: z.string().describe("The MCP's name: its provider id and the name of its directory and schema"),
   serve: z.enum(["toolbox", "standalone", "both"]).describe("Where it runs: in the Toolbox, on its own URL, or both"),
   database: z.enum(["shared", "own"]).describe("Where its tables live: a schema in the shared database answerable_mcps, or a database of its own"),
 }).meta({ title: "An MCP's declaration, mcps/<name>/mcp.json", description: "Written by bun mcp new; serve and database may be changed by hand" })

@@ -12,7 +12,7 @@ const calls = new AsyncLocalStorage<string>()
  * import { callerOrganisation } from "@answerable/mcp"
  * import { mcpDatabase } from "@answerable/mcp-postgres"
  *
- * const db = mcpDatabase(pool, { name: "acme", schema, mode: "shared", organisation: callerOrganisation })
+ * const db = mcpDatabase(pool, { name: "acme", schema, organisation: callerOrganisation })
  * ```
  */
 export const callerOrganisation = (): string | undefined => calls.getStore()

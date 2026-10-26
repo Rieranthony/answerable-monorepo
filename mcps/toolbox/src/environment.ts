@@ -21,10 +21,9 @@ export const toolboxConfig = defineConfig("Toolbox", {
     schema: z.url(),
     secret: true,
     defaults: locally("postgres://answerable_mcps_toolbox:answerable@localhost:47432/answerable_mcps"),
-    doc: "The shared MCP database, answerable_mcps, as the Toolbox's serving login, answerable_mcps_toolbox, which takes each mounted MCP's runtime role",
+    doc: "The shared MCP database, answerable_mcps, as the Toolbox's serving login, answerable_mcps_toolbox, which is granted each mounted MCP's schema and tables",
     source: "cluster",
   },
-  TOOLBOX_MCPS_ROLE_PREFIX: { schema: z.string().regex(/^[a-z][a-z0-9_]*$/), fallback: "mcp", doc: "The prefix of the MCPs' roles in the shared database: mcp; a test that serves its own database names its own" },
   TOOLBOX_ID_ISSUER: { schema: z.url(), defaults: locally("http://localhost:47300"), doc: "The Answerable ID issuer whose tokens the Toolbox accepts", source: "chart" },
   TOOLBOX_RESOURCE_URL: { schema: z.url(), defaults: locally("http://localhost:47400/mcp"), doc: "The Toolbox's own URL, the audience of the tokens it accepts", source: "chart" },
   TOOLBOX_STANDALONE_ORIGIN: {
@@ -48,8 +47,8 @@ export function readToolboxEnvironment(env: Record<string, string | undefined>) 
   const { auth: alone } = parseEnvironment(toolboxConfig, env, { issuer: "TOOLBOX_ID_ISSUER", resource: "TOOLBOX_STANDALONE_ORIGIN" })
   return {
     databaseUrl: data.TOOLBOX_DATABASE_URL,
-    /** The mounted MCPs' databases, for `mcpDatabases`: the shared one, each own one's URL by its variable, and the role prefix. */
-    mcps: { shared: data.TOOLBOX_MCPS_DATABASE_URL, own: own.urls(data), prefix: data.TOOLBOX_MCPS_ROLE_PREFIX },
+    /** The mounted MCPs' databases, for `mcpDatabases`: the shared one, and each own one's URL by its variable. */
+    mcps: { shared: data.TOOLBOX_MCPS_DATABASE_URL, own: own.urls(data) },
     auth,
     /** The origin of the MCPs served alone, each the resource `<origin>/<name>/mcp`. */
     origin: alone.resource,
