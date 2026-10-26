@@ -14,4 +14,12 @@
   - the empty-value rule (A2).
 - **Measured by this session:** the test gate with 50 and with 100 generated MCPs (F18). It passes at 50 and fails at 100 with `too many clients`. All 150 MCPs were dropped afterwards.
 - **The report,** `report.html`, is published as https://claude.ai/artifact/WadRa6EXTco4AxzsFPPt8y. It holds 11 defects to fix, 7 decisions for the owner, the recommended cleanups and the proposals recommended against.
+- **The owner decided:**
+  - D-1: one process;
+  - D-2: keep the `own` mode, against the recommendation;
+  - D-3: grants;
+  - everything else as recommended.
+
+  Recorded in `decisions.md`.
+- **The six audit reports** are copied into `audits/`. The briefs R1 to R6 are written in `briefs/`. R1 starts.
 

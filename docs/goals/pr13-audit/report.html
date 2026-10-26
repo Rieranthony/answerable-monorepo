@@ -82,6 +82,14 @@ a { color: var(--accent); }
   <div class="eyebrow">Pull request 13 · claude/typed-config-b1 at 7ffd16b4 · 26 October 2026</div>
   <h1>PR 13 merge audit</h1>
   <p class="lede">Before the pull request merges, this audit asks what is unnecessary, overly complicated or built on a weak assumption, what can be deleted, and what can then be simplified. Six auditors read the pull request independently. I checked every finding against the code, reproduced the ones that change a decision, and measured what was still an estimate. No code has changed yet.</p>
+  <p><b>Decided on 26 October 2026:</b></p>
+  <ul>
+    <li><b>D-1:</b> one process.</li>
+    <li><b>D-2:</b> keep the <code>own</code> mode, against the recommendation.</li>
+    <li><b>D-3:</b> replace the roles with grants.</li>
+    <li><b>Everything else:</b> as recommended.</li>
+  </ul>
+  <p>The work runs in six briefs, R1 to R6, in <code>docs/goals/pr13-audit/briefs/</code>.</p>
   <div class="facts">
     <span><b>15</b> commits</span>
     <span><b>+22,726 −3,494</b> lines before M9</span>

@@ -90,9 +90,9 @@ Before M9, it held 14 commits, 488 files, +22,726 and −3,494 lines. [`findings
 | 2. M9 lands; baseline counts and gate timings | complete |
 | 3. Six audits | complete |
 | 4. Verification | complete |
-| 5. Report and decisions | report published; decisions asked |
-| 6. The owner decides | waiting |
-| 7. Changes, gates, the final pass | pending |
+| 5. Report and decisions | complete |
+| 6. The owner decides | complete (`decisions.md`) |
+| 7. Changes, gates, the final pass | R1 to R6 (`briefs/`); R1 started |
 
 ## Errors
 
