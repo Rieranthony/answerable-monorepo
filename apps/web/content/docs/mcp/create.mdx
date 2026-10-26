@@ -99,7 +99,7 @@ bun mcp setup
 bun mcp dev acme
 ```
 
-`bun mcp setup` runs once. It connects `bun mcp` to your local Answerable ID: it makes a machine client there and writes its id and secret to the root `.env`. `bun mcp dev acme` then migrates the MCP's schema, starts the Toolbox with the MCP in it, gives your organisation access to it, and prints the command that connects Claude Code:
+Both need your local ID, migrated, with a sign-in for your email domain: [Before you start](/docs/mcp/local-testing#before-you-start). `bun mcp setup` runs once. It connects `bun mcp` to your local Answerable ID: it makes a machine client there and writes its id and secret to the root `.env`. `bun mcp dev acme` then migrates the MCP's schema, starts the Toolbox with the MCP in it, gives your organisation access to it, and prints the command that connects Claude Code:
 
 ```sh
 claude mcp add --transport http answerable-toolbox http://localhost:47400/mcp --client-id claude-code-toolbox --callback-port 47700

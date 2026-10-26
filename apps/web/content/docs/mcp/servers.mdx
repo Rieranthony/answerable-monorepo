@@ -114,7 +114,7 @@ Register each MCP's resource, a client and its access in ID before the first sig
 
 ## Health
 
-`createMcpServer` answers `GET /health` with `{ "status": "ok" }` without authentication, whatever the `Host` header, so load balancers and container probes can call it by address. The Toolbox, the standalone server and the admin MCP answer it themselves: `200` with `{ "status": "ok", "databases": { … }, "providers": […] }` while every database they use answers `select 1`, else `503` with `"status": "unavailable"` and the database that did not answer. `providers` lists the MCPs they serve.
+`createMcpServer` answers `GET /health` with `{ "status": "ok" }` without authentication, whatever the `Host` header, so load balancers and container probes can call it by address. The Toolbox, the standalone server and the admin MCP answer it themselves: `200` with `{ "status": "ok", "databases": { … }, "providers": […] }` while their own database answers `select 1`, else `503` with `"status": "unavailable"`. `databases` names each database's state, the MCP databases included; an MCP database that fails, or takes more than 250 ms, is `unavailable` there and never fails the check. `providers` lists the MCPs they serve.
 
 ## Manifest
 

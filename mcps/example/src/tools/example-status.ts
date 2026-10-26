@@ -12,8 +12,9 @@
 // input and output: Zod objects. Describe every field (.describe("…")): hosts show it to the model.
 //   A list takes limit and cursor and returns items, next_cursor and has_more (the conformance kit checks it).
 //
-// execute: gets the checked input and the caller: person, organisation and db. Row-level security limits every query to
-//   the caller's organisation, so no query filters on it by hand. Throw ToolError for a failure the caller can fix.
+// execute: gets the checked input and the caller: person, organisation and db. Row-level security limits every query on the
+//   MCP's tables to the caller's organisation, so none filters on it by hand; data from anywhere else is constrained by
+//   organisation.id. Throw ToolError for a failure the caller can fix.
 import { z } from "zod"
 import { defineTool } from "../mcp"
 

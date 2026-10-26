@@ -85,8 +85,23 @@ test("a Postgres that does not answer is named, with how to start it", async () 
   }
 })
 
+test("migrate from inside the MCP's folder reads the root .env, as setup and dev do", async () => {
+  // Bun loads a .env from the working directory only, so this one, at the repository's root, reaches the CLI only if it reads it itself.
+  const environment = join(repository.root, ".env")
+  const given = process.env.MCPS_DATABASE_ADMIN_URL
+  delete process.env.MCPS_DATABASE_ADMIN_URL
+  await Bun.write(environment, "MCPS_DATABASE_ADMIN_URL=postgres://answerable:answerable@localhost:1/answerable_mcps\n")
+  try {
+    const io = testIo(["db", "migrate"], join(repository.root, "mcps", shared), { exec: spawn })
+    expect([await main(io.io), io.stderr()]).toEqual([1, `database failed: the development Postgres does not answer on localhost:1; start it with bun run env:up from the main checkout\n\nFinish the job with:\n  bun mcp db ${shared} migrate\n`])
+  } finally {
+    await Bun.file(environment).delete()
+    if (given !== undefined) process.env.MCPS_DATABASE_ADMIN_URL = given
+  }
+})
+
 test.each([
-  [["generate", "migrate", "x"], "bun mcp db takes generate or migrate, after the MCP's name, not generate migrate x"],
+  [["generate", "migrate", "x"],"bun mcp db takes generate or migrate, after the MCP's name, not generate migrate x"],
   [["acme", "seed"], "bun mcp db takes generate or migrate, after the MCP's name, not acme seed"],
   [[], "bun mcp db takes generate or migrate, after the MCP's name"],
   [["acme", "migrate", "--name", "x"], "--name names the migration bun mcp db generate writes; migrate takes none"],

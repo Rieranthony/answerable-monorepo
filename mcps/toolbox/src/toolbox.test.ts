@@ -5,12 +5,12 @@ import { defineMutation, defineProvider, defineTool, type Mount, type Provider }
 import { errorOf } from "@answerable/mcp/testing"
 import { connect, createEvidence } from "@answerable/mcp-postgres"
 import { mcpPostgresTestConfig, rowsOf } from "@answerable/mcp-postgres/testing"
-import { Client } from "pg"
+import { Client, Pool } from "pg"
 import { z } from "zod"
 import { writeCatalogue } from "./catalogue"
 import { createMemoryTracer } from "@answerable/mcp-platform"
 import { serving } from "./test/database"
-import { createHub, names, resource, type Hub } from "./test/hub"
+import { createHub, names, resource, type Client as McpClient, type Hub } from "./test/hub"
 import { e2e } from "./test/mcps"
 import { databases, opened, prefix } from "./test/mcps"
 import { mcpDatabases } from "@answerable/mcp-platform"
@@ -210,6 +210,21 @@ test("grants are read from ID and cached; after an invalidation the same token s
   expect(await names(client)).toEqual(["toolbox_whoami", "e2e_identity_get"])
 })
 
+test("a cold call reads who is calling beside the grants, so it waits one round trip to ID, not two", async () => {
+  const { member, id } = await hub()
+  const call = async (client: McpClient) => (await client.callTool({ name: "e2e_identity_get", arguments: {} })).isError
+  // Another member's call first, so that the Toolbox already holds its own token for ID's admin API.
+  expect(await call(await (await member(["e2e"])).connect())).toBeFalsy()
+  const client = await (await member(["e2e"])).connect()
+  const latency = 300
+  id.slow(latency)
+  const started = performance.now()
+  expect(await call(client)).toBeFalsy()
+  const elapsed = performance.now() - started
+  expect(elapsed).toBeGreaterThanOrEqual(latency)
+  expect(elapsed).toBeLessThan(latency * 1.5)
+})
+
 test("when ID cannot say what a member may use, a call answers UPSTREAM_UNAVAILABLE and a list fails", async () => {
   const { member, id } = await hub()
   const client = await (await member(["e2e"])).connect()
@@ -221,15 +236,26 @@ test("when ID cannot say what a member may use, a call answers UPSTREAM_UNAVAILA
   } finally { log.mockRestore() }
 })
 
-test("health lists the mounted providers, and answers ok only while every database answers", async () => {
+test("health lists the mounted providers, is ready while the Toolbox's own database answers, and reports an MCP database that does not without failing", async () => {
   const own = connect(login.url, { max: 1 })
-  const toolbox = await createToolbox({ mount: [e2e, bulk].map(entry => ("provider" in entry ? entry : { provider: entry })), pools: { mcps: opened.pools.mcps! }, auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(createFakeId().config), spans: createMemoryTracer().tracer })
-  expect(await (await toolbox.fetch(new Request("https://mcp.test/health"))).json()).toEqual({ status: "ok", databases: { toolbox: "ok", mcps: "ok" }, providers: ["bulk", "e2e"] })
-  await own.$client.end()
-  const down = await toolbox.fetch(new Request("https://mcp.test/health"))
-  expect(down.status).toBe(503)
-  expect(await down.json()).toEqual({ status: "unavailable", databases: { toolbox: "unavailable", mcps: "ok" }, providers: ["bulk", "e2e"] })
-  expect((await toolbox.fetch(new Request(resource, { method: "POST", headers: { Host: "mcp.test" } }))).status).toBe(401)
+  const unreachable = new Pool({ connectionString: "postgres://nobody:nothing@127.0.0.1:1/none", max: 1 })
+  const mount = [e2e, bulk].map(entry => ("provider" in entry ? entry : { provider: entry }))
+  const toolboxOf = (mcps: Pool) => createToolbox({ mount, pools: { mcps }, auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(createFakeId().config), spans: createMemoryTracer().tracer })
+  const health = async (toolbox: Awaited<ReturnType<typeof createToolbox>>) => {
+    const response = await toolbox.fetch(new Request("https://mcp.test/health"))
+    return [response.status, await response.json()]
+  }
+  try {
+    const toolbox = await toolboxOf(opened.pools.mcps!)
+    expect(await health(toolbox)).toEqual([200, { status: "ok", databases: { toolbox: "ok", mcps: "ok" }, providers: ["bulk", "e2e"] }])
+    const mcpsDown = await toolboxOf(unreachable)
+    expect(await health(mcpsDown)).toEqual([200, { status: "ok", databases: { toolbox: "ok", mcps: "unavailable" }, providers: ["bulk", "e2e"] }])
+    await own.$client.end()
+    expect(await health(toolbox)).toEqual([503, { status: "unavailable", databases: { toolbox: "unavailable", mcps: "ok" }, providers: ["bulk", "e2e"] }])
+    expect((await toolbox.fetch(new Request(resource, { method: "POST", headers: { Host: "mcp.test" } }))).status).toBe(401)
+  } finally {
+    await unreachable.end()
+  }
 })
 
 // A record through the Toolbox: prepared with e2e_records_create, committed with toolbox_commit, then each organisation's list.

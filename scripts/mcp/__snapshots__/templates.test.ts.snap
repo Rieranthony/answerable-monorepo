@@ -198,8 +198,9 @@ exports[`every file of a new MCP, for a fixed name and date, with the status too
 // input and output: Zod objects. Describe every field (.describe("…")): hosts show it to the model.
 //   A list takes limit and cursor and returns items, next_cursor and has_more (the conformance kit checks it).
 //
-// execute: gets the checked input and the caller: person, organisation and db. Row-level security limits every query to
-//   the caller's organisation, so no query filters on it by hand. Throw ToolError for a failure the caller can fix.
+// execute: gets the checked input and the caller: person, organisation and db. Row-level security limits every query on the
+//   MCP's tables to the caller's organisation, so none filters on it by hand; data from anywhere else is constrained by
+//   organisation.id. Throw ToolError for a failure the caller can fix.
 import { z } from "zod"
 import { defineTool } from "../mcp"
 
@@ -307,8 +308,9 @@ exports[`a new MCP whose first tool is a read has its domain's table; a mutation
 // input and output: Zod objects. Describe every field (.describe("…")): hosts show it to the model.
 //   A list takes limit and cursor and returns items, next_cursor and has_more (the conformance kit checks it).
 //
-// execute: gets the checked input and the caller: person, organisation and db. Row-level security limits every query to
-//   the caller's organisation, so no query filters on it by hand. Throw ToolError for a failure the caller can fix.
+// execute: gets the checked input and the caller: person, organisation and db. Row-level security limits every query on the
+//   MCP's tables to the caller's organisation, so none filters on it by hand; data from anywhere else is constrained by
+//   organisation.id. Throw ToolError for a failure the caller can fix.
 import { desc, lt } from "drizzle-orm"
 import { z } from "zod"
 import * as schema from "../db/schema"
@@ -425,8 +427,9 @@ exports[`a new MCP whose first tool is a read has its domain's table; a mutation
 // prepare: computes the preview and changes nothing. It checks the input, reads nothing that changes, and returns the summary the
 //   person confirms, naming their organisation.
 //
-// commit: applies exactly what was prepared, from plan. Row-level security limits it to the caller's organisation, so it
-//   sets organisation_id from organisation.id and filters on nothing by hand. Throw ToolError for a failure the caller can fix.
+// commit: applies exactly what was prepared, from plan. Row-level security limits it on the MCP's tables to the caller's
+//   organisation, so it sets organisation_id from organisation.id and filters on nothing there by hand; data from anywhere else
+//   is constrained by organisation.id. Throw ToolError for a failure the caller can fix.
 import { z } from "zod"
 import * as schema from "../db/schema"
 import { defineMutation } from "../mcp"

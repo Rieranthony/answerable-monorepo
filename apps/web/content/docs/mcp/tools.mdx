@@ -61,7 +61,7 @@ The description is what a model reads to choose a tool. Write operational docume
 
 <AutoTypeTable path="../../packages/auth/src/index.ts" name="UserPrincipal" />
 
-**Constrain every query by `organisation.id`.** Another organisation's data must be not found, never forbidden. Join on `person.id`, never on an email address. A table in an MCP's [database](#the-database) is limited to the caller's organisation by Postgres as well. [How Answerable ID works](/docs/id) explains the token.
+**Keep to the caller's organisation.** A table with the organisation policy needs no filter; data from anywhere else is constrained by `organisation.id`: [the rule](/docs/mcp/database#add-a-table). Join on `person.id`, never on an email address. [How Answerable ID works](/docs/id) explains the token.
 
 ### The database
 

@@ -75,7 +75,7 @@ A tool's `execute`, or a change's `prepare` and `commit`, receives the checked i
 
 <include lang="ts" meta='title="mcps/example/src/docs/caller.ts"'>../../../../../mcps/example/src/docs/caller.ts</include>
 
-**Do not filter by organisation.** Postgres limits every query on your tables to the caller's organisation, so another organisation's rows are never returned, even by a query that forgets. A change sets `organisation_id` from `organisation.id` when it adds a row, as `notes.add` does. [Why, and the one exception](/docs/mcp/database#add-a-table).
+**Your tables need no filter by organisation.** Postgres limits every query on them to the caller's organisation, so another organisation's rows are never returned, even by a query that forgets. A change sets `organisation_id` from `organisation.id` when it adds a row, as `notes.add` does. Data from anywhere else, such as an upstream API, is constrained by `organisation.id`: [the rule, and why](/docs/mcp/database#add-a-table).
 
 ## Test it
 

@@ -285,7 +285,7 @@ Read from the root `.env` by `bun run toolbox:dev`; every variable is listed in 
 
 <Configuration group={["Toolbox", "Toolbox migration", "Toolbox test database"]} />
 
-The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, such as `http://localhost:47400/admin`; it has no variable. An MCP whose database is its own adds a variable, `TOOLBOX_MCP_<NAME>_DATABASE_URL`, which the generated list names. `GET /health` answers `200` with `{ "status": "ok", "databases": { "toolbox": "ok", "mcps": "ok" }, "providers": ["e2e", "example"] }` while every database answers `select 1`, and `503` with `"status": "unavailable"` and the database that did not answer otherwise, whatever the `Host` header; `providers` lists the mounted MCPs.
+The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, such as `http://localhost:47400/admin`; it has no variable. An MCP whose database is its own adds a variable, `TOOLBOX_MCP_<NAME>_DATABASE_URL`, which the generated list names. `GET /health`, the readiness check, answers `200` with `{ "status": "ok", "databases": { "toolbox": "ok", "mcps": "ok" }, "providers": ["e2e", "example"] }` while the Toolbox's own database answers `select 1`, and `503` with `"status": "unavailable"` otherwise, whatever the `Host` header. `databases` also reports each MCP database, `unavailable` when it fails or takes more than 250 ms, without failing the check: a busy MCP pool is load, and its tools answer errors. `providers` lists the mounted MCPs.
 
 ## Limits
 
@@ -332,7 +332,7 @@ The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, s
 | Log `permission denied for table <table>` | The runtime role lacks a grant: the database was migrated by an older version | Run `db:migrate` |
 | `Refusing to provision <role> as a runtime role: …` from `db:migrate` | `TOOLBOX_DATABASE_RUNTIME_ROLE` names a role with an attribute beyond login, a membership or an ownership | Name an unprivileged role |
 | `Set TOOLBOX_DATABASE_MIGRATION_URL…` from `db:migrate` | The owner's URL is not set | Set it as in [Environment](#environment) |
-| `503 {"status":"unavailable"}` from `/health` | The database does not answer | Check `TOOLBOX_DATABASE_URL` and Postgres |
+| `503 {"status":"unavailable"}` from `/health` | The Toolbox's database does not answer | Check `TOOLBOX_DATABASE_URL` and Postgres |
 | Log `relation "host_clients" does not exist`, or `"intents"`, and every list or call fails | The database lacks this version's migrations | Run `bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate` |
 | `db:migrate` fails with `Refusing to migrate: drizzle/<file> is not the migration this database applied…` | An applied migration was edited, regenerated or removed | Restore the file, or recreate a disposable database |
 | `db:migrate` fails with `Refusing to adopt a database the file migrator built: …` | The database was migrated by the previous file migrator with other files than this version adopts | Drop its `public` schema, then run `db:migrate` again |

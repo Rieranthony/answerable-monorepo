@@ -14,14 +14,16 @@ bun mcp dev acme
 
 ### Before you start
 
-Start two things from the main checkout. Never run `bun dev` or `bun run env:up` from a worktree: its Compose project has the main checkout's name, so it recreates the running Postgres.
+Have these in place, in order, from the main checkout. Never run `bun dev` or `bun run env:up` from a worktree: its Compose project has the main checkout's name, so it recreates the running Postgres.
 
-| What | Start it with | Port |
+| What | Do it with | Port |
 | --- | --- | --- |
 | The development Postgres | `bun run env:up` | `47432` |
+| ID's database, migrated | `bun --filter @answerable/id db:migrate`, before ID's first start and after a pull that adds a migration | |
 | Your local ID | `bun dev`, or `bun --filter @answerable/id dev` | `47300` |
+| A sign-in for your email domain on the platform organisation | [First run](/docs/id/onboard#first-run), steps 3 and 4, once | |
 
-The first run of ID makes the platform organisation, `answerable`. Nothing else is needed: the Toolbox and the standalone server are started by `bun mcp dev`.
+The first run of ID makes the platform organisation, `answerable`. Step 3 puts your email domain and your company's directory on it, and step 4 signs you in once, so that a sign-in from Claude Code can complete. Run them against `http://localhost:47300`, with `ROOT_ADMIN_SECRET` at ID's development default, and with the directory's `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET`, or the Google pair, in the root `.env` when ID starts. The Toolbox and the standalone server are started by `bun mcp dev`.
 
 ### Connect the CLI to your local ID
 
@@ -101,7 +103,7 @@ bun install
 bun run mcp:test:e2e
 ```
 
-Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). Measured: the 70 tests took 154.4 seconds; the CLI journeys below are 11.8 of them, run alone with their start.
+Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143).
 
 ## What the e2e journeys prove
 

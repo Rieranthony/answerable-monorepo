@@ -15,14 +15,14 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 | `packages/auth` | Verify Answerable ID access tokens, for a person or a machine client, in any service; an in-process test issuer | Locally tested |
 | `packages/mcp` | The SDK for MCP servers, on the official MCP TypeScript SDK: `defineTool`, `defineMutation`, `defineProvider`, `createMcpServer`, the error envelope, the manifest, the conformance kit and the in-process test client | Locally tested |
 | `packages/id-admin` | A server's machine client on ID's admin API (`createIdAdmin`, with `x-request-id` and a caller-chosen `Idempotency-Key`) and the fake ID for tests | Locally tested |
-| `packages/mcp-postgres` | Postgres storage for MCP servers: the intent store, the hash-chained evidence and the drizzle base schema, shared by the Toolbox and the admin MCP | Locally tested |
+| `packages/mcp-postgres` | Postgres storage for MCP servers and MCPs: the intent store, the hash-chained evidence, the drizzle base schema, and each MCP's schema and migrations | Locally tested |
 | `mcps/e2e` | Reference MCP: five tools (one a prepared mutation), a prompt, a resource and an MCP Apps view; every new MCP is compared with it | Local acceptance passes |
 | `mcps/toolbox` | The Toolbox: one MCP endpoint serving each person the capabilities their organisation granted, with intents, evidence, spans and an admin API | Local acceptance passes |
 | `mcps/admin` | The admin MCP: a staff-only server that reads and changes organisations, domains, SSO providers, groups, access and staff roles in ID, and enables the Toolbox, each tool behind a role read live from ID and each change a prepared intent the person confirms | Local acceptance passes |
 | `packages/acceptance` | The acceptance kit and journeys: real ID, the official MCP OAuth client, a browser and ID's pages | Locally tested |
 | `scripts` | Repository scripts: `bun mcp`, which makes MCPs and tools and checks them, and `bun run env:inventory` | Locally tested |
 | `infra/civo` | Terraform for the two Civo environments, one root and a var file each: network, cluster, PostgreSQL 17, firewalls, the platform chart, the deployer, the Cloudflare zone with its certificates, and the GitHub environment's own settings and deploy secrets | Validated and tested with mocked providers; not applied |
-| `charts/answerable` | The Helm chart of ID, the Toolbox and the admin MCP, with their migrations and the ops Jobs | Proved in the kind stack |
+| `charts/answerable` | The Helm chart of ID, the Toolbox, the admin MCP and the standalone server, with every MCP of `mcps.json`, their migrations and the ops Jobs | Proved in the kind stack |
 | `charts/platform` | The Helm chart of the cluster's edge: Traefik with the TLS option that demands Cloudflare's origin-pull certificate | Proved in the kind stack |
 | `infra/k8s` | The kind stack (`infra/k8s/local`): both charts and the images of `infra/pipeline/images.json` in a local cluster, `bun run infra:test`; and the chart tests | Locally tested |
 | `infra/ops` | The ops image: `bootstrap` (the database's certificate, databases and logins), `register` (the MCPs in ID, the staff domain and SSO provider) and `make-admin` (the first administrator), run as Kubernetes Jobs | Locally tested |

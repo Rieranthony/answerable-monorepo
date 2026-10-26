@@ -8,9 +8,10 @@ import { declaration } from "./workspace"
 
 /**
  * Names no MCP may take: the platform's own services, hosts and schemas, and the names whose workspace, `@answerable/mcp-<name>`, would be one of
- * the platform's packages (`platform`, `postgres`). `e2e` and `example` are taken by their directories.
+ * the platform's packages (`platform`, `postgres`, and the servers'), which the generator therefore keeps among a server's dependencies.
+ * `e2e` and `example` are taken by their directories.
  */
-const reservedNames = ["toolbox", "admin", "id", "mcp", "mcps", "standalone", "api", "www", "test", "ops", "public", "drizzle", "platform", "postgres"]
+export const reservedNames = ["toolbox", "admin", "id", "mcp", "mcps", "standalone", "api", "www", "test", "ops", "public", "drizzle", "platform", "postgres"]
 
 /** The values of `--serve` and `--database`, the default first where there is one. */
 export const choices = { serve: declaration.shape.serve.options, database: declaration.shape.database.options }

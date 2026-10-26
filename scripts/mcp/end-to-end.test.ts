@@ -69,5 +69,6 @@ async function run() {
   const again = await bun("mcp", "new", name, "--description", description, "--serve", "toolbox")
   expect(again.code).toBe(2)
   expect(again.output).toContain(`${name} is taken by mcps/${name}; choose another name`)
-  expect(await traces(name)).toEqual([`answerable_mcps.${name}`, `answerable_mcps_test.${name}`, `mcp_${name}`, `mcp_${name}_owner`, `mcp_test_${name}`, `mcp_test_${name}_owner`])
+  // Sorted here: Postgres's collation puts mcp_test_<name> first when the random name's second character is f.
+  expect((await traces(name)).toSorted()).toEqual([`answerable_mcps.${name}`, `answerable_mcps_test.${name}`, `mcp_${name}`, `mcp_${name}_owner`, `mcp_test_${name}`, `mcp_test_${name}_owner`].toSorted())
 }

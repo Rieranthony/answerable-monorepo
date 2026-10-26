@@ -173,6 +173,24 @@ describe("unit: process runtime", () => {
     expect(database.pool.ended).toBe(true);
   });
 
+  test("listens on the environment's address only", async () => {
+    const environment = testEnvironment({ port: 0, hostname: "::1" });
+    const runtime = await startRuntime(environment, {
+      allowTestEnvironment: true,
+      seed: async () => seedResult,
+      databaseFactory: () => createDatabase(environment),
+      authFactory: stubAuth,
+      signingKeyCheck: async () => {},
+    });
+    try {
+      const port = runtime.server.port!;
+      expect((await fetch(`http://[::1]:${port}/healthz`)).status).toBe(200);
+      await expect(fetch(`http://127.0.0.1:${port}/healthz`)).rejects.toThrow();
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+
   test("a failing seed closes the pool and never listens", async () => {
     const probe = Bun.serve({ port: 0, fetch: () => new Response() });
     const port = probe.port!;

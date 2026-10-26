@@ -46,6 +46,8 @@ function toEnvironment(environment: ReturnType<typeof idConfig.read>) {
     } as PlatformApplications,
     nodeEnv: environment.NODE_ENV,
     port: environment.PORT,
+    /** The address to listen on: loopback unless a container or a proxy in front needs another. */
+    hostname: environment.ID_HOST,
     databaseUrl: environment.DATABASE_URL,
     betterAuthUrl: environment.BETTER_AUTH_URL,
     betterAuthSecret: environment.BETTER_AUTH_SECRET,

@@ -1,6 +1,6 @@
 # E2E MCP
 
-The reference MCP, and the proof that Answerable ID signs people into MCP servers. Laid out as `bun mcp new` lays an MCP out, with its records in Postgres, and served both ways (`"serve": "both"` in `mcp.json`): mounted in the Toolbox, and on its own URL by the standalone server. Development and test only.
+The reference MCP, and the proof that Answerable ID signs people into MCP servers. Laid out as `bun mcp new` lays an MCP out, with its records in Postgres, and served both ways (`"serve": "both"` in `mcp.json`): mounted in the Toolbox, and on its own URL by the standalone server. It ships to every environment, as `charts/answerable/mcps.json` declares it.
 
 ```sh
 (cd packages/acceptance && bun x playwright install chromium)

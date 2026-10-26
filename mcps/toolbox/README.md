@@ -1,6 +1,6 @@
 # Toolbox
 
-One MCP endpoint on Answerable ID that serves each person exactly the capabilities their organisation granted them, directly or through its meta tools. It mounts every MCP whose `mcp.json` says `"serve": "toolbox"` or `"both"`, from `src/mounted.generated.ts`. Development and test only.
+One MCP endpoint on Answerable ID that serves each person exactly the capabilities their organisation granted them, directly or through its meta tools. It mounts every MCP whose `mcp.json` says `"serve": "toolbox"` or `"both"`, from `src/mounted.generated.ts`. Deployed to staging since 2026-10-23 ([evidence](../../reports/staging-evidence.md)); production: Not yet.
 
 ```sh
 bun run --filter @answerable/mcp-toolbox test
@@ -26,7 +26,7 @@ It builds on three shared packages: `@answerable/mcp-platform` (the evidence and
 | File | Job |
 | --- | --- |
 | `src/mounted.generated.ts` | The MCPs the Toolbox mounts, which `bun mcp` writes from `mcps/*/mcp.json`, with this workspace's dependencies on them. Never edited by hand |
-| `src/toolbox.ts` | `createToolbox({ mount, pools, auth, db, id, spans })`: the endpoint on `@answerable/mcp`, each mounted provider with its own `db`, authority, who is calling and the projection per request, evidence and a span per call and refusal, `RESULT_TOO_LARGE` above 100 KiB, `/health` with every database and the mounted providers |
+| `src/toolbox.ts` | `createToolbox({ mount, pools, auth, db, id, spans })`: the endpoint on `@answerable/mcp`, each mounted provider with its own `db`, authority, who is calling (read beside the grants on a call) and the projection per request, evidence and a span per call and refusal, `RESULT_TOO_LARGE` above 100 KiB, `/health` from its own database, with the MCP databases' state and the mounted providers |
 | `src/grants.ts` | `createGrantsReader`: grant strings from the Toolbox targets of ID's member access view, cached 60 seconds, a client-limited one counted only through its client; an invalidation sends `tools/list_changed`. `allowedScopes(providers)`, the Toolbox resource's allowed scopes |
 | `src/admin.ts` | The platform-tier admin API under `/admin/v1`: authentication (a machine client's token with `toolbox:admin`), routing, and the routes for providers, catalogue entries and host clients; `toolboxAdminResource` |
 | `src/admin-enable.ts` | The enable operation: what ID holds, what is missing, and the ID calls that make it |

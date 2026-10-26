@@ -11,7 +11,7 @@ Everything below is derived from the code on this branch: `apps/id/src/config.ts
 
 | Component | What it is | Notes |
 | --- | --- | --- |
-| `apps/id` | One Bun process serving the OAuth/OIDC provider, the admin API, login, selection, consent, error and security pages, health and discovery on `PORT` (default 47300) | Stateless apart from per-process rate-limit buckets and a five-minute JWKS cache, so replicas are fine |
+| `apps/id` | One Bun process serving the OAuth/OIDC provider, the admin API, login, selection, consent, error and security pages, health and discovery on `ID_HOST` and `PORT` (default `127.0.0.1` and 47300; the image sets `0.0.0.0`) | Stateless apart from per-process rate-limit buckets and a five-minute JWKS cache, so replicas are fine |
 | `apps/web` | Next.js site and docs | Public website |
 | PostgreSQL 17 | The only state: users, sessions, native OAuth state, policy, audit, command receipts | Local compose uses `postgres:17-alpine`; production needs your own instance with backups |
 | Ingress | TLS termination and the `x-forwarded-for` header | The **only** network path to `apps/id`; see the first requirement below |
@@ -58,7 +58,7 @@ Every SSO row, platform or own credentials, defaults to `email openid profile` w
 
 ## Configuration
 
-Every variable ID reads is in the `ID` group of [`packages/config/inventory.json`](../packages/config/inventory.json), and its migration's in `ID migration`: whether each is a secret, its default and where a deployment's value comes from. `bun run env:inventory` writes the file from [`apps/id/src/config.ts`](../apps/id/src/config.ts) and [`apps/id/scripts/env.ts`](../apps/id/scripts/env.ts); production applies no local default. In Answerable's deployment the Bootstrap workflow generates the application and root secrets and the deploy delivers every value ([`12-deployment.md`](12-deployment.md#secrets)); nothing here reads a file.
+Every variable ID reads is in the `ID` group of [`packages/config/inventory.json`](../packages/config/inventory.json), and its migration's in `ID migration`: whether each is a secret, its default and where a deployment's value comes from. `bun run env:inventory` writes the file from [`apps/id/src/config.ts`](../apps/id/src/config.ts) and [`apps/id/scripts/env.ts`](../apps/id/scripts/env.ts); production applies no local default. A variable the file marks `optional` can still be required: the definition's `refine` adds production's requirements, such as `TRUSTED_PROXY_CIDRS` and `BETTER_AUTH_TRUSTED_ORIGINS`, which the metadata does not show, so each one's `doc` says so. In Answerable's deployment the Bootstrap workflow generates the application and root secrets and the deploy delivers every value ([`12-deployment.md`](12-deployment.md#secrets)); nothing here reads a file.
 
 Fixed in `apps/id/src/env.ts`, not configurable: the admin API's resource `${BETTER_AUTH_URL}/api/admin`; the platform organisation's slug `answerable` and name `Answerable`, seeded at first boot and bound by immutable id afterwards; statement timeout 10 s, lock timeout 2 s, idle-in-transaction timeout 15 s, pool checkout 5 s and pool idle 10 s; operational log every 30 s; protocol sweep every 60 s in batches of 1,000; OpenAPI routes outside production only.
 

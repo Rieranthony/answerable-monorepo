@@ -17,7 +17,7 @@ const profiles = createIdProfiles(id)
 startAuditPoller({ id, caches: [profiles] })
 const [{ provider, db: mcp }] = mcps.mount
 const server = createMcpServer({ provider, db: mcp, auth, profiles, intents: calls.intents, allow: calls.allow(decide), wrapCall: calls.wrapCall })
-const healthy = health({ server: db.$client, ...mcps.pools }, [provider.id])      // GET /health
+const healthy = health({ server: db.$client }, [provider.id], mcps.pools)      // GET /health
 ```
 
 - **`createCalls({ db, spans?, salt, organisation?, denials?, upstream?, readLimit? })`.** `evidence` and `intents` on the server's database, and the `allow` and `wrapCall` of `createMcpServer`:
@@ -28,7 +28,7 @@ const healthy = health({ server: db.$client, ...mcps.pools }, [provider.id])    
 - **`createTracer(service, endpoint?)`, `createMemoryTracer()`.** The tracer `createCalls` takes as `spans`: one server span per call, named `tools/call <identity>`, with the MCP, GenAI and Answerable attributes and a W3C `traceparent` from `_meta` as its parent; exported over OTLP/HTTP when `endpoint` (`OTEL_EXPORTER_OTLP_ENDPOINT`) is set, on OpenTelemetry JS SDK 3.
 - **`startAuditPoller({ id, caches, intervalMs? })`.** Reads ID's audit log of successes every 15 seconds and calls `invalidate(organisationIds, userIds)` on every cache, the Toolbox's grants and every server's `createIdProfiles`, for the organisations and the users the events name. One poll at a time; a failed poll is logged as `[poller] reading ID's audit log failed`, and the next one catches up.
 - **`perRequest(read)`.** `read`, once per request: every decision of a request shares one read for its principal.
-- **`health(databases, providers)`.** `GET /health`: `200` with `{ status: "ok", databases, providers }` while every database answers `select 1`, else `503` with `status: "unavailable"`, each database `ok` or `unavailable` by name.
+- **`health(own, providers, mcps?)`.** `GET /health`, the readiness check: `200` with `{ status: "ok", databases, providers }` while each of the server's own databases answers `select 1`, else `503` with `status: "unavailable"`. `databases` names each `ok` or `unavailable`, the MCP databases of `mcps` too: one that fails, or takes more than 250 ms, is `unavailable` and never fails the check, since a busy MCP pool is load, not a fault of the pod.
 - **`mcpDatabases(declared, { shared, own, prefix? })`.** From a server's generated list (`Declared`: a provider and `shared`, or `own` with the `variable` its URL comes from): one pool to the shared database as the serving login, one per own MCP, and each MCP's `db` through `mcpDatabase`, with the call's organisation (`callerOrganisation`). `mount` for `createMcpServer` or `createToolbox`, `pools` for `/health`, `assert()` (`assertServingLogin` on the shared pool and `assertOwnLogin` on each own MCP's, to await before listening) and `close()`. `prefix` is `mcp`; a test that serves a database of its own names its own.
 - **`ownDatabases(declared)`.** The configuration fields of the own MCPs of a generated list, for `defineConfig`, and `urls(data)`, their parsed values by variable.
 

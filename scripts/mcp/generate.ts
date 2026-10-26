@@ -6,7 +6,8 @@
 import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { json } from "./templates/workspace"
-import { declarations, manifestOf, retired, type Declaration, type Manifest } from "./workspace"
+import { reservedNames } from "./rules"
+import { declarations, manifestOf, type Declaration, type Manifest } from "./workspace"
 
 /** The file the chart reads, with an object root: Helm's `fromJson` turns an array into an error map. */
 const chartList = "charts/answerable/mcps.json"
@@ -18,7 +19,9 @@ const servers = [
 ] as const
 type Server = (typeof servers)[number]
 
-const packageOf = (name: string) => `@answerable/mcp-${name}`
+// An MCP's workspace is @answerable/mcp-<name>.
+const prefix = "@answerable/mcp-"
+const packageOf = (name: string) => `${prefix}${name}`
 
 // A server's list: each MCP it serves, its provider imported from its workspace, and where its tables live; an own MCP's, from the variable
 // named here, such as TOOLBOX_MCP_ACME_DATABASE_URL.
@@ -36,10 +39,11 @@ function listOf(server: Server, mcps: readonly Declaration[]) {
   ].join("\n")
 }
 
-// A server's package.json with a dependency on the workspace of every MCP it serves, and on no other MCP's, declared or retired.
-async function packageJsonOf(path: string, served: readonly Declaration[], known: readonly string[]) {
+// A server's package.json with a dependency on the workspace of every MCP it serves, and on no other MCP's. A reserved name is never an
+// MCP's, so the platform's own packages, such as @answerable/mcp-platform, stay.
+async function packageJsonOf(path: string, served: readonly Declaration[]) {
   const file = await Bun.file(path).json() as { dependencies: Record<string, string> }
-  const kept = Object.entries(file.dependencies).filter(([dependency]) => !known.some(name => dependency === packageOf(name)))
+  const kept = Object.entries(file.dependencies).filter(([dependency]) => !dependency.startsWith(prefix) || reservedNames.includes(dependency.slice(prefix.length)))
   file.dependencies = Object.fromEntries([...kept, ...served.map(({ name }) => [packageOf(name), "workspace:*"])].sort(([a], [b]) => (a! < b! ? -1 : 1)))
   return json(file)
 }
@@ -59,11 +63,10 @@ export async function generatedFiles(root: string): Promise<Record<string, strin
   const list = { $comment: "Written by bun mcp from mcps/*/mcp.json and each manifest.json (scripts/mcp/generate.ts); never edit it by hand", mcps }
   const files: Record<string, string> = { [chartList]: json(list) }
   const present = servers.filter(({ workspace }) => existsSync(join(root, workspace, "package.json")))
-  const known = present.length ? [...declared.map(({ name }) => name), ...await retired(root)] : []
   for (const server of present) {
     const served = declared.filter(({ serve }) => (server.serves as readonly string[]).includes(serve))
     files[`${server.workspace}/${server.list}`] = listOf(server, served)
-    files[`${server.workspace}/package.json`] = await packageJsonOf(join(root, server.workspace, "package.json"), served, known)
+    files[`${server.workspace}/package.json`] = await packageJsonOf(join(root, server.workspace, "package.json"), served)
   }
   return files
 }

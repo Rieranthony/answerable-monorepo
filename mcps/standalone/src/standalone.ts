@@ -46,7 +46,7 @@ export function createStandalone({ serve, pools = {}, origin, auth, db, id, span
     provider, db: mcp, auth: { ...auth, resource: `${origin}/${provider.id}/mcp` }, profiles, intents: calls.intents, allow, wrapCall: calls.wrapCall,
   })]))
   //#endregion
-  const healthy = health({ standalone: db.$client, ...pools }, [...servers.keys()])
+  const healthy = health({ standalone: db.$client }, [...servers.keys()], pools)
   return {
     async fetch(request: Request) {
       const { pathname } = new URL(request.url)

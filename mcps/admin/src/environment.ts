@@ -7,7 +7,7 @@ export const adminConfig = defineConfig("admin MCP", {
   ADMIN_ID_ISSUER: { schema: z.url(), defaults: locally("http://localhost:47300"), doc: "The Answerable ID issuer whose tokens the admin MCP accepts", source: "chart" },
   ADMIN_RESOURCE_URL: { schema: z.url(), defaults: locally("http://localhost:47520/mcp"), doc: "The admin MCP's own URL, the audience of the tokens it accepts", source: "chart" },
   ADMIN_HOST: { schema: z.union([z.ipv4(), z.ipv6()]), fallback: "127.0.0.1", doc: "The address to listen on: loopback unless a container or a proxy in front needs another", source: "image" },
-  ADMIN_PORT: { schema: z.coerce.number().int().min(1).max(65535), fallback: "47520", doc: "The port the admin MCP listens on", source: "image" },
+  ADMIN_PORT: { schema: z.coerce.number().int().min(1).max(65535), fallback: "47520", doc: "The port the admin MCP listens on" },
   ADMIN_DATABASE_URL: {
     schema: z.url(),
     secret: true,

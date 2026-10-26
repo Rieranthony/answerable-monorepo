@@ -39,6 +39,8 @@ Define it in `src/db/schema.ts`, with `acmeSchema.table(…)`. This is `mcps/exa
 
 **Every table has `organisation_id` and the `organisationIsolation` policy.** When your tool runs a query, the platform tells Postgres which organisation is calling. The policy then hides every row that belongs to another organisation. A query cannot read or write another organisation's rows, even one that forgets to filter. This matters because one process serves every organisation: a slip in one `where` would otherwise show one client another client's data.
 
+**The rule for filtering by organisation.** A query on a table with the policy needs no filter on the organisation: Postgres adds it. Data from anywhere else, such as an upstream API or a table without the policy, is constrained by `organisation.id` in your code, so that another organisation's data is not found, never forbidden.
+
 **A table with no `organisation_id` is shared by every organisation.** That is an exception, and a reviewer should see why. Write the reason in a comment above the table. The runtime role can read and write every table. To narrow it, export `grants` from `src/db/grants.ts`, as the comment in the schema file shows; `bun mcp db acme migrate` and every deploy read it.
 
 Then, in order:
@@ -92,8 +94,6 @@ The code is the same in both. Tables are `pgSchema("acme")` tables either way, s
 | --- | --- |
 | Where a table may be | In your MCP's schema. Reading or writing another MCP's tables, or `public`, is refused by Postgres |
 | Code that switches the database role or sets the caller's organisation itself | Refused by `bun mcp check`, which scans `src` |
-| A query through your MCP's connection | 0.91 to 1.11 ms, against 0.46 to 0.60 ms on a plain connection. Measured on a development machine in three runs: each query sets the role and the caller's organisation |
-| 200 MCPs | Making all their schemas and roles took about 1.0 s. Migrating them all took 3.1 to 3.9 s the first time and 1.5 to 2.0 s with nothing pending. 1,000 queries over 200 schemas took 277 to 341 ms on at most 10 connections. The same burst against a database for each MCP had 105 of 200 refused at PostgreSQL's default limit, in a probe |
 | Connections to Civo's database | **Unknown.** Civo's `max_connections` for the database's size has not been measured. `bun mcp check` assumes PostgreSQL's default, 100, and warns when `own` MCPs push the servers' pools past it. `docs/12-deployment.md` in the repository has the arithmetic |
 | Removing an MCP | Its name goes into `mcps/retired.json`, and `bun mcp new` refuses it for ever. Its schema and roles stay in the database. A command that removes them: Not yet. Trigger: the first MCP that is removed |
 

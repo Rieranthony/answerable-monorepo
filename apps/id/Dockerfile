@@ -33,6 +33,7 @@ COPY --from=build /app/apps/id/dist apps/id/dist
 # Bun's transpiler cache would write under the home directory; the root filesystem is read-only.
 ENV NODE_ENV=production \
     PORT=47300 \
+    ID_HOST=0.0.0.0 \
     BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
 USER bun
 EXPOSE 47300

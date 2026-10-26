@@ -12,7 +12,7 @@ Each is safe to run again: a second run changes nothing. None prints a password,
 
 ## Run them
 
-The deploy switches `bootstrap` and `register` on every time (`infra/pipeline/README.md`). Any of the three runs once more with `bun infra/pipeline/src/cli.ts run-job <bootstrap|register|make-admin> --environment <environment> [--email <address>]`, which is what the `ops.yml` workflow runs: it switches the Job on for one upgrade on the release's own values, with the chart of the commit the release runs, and prints the Job's log.
+The deploy switches `bootstrap` and `register` on every time (`infra/pipeline/README.md`). The `ops.yml` workflow runs `register` or `make-admin` once more: `bun infra/pipeline/src/cli.ts run-job <register|make-admin> --environment <environment> [--email <address>]`, which switches the Job on for one upgrade on the release's own values, with the chart of the commit the release runs, and prints the Job's log. `bootstrap` runs again with the next deploy.
 
 Exit codes: `0` done, `1` failed (the message says why), `2` wrong usage or a missing or invalid variable (the message names it, never its value).
 
@@ -50,7 +50,7 @@ Nothing waits for ever:
 - **The MCPs** (`@answerable/mcp-postgres`). In `answerable_mcps`, `provisionMcps` makes each `shared` MCP's schema `<name>`, its `NOLOGIN` owner role `mcp_<name>_owner` and runtime role `mcp_<name>`, gives the migrator the owner role and each serving login of the servers that serve it (`serve`: `toolbox`, `standalone` or `both`) the runtime role, all `WITH INHERIT FALSE, SET TRUE`, and takes the runtime role back from a server that no longer serves it. The administrative login takes each owner role the same way, so it inherits none. In each own MCP's database, `provisionOwnMcp` makes schema `<name>` with `USAGE` for its runtime login. An MCP removed from the list keeps what it had.
 - **The Secrets.** `id-database-owner` (`DATABASE_MIGRATION_URL`), `id-database` (`DATABASE_URL`), and the same pairs for `toolbox-`, `admin-` and `standalone-` (`TOOLBOX_DATABASE_MIGRATION_URL`, `TOOLBOX_DATABASE_URL`, and the `ADMIN_` and `STANDALONE_` equivalents); `mcps-database-owner` (`MCPS_DATABASE_MIGRATION_URL`), `toolbox-mcps-database` (`TOOLBOX_MCPS_DATABASE_URL`) and `standalone-mcps-database` (`STANDALONE_MCPS_DATABASE_URL`); and per own MCP `mcp-<name>-database-owner` (`DATABASE_MIGRATION_URL`) and `mcp-<name>-database` (`DATABASE_URL`). Each URL ends `?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem`. The chart's ops Role names exactly these, from the same list.
 
-A rotated password: empty the key of its Secret and run `bootstrap` again.
+A rotated password: empty the key of its Secret, then ship a tag; the deploy's `bootstrap` sets the new password ([Rotate](../README.md#rotate)).
 
 ## Register
 

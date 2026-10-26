@@ -51,6 +51,13 @@ export const idConfig = defineConfig(
       doc: "The port ID listens on",
       source: "image",
     },
+    // Not HOST or HOSTNAME, which shells set.
+    ID_HOST: {
+      schema: z.union([z.ipv4(), z.ipv6()]),
+      fallback: "127.0.0.1",
+      doc: "The address to listen on: loopback unless a container or a proxy in front needs another",
+      source: "image",
+    },
     DATABASE_URL: {
       schema: z.url(),
       secret: true,

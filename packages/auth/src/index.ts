@@ -13,7 +13,10 @@ export type IdVerifierConfig<Kind extends "user" | "client" = "user"> = {
   subjectType?: Kind
 }
 
-/** The caller a verified access token names. Constrain every query by `organizationId`. */
+/**
+ * The caller a verified access token names. Constrain what it reaches by `organizationId`, unless Postgres does: an MCP's table with the
+ * organisation policy needs no filter ([the rule](/docs/mcp/database#add-a-table)).
+ */
 export type UserPrincipal = Readonly<{
   /** The person's global Answerable ID user id, the token's `sub`: the only id to join on. */
   userId: string
@@ -40,7 +43,10 @@ export type UserPrincipal = Readonly<{
   upstreamAuthTime: number | null
 }>
 
-/** The machine client a verified `client_credentials` token names. Constrain every query by `organizationId`. */
+/**
+ * The machine client a verified `client_credentials` token names. Constrain what it reaches by `organizationId`, unless Postgres does: an MCP's table with the
+ * organisation policy needs no filter ([the rule](/docs/mcp/database#add-a-table)).
+ */
 export type MachinePrincipal = Readonly<{
   /** The OAuth client that asked for the token, which is also the token's subject. */
   clientId: string

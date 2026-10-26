@@ -35,7 +35,7 @@ In the Answerable monorepo, add the tool <domain.operation> to the MCP <name>: <
 Read first: AGENTS.md and https://www.answerable.org/docs/mcp/add-a-tool.md.
 
 1. Run `bun mcp add tool <name> <domain.operation> --description "<what it does, when to use it, its limits>"`. For a change, add `--mutation` and say "prepare" in the description. Name the tool for what the caller can do, never for the vendor.
-2. Change the generated file into the real tool: its input, its output, and its table in mcps/<name>/src/db/schema.ts. Every table keeps organisation_id and its organisationIsolation policy. Do not filter queries by organisation: Postgres does. prepare returns a preview and changes nothing; commit applies exactly that. Throw ToolError for expected failures.
+2. Change the generated file into the real tool: its input, its output, and its table in mcps/<name>/src/db/schema.ts. Every table keeps organisation_id and its organisationIsolation policy. Queries on those tables need no organisation filter, since Postgres adds it; data from anywhere else is constrained by organisation.id. prepare returns a preview and changes nothing; commit applies exactly that. Throw ToolError for expected failures.
 3. After a change to the schema, run `bun mcp db <name> generate`, review the migration and commit it. Never edit, regenerate or remove a migration that was applied.
 4. Keep the tool's test proving that each organisation sees only its own rows.
 5. Run `bun mcp check <name>` until it passes, and commit the manifest it rewrites.

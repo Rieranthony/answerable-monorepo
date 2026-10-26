@@ -16,6 +16,7 @@ export function testEnvironment(
   return {
     nodeEnv: "test",
     port: 47_300,
+    hostname: "127.0.0.1",
     databaseUrl: testDatabaseUrl,
     betterAuthUrl: "http://localhost:47300",
     betterAuthSecret: "test-secret-that-is-at-least-32-characters",

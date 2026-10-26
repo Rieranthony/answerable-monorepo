@@ -13,7 +13,7 @@ export const standaloneConfig = defineConfig("standalone server", {
   STANDALONE_ORIGIN: { schema: z.url(), defaults: locally("http://localhost:47510"), doc: "The standalone server's origin: each MCP it serves is the resource <origin>/<name>/mcp, the audience of its tokens", source: "chart" },
   STANDALONE_ID_ISSUER: { schema: z.url(), defaults: locally("http://localhost:47300"), doc: "The Answerable ID issuer whose tokens the standalone server accepts", source: "chart" },
   STANDALONE_HOST: { schema: z.union([z.ipv4(), z.ipv6()]), fallback: "127.0.0.1", doc: "The address to listen on: loopback unless a container or a proxy in front needs another", source: "image" },
-  STANDALONE_PORT: { schema: z.coerce.number().int().min(1).max(65535), fallback: "47510", doc: "The port the standalone server listens on", source: "image" },
+  STANDALONE_PORT: { schema: z.coerce.number().int().min(1).max(65535), fallback: "47510", doc: "The port the standalone server listens on" },
   STANDALONE_DATABASE_URL: {
     schema: z.url(),
     secret: true,

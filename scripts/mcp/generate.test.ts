@@ -74,3 +74,19 @@ test("a server that serves no MCP gets an empty list", async () => {
     await repository.remove()
   }
 })
+
+test("an MCP folder deleted before it was ever declared or retired leaves no dependency behind, and the platform's packages stay", async () => {
+  const repository = await tempRepository({
+    "mcps/acme/mcp.json": '{ "name": "acme", "serve": "toolbox", "database": "shared" }',
+    "mcps/retired.json": "[]",
+    // mcps/gone was tried out and deleted, as create.mdx's undo says: never declared since, never retired.
+    "mcps/toolbox/package.json": JSON.stringify({ dependencies: Object.fromEntries(["mcp", "mcp-acme", "mcp-gone", "mcp-platform", "mcp-postgres", "mcp-admin", "id-admin"].map(name => [`@answerable/${name}`, "workspace:*"])) }),
+  })
+  try {
+    expect(Object.keys(JSON.parse((await generatedFiles(repository.root))["mcps/toolbox/package.json"]!).dependencies)).toEqual([
+      "@answerable/id-admin", "@answerable/mcp", "@answerable/mcp-acme", "@answerable/mcp-admin", "@answerable/mcp-platform", "@answerable/mcp-postgres",
+    ])
+  } finally {
+    await repository.remove()
+  }
+})

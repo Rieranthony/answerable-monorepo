@@ -1,6 +1,6 @@
 # Admin MCP
 
-The staff-only MCP through which Answerable staff onboard and manage organisations in Answerable ID from an AI host: read organisations, members, access and the audit log, and change them through prepared intents the person confirms. Only members of the platform organisation get a tool, and each tool only to a role at or above its minimum: the role is read from ID once per request and never cached. Development and test only. The page for staff: [The admin MCP](../../apps/web/content/docs/admin/index.mdx).
+The staff-only MCP through which Answerable staff onboard and manage organisations in Answerable ID from an AI host: read organisations, members, access and the audit log, and change them through prepared intents the person confirms. Only members of the platform organisation get a tool, and each tool only to a role at or above its minimum: the role is read from ID once per request and never cached. Deployed to staging since 2026-10-23 ([evidence](../../reports/staging-evidence.md)); production: Not yet. The page for staff: [The admin MCP](../../apps/web/content/docs/admin/index.mdx).
 
 ```sh
 bun run --filter @answerable/mcp-admin test

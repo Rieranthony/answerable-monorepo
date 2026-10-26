@@ -8,7 +8,7 @@ This is the dependency order, not a deployment claim. The [design](03-answerable
 
 **Admin MCP:** [The admin MCP](11-admin-mcp.md) for Answerable staff is built and locally accepted: `bun run mcp:test:e2e` signs staff into it through real ID and onboards an organisation through its tools into the Toolbox (journeys A1 to A7, in the [evidence](../reports/mcp-foundation-evidence.md)). Not yet: what [its design](11-admin-mcp.md#not-yet) lists.
 
-**Deployment:** [Answerable's deployment](12-deployment.md) of ID, the Toolbox and the admin MCP on Civo, behind Cloudflare, is built and proved locally with a production-shaped kind cluster; [the runbook](../infra/README.md) operates it. Not yet: the first staging deployment and its evidence (brief B7a of [the goal](goals/civo-deploy/task_plan.md)).
+**Deployment:** [Answerable's deployment](12-deployment.md) of ID, the Toolbox and the admin MCP on Civo, behind Cloudflare, is built and proved locally with a production-shaped kind cluster; [the runbook](../infra/README.md) operates it. Staging has run it since 2026-10-23 ([evidence](../reports/staging-evidence.md)). Not yet: production, after the rehearsal (brief B7c of [the goal](goals/civo-deploy/task_plan.md)).
 
 ## How we build
 

@@ -32,6 +32,7 @@ describe("unit: environment", () => {
     expect(idConfig.fields.map((field) => field.name)).toEqual([
       "NODE_ENV",
       "PORT",
+      "ID_HOST",
       "DATABASE_URL",
       "BETTER_AUTH_URL",
       "BETTER_AUTH_SECRET",
@@ -52,6 +53,7 @@ describe("unit: environment", () => {
     expect(parseEnvironment(production)).toEqual({
       nodeEnv: "production",
       port: 47_300,
+      hostname: "127.0.0.1",
       databaseUrl: requiredEnvironment.DATABASE_URL,
       betterAuthUrl: requiredEnvironment.BETTER_AUTH_URL,
       betterAuthSecret: requiredEnvironment.BETTER_AUTH_SECRET,
@@ -93,6 +95,15 @@ describe("unit: environment", () => {
         trustedProxyCidrs: [],
         openApiEnabled: true,
       });
+  });
+
+  test("listens on loopback unless ID_HOST names another address, as the image does", () => {
+    expect(parseEnvironment({}).hostname).toBe("127.0.0.1");
+    for (const ID_HOST of ["0.0.0.0", "::", "::1"])
+      expect(parseEnvironment({ ID_HOST }).hostname).toBe(ID_HOST);
+    expect(() => parseEnvironment({ ID_HOST: "id.example" })).toThrow(
+      "Invalid ID configuration: ID_HOST: ",
+    );
   });
 
   test("normalises the ID URL and derives the admin resource from it", () => {

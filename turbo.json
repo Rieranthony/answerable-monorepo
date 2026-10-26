@@ -136,6 +136,7 @@
       "env": ["PORT"],
       "passThroughEnv": [
         "TEST_DATABASE_URL",
+        "ID_HOST",
         "ROOT_ADMIN_SECRET",
         "ROOT_ADMIN_BREAK_GLASS",
         "DATABASE_*",

@@ -20,6 +20,14 @@
         "optional": true
       },
       {
+        "name": "ID_HOST",
+        "secret": false,
+        "fallback": "127.0.0.1",
+        "doc": "The address to listen on: loopback unless a container or a proxy in front needs another",
+        "source": "image",
+        "optional": true
+      },
+      {
         "name": "DATABASE_URL",
         "secret": true,
         "defaults": {
@@ -261,7 +269,6 @@
         "secret": false,
         "fallback": "47400",
         "doc": "The port the Toolbox listens on",
-        "source": "image",
         "optional": true
       },
       {
@@ -399,7 +406,6 @@
         "secret": false,
         "fallback": "47520",
         "doc": "The port the admin MCP listens on",
-        "source": "image",
         "optional": true
       },
       {
@@ -570,7 +576,6 @@
         "secret": false,
         "fallback": "47510",
         "doc": "The port the standalone server listens on",
-        "source": "image",
         "optional": true
       },
       {
@@ -779,7 +784,7 @@
       {
         "name": "OPS_ID_ROOT_SECRET",
         "secret": true,
-        "doc": "register and make-admin: ID's root secret, ROOT_ADMIN_SECRET",
+        "doc": "register and make-admin: ID's root secret, ROOT_ADMIN_SECRET; make-admin requires it, and register mints its own client with it when ops-id-client is empty and OPS_ID_TOKEN is unset",
         "source": "deploy",
         "optional": true
       },

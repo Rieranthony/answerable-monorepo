@@ -124,7 +124,7 @@
     },
     "mcps/admin": {
       "name": "@answerable/mcp-admin",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "dependencies": {
         "@answerable/config": "workspace:*",
         "@answerable/id-admin": "workspace:*",
@@ -239,7 +239,7 @@
     },
     "packages/acceptance": {
       "name": "@answerable/acceptance",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "dependencies": {
         "@answerable/id-admin": "workspace:*",
         "@answerable/mcp": "workspace:*",
@@ -336,7 +336,7 @@
     },
     "packages/id-admin": {
       "name": "@answerable/id-admin",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "dependencies": {
         "@answerable/mcp": "workspace:*",
         "zod": "4.6.7",

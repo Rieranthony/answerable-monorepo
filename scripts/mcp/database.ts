@@ -6,7 +6,7 @@ import { ensureLocalMcpDatabases, migrateMcp, ownMcpDatabase, provisionMcps, pro
 import { is } from "drizzle-orm"
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core"
 import { Client } from "pg"
-import { mcpCliConfig } from "./config"
+import { readSettings } from "./environment"
 import { Refusal, tail, type Exec } from "./io"
 import { schemaBinding } from "./templates"
 import type { Declaration } from "./workspace"
@@ -59,10 +59,11 @@ async function connected(url: URL, work: (client: Client) => Promise<unknown>) {
 /**
  * Provision and migrate the MCP's local development schema, as the deployment does: the local databases first when missing, then, shared, its
  * schema and roles in `answerable_mcps`, or, own, its database `answerable_mcp_<name>` and its two logins, with the development password.
- * The grants are those `src/db/grants.ts` exports as `grants`, else every table read and written. What it did, in words.
+ * The grants are those `src/db/grants.ts` exports as `grants`, else every table read and written. The admin URL is the root `.env`'s, wherever
+ * it runs (`readSettings`). What it did, in words.
  */
 export async function migrateLocal(root: string, { name, serve, database }: Declaration): Promise<string> {
-  const admin = new URL(mcpCliConfig.read(process.env).MCPS_DATABASE_ADMIN_URL)
+  const admin = new URL((await readSettings(root)).settings.MCPS_DATABASE_ADMIN_URL)
   const cluster = new URL(admin)
   cluster.pathname = "/postgres"
   await ensureLocalMcpDatabases(cluster.href).catch(unreachable(cluster))

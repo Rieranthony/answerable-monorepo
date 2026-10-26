@@ -106,7 +106,7 @@ metadata:
     {{- include "answerable.labels" $scope | nindent 4 }}
   annotations:
     helm.sh/hook: {{ ternary "pre-install,pre-upgrade" "post-install,post-upgrade" (eq $job "bootstrap") }}
-    # Bootstrap before the migrations (-10 to -8); register after every resource of the release is up; make-admin last.
+    # Bootstrap before the migrations (-10 to -6); register after every resource of the release is up; make-admin last.
     helm.sh/hook-weight: {{ get (dict "bootstrap" "-20" "register" "10" "make-admin" "20") $job | quote }}
     helm.sh/hook-delete-policy: before-hook-creation
 spec:

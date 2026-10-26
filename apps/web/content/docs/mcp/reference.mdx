@@ -75,7 +75,8 @@ type UserPrincipal = Readonly<{
 }>
 ```
 
-The caller a verified access token names. Constrain every query by `organizationId`.
+The caller a verified access token names. Constrain what it reaches by `organizationId`, unless Postgres does: an MCP's table with the
+organisation policy needs no filter ([the rule](/docs/mcp/database#add-a-table)).
 
 ### MachinePrincipal
 
@@ -96,7 +97,8 @@ type MachinePrincipal = Readonly<{
 }>
 ```
 
-The machine client a verified `client_credentials` token names. Constrain every query by `organizationId`.
+The machine client a verified `client_credentials` token names. Constrain what it reaches by `organizationId`, unless Postgres does: an MCP's table with the
+organisation policy needs no filter ([the rule](/docs/mcp/database#add-a-table)).
 
 ### AuthenticationError
 

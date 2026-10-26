@@ -70,7 +70,7 @@ const opsFields = {
   OPS_ID_URL: { schema: origin, doc: "register and make-admin: ID's origin", source: "chart" },
   // A staff token when one is given (the chart reads it from the ops-staff-token Secret), else ID's root secret: what mints register's own client.
   OPS_ID_TOKEN: { schema: nonEmpty.optional(), secret: true, doc: "register: a staff token, used over OPS_ID_ROOT_SECRET, once, to mint register's own client when ID's root secret is locked and ops-id-client is empty", source: "operator" },
-  OPS_ID_ROOT_SECRET: { schema: nonEmpty.optional(), secret: true, doc: "register and make-admin: ID's root secret, ROOT_ADMIN_SECRET", source: "deploy" },
+  OPS_ID_ROOT_SECRET: { schema: nonEmpty.optional(), secret: true, doc: "register and make-admin: ID's root secret, ROOT_ADMIN_SECRET; make-admin requires it, and register mints its own client with it when ops-id-client is empty and OPS_ID_TOKEN is unset", source: "deploy" },
   OPS_TOOLBOX_URL: { schema: origin, doc: "register: the Toolbox's origin", source: "chart" },
   OPS_ADMIN_MCP_URL: { schema: origin, doc: "register: the admin MCP's origin", source: "chart" },
   OPS_MCP_URL: { schema: origin, doc: "register: the standalone server's origin; <origin>/<name>/mcp is each standalone or both MCP's resource", source: "chart" },

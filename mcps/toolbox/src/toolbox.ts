@@ -13,7 +13,7 @@ import { search } from "./search"
 export type ToolboxConfig = {
   /** The providers it serves, each with its `db` when it has a `database`: `mcpDatabases(mounted, …).mount`. */
   mount: readonly Mount[]
-  /** The pools of the mounted providers' databases, by name, which `/health` checks beside the Toolbox's own: `mcpDatabases(mounted, …).pools`. */
+  /** The pools of the mounted providers' databases, by name, which `/health` reports beside the Toolbox's own: `mcpDatabases(mounted, …).pools`. */
   pools?: Readonly<Record<string, Checked>>
   auth: IdVerifierConfig
   db: Database
@@ -25,11 +25,12 @@ export type ToolboxConfig = {
 
 /**
  * The Toolbox: one MCP endpoint that serves each person the capabilities their organisation granted them. It ingests every provider's manifest
- * (refusing a changed contract under an old version), reads each caller's grant strings and who they are from ID through 60-second caches that the
- * poller invalidates, and the organisation's catalogue and the host client's settings once per request, serves the direct or the meta projection,
- * runs each capability with its own provider's `db`, keeps intents in Postgres, records evidence and a span for every call, every refusal and every
- * intent transition (`@answerable/mcp-platform`), answers `RESULT_TOO_LARGE` for a read above 100 KiB, tells listening callers when a grant changes,
- * answers `GET /health` from every database with the mounted providers, and serves the platform-tier admin API under `/admin/v1`.
+ * (refusing a changed contract under an old version), reads each caller's grant strings and who they are from ID, at once on a call, through
+ * 60-second caches that the poller invalidates, and the organisation's catalogue and the host client's settings once per request, serves the
+ * direct or the meta projection, runs each capability with its own provider's `db`, keeps intents in Postgres, records evidence and a span for
+ * every call, every refusal and every intent transition (`@answerable/mcp-platform`), answers `RESULT_TOO_LARGE` for a read above 100 KiB, tells
+ * listening callers when a grant changes, answers `GET /health` from its own database, reporting the mounted providers and their databases, and
+ * serves the platform-tier admin API under `/admin/v1`.
  */
 export async function createToolbox({ mount, pools = {}, auth, db, id, spans }: ToolboxConfig) {
   const grants = createGrantsReader({ id, resource: auth.resource, changed: () => server.toolsChanged() })
@@ -64,18 +65,24 @@ export async function createToolbox({ mount, pools = {}, auth, db, id, spans }: 
   const whoami = toolbox.tools.find(tool => tool.name === "toolbox.whoami")
   const own = new Set<Served<Tool | Mutation>>(toolbox.tools)
   await ingest(db, [toolbox, ...mount.map(entry => entry.provider)])
+  const decide = calls.allow(async (principal, tool) => {
+    if (!principal.scopes.includes("toolbox")) return { reason: "no toolbox scope" }
+    if (own.has(tool)) return undefined
+    const { grants: granted, catalogue } = await authority(principal)
+    return allowed(granted, catalogue, tool) ? undefined : { reason: "not granted" }
+  })
   const server = createMcpServer({
     provider: toolbox,
     mount: entries,
     auth,
     profiles,
     intents: calls.intents,
-    allow: calls.allow(async (principal, tool) => {
-      if (!principal.scopes.includes("toolbox")) return { reason: "no toolbox scope" }
-      if (own.has(tool)) return undefined
-      const { grants: granted, catalogue } = await authority(principal)
-      return allowed(granted, catalogue, tool) ? undefined : { reason: "not granted" }
-    }),
+    allow(principal, tool, called) {
+      // A call starts reading who is calling now, beside the grants read, not after it: the read before the handler then shares it, since
+      // `profiles` keeps one read per member and organisation. A refused call has read it for nothing.
+      if (called) profiles(principal).catch(() => {})
+      return decide(principal, tool, called)
+    },
     // Both projections serve toolbox_whoami; the direct one serves the granted capabilities, the meta one the Toolbox's tools that reach them.
     async project(principal, usable) {
       const meta = projectionOf((await authority(principal)).host, usable.filter(tool => !own.has(tool)).length) === "meta"
@@ -84,7 +91,7 @@ export async function createToolbox({ mount, pools = {}, auth, db, id, spans }: 
     policyClass: async (mutation, principal) => policyClassOf((await authority(principal)).catalogue, mutation),
     wrapCall: calls.wrapCall,
   })
-  const healthy = health({ toolbox: db.$client, ...pools }, mounted.map(provider => provider.id))
+  const healthy = health({ toolbox: db.$client }, mounted.map(provider => provider.id), pools)
   return {
     async fetch(request: Request) {
       const { pathname } = new URL(request.url)

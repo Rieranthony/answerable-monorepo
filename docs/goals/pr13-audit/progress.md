@@ -23,3 +23,31 @@
   Recorded in `decisions.md`.
 - **The six audit reports** are copied into `audits/`. The briefs R1 to R6 are written in `briefs/`. R1 starts.
 
+- **R1, the defects,** by Opus. All eleven are fixed, each with a test that failed first.
+  - **A4:** `ID_HOST`, loopback unless the image sets `0.0.0.0`.
+  - **C3:** readiness fails only on the server's own database. MCP databases are reported within 250 ms.
+  - **F18:**
+    - `mcp:test` runs through Turborepo with `--concurrency=4`, its cache off, `--continue` and `--env-mode=loose`.
+    - Measured: 200 generated MCPs pass, 2,225 tests in 46.6 to 52.0 s, at no more than 15 connections. Cap 16 times out from CPU load. CI's runner has 4 vCPUs.
+  - **F1:** the local path's prerequisites.
+  - **F2:** an unserved MCP's dependency is dropped (proven by deleting 100 MCPs).
+  - **F3:** one rule for organisation filtering.
+  - **C5:** in the Toolbox only. Done in the SDK, it would make the admin MCP read ID for an outsider's refused call, which its test forbids.
+  - **D11, A8, F11:** the lockfile also had `packages/acceptance` stale.
+  - **E12, E13, F13, M9's status lines.**
+  - **Also fixed,** outside the audit: the CLI end-to-end test failed about 1 run in 16 on the sort order of its roles.
+  - **The agent's gates:**
+    - `mcp:test`: 1,025 pass;
+    - ID: 1,493, at 100%;
+    - the acceptance: 69;
+    - kind: 123;
+    - web: 120;
+    - knip clean.
+- **The coordinator's review of R1:** the diff matches the brief. The gates:
+  - frozen install unchanged;
+  - typecheck and lint forced: 21 of 21;
+  - build: 2 of 2;
+  - `mcp:test` on the new runner: 14 of 14 tasks in 29 s;
+  - web: 120;
+  - knip clean;
+  - `infra:check` passed.
