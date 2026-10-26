@@ -193,8 +193,13 @@ test("application secret rotation validates every retained version without leaki
       { version: 1, value: old },
     ],
   });
+  // An empty or blank ring is unset: ID signs with BETTER_AUTH_SECRET alone.
+  for (const value of ["", " "])
+    expect(
+      parseEnvironment({ ...requiredEnvironment, BETTER_AUTH_SECRETS: value })
+        .betterAuthSecrets,
+    ).toBeUndefined();
   for (const value of [
-    "",
     `2x:${current}`,
     `-1:${current}`,
     `1.5:${current}`,

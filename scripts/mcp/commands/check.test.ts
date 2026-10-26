@@ -68,13 +68,13 @@ test("a stale manifest and stale generated files are rewritten, the check passes
 
 test("the generated step also runs bun run env:inventory's script, and an inventory it rewrote is listed to commit with the generated files", async () => {
   const { exec, ran } = recorder(command => {
-    if (command.at(-1)?.endsWith("env-inventory.ts")) writeFileSync(join(repository.root, "default.env"), "# written by the inventory\n")
+    if (command.at(-1)?.endsWith("env-inventory.ts")) writeFileSync(join(repository.root, ".env.example"), "# written by the inventory\n")
     return { code: 0, output: passing }
   })
   const { code, stdout } = await run(["acme", "--json"], exec)
   expect(code).toBe(0)
   expect(ran.filter(({ command }) => command.at(-1)?.endsWith("env-inventory.ts")).map(({ command, cwd }) => [command.slice(1), cwd])).toEqual([[["scripts/env-inventory.ts"], repository.root]])
-  expect(JSON.parse(stdout())).toMatchObject({ ok: true, next: ["git add default.env"] })
+  expect(JSON.parse(stdout())).toMatchObject({ ok: true, next: ["git add .env.example"] })
   expect((await run(["acme"], exec)).stdout()).toContain("ok      generated  current")
 })
 

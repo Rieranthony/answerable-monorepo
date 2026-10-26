@@ -5,7 +5,7 @@ The ops image's Jobs (infra/ops/README.md), each switched on for one upgrade by 
   its schema in answerable_mcps, or its own database and logins, and writes the URL Secrets the migrations and
   the services read;
 - register, on every deploy after the release and once ID is up, as its own machine client, ops-register, which its first
-  run mints with ID's root secret (or, once, a staff token from ops-staff-token) and keeps in ops-id-client: registers the
+  run mints with ID's root secret and keeps in ops-id-client: registers the
   Toolbox and the admin MCP in ID, registers each standalone or both MCP of mcps.json (OPS_MCPS, with its scopes) at
   hostnames.mcp, writes the client Secrets and starts the servers, which wait at zero replicas until their Secret exists
   (_server.tpl), and, with id.staffDomain and id.entraTenant, connects the staff domain and directory to the platform
@@ -135,10 +135,6 @@ spec:
           command: ["bun", "infra/ops/src/cli.ts", {{ $job | quote }}]
           env:
             {{- if eq $job "bootstrap" }}
-            - name: OPS_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
             # The managed database's administrative login (CREATEDB and CREATEROLE), as a URL with sslmode=verify-full:
             # a Secret Terraform writes. Bootstrap verifies the database against the ConfigMap postgres-ca, which it
             # writes on first use.
@@ -147,10 +143,6 @@ spec:
               value: {{ toJson $mcps | quote }}
             {{- else }}
             {{- if eq $job "register" }}
-            - name: OPS_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
             - name: OPS_TOOLBOX_URL
               value: {{ include "answerable.toolboxUrl" $ | quote }}
             - name: OPS_ADMIN_MCP_URL
@@ -159,8 +151,6 @@ spec:
               value: {{ include "answerable.origin" (dict "root" $ "host" $.Values.hostnames.mcp) | quote }}
             - name: OPS_MCPS
               value: {{ toJson $mcps | quote }}
-            - name: OPS_CLAUDE_CALLBACK_PORT
-              value: {{ $.Values.ops.claudeCallbackPort | quote }}
             - name: OPS_START_DEPLOYMENTS
               value: {{ include "answerable.opsStartDeployments" $ | quote }}
             {{- with $.Values.id.staffDomain }}
@@ -171,15 +161,6 @@ spec:
             - name: OPS_ENTRA_TENANT
               value: {{ . | quote }}
             {{- end }}
-            # A staff token, needed once only if ID refuses the root secret (root_locked) before register has minted its own
-            # client (infra/README.md, Register again):
-            # kubectl -n answerable create secret generic ops-staff-token --from-literal=OPS_ID_TOKEN=<token>
-            - name: OPS_ID_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: ops-staff-token
-                  key: OPS_ID_TOKEN
-                  optional: true
             {{- else }}
             - name: OPS_ADMIN_EMAIL
               value: {{ $.Values.ops.adminEmail | quote }}

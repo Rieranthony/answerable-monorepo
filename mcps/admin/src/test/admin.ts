@@ -87,7 +87,7 @@ export function seed(id: FakeId) {
 }
 
 /** The admin MCP in-process on a fake ID whose machine client belongs to the platform organisation, a fake Toolbox, and staff to sign in as. */
-export async function createAdmin(db: Database, { freshSeconds }: { freshSeconds?: number } = {}) {
+export async function createAdmin(db: Database, { freshSeconds = 1800 }: { freshSeconds?: number } = {}) {
   const id = createIdFake()
   const toolbox = createFakeToolbox(id)
   const platform = id.organizationId

@@ -1,37 +1,34 @@
 import { expect, test } from "bun:test"
 import { z } from "zod"
-import { ConfigError, defineConfig, locally } from "./index"
+import { ConfigError, defineConfig } from "./index"
 
 const config = defineConfig("Acme", {
-  ACME_URL: { schema: z.url(), defaults: locally("http://localhost:47600"), doc: "Where Acme is", source: "chart" },
-  ACME_SECRET: { schema: z.string().min(8), secret: true, defaults: { development: "development-secret", test: "test-secret" }, doc: "Acme's secret", source: "deploy" },
+  ACME_URL: { schema: z.url(), local: "http://localhost:47600", doc: "Where Acme is", source: "chart" },
+  ACME_SECRET: { schema: z.string().min(8), secret: true, local: "development-secret", doc: "Acme's secret", source: "deploy" },
   ACME_PORT: { schema: z.coerce.number().int().min(1), fallback: "47600", doc: "The port", source: "image" },
   ACME_NOTE: { schema: z.string().optional(), doc: "A note" },
-  ACME_TOKEN: { schema: z.string().optional(), secret: true, doc: "An optional credential, without defaults" },
+  ACME_TOKEN: { schema: z.string().optional(), secret: true, doc: "An optional credential, without a local value" },
 })
 
-test("development and test fill unset and empty variables with their defaults, then the fallback", () => {
-  expect(config.read({})).toEqual({ NODE_ENV: "development", ACME_URL: "http://localhost:47600", ACME_SECRET: "development-secret", ACME_PORT: 47600, ACME_NOTE: undefined, ACME_TOKEN: undefined })
-  expect(config.read({ NODE_ENV: "test", ACME_URL: "", ACME_SECRET: "" })).toMatchObject({ NODE_ENV: "test", ACME_URL: "http://localhost:47600", ACME_SECRET: "test-secret" })
-  expect(config.read({ ACME_URL: "https://acme.example", ACME_SECRET: "a-secret-of-mine", ACME_PORT: "1", ACME_NOTE: "" })).toEqual({
-    NODE_ENV: "development", ACME_URL: "https://acme.example", ACME_SECRET: "a-secret-of-mine", ACME_PORT: 1, ACME_NOTE: "", ACME_TOKEN: undefined,
+test("development and test fill unset variables with their local values, then the fallback; an empty or blank variable is unset", () => {
+  const local = { ACME_URL: "http://localhost:47600", ACME_SECRET: "development-secret", ACME_PORT: 47600, ACME_NOTE: undefined, ACME_TOKEN: undefined }
+  expect(config.read({})).toEqual({ NODE_ENV: "development", ...local })
+  expect(config.read({ NODE_ENV: "test", ACME_URL: "", ACME_SECRET: " ", ACME_PORT: "", ACME_NOTE: "\t", ACME_TOKEN: "" })).toEqual({ NODE_ENV: "test", ...local })
+  expect(config.read({ ACME_URL: "https://acme.example", ACME_SECRET: "a-secret-of-mine", ACME_PORT: "1", ACME_NOTE: "a note" })).toEqual({
+    NODE_ENV: "development", ACME_URL: "https://acme.example", ACME_SECRET: "a-secret-of-mine", ACME_PORT: 1, ACME_NOTE: "a note", ACME_TOKEN: undefined,
   })
 })
 
-test("a fallback stands in for an unset variable only: an empty one is parsed as it is", () => {
-  expect(() => config.read({ ACME_PORT: "" })).toThrow("Invalid Acme configuration: ACME_PORT: ")
-})
-
-test("production applies no default, keeps the fallback and names every variable it refuses", () => {
+test("production applies no local value, keeps the fallback, counts an empty or blank variable as unset and names every variable it refuses", () => {
   const production = { NODE_ENV: "production", ACME_URL: "https://acme.example", ACME_SECRET: "a-secret-of-mine" }
   expect(config.read(production)).toMatchObject({ NODE_ENV: "production", ACME_PORT: 47600, ACME_TOKEN: undefined })
+  expect(config.read({ ...production, ACME_PORT: "", ACME_TOKEN: "  " })).toMatchObject({ ACME_PORT: 47600, ACME_TOKEN: undefined })
   expect(() => config.read({ NODE_ENV: "production" })).toThrow(/^Invalid Acme configuration: ACME_URL: .+; ACME_SECRET: .+$/)
   expect(() => config.read({ ...production, ACME_URL: "" })).toThrow("ACME_URL")
 })
 
-test("production refuses a secret that is a development or test default, and only a secret", () => {
-  for (const ACME_SECRET of ["development-secret", "test-secret"])
-    expect(() => config.read({ NODE_ENV: "production", ACME_URL: "https://acme.example", ACME_SECRET })).toThrow("Invalid Acme configuration: ACME_SECRET: a development default")
+test("production refuses a secret whose value is its local one, and only a secret", () => {
+  expect(() => config.read({ NODE_ENV: "production", ACME_URL: "https://acme.example", ACME_SECRET: "development-secret" })).toThrow("Invalid Acme configuration: ACME_SECRET: a development default")
   expect(config.read({ NODE_ENV: "production", ACME_URL: "http://localhost:47600", ACME_SECRET: "a-secret-of-mine" }).ACME_URL).toBe("http://localhost:47600")
 })
 
@@ -66,10 +63,10 @@ test("fields describe every variable, NODE_ENV first, with whether production ma
   expect(config.label).toBe("Acme")
   expect(config.fields).toEqual([
     { name: "NODE_ENV", secret: false, fallback: "development", doc: expect.any(String), source: "image", optional: true },
-    { name: "ACME_URL", secret: false, defaults: { development: "http://localhost:47600", test: "http://localhost:47600" }, doc: "Where Acme is", source: "chart", optional: false },
-    { name: "ACME_SECRET", secret: true, defaults: { development: "development-secret", test: "test-secret" }, doc: "Acme's secret", source: "deploy", optional: false },
+    { name: "ACME_URL", secret: false, local: "http://localhost:47600", doc: "Where Acme is", source: "chart", optional: false },
+    { name: "ACME_SECRET", secret: true, local: "development-secret", doc: "Acme's secret", source: "deploy", optional: false },
     { name: "ACME_PORT", secret: false, fallback: "47600", doc: "The port", source: "image", optional: true },
     { name: "ACME_NOTE", secret: false, doc: "A note", optional: true },
-    { name: "ACME_TOKEN", secret: true, doc: "An optional credential, without defaults", optional: true },
+    { name: "ACME_TOKEN", secret: true, doc: "An optional credential, without a local value", optional: true },
   ])
 })

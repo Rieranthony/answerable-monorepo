@@ -8,7 +8,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { sql } from "drizzle-orm"
 import { Client, Pool } from "pg"
-import { ensureLocalMcpDatabases } from "../src/local"
 import { mcpDatabase } from "../src/mcp-database"
 import { migrateMcps, type McpMigration } from "../src/migrate-mcp"
 import { sharedMcps } from "../src/names"
@@ -32,8 +31,6 @@ async function perRun(work: () => Promise<unknown>, runs = 2000) {
   for (let run = 0; run < 100; run++) await work()
   return (await time(async () => { for (let run = 0; run < runs; run++) await work() })) / runs
 }
-
-await ensureLocalMcpDatabases(at("/postgres"))
 const cluster = new Client({ connectionString: at("/postgres") })
 await cluster.connect()
 await cluster.query(`drop database if exists ${database} with (force)`)

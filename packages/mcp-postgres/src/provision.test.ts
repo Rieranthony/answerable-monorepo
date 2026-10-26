@@ -1,16 +1,14 @@
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { Pool } from "pg"
-import { ensureLocalMcpDatabases } from "./local"
 import { ownMcpDatabase, sharedMcps } from "./names"
 import { provisionMcps, provisionOwnMcp, sqlOf, type Sql } from "./provision"
 import { database } from "./test/database"
-import { clientOf, clusterUrl, forget, mcpsUrl, testLogin } from "./test/mcps"
+import { clientOf, forget, mcpsUrl, testLogin } from "./test/mcps"
 
 const admin = new Pool({ connectionString: mcpsUrl, max: 1 })
 const sql = sqlOf(admin)
 const names = ["mpgprova", "mpgprovb", "mpgprovc"]
 beforeAll(async () => {
-  await ensureLocalMcpDatabases(clusterUrl)
   await forget(admin, ...names)
 })
 afterAll(async () => {

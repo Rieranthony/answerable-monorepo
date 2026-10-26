@@ -13,7 +13,7 @@ The lane starts a throwaway ID, the admin MCP and the Toolbox, registers them as
 
 ## Register the admin MCP
 
-**In a deployment, nobody runs this.** The deploy's register Job makes these registrations, with these keys, on every deploy, as its own machine client, `ops-register`, which its first run mints with the root secret; no later deploy needs the root secret or a staff token. It also registers each standalone MCP, which the Toolbox serves at its own path: its resource, its Claude Code client and their link.
+**In a deployment, nobody runs this.** The deploy's register Job makes these registrations, with these keys, on every deploy, as its own machine client, `ops-register`, which its first run mints with the root secret; no later deploy needs the root secret. It also registers each standalone MCP, which the Toolbox serves at its own path: its resource, its Claude Code client and their link.
 
 **Who.** Answerable staff, once per ID of your own, such as a local one. Use the root secret as `TOKEN` while no person is a platform administrator; ID then answers `403 root_locked` and `TOKEN` is a [staff token](/docs/id/onboard#get-a-staff-token). Each write sends its own `Idempotency-Key`, so a lost answer can be retried.
 

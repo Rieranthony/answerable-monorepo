@@ -1,6 +1,6 @@
-import { createIdProfiles, type IdAdmin } from "@answerable/id-admin"
+import type { IdAdmin } from "@answerable/id-admin"
 import { createMcpServer, type IdVerifierConfig, type Mount, type Mutation, type Served, type Tool, type UserPrincipal } from "@answerable/mcp"
-import { createCalls, health, perRequest, type Checked, type Serve, type Tracer } from "@answerable/mcp-platform"
+import { createCalls, createIdProfiles, health, perRequest, type Checked, type Serve, type Tracer } from "@answerable/mcp-platform"
 import type { Database } from "@answerable/mcp-postgres"
 import { createAdmin } from "./admin"
 import { ingest, readCatalogue, readHostClient } from "./catalogue"

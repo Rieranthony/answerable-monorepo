@@ -1,7 +1,7 @@
 // Databases for the tests of a server that serves MCPs, on the development Postgres, each a suite's own, as the deployment makes them.
 import { fileURLToPath } from "node:url"
 import type { Provider } from "@answerable/mcp"
-import { ensureLocalMcpDatabases, migrateMcp, provisionMcps, provisionOwnMcp, sharedMcps, sqlOf } from "@answerable/mcp-postgres"
+import { migrateMcp, provisionMcps, provisionOwnMcp, sharedMcps, sqlOf } from "@answerable/mcp-postgres"
 import { mcpPostgresTestConfig } from "@answerable/mcp-postgres/testing"
 import { Client } from "pg"
 
@@ -42,7 +42,6 @@ function assertDisposable(name: string) {
  */
 export async function testSharedMcps({ name, mcps }: { name: string; mcps: readonly Provider[] }) {
   assertDisposable(name)
-  await ensureLocalMcpDatabases(cluster("postgres").href)
   const serving = login(name)
   await statements(`drop database if exists ${name} with (force)`, `create database ${name} owner ${sharedMcps.logins.migrator}`, `create role ${serving.role} login password '${serving.password}' noinherit`)
   await asSuperuser(name, client => provisionMcps(sqlOf(client), { mcps: mcps.map(({ id }) => ({ name: id })), logins: { migrator: sharedMcps.logins.migrator, toolbox: serving.role } }))

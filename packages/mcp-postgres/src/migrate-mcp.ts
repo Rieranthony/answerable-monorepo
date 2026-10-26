@@ -1,4 +1,4 @@
-// An MCP's migrations, its grants and the schema line drizzle-kit writes. Values come from node, pg and drizzle-orm only, never from
+// An MCP's migrations, the serving login's grants and the schema line drizzle-kit writes. Values come from node, pg and drizzle-orm only, never from
 // @answerable/mcp, so that the ops image, which copies only this package (infra/ops/Dockerfile), can run it.
 import { readFileSync } from "node:fs"
 import { DrizzleQueryError } from "drizzle-orm"
@@ -7,7 +7,6 @@ import { drizzle } from "drizzle-orm/node-postgres"
 import type { Client } from "pg"
 import { migrate } from "./migrate"
 import { assertMcpName, identifier, quote } from "./names"
-import { privileges, type Grant } from "./runtime-role"
 
 /** An MCP to migrate, as the owner of its schema: the migrator login in the shared database, or the owner login of an own MCP's database. */
 export type McpMigration = {
@@ -16,8 +15,6 @@ export type McpMigration = {
   folder: string
   /** The login that serves the MCP and is granted its tables: the shared database's serving login, or an own MCP's runtime login. */
   serving: string
-  /** What the serving login may do, table by table, replacing the default: every table but the journal, read and written. */
-  grants?: readonly Grant[]
 }
 
 /** drizzle's journal table, in the MCP's own schema. */
@@ -34,18 +31,13 @@ const lineOf = (text: string, index: number) => text.slice(0, index).split("\n")
  * owner on `client`: the migrator login in the shared database, an own MCP's owner login in its database. An applied file whose text or journal
  * time changed, or that disappeared, refuses the run before anything is applied, naming the file; a statement that fails names the MCP and its
  * file, and nothing pending is applied. Then the grants, in one transaction: `serving` gets `USAGE` on the schema, `select, insert, update,
- * delete` on every table but the journal, or exactly `grants`, and `USAGE` on the sequences but the journal's; every other privilege on the schema
+ * delete` on every table but the journal, and `USAGE` on the sequences but the journal's; every other privilege on the schema
  * and its objects, `PUBLIC`'s included, is revoked. Running it again with nothing pending changes nothing. `client` is one connection, not a
  * pool: a drizzle transaction on a pool would borrow another.
  */
-export async function migrateMcp({ client, name, folder, serving, grants }: McpMigration & { client: Client }): Promise<void> {
+export async function migrateMcp({ client, name, folder, serving }: McpMigration & { client: Client }): Promise<void> {
   assertMcpName(name)
   if (!identifier.test(serving)) throw new Error(`Invalid serving login name "${serving}"`)
-  for (const grant of grants ?? []) {
-    if (!identifier.test(grant.table) || grant.table === journal) throw new Error(`A grant names "${grant.table}", which is not a table the serving login may be granted`)
-    const unknown = grant.privileges.find(privilege => !privileges.has(privilege))
-    if (unknown) throw new Error(`Invalid privilege "${unknown}" on ${grant.table}`)
-  }
   try {
     await migrate(drizzle({ client }), { folder, schema: name })
   } catch (error) {
@@ -56,12 +48,12 @@ export async function migrateMcp({ client, name, folder, serving, grants }: McpM
     const index = files.findLastIndex(file => file.sql.includes(error.query))
     throw new Error(`${name}: ${index < 0 ? "" : `${tags[index]}.sql failed: `}${(error.cause as Error).message}`, { cause: error })
   }
-  await grant(client, name, serving, grants)
+  await grant(client, name, serving)
 }
 
 // As the schema's owner, in one statement and so one transaction: revoke everything every grantee holds on the schema and its objects, PUBLIC and
 // the serving login always, then grant.
-async function grant(client: Client, name: string, serving: string, grants: readonly Grant[] | undefined) {
+async function grant(client: Client, name: string, serving: string) {
   const schema = quote(name)
   const login = quote(serving)
   const { rows: others } = await client.query<{ grantee: string }>(`select distinct acl.grantee::regrole::text as grantee
@@ -70,16 +62,14 @@ async function grant(client: Client, name: string, serving: string, grants: read
       union all select p.proacl, p.proowner from pg_proc p where p.pronamespace = $1::regnamespace) as object, aclexplode(object.acl) as acl
     where acl.grantee not in (0, object.owner)`, [name])
   const grantees = [...new Set(["public", login, ...others.map(row => row.grantee)])].join(", ")
-  const tables = grants
-    ? grants.filter(grant => grant.privileges.length).map(grant => `grant ${grant.privileges.join(", ")} on ${schema}.${quote(grant.table)} to ${login}`)
-    : [`grant select, insert, update, delete on all tables in schema ${schema} to ${login}`, `revoke all on ${schema}.${journal} from ${login}`]
   await client.query([
     `revoke all on schema ${schema} from ${grantees}`,
     `revoke all on all tables in schema ${schema} from ${grantees}`,
     `revoke all on all sequences in schema ${schema} from ${grantees}`,
     `revoke all on all routines in schema ${schema} from ${grantees}`,
     `grant usage on schema ${schema} to ${login}`,
-    ...tables,
+    `grant select, insert, update, delete on all tables in schema ${schema} to ${login}`,
+    `revoke all on ${schema}.${journal} from ${login}`,
     `grant usage on all sequences in schema ${schema} to ${login}`,
     `revoke all on sequence ${schema}.${quote(`${journal}_id_seq`)} from ${login}`,
   ].join(";\n"))

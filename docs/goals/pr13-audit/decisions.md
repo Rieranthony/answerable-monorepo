@@ -70,6 +70,15 @@ The owner chose "As recommended (Recommended)":
 - **Cleanups:** take every cleanup in the report's section 3, except those D-2 keeps.
 - **Recommended against:** take none of the proposals in the report's section 4.
 
+## Follow-ups decided during the work (2026-10-26)
+
+- **The development Postgres:** "You run it (Recommended)".
+  - The coordinator found that the eight old `mcp_*` roles owned 18 objects, all in the empty `e2e` and `example` schemas of `answerable_mcps`.
+  - It dropped both schemas, the roles' privileges in both MCP databases, and the eight roles. Then it migrated `e2e` and `example` again with `bun mcp db … migrate`, from a clean copy of b4081e52.
+  - The Toolbox's login passes `assertServingLogin` for both. Any other developer's Postgres needs the same once.
+- **The organisation guard:** "Add the check (Recommended)". `bun mcp check` refuses `answerable.organisation_id` in an MCP's `src`, which the deleted role scan used to flag. This goes in R5.
+- **Docker:** "Clear build cache". `docker builder prune -f` freed 11 GB of build cache. No container, volume or image was touched.
+
 ## Order of work
 
 The briefs are in [`briefs/`](briefs/):

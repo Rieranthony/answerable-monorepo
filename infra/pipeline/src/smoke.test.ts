@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { hostsFor } from "./environments"
-import { formatReport, runSmoke, smokePassed, type DeclaredMcp, type Fetch, type SmokeOptions } from "./smoke"
+import type { DeclaredMcp } from "@answerable/mcp-postgres"
+import { formatReport, runSmoke, smokePassed, type Fetch, type SmokeOptions } from "./smoke"
 
 const hosts = hostsFor("staging")
 /** An MCP in each place: the Toolbox's hub and its own URL, the hub alone, its own URL alone. */
-const MCPS: DeclaredMcp[] = [{ name: "e2e", serve: "both" }, { name: "example", serve: "toolbox" }, { name: "solo", serve: "standalone" }]
+const MCPS: DeclaredMcp[] = [{ name: "e2e", serve: "both", database: "shared", scopes: [] }, { name: "example", serve: "toolbox", database: "shared", scopes: [] }, { name: "solo", serve: "standalone", database: "own", scopes: [] }]
 const ISSUER = `https://${hosts.id}`
 const url = (host: string, path: string) => `https://${host}${path}`
 

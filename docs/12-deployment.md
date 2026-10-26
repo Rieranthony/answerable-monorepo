@@ -147,7 +147,7 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 - **What a person provides** goes once into the GitHub environment, pasted in the browser: the Civo key, the Cloudflare token, the Entra client ID and secret, and a fine-grained GitHub token for this repository with read and write on Environments alone (the permission that writes environment secrets; managing the environment itself would need repository administration, which can also delete the repository, so the environment's policy and reviewer are the owner's, set once). GitHub encrypts each value with a libsodium sealed box before it reaches GitHub, stores it write-only, masks it in logs and hands it only to the workflow steps that name it.
 - **What a workflow generates** goes into the environment the same way: `bootstrap.yml` creates the state bucket's credential in Civo and ID's two random secrets, each only when missing, and rotates `ROOT_ADMIN_SECRET` on request.
 - **What Terraform makes** stays in its state and goes where it is used: the deploy credentials into the GitHub environment (the `github` module), the database administrator's URL, the origin certificate and the trusted proxies into the cluster (the `platform` module), the origin-pull certificate to Cloudflare (the `edge` module). Terraform holds no secret as input.
-- **What the ops Jobs generate never leaves the cluster.** `ops-bootstrap` writes the database URLs and `ops-register` the three machine-client secrets, its own among them, straight into Kubernetes Secrets. A rebuilt cluster re-runs both: bootstrap sets a new password for a login whose Secret is gone, register rotates a client secret it cannot find. Register's own secret is rotated by the bearer that mints it: the root secret before the lock, a staff token after.
+- **What the ops Jobs generate never leaves the cluster.** `ops-bootstrap` writes the database URLs and `ops-register` the three machine-client secrets, its own among them, straight into Kubernetes Secrets. A rebuilt cluster re-runs both: bootstrap sets a new password for a login whose Secret is gone, register rotates a client secret it cannot find. Register's own secret is rotated by the root secret that mints it: before the lock, or with break glass after.
 - **Kubernetes Secrets rest in Civo's etcd**, whose encryption at rest is undocumented.
 
 | Secret in `answerable` | Keys | Written by | Rotated by |
@@ -160,8 +160,7 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 | `mcps-database-owner`, `toolbox-mcps-database` | `MCPS_DATABASE_MIGRATION_URL`, `TOOLBOX_MCPS_DATABASE_URL`: the shared MCP database's two logins | `ops-bootstrap` | Empty the key, tag |
 | `mcp-<name>-database-owner`, `mcp-<name>-database`, per `own` MCP | `DATABASE_MIGRATION_URL`, `DATABASE_URL` | `ops-bootstrap` | Empty the key, tag |
 | `toolbox-id-client`, `admin-id-client` | `TOOLBOX_ID_CLIENT_SECRET`, `ADMIN_ID_CLIENT_SECRET` | `ops-register` | Empty the key, register again |
-| `ops-id-client` | `OPS_ID_CLIENT_SECRET`: register's own client, `ops-register` | `ops-register`, the run that mints it | Empty the key, a staff token in `ops-staff-token`, register again |
-| `ops-staff-token` | `OPS_ID_TOKEN` | The owner, by hand, only when `ops-id-client` is empty and root has locked: minting or rotating register's own client | Delete it after use |
+| `ops-id-client` | `OPS_ID_CLIENT_SECRET`: register's own client, `ops-register` | `ops-register`, the run that mints it | Empty the key, then a ship with break glass once root has locked ([runbook](../infra/README.md#register-again)) |
 
 Public, in the cluster: the ConfigMaps `trusted-proxies` (Terraform) and `postgres-ca` (the bootstrap Job).
 
@@ -185,7 +184,7 @@ Public, in the cluster: the ConfigMaps `trusted-proxies` (Terraform) and `postgr
 An MCP ships with its commit: nothing outside its folder changes, the image holds it, and the chart's list, which `bun mcp` writes, provisions, migrates, mounts and routes it, and `ops-register` registers it in ID.
 
 **Registration in ID** ([MCP CLI D9](goals/mcp-cli/decisions.md), the v0 code audit's D13). `ops-register` runs after `--wait` on every deploy, as its own machine client, `ops-register`, a `client_credentials` client of the platform organisation with `platform:read platform:write` on ID's admin API.
-- **Its client.** The first run, which holds the root secret before anyone is a platform administrator, mints it, keeps its secret in `ops-id-client`, and goes on as it; no later run needs the root secret or a staff token. An environment whose root locked before `ops-register` existed needs a staff token in `ops-staff-token` once ([runbook](../infra/README.md#the-first-ship-of-the-mcps-image)).
+- **Its client.** The first run, which holds the root secret before anyone is a platform administrator, mints it, keeps its secret in `ops-id-client`, and goes on as it; no later run needs the root secret. An environment whose root locked before `ops-register` existed ships once with break glass, `ROOT_ADMIN_BREAK_GLASS` in the overlay, and once more without it ([runbook](../infra/README.md#the-first-ship-of-the-mcps-image)).
 - **What it registers.** The Toolbox and the admin MCP, and for each `standalone` or `both` MCP of `charts/answerable/mcps.json` the resource `https://mcp.<zone>/<name>/mcp` (the manifest's scopes and `offline_access`, 900-second tokens), its Claude Code client `claude-code-<name>` and their link.
 - **Compare, then change.** It reads each resource and client, creates what is missing with its documented `Idempotency-Key`, and changes with `If-Match` only the fields that differ. Scopes and redirect URIs only widen, so what `toolbox_enable` adds to the Toolbox's resource stays; an MCP's own resource follows its manifest, and a dropped scope is logged. An MCP removed from the list keeps its rows. At 200 standalone MCPs a deploy's run makes 426 calls to ID when nothing changed and 1,041 the first time (measured against the fake ID).
 - **A failure rolls the release back**, as a migration's does: a release is its images and what they need in place, ID's rows included, and ID rolls in the same release.
@@ -195,7 +194,7 @@ An MCP ships with its commit: nothing outside its folder changes, the image hold
 
 - **Roll back** by tagging an earlier commit, or `helm rollback` with a kubeconfig.
 - **Migrations are expand, then contract** ([D10](goals/civo-deploy/decisions.md)): a migration never breaks the image before it, because that image keeps serving during the rollout and after a rollback. A change that cannot be written that way needs a restore, not a rollback.
-- **Registering again** without a deploy (a rotated client secret) and **the first administrator** are `ops.yml`; registering needs a staff token in `ops-staff-token` only to mint or rotate register's own client once root has locked.
+- **Registering again** without a deploy (a rotated client secret) and **the first administrator** are `ops.yml`; registering needs break glass only to mint or rotate register's own client once root has locked.
 
 ## Observability
 

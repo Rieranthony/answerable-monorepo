@@ -173,12 +173,6 @@ exports[`every file of a new MCP, for a fixed name and date, with the status too
 //     organisation_id: pg.uuid().notNull(),
 //     name: pg.text().notNull(),
 //   }, table => [organisationIsolation(table.organisation_id)]).enableRLS()
-//
-// The serving login reads and writes every table here. To narrow that, export grants from src/db/grants.ts, which
-// bun mcp db acme migrate reads:
-//
-//   import type { Grant } from "@answerable/mcp-postgres"
-//   export const grants: Grant[] = [{ table: "projects", privileges: ["select", "insert"] }]
 export const acmeSchema = pg.pgSchema("acme")
 "
 `;
@@ -255,12 +249,6 @@ import * as pg from "drizzle-orm/pg-core"
 //     organisation_id: pg.uuid().notNull(),
 //     name: pg.text().notNull(),
 //   }, table => [organisationIsolation(table.organisation_id)]).enableRLS()
-//
-// The serving login reads and writes every table here. To narrow that, export grants from src/db/grants.ts, which
-// bun mcp db acme migrate reads:
-//
-//   import type { Grant } from "@answerable/mcp-postgres"
-//   export const grants: Grant[] = [{ table: "projects", privileges: ["select", "insert"] }]
 export const acmeSchema = pg.pgSchema("acme")
 
 // The notes table: each organisation's rows. The id is a UUID v7, so ids sort by creation.

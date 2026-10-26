@@ -19,17 +19,23 @@ export type Deps = {
   root: string
 }
 
-/** The `ops` Jobs the chart can run on request, and the value that switches each on. */
+/** The `ops` Jobs of the chart, and the value that switches each on. */
 const OPS_JOBS = { bootstrap: "ops.bootstrap", register: "ops.register", "make-admin": "ops.makeAdmin" } as const
 
 /** One of the ops Jobs. */
-export type OpsJob = keyof typeof OPS_JOBS
+type OpsJob = keyof typeof OPS_JOBS
 
-/** Read the job name of `run-job`: it must be one of the ops Jobs. */
-export function parseJob(value: string | undefined): OpsJob {
-  const found = Object.keys(OPS_JOBS).find((job) => job === value)
-  if (!found) throw new UsageError(`the job must be one of ${Object.keys(OPS_JOBS).join(", ")}`)
-  return found as OpsJob
+/** The Jobs `run-job` runs, as `ops.yml` offers them: every deploy runs bootstrap. */
+const RUNNABLE = ["register", "make-admin"] as const
+
+/** A Job `run-job` runs. */
+export type RunnableJob = (typeof RUNNABLE)[number]
+
+/** Read the job name of `run-job`: it must be one it runs. */
+export function parseJob(value: string | undefined): RunnableJob {
+  const found = RUNNABLE.find((job) => job === value)
+  if (!found) throw new UsageError(`the job must be one of ${RUNNABLE.join(", ")}`)
+  return found
 }
 
 /** An image tag the pipeline accepts: the full commit SHA, never a branch or `latest`. */
@@ -349,7 +355,7 @@ const EMAIL = /^[^\s@,\\]+@[^\s@,\\]+\.[^\s@,\\]+$/
 /** What `runJob` does. */
 export type RunJobOptions = {
   environment: EnvironmentName
-  job: OpsJob
+  job: RunnableJob
   /** `make-admin`'s staff member: the email they signed in with. */
   email?: string
   /** How long Helm and the restarts wait, as a Go duration; defaults to `10m`. */

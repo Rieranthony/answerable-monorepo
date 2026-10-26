@@ -90,15 +90,15 @@ The server never sees a password, never runs Better Auth and never reads ID's da
 | --- | --- |
 | `@answerable/auth` | Verify an Answerable ID access token, for a person or a machine client |
 | `@answerable/auth/testing` | An in-process issuer that signs test tokens |
-| `@answerable/mcp` | `defineTool`, `defineMutation`, `defineProvider`, `definePrompt`, `defineResource`, `defineView`, `withDatabase`, `createMcpServer`, `callerOrganisation`, `createMemoryIntentStore`, `manifest`, `ToolError`, `errorCodes`, `errorCodeOf`, `riskClass`, `checkProviderId`, `checkToolName`, `checkDescription`, `checkMutationDescription`, `parseEnvironment` |
+| `@answerable/mcp` | `defineTool`, `defineMutation`, `defineProvider`, `definePrompt`, `defineResource`, `defineView`, `withDatabase`, `createMcpServer`, `callerOrganisation`, `createMemoryIntentStore`, `manifest`, `ToolError`, `errorCodes`, `errorCodeOf`, `riskClass`, `checkProviderId`, `checkToolName`, `checkDescription`, `checkMutationDescription` |
 | `@answerable/mcp/build` | Bundle an MCP Apps view into one HTML resource |
 | `@answerable/mcp/testing` | `createTestMcp`, `assertProviderConformance`, `errorOf` and `testPrincipal`; for an MCP with a database, `@answerable/mcp-postgres/testing` has its own `createTestMcp` and `assertProviderConformance` |
 | `@answerable/acceptance` | The kit that starts real ID, provisions it and signs a person in, and the journeys (`packages/acceptance`) |
 | `@answerable/mcp-e2e` | The reference MCP: five tools over its records in Postgres, a prompt, a resource and a view (`mcps/e2e`) |
 | `@answerable/mcp-example` | The finished example, made with `bun mcp`: `example.status`, `notes.list` and `notes.add` over its database (`mcps/example`) |
-| `@answerable/id-admin` | A server's machine client on Answerable ID's admin API: `createIdAdmin`, `IdError`, `found`, `createIdProfiles` (who is calling, for `createMcpServer`), and the fake ID in `@answerable/id-admin/testing` (`packages/id-admin`) |
+| `@answerable/id-admin` | A server's machine client on Answerable ID's admin API: `createIdAdmin`, `IdError`, `found`, and the fake ID in `@answerable/id-admin/testing` (`packages/id-admin`) |
 | `@answerable/mcp-postgres` | Postgres storage for MCP servers: the intent store, the evidence chain, the drizzle base schema, and a database for every MCP with `mcpDatabase` (`packages/mcp-postgres`) |
-| `@answerable/mcp-platform` | What every server Answerable runs shares: the evidence and spans of every call and refusal (`createCalls`), the audit-log poller, `/health`, each MCP's database from the Toolbox's generated list (`mcpDatabases`), and test databases in `@answerable/mcp-platform/testing` (`packages/mcp-platform`) |
+| `@answerable/mcp-platform` | What every server Answerable runs shares: its environment (`parseEnvironment`), who is calling (`createIdProfiles`, for `createMcpServer`), the evidence and spans of every call and refusal (`createCalls`), the audit-log poller, `/health`, each MCP's database from the Toolbox's generated list (`mcpDatabases`), and test databases in `@answerable/mcp-platform/testing` (`packages/mcp-platform`) |
 | `@answerable/mcp-toolbox` | The Toolbox: `createToolbox`, the grants reader, the catalogue and the admin API, serving the MCPs of its generated list in its hub and at their own paths (`mcps/toolbox`) |
 | `@answerable/scripts` | `bun mcp`: `new`, `add tool`, `list`, `check`, `db`, `setup` and `dev`, their templates and the generator of the lists the Toolbox and the chart read (`scripts/mcp`). [The bun mcp command](/docs/mcp/cli) |
 

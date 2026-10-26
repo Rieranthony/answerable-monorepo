@@ -67,6 +67,8 @@ type Options = {
   sslRootCert: string
   password?: () => string
   log?: (line: string) => void
+  /** `@answerable/mcp-postgres`'s provisioning, of the shared database's MCPs and of an own MCP's database; a test passes its own. */
+  provision?: { shared: typeof provisionMcps; own: typeof provisionOwnMcp }
 }
 
 // A statement that waits on a lock, or runs away, fails with PostgreSQL's reason instead of holding the Job until its deadline.
@@ -82,7 +84,7 @@ async function bounded(sql: Sql) {
  * postgres` provisions the MCPs of `mcps`: in the shared database, each shared MCP's schema, owned by the migrator, with `USAGE` for the Toolbox,
  * which serves it; in each own MCP's database, its schema. Running it again changes nothing. Never prints a password.
  */
-export async function bootstrap({ sql, database: connect, mcps, store, host, port, sslRootCert, password = generatePassword, log = console.log }: Options) {
+export async function bootstrap({ sql, database: connect, mcps, store, host, port, sslRootCert, password = generatePassword, log = console.log, provision = { shared: provisionMcps, own: provisionOwnMcp } }: Options) {
   const address = host.includes(":") ? `[${host}]` : host
   await bounded(sql)
   for (const database of databasesFor(mcps)) {
@@ -122,11 +124,11 @@ export async function bootstrap({ sql, database: connect, mcps, store, host, por
     log(`${database.name}: only its owner and ${database.runtime.map(({ name }) => name).join(" and ")} may connect`)
   }
   const shared = mcps.filter(mcp => mcp.database === "shared")
-  await on(connect(sharedMcps.database), sql => provisionMcps(sql, { mcps: shared.map(({ name }) => ({ name })), logins: sharedMcps.logins }))
+  await on(connect(sharedMcps.database), sql => provision.shared(sql, { mcps: shared.map(({ name }) => ({ name })), logins: sharedMcps.logins }))
   log(`${sharedMcps.database}: ${shared.length ? `${shared.map(({ name }) => name).join(", ")} provisioned` : "no MCP to provision"}`)
   for (const { name } of mcps.filter(mcp => mcp.database === "own")) {
     const own = ownMcpDatabase(name)
-    await on(connect(own.database), sql => provisionOwnMcp(sql, { name, owner: own.owner, runtime: own.runtime }))
+    await on(connect(own.database), sql => provision.own(sql, { name, owner: own.owner, runtime: own.runtime }))
     log(`${own.database}: schema ${name} provisioned`)
   }
 }

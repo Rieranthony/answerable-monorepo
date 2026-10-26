@@ -269,19 +269,19 @@ bun run toolbox:dev
 
 The Toolbox migrates as the schema owner and serves as a restricted login, as [Answerable ID](/docs/id/onboard#first-run) and [the admin MCP](/docs/admin#database-roles) do.
 
-- **`db:migrate`** connects with `TOOLBOX_DATABASE_MIGRATION_URL`, applies the drizzle migrations in `mcps/toolbox/drizzle` (the same migrator as Answerable ID's), then grants `TOOLBOX_DATABASE_RUNTIME_ROLE` exactly what the Toolbox needs and takes back anything else. It runs again safely, and adopts a database the previous file migrator built.
+- **`db:migrate`** connects with `TOOLBOX_DATABASE_MIGRATION_URL`, applies the drizzle migrations in `mcps/toolbox/drizzle` (the same migrator as Answerable ID's), then grants its runtime role, `answerable_toolbox_runtime`, exactly what the Toolbox needs and takes back anything else. It runs again safely, and adopts a database the previous file migrator built.
 - **The Toolbox** connects with `TOOLBOX_DATABASE_URL`, the runtime login, and refuses to listen when that login is a superuser, owns anything, or could change the evidence.
 - **The runtime role** reads and adds evidence, erases payload bodies, moves and sweeps intents, writes the catalogue and the host clients, and nothing else: no `CREATE`, no temporary tables, nothing in schema `drizzle`, where the migration receipts are.
 
-The local logins come from `infra/postgres/init/005-create-mcp-runtime-roles.sql` when the Postgres volume is created. On a volume made before it, run the file once:
+The local logins come from `infra/postgres/init/005-create-mcp-runtime-roles.sql`, and the shared MCP databases and their two logins from `006-create-mcps-databases.sql`, when the Postgres volume is created. On a volume made before them, run both once; each is safe to run again:
 
 ```bash
-docker exec -i answerable-postgres-1 psql -U answerable -d postgres < infra/postgres/init/005-create-mcp-runtime-roles.sql
+cat infra/postgres/init/005-create-mcp-runtime-roles.sql infra/postgres/init/006-create-mcps-databases.sql | docker exec -i answerable-postgres-1 psql -U answerable -d postgres
 ```
 
 ## Environment
 
-Read from the root `.env` by `bun run toolbox:dev`; every variable is listed in `default.env`.
+Read from the root `.env` by `bun run toolbox:dev`. An empty variable counts as unset.
 
 <Configuration group={["Toolbox", "Toolbox migration", "Toolbox test database"]} />
 
@@ -330,7 +330,7 @@ The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, s
 | `The Toolbox cannot start: Database role <role> is not a restricted runtime role: …` | `TOOLBOX_DATABASE_URL` is the owner, a superuser, or a login with more than the Toolbox needs; the message names each problem | Point `TOOLBOX_DATABASE_URL` at the runtime login, then run `db:migrate`, which takes back extra privileges |
 | `password authentication failed for user "answerable_toolbox_runtime"` | The runtime login does not exist, or has another password: `db:migrate` creates a missing role without a login or password | Run `005-create-mcp-runtime-roles.sql` once, as in [Database roles](#database-roles) |
 | Log `permission denied for table <table>` | The runtime role lacks a grant: the database was migrated by an older version | Run `db:migrate` |
-| `Refusing to provision <role> as a runtime role: …` from `db:migrate` | `TOOLBOX_DATABASE_RUNTIME_ROLE` names a role with an attribute beyond login, a membership or an ownership | Name an unprivileged role |
+| `Refusing to provision answerable_toolbox_runtime as a runtime role: …` from `db:migrate` | The runtime login has an attribute beyond login, a membership or an ownership | Take it away from the login, then migrate again |
 | `Set TOOLBOX_DATABASE_MIGRATION_URL…` from `db:migrate` | The owner's URL is not set | Set it as in [Environment](#environment) |
 | `503 {"status":"unavailable"}` from `/health` | The Toolbox's database does not answer | Check `TOOLBOX_DATABASE_URL` and Postgres |
 | Log `relation "host_clients" does not exist`, or `"intents"`, and every list or call fails | The database lacks this version's migrations | Run `bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate` |

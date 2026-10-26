@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test"
-import { defineConfig, locally } from "@answerable/config"
+import { defineConfig } from "@answerable/config"
 import { z } from "zod"
 import { parseEnvironment } from "./index"
 
 const config = defineConfig("Acme", {
-  ACME_ID_ISSUER: { schema: z.url(), defaults: locally("http://localhost:47300"), doc: "The ID issuer" },
-  ACME_RESOURCE_URL: { schema: z.url(), defaults: locally("http://localhost:47510/acme/mcp"), doc: "This server's URL" },
+  ACME_ID_ISSUER: { schema: z.url(), local: "http://localhost:47300", doc: "The ID issuer" },
+  ACME_RESOURCE_URL: { schema: z.url(), local: "http://localhost:47510/acme/mcp", doc: "This server's URL" },
   ACME_PORT: { schema: z.coerce.number().int().min(1).max(65535), fallback: "47510", doc: "The port" },
 })
 const names = { issuer: "ACME_ID_ISSUER", resource: "ACME_RESOURCE_URL" } as const

@@ -70,7 +70,6 @@ A tool's `execute`, or a change's `prepare` and `commit`, receives the checked i
 | --- | --- |
 | `person` and `organisation`: the ids | The access token, checked on every call |
 | `person` and `organisation`: names, email and groups | Answerable ID, read for you and kept for 60 seconds. [The caller](/docs/mcp/tools#the-caller) |
-| `client` | The AI app the person signed in with, from the token |
 | `db` | Made once for the MCP when the server starts. Each query borrows a connection and returns it |
 
 <include lang="ts" meta='title="mcps/example/src/docs/caller.ts"'>../../../../../mcps/example/src/docs/caller.ts</include>

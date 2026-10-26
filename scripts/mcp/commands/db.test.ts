@@ -56,14 +56,13 @@ test("generate refuses a table outside the MCP's schema, writing nothing", async
   }
 })
 
-test("migrate provisions the shared schema, applies the journal as the migrator, makes no role, and narrows the serving login's grants as src/db/grants.ts exports", async () => {
-  await Bun.write(file(shared, "src/db/grants.ts"), 'export const grants = [{ table: "notes", privileges: ["select"] }]\n')
+test("migrate provisions the shared schema, applies the journal as the migrator, makes no role, and grants the serving login every table", async () => {
   const { code, stdout } = await run([shared, "migrate"])
-  expect([code, lines(stdout())[0]]).toEqual([0, `ok      database   schema ${shared} in answerable_mcps: migrated, with src/db/grants.ts`])
+  expect([code, lines(stdout())[0]]).toEqual([0, `ok      database   schema ${shared} in answerable_mcps: migrated`])
   expect(lines(stdout())[0]!.split(/ +/)[1]).toBe(definitions.db.steps[1]!.name)
   expect(await traces(shared)).toEqual([`answerable_mcps.${shared}`])
   expect(await query("answerable_mcps", "select tableowner from pg_tables where schemaname = $1 and tablename = 'notes'", [shared])).toEqual([{ tableowner: "answerable_mcps_migrator" }])
-  expect(await query("answerable_mcps", "select privilege_type from information_schema.role_table_grants where grantee = $1 and table_schema = $2 and table_name = 'notes'", ["answerable_mcps_toolbox", shared])).toEqual([{ privilege_type: "SELECT" }])
+  expect(await query("answerable_mcps", "select privilege_type from information_schema.role_table_grants where grantee = $1 and table_schema = $2 and table_name = 'notes' order by privilege_type", ["answerable_mcps_toolbox", shared])).toEqual(["DELETE", "INSERT", "SELECT", "UPDATE"].map(privilege_type => ({ privilege_type })))
   expect((await run([shared, "migrate"])).code).toBe(0)
 })
 

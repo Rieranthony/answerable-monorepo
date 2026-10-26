@@ -11,7 +11,7 @@ const complete = {
   ADMIN_STANDALONE_ORIGIN: "https://mcp.example.test",
 }
 
-test("reads ID, the resource, the database and the machine client, defaulting the bind address to 127.0.0.1, the port to 47520 and leaving the freshness window to createAdminMcp", () => {
+test("reads ID, the resource, the database and the machine client, defaulting the bind address to 127.0.0.1, the port to 47520 and the freshness window to 1,800 seconds", () => {
   expect(readAdminEnvironment({ ...complete, NODE_ENV: "production" })).toEqual({
     auth: { issuer: "http://localhost:47300", resource: "http://localhost:47520/mcp" },
     hostname: "127.0.0.1",
@@ -20,7 +20,7 @@ test("reads ID, the resource, the database and the machine client, defaulting th
     id: { issuer: "http://localhost:47300", adminResource: "http://localhost:47300/api/admin", clientId: "admin-mcp", clientSecret: "secret" },
     toolboxAdminResource: undefined,
     standaloneOrigin: "https://mcp.example.test",
-    freshSeconds: undefined,
+    freshSeconds: 1800,
   })
   expect(readAdminEnvironment({ ...complete, ADMIN_PORT: "47521", ADMIN_TOOLBOX_ADMIN_RESOURCE: "http://localhost:47400/admin", ADMIN_STANDALONE_ORIGIN: "https://mcp.example/", ADMIN_FRESH_SECONDS: "600" }))
     .toMatchObject({ port: 47521, toolboxAdminResource: "http://localhost:47400/admin", standaloneOrigin: "https://mcp.example", freshSeconds: 600 })
@@ -38,7 +38,7 @@ test("outside production, everything but the client pair defaults to the local s
       id: { issuer: "http://localhost:47300", adminResource: "http://localhost:47300/api/admin", clientId: "admin-mcp", clientSecret: "secret" },
       toolboxAdminResource: "http://localhost:47400/admin",
       standaloneOrigin: "http://localhost:47400",
-      freshSeconds: undefined,
+      freshSeconds: 1800,
     })
   expect(() => readAdminEnvironment({})).toThrow("Invalid admin MCP configuration: ADMIN_ID_CLIENT_ID: ")
 })

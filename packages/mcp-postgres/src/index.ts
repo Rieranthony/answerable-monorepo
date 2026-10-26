@@ -2,7 +2,6 @@ export { connect, type ConnectOptions, type Database, type Executor } from "./co
 export { declaredMcps, type DeclaredMcp } from "./declared"
 export { createEvidence, type EvidenceEvent } from "./evidence"
 export { createPostgresIntentStore } from "./intents"
-export { ensureLocalMcpDatabases } from "./local"
 export { mcpDatabase } from "./mcp-database"
 export { evidenceChainSql, legacyBaseline, migrate, type LegacyBaseline } from "./migrate"
 export { migrateMcp, migrateMcps, withoutSchemaCreation, type McpMigration } from "./migrate-mcp"

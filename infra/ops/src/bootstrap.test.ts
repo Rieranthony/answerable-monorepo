@@ -6,19 +6,19 @@ import { memoryStore } from "./testing"
 type Role = { password: string; rolsuper: boolean; rolreplication: boolean; rolbypassrls: boolean; restricted: boolean; login: boolean }
 
 /**
- * A PostgreSQL that understands the statements bootstrap sends, and those `@answerable/mcp-postgres`'s provisioning sends on a connection to
- * another database: roles, databases and their owners, schemas and their owners, `USAGE` on them, and a log of every statement, prefixed by its
- * database when it is not the administrative connection's.
+ * A PostgreSQL that understands the statements bootstrap sends: roles, databases and their owners, and a log of every statement, prefixed by its
+ * database when it is not the administrative connection's. `provision` stands in for `@answerable/mcp-postgres`'s provisioning, which its own
+ * tests prove on a real Postgres, and records what bootstrap hands it: the database of the connection, and the arguments.
  */
 function fakePostgres({ roles = {}, owners = {} }: { roles?: Record<string, Partial<Role>>; owners?: Record<string, string> } = {}) {
   const state = {
     roles: Object.fromEntries(Object.entries(roles).map(([name, role]) => [name, { password: "", rolsuper: false, rolreplication: false, rolbypassrls: false, restricted: false, login: true, ...role }])) as Record<string, Role>,
     owners: { ...owners },
-    schemas: new Set<string>(),
-    usage: new Set<string>(),
     statements: [] as string[],
     connections: [] as string[],
+    provisioned: [] as { kind: "shared" | "own"; database: string; with: unknown }[],
   }
+  const databaseOf = new Map<Sql, string>()
   const on = (database?: string): Sql => async (text, params = []) => {
     state.statements.push(database ? `${database}: ${text}` : text)
     let match: RegExpMatchArray | null
@@ -30,7 +30,6 @@ function fakePostgres({ roles = {}, owners = {} }: { roles?: Record<string, Part
       const owner = state.owners[String(params[0])]
       return owner ? [{ owner }] : []
     }
-    if (text.startsWith("select datname as name")) return [{ name: database, owner: state.owners[database!] }]
     if ((match = text.match(/^create role "(\w+)" with login password '((?:[^']|'')*)'(.*)$/))) {
       state.roles[match[1]!] = { password: match[2]!, rolsuper: false, rolreplication: false, rolbypassrls: false, restricted: match[3]!.includes("nobypassrls"), login: true }
       return []
@@ -41,31 +40,38 @@ function fakePostgres({ roles = {}, owners = {} }: { roles?: Record<string, Part
       if (match[3]!.includes("noinherit")) role.restricted = true
       return []
     }
-    if ((match = text.match(/^create schema if not exists "(\w+)" authorization "(\w+)"$/))) state.schemas.add(`${database}.${match[1]} ${match[2]}`)
-    if ((match = text.match(/^grant usage on schema "(\w+)" to "(\w+)"$/))) state.usage.add(`${database}.${match[1]}>${match[2]}`)
     if ((match = text.match(/^create database "(\w+)" owner "(\w+)"$/))) state.owners[match[1]!] = match[2]!
     if ((match = text.match(/^alter database "(\w+)" owner to "(\w+)"$/))) state.owners[match[1]!] = match[2]!
     return []
   }
   const database = (name: string) => {
     state.connections.push(name)
-    return { sql: on(name), close: async () => {} }
+    const sql = on(name)
+    databaseOf.set(sql, name)
+    return { sql, close: async () => {} }
   }
-  return { sql: on(), database, state }
+  const provision = {
+    shared: async (sql: Sql, options: unknown) => void state.provisioned.push({ kind: "shared", database: databaseOf.get(sql)!, with: options }),
+    own: async (sql: Sql, options: unknown) => void state.provisioned.push({ kind: "own", database: databaseOf.get(sql)!, with: options }),
+  }
+  return { sql: on(), database, provision, state }
 }
 
 const options = { host: "db.internal", port: 5432, sslRootCert: "/etc/ssl/db/ca.pem", mcps: [] as DeclaredMcp[] }
 let counter = 0
 const password = () => `generated-${++counter}-password`
 const run = (pg: ReturnType<typeof fakePostgres>, store = memoryStore().store, more: Partial<Parameters<typeof bootstrap>[0]> = {}) =>
-  bootstrap({ sql: pg.sql, database: pg.database, store, ...options, password, log: () => {}, ...more })
-const mcps: DeclaredMcp[] = [{ name: "e2e", serve: "both", database: "shared" }, { name: "example", serve: "toolbox", database: "shared" }, { name: "acme", serve: "standalone", database: "own" }]
+  bootstrap({ sql: pg.sql, database: pg.database, provision: pg.provision, store, ...options, password, log: () => {}, ...more })
+const mcps: DeclaredMcp[] = [
+  { name: "e2e", serve: "both", database: "shared", scopes: [] }, { name: "example", serve: "toolbox", database: "shared", scopes: [] }, { name: "acme", serve: "standalone", database: "own", scopes: [] },
+]
+const sharedLogins = { migrator: "answerable_mcps_migrator", toolbox: "answerable_mcps_toolbox" }
 
 test("on an empty cluster: four databases owned by their owners, their logins, the serving ones restricted, every URL written", async () => {
   const pg = fakePostgres()
   const { store, values, writes } = memoryStore()
   const lines: string[] = []
-  await bootstrap({ sql: pg.sql, database: pg.database, store, ...options, log: line => lines.push(line) })
+  await bootstrap({ sql: pg.sql, database: pg.database, provision: pg.provision, store, ...options, log: line => lines.push(line) })
   // No statement waits on a lock or runs for long: the Job fails with the reason instead of hanging.
   expect(pg.state.statements.slice(0, 2)).toEqual(["set lock_timeout = '10s'", "set statement_timeout = '60s'"])
   expect(Object.keys(pg.state.owners).sort()).toEqual(["answerable_admin", "answerable_id", "answerable_mcps", "answerable_toolbox"])
@@ -97,6 +103,7 @@ test("on an empty cluster: four databases owned by their owners, their logins, t
   // The shared database is owned by the migrator and served by the Toolbox's login; with no MCP, provisioning only keeps its privileges.
   expect(pg.state.owners.answerable_mcps).toBe("answerable_mcps_migrator")
   expect(pg.state.connections).toEqual(["answerable_mcps"])
+  expect(pg.state.provisioned).toEqual([{ kind: "shared", database: "answerable_mcps", with: { mcps: [], logins: sharedLogins } }])
   expect(lines).toContain("answerable_mcps: no MCP to provision")
   // Generated passwords: 32 random bytes, base64url, each different.
   const passwords = Object.values(pg.state.roles).map(role => role.password)
@@ -106,7 +113,7 @@ test("on an empty cluster: four databases owned by their owners, their logins, t
   for (const line of lines) for (const value of passwords) expect(line).not.toContain(value)
 })
 
-test("with the chart's list: each shared MCP's schema in answerable_mcps, owned by the migrator, with USAGE for the Toolbox, which serves every one, and no role; a database and two logins for each own one", async () => {
+test("with the chart's list: the shared MCPs provisioned in answerable_mcps for the migrator and the Toolbox's login, and no role; a database, two logins and its provisioning for each own one", async () => {
   const pg = fakePostgres()
   const { store, values, writes } = memoryStore()
   const lines: string[] = []
@@ -116,36 +123,38 @@ test("with the chart's list: each shared MCP's schema in answerable_mcps, owned 
   expect(pg.state.roles.answerable_mcp_acme_runtime!.restricted).toBe(true)
   expect(new URL(values["mcp-acme-database/DATABASE_URL"]!).pathname).toBe("/answerable_mcp_acme")
   expect(pg.state.connections).toEqual(["answerable_mcps", "answerable_mcp_acme"])
-  // provisionMcps for the shared ones; provisionOwnMcp in the own MCP's database: its schema, owned by its owner login, USAGE for its runtime login.
-  expect([...pg.state.schemas].sort()).toEqual(["answerable_mcp_acme.acme answerable_mcp_acme_owner", "answerable_mcps.e2e answerable_mcps_migrator", "answerable_mcps.example answerable_mcps_migrator"])
-  expect([...pg.state.usage].sort()).toEqual(["answerable_mcp_acme.acme>answerable_mcp_acme_runtime", "answerable_mcps.e2e>answerable_mcps_toolbox", "answerable_mcps.example>answerable_mcps_toolbox"])
+  // provisionMcps for the shared ones, on a connection to the shared database; provisionOwnMcp on one to the own MCP's database.
+  expect(pg.state.provisioned).toEqual([
+    { kind: "shared", database: "answerable_mcps", with: { mcps: [{ name: "e2e" }, { name: "example" }], logins: sharedLogins } },
+    { kind: "own", database: "answerable_mcp_acme", with: { name: "acme", owner: "answerable_mcp_acme_owner", runtime: "answerable_mcp_acme_runtime" } },
+  ])
+  // Each connection is bounded before provisioning runs on it.
+  expect(pg.state.statements.filter(statement => statement.startsWith("answerable_mcp"))).toEqual(["answerable_mcps", "answerable_mcp_acme"].flatMap(name => [`${name}: set lock_timeout = '10s'`, `${name}: set statement_timeout = '60s'`]))
   // The logins are the eight services' and the own MCP's two: no role for an MCP.
   expect(Object.keys(pg.state.roles).filter(role => role.startsWith("mcp_"))).toEqual([])
   expect(lines).toContain("answerable_mcps: e2e, example provisioned")
   expect(lines).toContain("answerable_mcp_acme: schema acme provisioned")
 })
 
-test("a second run writes nothing and creates nothing: each password is set to the one its Secret holds, every MCP as it was", async () => {
+test("a second run writes nothing and creates nothing: each password is set to the one its Secret holds, and the MCPs are provisioned as before", async () => {
   const pg = fakePostgres()
   const memory = memoryStore()
   await run(pg, memory.store, { mcps })
-  const before = { roles: structuredClone(pg.state.roles), schemas: [...pg.state.schemas], usage: [...pg.state.usage] }
+  const before = { roles: structuredClone(pg.state.roles), provisioned: [...pg.state.provisioned] }
   memory.writes.length = 0
   pg.state.statements.length = 0
+  pg.state.provisioned.length = 0
   await run(pg, memory.store, { mcps })
   expect(memory.writes).toEqual([])
   expect(pg.state.statements.filter(statement => /^(\w+: )?create (role|database)/.test(statement))).toEqual([])
   expect(pg.state.statements.filter(statement => statement.startsWith("alter role"))).toHaveLength(10)
-  expect({ roles: pg.state.roles, schemas: [...pg.state.schemas], usage: [...pg.state.usage] }).toEqual(before)
+  expect({ roles: pg.state.roles, provisioned: pg.state.provisioned }).toEqual(before)
 })
 
-test("an MCP whose serve changed keeps its schema and the Toolbox's USAGE on it, since the Toolbox serves it in its hub and alone alike", async () => {
+test("where an MCP is served changes nothing of its provisioning: the Toolbox serves it in its hub and alone alike", async () => {
   const pg = fakePostgres()
-  const memory = memoryStore()
-  await run(pg, memory.store, { mcps })
-  await run(pg, memory.store, { mcps: [{ name: "e2e", serve: "standalone", database: "shared" }, { name: "example", serve: "both", database: "shared" }] })
-  expect([...pg.state.usage].filter(usage => usage.startsWith("answerable_mcps.")).sort()).toEqual(["answerable_mcps.e2e>answerable_mcps_toolbox", "answerable_mcps.example>answerable_mcps_toolbox"])
-  expect(pg.state.statements.filter(statement => statement.includes("revoke usage"))).toEqual([])
+  await run(pg, memoryStore().store, { mcps: [{ name: "e2e", serve: "standalone", database: "shared", scopes: [] }, { name: "example", serve: "both", database: "shared", scopes: [] }] })
+  expect(pg.state.provisioned).toEqual([{ kind: "shared", database: "answerable_mcps", with: { mcps: [{ name: "e2e" }, { name: "example" }], logins: sharedLogins } }])
 })
 
 test("the Secrets of the list's own MCPs are named after them, as the chart names them for the ops Role", () => {

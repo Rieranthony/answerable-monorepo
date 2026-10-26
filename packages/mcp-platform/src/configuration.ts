@@ -1,4 +1,3 @@
-import { locally } from "@answerable/config"
 import { ownMcpDatabase } from "@answerable/mcp-postgres"
 import { z } from "zod"
 import type { Declared } from "./databases"
@@ -15,7 +14,7 @@ export function ownDatabases(declared: readonly Declared[]) {
     const field = {
       schema: z.url(),
       secret: true,
-      defaults: locally(`postgres://${runtime}:answerable@localhost:47432/${database}`),
+      local: `postgres://${runtime}:answerable@localhost:47432/${database}`,
       doc: `The database of the ${entry.provider.id} MCP, its own, as its runtime login`,
       source: "cluster",
     } as const

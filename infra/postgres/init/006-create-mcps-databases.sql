@@ -1,7 +1,7 @@
 -- Runs once when the postgres volume is first created: the shared database of every MCP's schema, answerable_mcps, its test database,
 -- answerable_mcps_test, and their two logins: the migrator, which owns both, and the Toolbox's serving login, answerable_mcps_toolbox.
--- @answerable/mcp-postgres's ensureLocalMcpDatabases runs this file on an existing volume, so the tests need no manual step; it is safe to
--- run again by hand with psql. It never changes an existing login.
+-- A volume made before this file runs it once by hand with psql, as the Toolbox's docs show (Database roles); it is safe to run again. It never
+-- changes an existing login.
 DO $$
 DECLARE
   name text;

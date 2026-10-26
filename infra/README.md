@@ -112,7 +112,7 @@ Once per environment, the first tag of a commit that has the `mcps` image, the `
 2. **If the deploy failed pulling the `mcps` image**, the new package is private: make it public once, as in [First run](#first-run) step 5 (`answerable/mcps`), and rerun the failed jobs. Staging pulled the new `ops` package without that step ([`reports/staging-evidence.md`](../reports/staging-evidence.md#image-pulls)). The packages `answerable/toolbox` and `answerable/admin-mcp` are no longer built; delete them once production runs `mcps`.
 3. **`ops-register` has no client of its own yet.** It is minted in this deploy, by whichever bearer the Job holds:
    - **Nobody has run `make-admin` in the environment yet:** the root secret mints it, as on a first run. Nothing to do.
-   - **Root is locked already:** ID refuses the root secret, the Job stops with `register has no machine client of its own yet (the Secret ops-id-client is empty), and ID refuses the root secret (root_locked)`, and the release rolls back. So, before the tag, put a staff token in `ops-staff-token`, as in [Register again](#register-again); the Job mints `ops-register` with it and goes on as `ops-register`. Delete the Secret afterwards. This is the last time anyone places a token by hand.
+   - **Root is locked already:** ID refuses the root secret, the Job stops with `register has no machine client of its own yet (the Secret ops-id-client is empty), and ID refuses the root secret (root_locked)`, and the release rolls back. So ship this tag with break glass, as in [Register again](#register-again): the Job mints `ops-register` with the root secret and goes on as `ops-register`; the next tag removes break glass.
 
 ### Ship an MCP
 
@@ -178,7 +178,7 @@ A changed secret in the environment reaches the cluster on the next tag: the dep
 | Microsoft or Google platform application | Create a new secret in the provider's console, set both of the pair in the environment (`gh secret set MICROSOFT_CLIENT_SECRET --env staging`, which asks for the value), tag, then retire the old secret ([`docs/06`](../docs/06-deploying-answerable-id.md#operating-it)) |
 | A database login | Empty its key, for example `kubectl -n answerable patch secret id-database --type merge -p '{"stringData":{"DATABASE_URL":""}}'` with a [kubeconfig](#get-a-kubeconfig); tag (`ops-bootstrap` gives the login a new password and writes its URL); the service restarts with the deploy ([`infra/ops`](ops/README.md#bootstrap)) |
 | A machine client (`toolbox-id-client`, `admin-id-client`) | Empty its key the same way, then [register again](#register-again); `register` rotates the secret in ID and restarts the servers |
-| Register's own client (`ops-id-client`) | Empty its key, put a staff token in `ops-staff-token` and [register again](#register-again): `register` rotates its secret in ID with the token and stores it. Delete `ops-staff-token` afterwards |
+| Register's own client (`ops-id-client`) | Empty its key and ship with break glass, as in [Register again](#register-again): `register` rotates its secret in ID with the root secret and stores it. The next tag removes break glass |
 | The origin certificate or the origin-pull certificate | Adding a hostname (as `mcp` was) reissues the origin certificate on the next apply by itself: a new one is issued and written to `origin-tls` before the old one is revoked. Otherwise, a reviewed change adds `-replace` for the key to the apply once, or run it from a trusted machine: `infra/civo/terraform.sh staging apply -replace=module.edge.tls_private_key.<name>`; both switch within one apply, with a short interruption ([`infra/civo/README.md`](civo/README.md#certificates)) |
 | The deployer token | `infra/civo/terraform.sh staging apply -replace=module.deployer.kubernetes_secret_v1.token` from a trusted machine; Terraform writes the new `KUBE_TOKEN` into the environment |
 | `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `GH_SECRETS_TOKEN` | Regenerate in the vendor's console (for Civo, regeneration is the only control), then `gh secret set <name> --env staging` (it asks for the value) |
@@ -221,14 +221,10 @@ gh run watch
 
 `register` reads each resource and client, changes with `If-Match` only what differs, and writes nothing when everything is as declared. Scopes only widen, so what `toolbox_enable` added to the Toolbox's resource stays; an MCP's own resource follows its manifest. An MCP removed from the list keeps its rows.
 
-**A staff token, once.** `register` needs one only when it has no client of its own (`ops-id-client` empty) and root is locked: the first ship of `ops-register` after `make-admin`, or a rotation of its own secret. Get one ([Get a staff token](../apps/web/content/docs/id/onboard.mdx#get-a-staff-token)) and put it where the Job reads it, with a [kubeconfig](#get-a-kubeconfig), before the tag or the workflow:
+**Break glass, for one ship.** `register` needs the root secret only when it has no client of its own (`ops-id-client` empty) and root is locked: the first ship of `ops-register` after `make-admin`, or a rotation of its own secret. Root works again only with break glass:
 
-```sh
-printf 'Staff token: '; read -rs TOKEN; echo
-kubectl -n answerable create secret generic ops-staff-token --from-literal=OPS_ID_TOKEN="$TOKEN"
-# … the tag, or gh workflow run ops.yml … -f command=register
-kubectl -n answerable delete secret ops-staff-token
-```
+1. Add `ROOT_ADMIN_BREAK_GLASS: "true"` under `id.env` in `charts/answerable/values-civo-staging.yaml`, and tag (for production, tag and approve). The deploy's `register` mints, or rotates, `ops-register` with the root secret and stores its secret.
+2. Remove the line and tag again. Every use of the root secret is in the audit log as `admin.root_request`.
 
 ## Restore
 

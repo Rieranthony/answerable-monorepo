@@ -189,4 +189,3 @@ export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, f
 }
 /** ID's admin API as a server's machine client. */
 export type IdAdmin = ReturnType<typeof createIdAdmin>
-export { createIdProfiles, type IdProfiles } from "./profiles"

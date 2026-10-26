@@ -48,11 +48,11 @@ export type Mount = Readonly<{
 export type McpServerConfig = {
   /** The provider it serves, from `defineProvider`: its tools, prompts and resources, named after it. */
   provider: Provider
-  /** The Answerable ID issuer to trust and this server's resource URL, the token audience: `parseEnvironment(config, process.env, names).auth`. */
+  /** The Answerable ID issuer to trust and this server's resource URL, the token audience. */
   auth: IdVerifierConfig
   /**
    * Who is calling, beyond the token's ids: the person's name, email and groups, and the organisation's name and slug, which every handler
-   * receives in its context. `createIdProfiles(id)` from `@answerable/id-admin` reads them from Answerable ID. Called once for each request that
+   * receives in its context. `createIdProfiles(id)` from `@answerable/mcp-platform` reads them from Answerable ID. Called once for each request that
    * runs a handler (`tools/call`, `prompts/get`, `resources/read`), before the handler, and never for a list. A `ToolError` it throws answers the
    * call with that error; any other failure answers `UPSTREAM_UNAVAILABLE`, logged as `[mcp] reading who is calling failed`.
    */
@@ -175,7 +175,8 @@ function wireNames(provider: Provider, mount: readonly Provider[]) {
  * @example
  * ```ts
  * import { createMcpServer } from "@answerable/mcp"
- * import { createIdAdmin, createIdProfiles } from "@answerable/id-admin"
+ * import { createIdAdmin } from "@answerable/id-admin"
+ * import { createIdProfiles } from "@answerable/mcp-platform"
  * import { provider } from "./provider"
  *
  * const auth = { issuer: "http://localhost:47300", resource: "http://localhost:47510/acme/mcp" }
@@ -287,7 +288,6 @@ export function createMcpServer(config: McpServerConfig): McpServerHandle {
           groups: Object.freeze(person.groups.map(({ id, slug, name }) => Object.freeze({ id, slug, name }))),
         }),
         organisation: Object.freeze({ id: principal.organizationId, name: organisation.name, slug: organisation.slug }),
-        client: Object.freeze({ id: principal.clientId }),
       })
     }
     let permitted: Served<Tool | Mutation>[]

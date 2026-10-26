@@ -186,7 +186,8 @@ it for 30 seconds, for that caller alone.
 
 ```ts
 import { createMcpServer } from "@answerable/mcp"
-import { createIdAdmin, createIdProfiles } from "@answerable/id-admin"
+import { createIdAdmin } from "@answerable/id-admin"
+import { createIdProfiles } from "@answerable/mcp-platform"
 import { provider } from "./provider"
 
 const auth = { issuer: "http://localhost:47300", resource: "http://localhost:47510/acme/mcp" }
@@ -200,11 +201,11 @@ Bun.serve({ hostname: "127.0.0.1", port: 47510, fetch: server.fetch })
 type McpServerConfig = {
   /** The provider it serves, from `defineProvider`: its tools, prompts and resources, named after it. */
   provider: Provider
-  /** The Answerable ID issuer to trust and this server's resource URL, the token audience: `parseEnvironment(config, process.env, names).auth`. */
+  /** The Answerable ID issuer to trust and this server's resource URL, the token audience. */
   auth: IdVerifierConfig
   /**
    * Who is calling, beyond the token's ids: the person's name, email and groups, and the organisation's name and slug, which every handler
-   * receives in its context. `createIdProfiles(id)` from `@answerable/id-admin` reads them from Answerable ID. Called once for each request that
+   * receives in its context. `createIdProfiles(id)` from `@answerable/mcp-platform` reads them from Answerable ID. Called once for each request that
    * runs a handler (`tools/call`, `prompts/get`, `resources/read`), before the handler, and never for a list. A `ToolError` it throws answers the
    * call with that error; any other failure answers `UPSTREAM_UNAVAILABLE`, logged as `[mcp] reading who is calling failed`.
    */
@@ -1037,10 +1038,6 @@ type ToolContext = Readonly<{
     name: string
     slug: string
   }>
-  /** The AI app the person uses, such as Claude Code: `id` is the token's OAuth client (`principal.clientId`). */
-  client: Readonly<{
-    id: string
-  }>
   /** The verified token: person, organisation, membership, client and scopes, for anything the fields above do not cover. */
   principal: UserPrincipal
   /** A UUIDv7 minted for this call: the error envelope's `request_id`, and the id the server log names. */
@@ -1209,40 +1206,6 @@ type Retry = {
 ```
 
 What a caller should do after a failure.
-
-### parseEnvironment
-
-```ts
-function parseEnvironment<Fields extends Record<string, Field>>(config: Config<Fields>, env: Record<string, string | undefined>, names: {
-  issuer: keyof Fields & string
-  resource: keyof Fields & string
-}): {
-  data: ReturnType<Config<Fields>["read"]>
-  auth: {
-    issuer: string
-    resource: string
-  }
-}
-```
-
-Read `env` with `config`, a server's own variables from `defineConfig` (`@answerable/config`), then check the ID issuer and the resource URL,
-read from the two variables `names` gives, as `createIdVerifier` checks them. Returns the parsed `data` and the `auth` option of
-`createMcpServer`; throws `Invalid <label> configuration: <VARIABLE>: <problem>`, naming each variable that is missing or invalid.
-
-**Example**
-
-```ts
-import { defineConfig, locally } from "@answerable/config"
-import { parseEnvironment } from "@answerable/mcp"
-import { z } from "zod"
-
-const config = defineConfig("Acme", {
-  ACME_ID_ISSUER: { schema: z.url(), defaults: locally("http://localhost:47300"), doc: "The ID issuer" },
-  ACME_RESOURCE_URL: { schema: z.url(), defaults: locally("http://localhost:47510/mcp"), doc: "This server's URL" },
-  ACME_DATABASE_URL: { schema: z.url(), secret: true, doc: "The database" },
-})
-const { data, auth } = parseEnvironment(config, process.env, { issuer: "ACME_ID_ISSUER", resource: "ACME_RESOURCE_URL" })
-```
 
 ### UserPrincipal
 

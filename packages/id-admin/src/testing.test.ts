@@ -280,6 +280,45 @@ test("a client created through the API is shown its secret once and gets a token
   expect(await token("wrong", admin, "platform:read")).toBe(401)
   const rotated = await (await send("POST", "/clients/dev/rotate-secret")).json()
   expect([await token(created.clientSecret, admin, "platform:read"), await token(rotated.clientSecret, admin, "platform:read")]).toEqual([401, 200])
+  expect(id.clientOf("dev")).toMatchObject({ clientId: "dev", resources: [toolboxAdmin, admin], secret: rotated.clientSecret })
+  expect(id.clientOf("nobody")).toBeUndefined()
+})
+
+test("as the ops Jobs meet it: each caller keeps its own keys, a route can be made to fail, an Entra provider needs ID's Microsoft application, and joining platform-admins locks the root secret unless break glass keeps it", async () => {
+  const send = (id: ReturnType<typeof createFakeId>, method: string, path: string, { body, key = crypto.randomUUID(), bearer = "root-secret", ifNoneMatch = false }: { body?: unknown; key?: string; bearer?: string; ifNoneMatch?: boolean } = {}) =>
+    id.config.fetch(`https://id.test/api/admin/v1${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${bearer}`, ...(method === "GET" ? {} : { "Idempotency-Key": key }), ...(ifNoneMatch ? { "If-None-Match": "*" } : {}), ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  const id = createFakeId({ rootSecret: "root-secret", microsoft: false })
+  id.staffToken("staff-token")
+  const platform = id.organizationId
+  const groups = `/organizations/${platform}/groups`
+  // The same key from another caller is another command: here, a second group of the same slug, which ID refuses.
+  expect((await send(id, "POST", groups, { body: { slug: "staff", name: "Staff" }, key: "one-key" })).status).toBe(201)
+  expect((await send(id, "POST", groups, { body: { slug: "staff", name: "Staff" }, key: "one-key" })).headers.get("Idempotency-Replayed")).toBe("true")
+  expect(await (await send(id, "POST", groups, { body: { slug: "staff", name: "Staff" }, key: "one-key", bearer: "staff-token" })).json()).toMatchObject({ status: 409, code: "conflict" })
+  expect(id.received.slice(-3).map(({ caller }) => caller)).toEqual(["root", "root", null])
+  // A failing route answers so on every call, reads included.
+  id.fail("GET /organizations", 502, "bad_gateway")
+  for (let call = 0; call < 2; call++) expect(await (await send(id, "GET", "/organizations?q=answerable")).json()).toMatchObject({ status: 502, code: "bad_gateway" })
+  id.fail(`POST ${groups}`, 500)
+  expect(await (await send(id, "POST", groups, { body: { slug: "other", name: "Other" } })).json()).toMatchObject({ status: 500, code: "internal_error" })
+  // Without Answerable's Microsoft application, ID refuses an Entra provider with platform credentials, before its precondition.
+  const entra = await send(id, "PUT", `/organizations/${platform}/sso-provider`, { body: { issuer: "https://login.microsoftonline.com/0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0/v2.0", domain: "answerable.org" }, ifNoneMatch: true })
+  expect(await entra.json()).toMatchObject({ status: 409, code: "platform_application_missing" })
+  expect(operations.find(({ method, pattern }) => method === "PUT" && pattern.test(`/api/admin/v1/organizations/${platform}/sso-provider`))!.responses["409"]).toBeDefined()
+  // A member who joins platform-admins locks the root secret; another group does not, nor does break glass.
+  for (const [breakGlass, locked] of [[false, true], [true, false]] as const) {
+    const fake = createFakeId({ rootSecret: "root-secret", breakGlass })
+    const ada = fake.member(fake.organizationId, { email: "ada@answerable.org" }).id
+    for (const slug of ["answerable-owner", "platform-admins"]) {
+      const group = fake.group(fake.organizationId, { slug }).id
+      expect((await send(fake, "PUT", `/organizations/${fake.organizationId}/groups/${group}/members/${ada}`, { body: {}, ifNoneMatch: true })).status).toBe(201)
+      expect(fake.rootLocked(), slug).toBe(slug === "platform-admins" && locked)
+    }
+  }
 })
 
 test("the root secret works as a platform administrator's until it is locked, then ID answers it 403 root_locked; a staff token keeps working", async () => {

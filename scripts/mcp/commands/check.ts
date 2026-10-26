@@ -7,7 +7,7 @@ import { Refusal, runSteps, sh, type Command, type Io, type Step } from "../io"
 import { declarations, findRoot, resolveMcp } from "../workspace"
 
 // The files `bun run env:inventory` writes (scripts/env-inventory.ts), from every service's configuration, which a generated list can change.
-const inventories = ["default.env", ".env.example", "packages/config/inventory.json"]
+const inventories = [".env.example", "packages/config/inventory.json"]
 
 // What a test run reports: its counts, and the coverage of every file when the workspace gates it.
 function testSummary(output: string) {

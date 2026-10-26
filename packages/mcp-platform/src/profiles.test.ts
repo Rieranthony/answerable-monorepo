@@ -1,8 +1,9 @@
 import { expect, spyOn, test } from "bun:test"
 import { ToolError } from "@answerable/mcp"
 import { testPrincipal } from "@answerable/mcp/testing"
-import { createIdAdmin, createIdProfiles } from "./index"
-import { createFakeId } from "./testing"
+import { createIdAdmin } from "@answerable/id-admin"
+import { createFakeId } from "@answerable/id-admin/testing"
+import { createIdProfiles } from "./index"
 
 // A fake ID holding Acme and Ada, a member of it; a clock the test moves; and the profile reads ID received.
 function setup(options: { ttlMs?: number; staleMs?: number } = {}) {

@@ -24,7 +24,6 @@ const context = {
   principal,
   person: { id: principal.userId, membershipId: principal.membershipId, name: "Test Person", email: "person@example.test", groups: [] },
   organisation: { id: principal.organizationId, name: "Test Organisation", slug: "test" },
-  client: { id: principal.clientId },
   executionId: Bun.randomUUIDv7(),
   signal: new AbortController().signal,
 }

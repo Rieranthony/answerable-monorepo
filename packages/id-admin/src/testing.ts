@@ -57,13 +57,17 @@ const platformIssuer = (value: unknown) => value === "https://accounts.google.co
  * `operationInProgress`, a write whose method, path and Idempotency-Key a running write holds answers `409 operation_in_progress`, as ID does;
  * without it, the second write runs after the first. A method the fake does not implement on a route answers `405`.
  *
- * Staff set a service up through the admin API: `rootSecret` is a bearer that works as a platform administrator's until `lockRoot(true)`, after
- * which ID answers it `403 root_locked`; `staffToken` makes another bearer one. `POST /resources` and `POST /clients` create a resource or a
- * client (a `client_secret_basic` client's secret is answered once, and `rotate-secret` answers another); a created client gets a
- * `client_credentials` token for an audience it is linked to and holds a capability for, on ID's own admin resource without registration.
+ * Staff set a service up through the admin API: `rootSecret` is a bearer that works as a platform administrator's until `lockRoot(true)`, or until a
+ * member joins the platform organisation's `platform-admins` group without `breakGlass`, after which ID answers it `403 root_locked`; `staffToken`
+ * makes another bearer one. `POST /resources` and `POST /clients` create a resource or a client (a `client_secret_basic` client's secret is
+ * answered once, and `rotate-secret` answers another); a created client gets a `client_credentials` token for an audience it is linked to and
+ * holds a capability for, on ID's own admin resource without registration. Without `microsoft`, ID has no Microsoft platform application, and an
+ * Entra SSO provider with platform credentials is `409 platform_application_missing`. A command's `Idempotency-Key` is its caller's, as ID keys
+ * its journal by actor: the root secret, a machine client or a staff token.
  */
 export function createFakeId({
   issuer = "https://id.test", expiresIn = 3600, pageSize = 200, clientId = "toolbox-hub", clientSecret = "hub-secret", platform = true, operationInProgress = false, rootSecret = undefined as string | undefined,
+  breakGlass = false, microsoft = true,
   resources: audiences = { [`${issuer}/api/admin`]: ["platform:read", "platform:read platform:write"] } as Record<string, readonly string[]>,
 } = {}) {
   const adminResource = `${issuer}/api/admin`
@@ -71,10 +75,14 @@ export function createFakeId({
   const access = new Map<string, Target[]>()
   const events: Stored[] = []
   const requests: string[] = []
-  // The scope and audience each token was issued with, and the scopes each token request asked for.
-  const tokens = new Map<string, { scope: string; resource: string }>()
+  // The scope and audience each token was issued with, and the machine client it was issued to; and the scopes each token request asked for.
+  const tokens = new Map<string, { scope: string; resource: string; client?: string }>()
   const asked: string[] = []
-  const received: { request: string; requestId: string | null; idempotencyKey: string | null; ifMatch: string | null; ifNoneMatch: string | null }[] = []
+  const received: { request: string; requestId: string | null; idempotencyKey: string | null; ifMatch: string | null; ifNoneMatch: string | null; caller: string | null }[] = []
+  // The answer of a route a test makes fail, by method and path under the admin API.
+  const failures = new Map<string, { status: number; code: string }>()
+  // Who a bearer is: the root secret, a machine client by its id, or nobody known, as a staff token is.
+  const callerOf = (bearer: string) => (rootSecret !== undefined && bearer === rootSecret ? "root" : tokens.get(bearer)?.client ?? null)
   const resources = new Map<string, Resource>()
   const clients = new Map<string, Stored>()
   // The secret of each client created through the API, which ID shows once; and the clients linked to ID's own admin resource, which is not registered.
@@ -179,6 +187,8 @@ export function createFakeId({
     const row = { id: Bun.randomUUIDv7(), revision: 1, organizationId: organisation, groupId, memberId, validFrom: null, validUntil: null, createdAt: now(), ...window }
     assignments(groupId).set(memberId, row)
     changes++
+    // A person who holds platform:write locks the root secret, unless break glass keeps it working.
+    if (platform && organisation === organizationId && group.slug === "platform-admins" && !breakGlass) rootLocked = true
     return tagged(row, 201)
   }
   function organisationRoute(request: Request, url: URL, organisation: string, rest: string, body: Record<string, unknown>) {
@@ -223,6 +233,9 @@ export function createFakeId({
         const oidc = (body.oidc ?? { credentials: "platform" }) as Record<string, unknown>
         if (oidc.credentials === "platform" && !platformIssuer(body.issuer)) {
           return problem(400, "platform_credentials_unsupported", "Platform credentials require a Google Workspace or Microsoft Entra issuer")
+        }
+        if (oidc.credentials === "platform" && !microsoft && String(body.issuer).startsWith("https://login.microsoftonline.com/")) {
+          return problem(409, "platform_application_missing", "Configure MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET (or the Google pair) before assigning the platform application")
         }
         const refused = precondition(request, provider, true)
         if (refused) return refused
@@ -313,11 +326,14 @@ export function createFakeId({
     }
   }
   async function admin(request: Request, url: URL, path: string) {
-    const token = tokens.get(request.headers.get("Authorization")!.slice(7))!
+    const bearer = request.headers.get("Authorization")!.slice(7)
+    const token = tokens.get(bearer)!
     if (token.resource !== adminResource) return invalidToken()
     const write = request.method !== "GET"
     if (write && !token.scope.includes("platform:write"))
       return problem(403, "insufficient_scope", "Current command authority is required", {}, { "WWW-Authenticate": 'Bearer error="insufficient_scope"' })
+    const fails = failures.get(`${request.method} ${path}`)
+    if (fails) return problem(fails.status, fails.code, "The fake ID failed this route")
     const body = write && request.headers.get("Content-Type") ? await request.json() as Record<string, unknown> : {}
     if (path === "/me") {
       return unsupported(request, "GET") ?? Response.json({
@@ -334,7 +350,7 @@ export function createFakeId({
       failing = undefined
       return problem(status, "database_busy", "Database is busy", { detail: "Retry with the same idempotency key and input." }, { "Retry-After": "1" })
     }
-    const name = `${request.method} ${path} ${key}`
+    const name = `${callerOf(bearer) ?? bearer} ${request.method} ${path} ${key}`
     const fingerprint = JSON.stringify([body, request.headers.get("If-Match"), request.headers.get("If-None-Match")])
     const done = journal.get(name)
     if (done && done.fingerprint !== fingerprint) return problem(409, "idempotency_key_reused", "Idempotency key was used for different input", { retryable: false })
@@ -494,7 +510,8 @@ export function createFakeId({
       if (gone) throw new TypeError("Unable to connect")
       if (url.pathname.startsWith("/api/admin/v1")) {
         const header = (name: string) => request.headers.get(name)
-        received.push({ request: `${request.method} ${url.pathname}${url.search}`, requestId: header("x-request-id"), idempotencyKey: key, ifMatch: header("If-Match"), ifNoneMatch: header("If-None-Match") })
+        const bearer = header("Authorization")?.slice(7) ?? ""
+        received.push({ request: `${request.method} ${url.pathname}${url.search}`, requestId: header("x-request-id"), idempotencyKey: key, ifMatch: header("If-Match"), ifNoneMatch: header("If-None-Match"), caller: callerOf(bearer) })
       }
       if (down) return new Response("Unavailable", { status: 503 })
       if (url.pathname === "/healthz") return Response.json({ status: "ok" })
@@ -508,7 +525,7 @@ export function createFakeId({
         const resource = form.get("resource")!
         if (form.get("grant_type") !== "client_credentials" || !(hub ? audiences[resource]?.includes(scope) : mayAsk(who, resource, scope))) return Response.json({ error: "invalid_request" }, { status: 400 })
         asked.push(scope)
-        tokens.set(`machine-${++issued}`, { scope, resource })
+        tokens.set(`machine-${++issued}`, { scope, resource, client: who })
         return Response.json({ access_token: `machine-${issued}`, token_type: "Bearer", expires_in: expiresIn })
       }
       const bearer = request.headers.get("Authorization")?.slice(7) ?? ""
@@ -568,7 +585,7 @@ export function createFakeId({
     scopesAsked: asked,
     /**
      * Every request to the admin API, in order, with the `x-request-id`, `Idempotency-Key`, `If-Match` and `If-None-Match` it carried (`null` when it
-     * carried none); the ones refused with `401` too.
+     * carried none), and its `caller`: `root`, a machine client's id, or `null` for any other bearer; the ones refused with `401` too.
      */
     received,
     /** The audience and scope a token was issued with, or undefined when this ID never issued it: how a fake of another service checks a bearer. */
@@ -592,6 +609,8 @@ export function createFakeId({
     revoke() { tokens.clear() },
     /** Lock the root secret, as ID does when a person becomes a platform administrator: ID then answers it `403 root_locked`. */
     lockRoot(value: boolean) { rootLocked = value },
+    /** Whether ID refuses the root secret now. */
+    rootLocked: () => rootLocked,
     /** Make `token` a staff token: a bearer of a platform administrator, who can write to the admin API. */
     staffToken(token: string) { tokens.set(token, { scope: "platform:read platform:write", resource: adminResource }) },
     /** Register a resource with the scopes it allows, named after its identifier, as staff do; its linked clients and revision are read back. */
@@ -604,6 +623,13 @@ export function createFakeId({
     client(clientId: string) {
       addClient(clientId)
     },
+    /** What ID holds for a client: its row, the resources it is linked to, ID's admin resource among them, and its secret; undefined when it has none. */
+    clientOf(id: string) {
+      const row = clients.get(id)
+      if (!row) return undefined
+      const linked = [...resources].filter(([, resource]) => resource.clients.includes(id)).map(([identifier]) => identifier)
+      return { ...row, resources: adminLinks.has(id) ? [...linked, adminResource] : linked, secret: secrets.get(id) } as Stored & { resources: string[]; secret: string | undefined }
+    },
     /** Create an organisation, or change the fields of one, and return its row. */
     organisation,
     /** The organisation's capability and entitlement rows, in the order created; push a row to seed one. */
@@ -614,10 +640,14 @@ export function createFakeId({
       id: Bun.randomUUIDv7(), revision: 1, organizationId, memberId: null, groupId: null, clientId: null, resource: null, status: "active",
       validFrom: null, validUntil: null, createdAt: now(), updatedAt: now(), ...fields,
     }) as Row,
+    /** An organisation's domains, in the order added. */
+    domainsOf: (organizationId: string) => rows(domains, organizationId),
     /** Add a domain to an organisation and return its row. */
     domain: (organizationId: string, domain: string, fields: Record<string, unknown> = {}) => add(domains, organizationId, {
       id: Bun.randomUUIDv7(), organizationId, domain, status: "active", createdAt: now(), updatedAt: now(), ...fields,
     }),
+    /** An organisation's SSO provider, or undefined when it has none. */
+    ssoProviderOf: (organizationId: string) => providers.get(organizationId),
     /** Set an organisation's SSO provider, signing in with Answerable's platform application unless `fields` say otherwise, and return its row. */
     ssoProvider(organizationId: string, fields: Record<string, unknown> & { issuer: string; domain: string }) {
       const row = { id: Bun.randomUUIDv7(), revision: 1, organizationId, providerId: `sso-${organizationId}`, oidc: { credentials: "platform", hasClientSecret: false }, createdAt: now(), updatedAt: now(), ...fields }
@@ -645,14 +675,18 @@ export function createFakeId({
     /** Advance the revision of the row with this id, or of the resource with this identifier, as another writer's change would. */
     revise(id: string) {
       const stored = [
-        ...organisations.values(), ...providers.values(), ...[...groups.values(), ...entitlements.values(), ...capabilities.values()].flat(),
+        ...organisations.values(), ...providers.values(), ...clients.values(), ...[...groups.values(), ...entitlements.values(), ...capabilities.values()].flat(),
         ...[...joined.values()].flatMap(table => [...table.values()]),
       ]
       const row = stored.find(item => item.id === id) ?? resources.get(id) ?? [...resources.values()].find(item => item.id === id)
       if (!row) throw new Error(`The fake ID holds no row ${id}`)
       row.revision = Number(row.revision) + 1
     },
+    /** Forget every command's receipt, as if a caller that never sent them sent the next ones. */
+    forgetCommands() { journal.clear() },
     /** Make the `after`th write from now on answer `status` with a problem, once. */
     failWrite(after: number, status = 503) { failing = { remaining: after, status } },
+    /** Make every call of `request`, `METHOD /path` under the admin API without its query, answer `status` with problem `code`. */
+    fail(request: string, status: number, code = "internal_error") { failures.set(request, { status, code }) },
   }
 }

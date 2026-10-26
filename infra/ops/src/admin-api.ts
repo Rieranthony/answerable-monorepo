@@ -20,7 +20,7 @@ export class RootLocked extends Error {
 type Options = {
   /** Answerable ID's origin. */
   id: string
-  /** The root secret or a staff token, or what answers a machine client's current token (`clientToken`). */
+  /** The root secret, or what answers a machine client's current token (`clientToken`). */
   token: string | (() => Promise<string>)
   /** What a 403 root_locked means to this command: the message of the RootLocked it throws. */
   rootLocked: string
@@ -108,9 +108,12 @@ export async function findBySlug(call: Call, path: string, slug: string) {
   return (answer.body.items as { id: string; slug: string }[]).find(item => item.slug === slug)?.id
 }
 
+/** The platform organisation's slug, a constant of ID's (apps/id/src/env.ts). */
+const PLATFORM_SLUG = "answerable"
+
 /** The platform organisation's id, by its slug. */
-export async function platformOrganisation(call: Call, slug: string) {
-  const platform = await findBySlug(call, "/organizations", slug)
-  if (!platform) throw new Error(`ID has no organisation with the slug ${slug}: set OPS_PLATFORM_SLUG to the platform organisation's`)
+export async function platformOrganisation(call: Call) {
+  const platform = await findBySlug(call, "/organizations", PLATFORM_SLUG)
+  if (!platform) throw new Error(`ID has no organisation with the slug ${PLATFORM_SLUG}, its platform organisation's: is this Answerable ID?`)
   return platform
 }

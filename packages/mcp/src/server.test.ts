@@ -228,14 +228,13 @@ test("handlers receive a frozen context with a fresh UUIDv7 execution id, and th
   expect(contexts).toHaveLength(2)
   for (const context of contexts) {
     expect(Object.isFrozen(context)).toBe(true)
-    expect(Object.keys(context).sort()).toEqual(["client", "executionId", "organisation", "person", "principal", "signal"])
+    expect(Object.keys(context).sort()).toEqual(["executionId", "organisation", "person", "principal", "signal"])
     expect(context.executionId).toMatch(uuidV7)
     expect(context.principal.organizationId).toBe(organizationId)
     expect(context.signal).toBeInstanceOf(AbortSignal)
     expect(context.person).toEqual({ id: context.principal.userId, membershipId: context.principal.membershipId, name: "Test Person", email: "person@example.test", groups: [] })
     expect(context.organisation).toEqual({ id: organizationId, name: "Test Organisation", slug: "test" })
-    expect(context.client).toEqual({ id: "test-client" })
-    for (const part of [context.person, context.person.groups, context.organisation, context.client]) expect(Object.isFrozen(part)).toBe(true)
+    for (const part of [context.person, context.person.groups, context.organisation]) expect(Object.isFrozen(part)).toBe(true)
   }
   expect(contexts[0]!.executionId).not.toBe(contexts[1]!.executionId)
   const text = ((await client.readResource({ uri: document.uri })).contents[0] as { text: string }).text

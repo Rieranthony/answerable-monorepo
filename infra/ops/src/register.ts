@@ -1,28 +1,24 @@
+import type { DeclaredMcp } from "@answerable/mcp-postgres"
 import { adminApi, type Call, clientToken, failure, findBySlug, platformOrganisation } from "./admin-api"
 import { createRegistrar, hostClient, hostGrants, registerStandalone, signIn, toolboxRows } from "./registrar"
 import type { SecretRef, SecretStore } from "./secret-store"
-
-/** An MCP of charts/answerable/mcps.json as register reads it: its name, where it runs and its manifest's scopes. */
-export type RegisteredMcp = { name: string; serve: "toolbox" | "standalone" | "both"; scopes: readonly string[] }
 
 type Options = {
   /** Answerable ID's origin: its issuer and its admin API's base. */
   id: string
   /**
-   * The bearer that mints register's own machine client, ops-register, while the Secret ops-id-client holds none: ID's root secret before a person
-   * is a platform administrator, a staff token after (docs/id/onboard). Unused once ops-register's secret is stored.
+   * ID's root secret, which mints register's own machine client, ops-register, while the Secret ops-id-client holds none: before a person is a
+   * platform administrator, or after with break glass (`ROOT_ADMIN_BREAK_GLASS`). Unused once ops-register's secret is stored.
    */
-  token?: string
+  rootSecret?: string
   /** The Toolbox's origin: `/mcp` is its resource, `/admin` its admin resource. */
   toolbox: string
   /** The admin MCP's origin: `/mcp` is its resource. */
   adminMcp: string
   /** The origin of the MCPs the Toolbox serves alone: each standalone or both MCP is the resource `<origin>/<name>/mcp`. */
   mcpOrigin: string
-  /** The MCPs of charts/answerable/mcps.json: each standalone or both one is registered. */
-  mcps: readonly RegisteredMcp[]
-  /** The platform organisation's slug, `answerable` in ID. */
-  platformSlug: string
+  /** The MCPs of charts/answerable/mcps.json: each standalone or both one is registered, with its manifest's scopes. */
+  mcps: readonly Pick<DeclaredMcp, "name" | "serve" | "scopes">[]
   /** Claude Code's `--callback-port`, in the host clients' redirect URI. */
   callbackPort: number
   /** The staff email domain and the Microsoft Entra tenant that signs the staff in, to connect to the platform organisation. */
@@ -43,8 +39,8 @@ const clientSecrets = {
 type Machine = keyof typeof clientSecrets
 const clientNames: Record<Machine, string> = { "ops-register": "Ops register", "toolbox-hub": "Toolbox", "admin-mcp": "Admin MCP" }
 
-/** The one-time remedy when register has no client of its own and nothing to mint it with. */
-const once = "Once: put a staff token in the Secret ops-staff-token (key OPS_ID_TOKEN) and run register again; it mints its client, ops-register, and needs no token after that (infra/README.md#register-again)"
+/** The one-time remedy when register has no client of its own and nothing to mint it with: break glass, for one ship. */
+const once = "Once: add ROOT_ADMIN_BREAK_GLASS: \"true\" under id.env in the environment's overlay and ship it; register mints its client, ops-register, with the root secret and needs it no more. Then remove the line and ship again (infra/README.md#register-again)"
 const noClient = "register has no machine client of its own yet (the Secret ops-id-client is empty)"
 const remedy = `${noClient}, and ID refuses the root secret (root_locked): a platform administrator exists. ${once}`
 
@@ -55,8 +51,8 @@ const roles = ["team", "admin", "owner"] as const
 
 /**
  * Register in ID what the deployment needs, as register's own machine client, `ops-register` (`platform:read platform:write`): the run that finds no
- * secret in `ops-id-client` mints that client with `token` first, stores its secret, and goes on with it; every later run needs neither the root
- * secret nor a staff token. Then the Toolbox and the admin MCP, as their docs register them (apps/web/content/docs/toolbox/admin.mdx and
+ * secret in `ops-id-client` mints that client with `rootSecret` first, stores its secret, and goes on with it; every later run needs no root
+ * secret. Then the Toolbox and the admin MCP, as their docs register them (apps/web/content/docs/toolbox/admin.mdx and
  * admin/setup.mdx), and for each standalone or both MCP of `mcps`, which the Toolbox serves alone, its resource, `<mcpOrigin>/<name>/mcp`, its
  * Claude Code client, `claude-code-<name>`, and their link.
  *
@@ -67,7 +63,7 @@ const roles = ["team", "admin", "owner"] as const
  * Each machine client's secret is stored the moment ID answers it, and one that exists while its secret is not stored is rotated. With `staff`,
  * then connects the staff domain and directory (see {@link connectStaff}). Prints the Claude Code commands and the first owner's step; never a secret.
  */
-export async function register({ id, token, toolbox, adminMcp, mcpOrigin, mcps, platformSlug, callbackPort, staff, store, fetch = globalThis.fetch, log = console.log, timeoutMs = 30_000 }: Options) {
+export async function register({ id, rootSecret, toolbox, adminMcp, mcpOrigin, mcps, callbackPort, staff, store, fetch = globalThis.fetch, log = console.log, timeoutMs = 30_000 }: Options) {
   const admin = `${id}/api/admin`
   const toolboxAdmin = `${toolbox}/admin`
   const adminResource = `${adminMcp}/mcp`
@@ -77,14 +73,14 @@ export async function register({ id, token, toolbox, adminMcp, mcpOrigin, mcps, 
     id, fetch, timeoutMs, rootLocked: remedy,
     token: clientToken({
       id, clientId: "ops-register", clientSecret, fetch, timeoutMs,
-      refused: "ID refused ops-register's client credentials: the Secret ops-id-client holds a secret ID does not. Empty its key OPS_ID_CLIENT_SECRET, put a staff token in ops-staff-token and run register again, which rotates it (infra/README.md#register-again)",
+      refused: "ID refused ops-register's client credentials: the Secret ops-id-client holds a secret ID does not. Empty its key OPS_ID_CLIENT_SECRET and run register again, which rotates it with the root secret: with break glass once root is locked (infra/README.md#register-again)",
     }),
   })
 
   const stored = await store.get(clientSecrets["ops-register"])
-  if (!stored && !token) throw new Error(`${noClient}, and no root secret or staff token to mint one. ${once}`)
-  let call: Call = stored ? asOpsRegister(stored) : adminApi({ id, token: token!, fetch, timeoutMs, rootLocked: remedy })
-  // The registrar calls ID as whoever `call` is at the time: the bearer until ops-register is minted, then ops-register.
+  if (!stored && !rootSecret) throw new Error(`${noClient}, and no root secret to mint one. ${once}`)
+  let call: Call = stored ? asOpsRegister(stored) : adminApi({ id, token: rootSecret!, fetch, timeoutMs, rootLocked: remedy })
+  // The registrar calls ID as whoever `call` is at the time: the root secret until ops-register is minted, then ops-register.
   const registrar = createRegistrar((...args) => call(...args), log)
   const { tally, write, link } = registrar
 
@@ -113,13 +109,13 @@ export async function register({ id, token, toolbox, adminMcp, mcpOrigin, mcps, 
     write("POST", `/organizations/${platform}/capabilities`, key, { clientId, resource: target, grantKind, scopes }, { create: true })
   const entitlement = (key: string, body: Record<string, unknown>) => write("POST", `/organizations/${platform}/entitlements`, key, body, { create: true })
 
-  const platform = await platformOrganisation(call, platformSlug)
+  const platform = await platformOrganisation(call)
   if (stored) log("Registering as ops-register, register's own machine client")
   else {
-    // Its own machine client first, so that every later run needs neither the root secret nor a staff token; this run goes on with it.
+    // Its own machine client first, so that every later run needs no root secret; this run goes on with it.
     await machine("ops-register", [["", admin, ["platform:read", "platform:write"]]])
     call = asOpsRegister((await store.get(clientSecrets["ops-register"]))!)
-    log("ops-register is minted: register goes on as its own machine client, and needs no root secret or staff token again")
+    log("ops-register is minted: register goes on as its own machine client, and needs no root secret again")
   }
 
   // The Toolbox: its resource and admin resource, its machine client on ID's admin API, which also reads who is calling for the MCPs it serves

@@ -101,10 +101,10 @@ export function createKubernetes({ server, token, ca, namespace, fetch = globalT
   }
 }
 
-/** The client a pod has: its ServiceAccount's mounted token, certificate authority and namespace (`OPS_NAMESPACE` overrides it), and the API server Kubernetes names in the environment. */
+/** The client a pod has: its ServiceAccount's mounted token, certificate authority and namespace, and the API server Kubernetes names in the environment. */
 export function inClusterKubernetes(env: Record<string, string | undefined>, { directory = "/var/run/secrets/kubernetes.io/serviceaccount", fetch }: { directory?: string; fetch?: typeof globalThis.fetch } = {}) {
   const read = (file: string) => readFileSync(join(directory, file), "utf8").trim()
   const host = env.KUBERNETES_SERVICE_HOST
   const server = host ? `https://${host.includes(":") ? `[${host}]` : host}:${env.KUBERNETES_SERVICE_PORT ?? "443"}` : "https://kubernetes.default.svc"
-  return createKubernetes({ server, token: read("token"), ca: read("ca.crt"), namespace: env.OPS_NAMESPACE || read("namespace"), fetch })
+  return createKubernetes({ server, token: read("token"), ca: read("ca.crt"), namespace: read("namespace"), fetch })
 }

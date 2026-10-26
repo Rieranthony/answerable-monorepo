@@ -46,8 +46,7 @@ metadata:
 spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
-{{- range $server := list (dict "component" "id" "port" 47300 "enabled" true) (dict "component" "toolbox" "port" 47400 "enabled" $.Values.toolbox.enabled) (dict "component" "admin-mcp" "port" 47520 "enabled" $.Values.adminMcp.enabled) }}
-{{- if $server.enabled }}
+{{- range $server := list (dict "component" "id" "port" 47300) (dict "component" "toolbox" "port" 47400) (dict "component" "admin-mcp" "port" 47520) }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -79,7 +78,6 @@ spec:
     {{- toYaml . | nindent 4 }}
     {{- end }}
     {{- end }}
-{{- end }}
 {{- end }}
 ---
 apiVersion: networking.k8s.io/v1

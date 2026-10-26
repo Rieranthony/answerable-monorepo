@@ -164,7 +164,7 @@ test("every call leaves one evidence row on the platform organisation's chain, a
 test("health answers ok only while the database answers", async () => {
   const own = connect(login.url, { max: 1 })
   const id = createFakeId({ clientId: "admin-mcp" })
-  const server = createAdminMcp({ auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(id.config), platform: id.organizationId, standaloneOrigin })
+  const server = createAdminMcp({ auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(id.config), platform: id.organizationId, freshSeconds: 1800, standaloneOrigin })
   const health = async () => {
     const response = await server.fetch(new Request("https://mcp.test/health"))
     return [response.status, await response.json()]
@@ -218,7 +218,7 @@ test("a controlled intent commits only through admin_commit_confirmed with its s
   const [patch] = writesTo(id, `PATCH /api/admin/v1/organizations/${newco.id}`)
   const committing = (await events(platform)).findLast(row => row.capability_identity === "admin/commit_confirmed")!
   expect(patch).toEqual({
-    request: `PATCH /api/admin/v1/organizations/${newco.id}`, requestId: committing.execution_id, idempotencyKey: intent.intent_id, ifMatch: `"${newco.id}:1"`, ifNoneMatch: null,
+    request: `PATCH /api/admin/v1/organizations/${newco.id}`, requestId: committing.execution_id, idempotencyKey: intent.intent_id, ifMatch: `"${newco.id}:1"`, ifNoneMatch: null, caller: "admin-mcp",
   })
   expect(receipt).toMatchObject({ results: { organizationId: newco.id, operationId: answers.find(answer => answer.request === `PATCH /api/admin/v1/organizations/${newco.id}`)!.operationId }, idempotent_replay: false })
   const again = (await confirm(client, intent)).structuredContent

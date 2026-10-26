@@ -46,7 +46,7 @@ It returns:
 The token carries only ids. `profiles` gives the rest every handler receives: the person's name, email and groups, and the organisation's name and slug ([the caller](/docs/mcp/tools#the-caller)). It is required: a server that cannot say who is calling does not start.
 
 - **When it runs.** Once for each request that runs a handler (`tools/call`, `prompts/get`, `resources/read` of a resource), before the handler, and never for a list or a view.
-- **`createIdProfiles(id, { ttlMs, staleMs })`**, from `@answerable/id-admin`, reads the member and the organisation from ID's admin API in parallel, with the server's machine client and `platform:read`. It keeps each for `ttlMs` (60 seconds), per member and per organisation. `invalidate(organisationIds, userIds)` drops them sooner: the audit-log poller of `@answerable/mcp-platform` calls it on the events that change a member or an organisation, in the Toolbox with its grants.
+- **`createIdProfiles(id, { ttlMs, staleMs })`**, from `@answerable/mcp-platform`, reads the member and the organisation from ID's admin API in parallel, with the server's machine client and `platform:read`. It keeps each for `ttlMs` (60 seconds), per member and per organisation. `invalidate(organisationIds, userIds)` drops them sooner: the audit-log poller of `@answerable/mcp-platform` calls it on the events that change a member or an organisation, in the Toolbox with its grants.
 - **When ID does not answer.** The last value is served for up to `staleMs` (an hour) after it expired. With none, the call answers `UPSTREAM_UNAVAILABLE` and the handler does not run.
 - **Who is refused.** A member whose membership is not in force (ID's `effective: false`), or whom ID no longer knows, gets `PERMISSION_DENIED`, whatever an earlier read cached. A group membership counts while its `validFrom` is past and its `validUntil` unset or future.
 
@@ -96,8 +96,6 @@ The Toolbox serves every MCP whose `serve` is `standalone` or `both` at its own 
 ## Configure
 
 The Toolbox's variables are on [its page](/docs/toolbox#environment). `TOOLBOX_STANDALONE_ORIGIN` is the origin of the MCPs it serves alone, `https://mcp.<zone>` deployed and `http://localhost:47400` locally. An MCP whose database is its own adds a variable, `TOOLBOX_MCP_<NAME>_DATABASE_URL`, which the generated list names.
-
-**A server of your own.** A server with variables of its own lists them with `defineConfig` from `@answerable/config` and reads them with `parseEnvironment(config, env, names)`, as the Toolbox and the admin MCP do: it reads `env` with the definition, checks the issuer and resource URL in the two variables `names` gives, and throws `Invalid <label> configuration: <VARIABLE>: <problem>`.
 
 **Issuer.** The Answerable ID origin. The verifier reads ID's signing keys from the issuer's metadata; never take an issuer from a token.
 

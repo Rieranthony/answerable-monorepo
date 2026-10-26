@@ -2,20 +2,19 @@ import { z } from "zod"
 
 type Profile = "development" | "test" | "production"
 type Source = "deploy" | "cluster" | "chart" | "image" | "operator"
-type Defaults = { development?: string; test?: string }
 type Env = Record<string, string | undefined>
 
 /** One variable a service reads. */
 export type Field = {
   /** A zod schema of the raw string, with the coercions and transforms the service needs; it receives `undefined` when the variable is unset. */
   schema: z.ZodType
-  /** A credential. Production refuses it when its value is one of `defaults`, so a development default can be committed. */
+  /** A credential. Production refuses it when its value is `local`, so a development default can be committed. */
   secret?: boolean
   /** The value in every profile when the variable is unset, as the loader's own default. */
   fallback?: string
-  /** The value under `development` or `test` when the variable is unset or empty; never under `production`. */
-  defaults?: Defaults
-  /** One line: what the variable is. It is the comment above the variable in `default.env`. */
+  /** The value under `development` and `test` when the variable is unset; never under `production`. */
+  local?: string
+  /** One line: what the variable is. */
   doc: string
   /** Where a deployed environment's value comes from: the deploy step, the cluster (Terraform or the ops Jobs), the chart, the image or an operator. Omitted for tooling and local-only variables. */
   source?: Source
@@ -26,7 +25,7 @@ export type FieldMeta = {
   name: string
   secret: boolean
   fallback?: string
-  defaults?: Defaults
+  local?: string
   doc: string
   source?: Source
   /** Whether production starts with the variable unset: the schema accepts `undefined`, or a fallback stands in. */
@@ -51,27 +50,25 @@ export class ConfigError extends Error {
   }
 }
 
-/** The same default under `development` and `test`. */
-export const locally = (value: string): Defaults => ({ development: value, test: value })
-
 const profiles = z.enum(["development", "test", "production"]).default("development")
 const nodeEnv: FieldMeta = {
   name: "NODE_ENV",
   secret: false,
   fallback: "development",
-  doc: "development, test or production (unset, development): the first two fill unset variables with local defaults, production none; the images set production",
+  doc: "development, test or production (unset, development): the first two fill unset variables with their local values, production none; the images set production",
   source: "image",
   optional: true,
 }
 
 /**
- * Define the variables a service reads. `read(env)` takes `NODE_ENV` (default `development`), fills each unset variable with its profile's
- * default, then its fallback, parses it with its schema, and runs `refine` for the rules that span variables once every variable parses.
+ * Define the variables a service reads. `read(env)` takes `NODE_ENV` (default `development`), counts an empty or blank variable as unset, fills each
+ * unset one with its `local` value outside production, then its fallback, parses it with its schema, and runs `refine` for the rules that span
+ * variables once every variable parses.
  *
  * @example
  * ```ts
  * const config = defineConfig("Acme", {
- *   ACME_DATABASE_URL: { schema: z.url(), secret: true, defaults: locally("postgres://localhost:47432/acme"), doc: "The database", source: "cluster" },
+ *   ACME_DATABASE_URL: { schema: z.url(), secret: true, local: "postgres://localhost:47432/acme", doc: "The database", source: "cluster" },
  *   ACME_PORT: { schema: z.coerce.number().int(), fallback: "47600", doc: "The port to listen on", source: "image" },
  * })
  * const { ACME_DATABASE_URL, ACME_PORT } = config.read(process.env)
@@ -86,8 +83,8 @@ export function defineConfig<Fields extends Record<string, Field>>(
     label,
     fields: [
       nodeEnv,
-      ...Object.entries(fields).map(([name, { schema, secret = false, fallback, defaults, doc, source }]) => ({
-        name, secret, fallback, defaults, doc, source, optional: fallback !== undefined || schema.safeParse(undefined).success,
+      ...Object.entries(fields).map(([name, { schema, secret = false, fallback, local, doc, source }]) => ({
+        name, secret, fallback, local, doc, source, optional: fallback !== undefined || schema.safeParse(undefined).success,
       })),
     ],
     read(env) {
@@ -95,11 +92,11 @@ export function defineConfig<Fields extends Record<string, Field>>(
       const profile = profiles.safeParse(env.NODE_ENV)
       if (!profile.success) for (const { message } of profile.error.issues) issues.push({ name: "NODE_ENV", message })
       const data: Record<string, unknown> = { NODE_ENV: profile.data }
+      const local = profile.data === "development" || profile.data === "test"
       for (const [name, field] of Object.entries(fields)) {
         const raw = env[name]
-        const local = profile.data === "development" || profile.data === "test" ? field.defaults?.[profile.data] : undefined
-        const value = !raw && local !== undefined ? local : (raw ?? field.fallback)
-        if (profile.data === "production" && field.secret && value !== undefined && Object.values(field.defaults ?? {}).includes(value)) {
+        const value = (raw?.trim() ? raw : undefined) ?? (local ? field.local : undefined) ?? field.fallback
+        if (profile.data === "production" && field.secret && value !== undefined && value === field.local) {
           issues.push({ name, message: "a development default" })
           continue
         }

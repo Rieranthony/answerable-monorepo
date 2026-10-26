@@ -2,7 +2,6 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { eq, sql } from "drizzle-orm"
 import { Pool, type PoolClient } from "pg"
-import { ensureLocalMcpDatabases } from "./local"
 import { mcpDatabase } from "./mcp-database"
 import { migrateMcps } from "./migrate-mcp"
 import { sharedMcps } from "./names"
@@ -11,7 +10,7 @@ import * as fixtureA from "./test/fixtures/mpgfixa"
 import { notes, projects } from "./test/fixtures/mpgfixa"
 import * as fixtureB from "./test/fixtures/mpgfixb"
 import { secrets } from "./test/fixtures/mpgfixb"
-import { as, clientOf, clusterUrl, fixtureFolder, forget, mcpsUrl, testLogin } from "./test/mcps"
+import { as, clientOf, fixtureFolder, forget, mcpsUrl, testLogin } from "./test/mcps"
 import { refusalOf } from "./testing"
 
 // The Toolbox's shape: one serving login granted both MCPs' schemas, one pool, and a database for each MCP over it.
@@ -25,7 +24,6 @@ let pool: Pool
 let a: ReturnType<typeof mcpDatabase<typeof fixtureA>>
 let b: ReturnType<typeof mcpDatabase<typeof fixtureB>>
 beforeAll(async () => {
-  await ensureLocalMcpDatabases(clusterUrl)
   await forget(admin, "mpgfixa", "mpgfixb")
   login = await testLogin(admin)
   await provisionMcps(sqlOf(admin), { mcps: [{ name: "mpgfixa" }, { name: "mpgfixb" }], logins: { ...sharedMcps.logins, toolbox: login.name } })

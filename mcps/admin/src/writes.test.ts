@@ -63,7 +63,7 @@ test("organisations_create previews the organisation, changes nothing until comm
   expect(writes()).toEqual([])
   const receipt = await committed(intent)
   const [create] = writes()
-  expect(create).toEqual({ request: "POST /api/admin/v1/organizations", requestId: lastCommit(), idempotencyKey: intent.intent_id, ifMatch: null, ifNoneMatch: null })
+  expect(create).toEqual({ request: "POST /api/admin/v1/organizations", requestId: lastCommit(), idempotencyKey: intent.intent_id, ifMatch: null, ifNoneMatch: null, caller: "admin-mcp" })
   expect(receipt.results).toEqual({ organizationId: expect.any(String), slug: "acme", operationId: expect.any(String) })
   expect(receipt.effects_performed).toEqual(["publication"])
   expect(await refusal("organisations_create", { slug: "acme", name: "Acme again" })).toMatchObject({

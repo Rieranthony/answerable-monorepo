@@ -145,3 +145,56 @@
     - knip clean;
     - `infra:check` passed.
   - **The kind stack** runs in CI on the push.
+- **The owner's follow-ups,** done by the coordinator (`decisions.md`, Follow-ups):
+  - the development Postgres cleaned and migrated under the new model, with the Toolbox's login passing its check;
+  - the organisation guard added to R5's brief;
+  - Docker's build cache cleared, 11 GB.
+- **CI on R3 (b4081e52):** passed. `containers` (the kind stack), `validate` and `infra-check` all succeeded, so the grants model holds in the kind stack.
+- **R4, configuration, database, SDK and shipping cleanups,** by Opus.
+  - **Done:**
+    - **Configuration:**
+      - A1: one `local` value;
+      - A2: an empty or blank variable is unset, while `NODE_ENV=""` is still refused. Production behaviour changes are listed in the agent's report, such as an empty `PORT` becoming the default instead of being refused;
+      - A3: `default.env` deleted, with the hand-written groups;
+      - A5 and C17: `parseEnvironment` moved to `mcp-platform`;
+      - A6: three ops variables are constants;
+      - A7: the chart's `runtimeRole` values deleted;
+      - A9: own MCPs' migration variables inventoried;
+      - A10 and E8: one `declaredMcps` schema;
+      - A11, A12.
+    - **Database:**
+      - B4: `ensureLocalMcpDatabases` deleted, with one command documented for older volumes;
+      - B5: the `grants.ts` hook deleted;
+      - B8: test-migrate scripts split out of the production scripts;
+      - B11: the bootstrap test asserts what `provisionMcps` is handed.
+    - **SDK:**
+      - C7: `createIdProfiles` moved to `mcp-platform`, so `id-admin` depends on zod alone;
+      - C8: `context.client` deleted;
+      - C12 and F10: one fake of ID's admin API, `createFakeId`, which gained break glass, the root lock, per-caller idempotency and injected failures.
+    - **Shipping:**
+      - E4: the staff-token path deleted; the remedy for a locked root is break glass;
+      - E5: `run-job bootstrap` deleted;
+      - E9: the `mcps` image copies `packages/`, +0.18%;
+      - E10: the `enabled` switches deleted.
+  - **Not done:**
+    - **F17's call to `checkProviderId`.** `names.ts` is on the ops image's runtime path, and the ops image doesn't carry the SDK. The duplicate rule stays, held equal by its test.
+    - **C9, stopped before any code.** It touches pre-PR code:
+      - the Toolbox's `/enable`, which `bun mcp dev`, three acceptance set-ups, the admin MCP's tests and 13 docs pages use;
+      - register, which cannot narrow staging's existing `toolbox-hub` capability without narrowing code or a one-off admin call.
+  - **Size:** 141 files, +916 / −1,893, without the plan files.
+  - **The agent's gates:**
+    - `mcp:test`: 1,004 pass;
+    - ID: 1,493, at 100%;
+    - the acceptance: 69;
+    - kind: 123, now that Docker's disk is free;
+    - web: 120;
+    - knip clean.
+- **The coordinator:** removed by ID the three untagged Answerable images the earlier kind runs left, about 711 MB.
+- **The coordinator's gates on R4:**
+  - frozen install unchanged;
+  - typecheck and lint forced: 20 of 20;
+  - build: 2 of 2;
+  - `mcp:test`: 13 of 13 tasks in 30 s;
+  - web: 120;
+  - knip clean;
+  - `infra:check` passed.

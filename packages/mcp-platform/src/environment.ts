@@ -2,19 +2,19 @@ import { ConfigError, type Config, type Field } from "@answerable/config"
 import { createIdVerifier } from "@answerable/auth"
 
 /**
- * Read `env` with `config`, a server's own variables from `defineConfig` (`@answerable/config`), then check the ID issuer and the resource URL,
- * read from the two variables `names` gives, as `createIdVerifier` checks them. Returns the parsed `data` and the `auth` option of
+ * Read `env` with `config`, a platform server's own variables from `defineConfig` (`@answerable/config`), then check the ID issuer and the
+ * resource URL, read from the two variables `names` gives, as `createIdVerifier` checks them. Returns the parsed `data` and the `auth` option of
  * `createMcpServer`; throws `Invalid <label> configuration: <VARIABLE>: <problem>`, naming each variable that is missing or invalid.
  *
  * @example
  * ```ts
- * import { defineConfig, locally } from "@answerable/config"
- * import { parseEnvironment } from "@answerable/mcp"
+ * import { defineConfig } from "@answerable/config"
+ * import { parseEnvironment } from "@answerable/mcp-platform"
  * import { z } from "zod"
  *
  * const config = defineConfig("Acme", {
- *   ACME_ID_ISSUER: { schema: z.url(), defaults: locally("http://localhost:47300"), doc: "The ID issuer" },
- *   ACME_RESOURCE_URL: { schema: z.url(), defaults: locally("http://localhost:47510/mcp"), doc: "This server's URL" },
+ *   ACME_ID_ISSUER: { schema: z.url(), local: "http://localhost:47300", doc: "The ID issuer" },
+ *   ACME_RESOURCE_URL: { schema: z.url(), local: "http://localhost:47510/mcp", doc: "This server's URL" },
  *   ACME_DATABASE_URL: { schema: z.url(), secret: true, doc: "The database" },
  * })
  * const { data, auth } = parseEnvironment(config, process.env, { issuer: "ACME_ID_ISSUER", resource: "ACME_RESOURCE_URL" })

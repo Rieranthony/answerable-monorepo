@@ -6,7 +6,8 @@ import { projects } from "./test/fixtures/mpgfixa"
 import * as fixtureB from "./test/fixtures/mpgfixb"
 import { secrets } from "./test/fixtures/mpgfixb"
 import { fixtureFolder, forget, mcpsUrl } from "./test/mcps"
-import { refusalOf, testDatabase, testMcpDatabase } from "./testing"
+import { testMcpDatabase } from "./mcp-test-database"
+import { refusalOf, testDatabase } from "./testing"
 
 const admin = new Pool({ connectionString: mcpsUrl, max: 1 })
 afterAll(async () => {

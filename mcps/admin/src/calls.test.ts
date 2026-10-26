@@ -7,7 +7,7 @@ import { createCalls } from "./calls"
 
 const principal = testPrincipal()
 const context = Object.freeze({
-  principal, executionId: "exec-1", signal: new AbortController().signal, client: { id: principal.clientId },
+  principal, executionId: "exec-1", signal: new AbortController().signal,
   person: { id: principal.userId, membershipId: principal.membershipId, name: "Staff member", email: "staff@answerable.test", groups: [] },
   organisation: { id: principal.organizationId, name: "Answerable", slug: "answerable" },
 })

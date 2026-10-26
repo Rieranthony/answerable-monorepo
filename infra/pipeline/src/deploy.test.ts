@@ -144,9 +144,9 @@ describe("assertImageTag and parseJob", () => {
       expect(() => assertImageTag(tag)).toThrow(UsageError)
   })
 
-  test("parseJob accepts the three ops jobs only", () => {
-    for (const job of ["bootstrap", "register", "make-admin"] as const) expect(parseJob(job)).toBe(job)
-    expect(() => parseJob("migrate")).toThrow("the job must be one of bootstrap, register, make-admin")
+  test("parseJob accepts the two ops jobs ops.yml offers only: every deploy runs bootstrap", () => {
+    for (const job of ["register", "make-admin"] as const) expect(parseJob(job)).toBe(job)
+    for (const job of ["migrate", "bootstrap"]) expect(() => parseJob(job)).toThrow("the job must be one of register, make-admin")
     expect(() => parseJob(undefined)).toThrow(UsageError)
   })
 })
@@ -494,7 +494,7 @@ describe("runJob", () => {
     const head = (await systemRunner(["git", "rev-parse", "HEAD"], { cwd: new URL("../../..", import.meta.url).pathname })).stdout.trim()
     const repository = new URL("../../..", import.meta.url).pathname
     let rendered: { mcps: string; chart: string } | undefined
-    const runner = createFakeRunner(() => undefined)
+    const runner = createFakeRunner(restarts)
     const deps: Deps = {
       run: async (argv, options) => {
         if (argv[0] === "git" || argv[0] === "tar") return systemRunner(argv, options)
@@ -506,12 +506,12 @@ describe("runJob", () => {
       env: CLUSTER_ENV,
       root: repository,
     }
-    await runJob({ environment: "staging", job: "bootstrap" }, deps)
+    await runJob({ environment: "staging", job: "register" }, deps)
     const committed = async (path: string) => (await systemRunner(["git", "show", `${head}:${path}`], { cwd: repository })).stdout
     expect(rendered).toEqual({ mcps: await committed("charts/answerable/mcps.json"), chart: await committed("charts/answerable/Chart.yaml") })
   })
 
-  test("make-admin passes the email, and bootstrap runs alone; neither restarts anything", async () => {
+  test("make-admin passes the email, runs alone and restarts nothing", async () => {
     const admin = await fixture(restarts)
     await runJob({ environment: "staging", job: "make-admin", email: "you@answerable.org", timeout: "5m" }, admin.deps)
     expect(commands(admin)).toEqual([
@@ -519,17 +519,14 @@ describe("runJob", () => {
       jobUpgrade("--set ops.bootstrap=false --set ops.register=false --set ops.makeAdmin=true", " --set-string ops.adminEmail=you@answerable.org").replace("--timeout 10m", "--timeout 5m"),
       "kubectl logs -n answerable job/ops-make-admin --all-containers",
     ])
-    const bootstrap = await fixture(restarts)
-    await runJob({ environment: "staging", job: "bootstrap" }, bootstrap.deps)
-    expect(commands(bootstrap)[4]).toBe(jobUpgrade("--set ops.bootstrap=true --set ops.register=false --set ops.makeAdmin=false"))
-    expect(bootstrap.runner.commands().some((command) => command.startsWith("kubectl rollout"))).toBe(false)
+    expect(admin.runner.commands().some((command) => command.startsWith("kubectl rollout"))).toBe(false)
   })
 
   test("says so when the Job's log cannot be read, and goes on", async () => {
-    const f = await fixture((call) => (call.argv[1] === "logs" ? { exitCode: 1 } : deployed(call)))
-    await runJob({ environment: "staging", job: "bootstrap" }, f.deps)
+    const f = await fixture((call) => (call.argv[1] === "logs" ? { exitCode: 1 } : restarts(call)))
+    await runJob({ environment: "staging", job: "register" }, f.deps)
     expect(f.log()).toContain("(The Job's log could not be read: kubectl exited with 1.)")
-    expect(f.log()).toContain("Ran bootstrap in staging.")
+    expect(f.log()).toContain("Ran register in staging.")
   })
 
   test("refuses make-admin without an email, an email for another job, an address Helm would split, and starts nothing", async () => {

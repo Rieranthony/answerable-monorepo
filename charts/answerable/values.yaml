@@ -71,7 +71,6 @@ id:
   resources:
     requests: { cpu: 250m, memory: 256Mi }
     limits: { memory: 768Mi }
-  runtimeRole: answerable_id_runtime
   # BETTER_AUTH_TRUSTED_ORIGINS: origin-only URLs; production requires at least one. A company directory on a private
   # network must be listed here, and reachable through extraEgress.
   trustedOrigins: []
@@ -86,7 +85,6 @@ id:
   env: {}
 
 toolbox:
-  enabled: true
   replicas: 2
   autoscaling:
     enabled: true
@@ -96,11 +94,9 @@ toolbox:
     requests: { cpu: 100m, memory: 128Mi }
     limits: { memory: 512Mi }
   clientId: toolbox-hub
-  runtimeRole: answerable_toolbox_runtime
   env: {}
 
 adminMcp:
-  enabled: true
   replicas: 2
   autoscaling:
     enabled: true
@@ -110,7 +106,6 @@ adminMcp:
     requests: { cpu: 100m, memory: 128Mi }
     limits: { memory: 384Mi }
   clientId: admin-mcp
-  runtimeRole: answerable_admin_runtime
   env: {}
 
 migrations:
@@ -131,8 +126,6 @@ ops:
   register: false
   makeAdmin: false
   adminEmail: ""
-  # Claude Code's --callback-port, in the redirect URI of the host clients register creates (docs/admin/setup).
-  claudeCallbackPort: 47700
   activeDeadlineSeconds: 600
   # How long a finished Job, and its pod's log, stays before Kubernetes removes it; the next run replaces it anyway.
   ttlSecondsAfterFinished: 86400

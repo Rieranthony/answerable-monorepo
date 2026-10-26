@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import type { DeclaredMcp } from "@answerable/mcp-postgres"
 import { databasesFor } from "../ops/src/bootstrap"
 import images from "../pipeline/images.json"
 import { buildDependencies, charts, check, crdSchemas, kubernetesVersion, type Manifest, overlays, render, run, templateArguments } from "./helm"
@@ -16,17 +17,15 @@ const environments = {
   "values-civo-production.yaml": { id: "id.answerable.org", toolbox: "toolbox.answerable.org", adminMcp: "admin-mcp.answerable.org", mcp: "mcp.answerable.org", network: "10.20.0.0/24" },
 } as const
 
-/** An MCP as charts/answerable/mcps.json declares it, where it runs, its database mode and its manifest's scopes. */
-type Declared = { name: string; serve: "toolbox" | "standalone" | "both"; database: "shared" | "own"; scopes: string[] }
-const declared = (JSON.parse(readFileSync(join(charts, "answerable/mcps.json"), "utf8")) as { mcps: Declared[] }).mcps
-const listed = (mcps: Declared[]) => mcps.map(({ name, serve, database, scopes }) => ({ name, serve, database, scopes }))
+const declared = (JSON.parse(readFileSync(join(charts, "answerable/mcps.json"), "utf8")) as { mcps: DeclaredMcp[] }).mcps
+const listed = (mcps: DeclaredMcp[]) => mcps.map(({ name, serve, database, scopes }) => ({ name, serve, database, scopes }))
 /** The MCPs the Toolbox serves alone, standalone or both: the mcp host's Ingress renders only while there is one. */
-const alone = (mcps: Declared[]) => mcps.filter(mcp => mcp.serve !== "toolbox")
+const alone = (mcps: DeclaredMcp[]) => mcps.filter(mcp => mcp.serve !== "toolbox")
 const mcpIngress = alone(declared).length > 0
 /** The Deployments the register Job starts, as the chart names them. */
 const registered = ["toolbox", "admin-mcp"]
 /** The Secrets the bootstrap writes for a list, as infra/ops names them: the ops Role must name exactly these. */
-const bootstrapSecrets = (mcps: Declared[]) => databasesFor(mcps).flatMap(database => [database.owner, ...database.runtime]).map(login => login.ref.secret)
+const bootstrapSecrets = (mcps: DeclaredMcp[]) => databasesFor(mcps).flatMap(database => [database.owner, ...database.runtime]).map(login => login.ref.secret)
 
 // The origin-pull CA Terraform passes to charts/platform with --set-file, which its Civo overlays refuse to render
 // without: a stand-in PEM here (the chart checks only that it is PEM), and one that is not PEM.
@@ -208,7 +207,7 @@ describe("charts/answerable", () => {
         for (const server of registered) expect(named(manifests, "Deployment", server)!.spec.template.metadata.annotations, server).toBeUndefined()
       })
 
-      test("the ops Jobs: one attempt, the token of their own ServiceAccount where they call Kubernetes, the administrative login or the ID token from Secrets", () => {
+      test("the ops Jobs: one attempt, the token of their own ServiceAccount where they call Kubernetes, the administrative login or ID's root secret from Secrets", () => {
         const bootstrap = named(manifests, "Job", "ops-bootstrap")!
         const register = named(manifests, "Job", "ops-register")!
         const makeAdmin = named(manifests, "Job", "ops-make-admin")!
@@ -219,14 +218,13 @@ describe("charts/answerable", () => {
         }
         for (const job of [bootstrap, register]) {
           expect(podSpec(job)).toMatchObject({ serviceAccountName: "ops", automountServiceAccountToken: true })
-          expect(env(job, "OPS_NAMESPACE").valueFrom).toEqual({ fieldRef: { fieldPath: "metadata.namespace" } })
         }
         expect(new Set(secretReferences(bootstrap))).toEqual(new Set(["postgres-admin"]))
         expect(env(bootstrap, "OPS_DATABASE_ADMIN_URL").valueFrom.secretKeyRef).toEqual({ name: "postgres-admin", key: "OPS_DATABASE_ADMIN_URL" })
-        expect(containersOf(bootstrap)[0].env.map((variable: { name: string }) => variable.name).filter((variable: string) => variable.startsWith("OPS_"))).toEqual(["OPS_NAMESPACE", "OPS_DATABASE_ADMIN_URL", "OPS_MCPS"])
+        expect(containersOf(bootstrap)[0].env.map((variable: { name: string }) => variable.name).filter((variable: string) => variable.startsWith("OPS_"))).toEqual(["OPS_DATABASE_ADMIN_URL", "OPS_MCPS"])
         expect(JSON.parse(env(bootstrap, "OPS_MCPS").value)).toEqual(listed(declared))
-        // A staff token when the operator has stored one, else the root secret; either may be absent, and the command says which it needs.
-        expect(env(register, "OPS_ID_TOKEN").valueFrom.secretKeyRef).toEqual({ name: "ops-staff-token", key: "OPS_ID_TOKEN", optional: true })
+        // The root secret mints register's own client on its first run; it may be absent, and the command says when it needs it.
+        expect(env(register, "OPS_ID_TOKEN")).toBeUndefined()
         expect(env(register, "OPS_ID_ROOT_SECRET").valueFrom.secretKeyRef).toEqual({ name: "id-env", key: "ROOT_ADMIN_SECRET", optional: true })
         expect(env(register, "OPS_ID_URL").value).toBe(env(named(manifests, "Deployment", "toolbox")!, "TOOLBOX_ID_ISSUER").value)
         expect(env(register, "OPS_TOOLBOX_URL").value).toBe(env(named(manifests, "Deployment", "toolbox")!, "TOOLBOX_RESOURCE_URL").value.replace(/\/mcp$/, ""))
@@ -414,28 +412,28 @@ describe("charts/answerable", () => {
     for (const workload of workloads(renderSupplied("answerable"))) for (const container of containersOf(workload)) expect(container.image).toEndWith(":unset")
   })
 
-  test("the servers connect as their runtime logins and the migrations as the owners, with the role to provision", () => {
+  test("the servers connect as their runtime logins and the migrations as the owners, naming no role: each script provisions its service's", () => {
     const manifests = renderSupplied("answerable", [], { "image.tag": tag })
     for (const [deployment, variable, secret] of [
       ["id", "DATABASE_URL", "id-database"], ["toolbox", "TOOLBOX_DATABASE_URL", "toolbox-database"], ["admin-mcp", "ADMIN_DATABASE_URL", "admin-database"], ["toolbox", "TOOLBOX_MCPS_DATABASE_URL", "toolbox-mcps-database"],
     ]) {
       expect(env(named(manifests, "Deployment", deployment!)!, variable!).valueFrom.secretKeyRef).toEqual({ name: secret, key: variable })
     }
-    for (const [job, prefix, role] of [["id-migrate", "", "answerable_id_runtime"], ["toolbox-migrate", "TOOLBOX_", "answerable_toolbox_runtime"], ["admin-migrate", "ADMIN_", "answerable_admin_runtime"]]) {
+    for (const [job, prefix] of [["id-migrate", ""], ["toolbox-migrate", "TOOLBOX_"], ["admin-migrate", "ADMIN_"]]) {
       const migration = named(manifests, "Job", job!)!
       expect(env(migration, `${prefix}DATABASE_MIGRATION_URL`).valueFrom.secretKeyRef.key).toBe(`${prefix}DATABASE_MIGRATION_URL`)
-      expect(env(migration, `${prefix}DATABASE_RUNTIME_ROLE`).value).toBe(role)
+      expect(env(migration, `${prefix}DATABASE_RUNTIME_ROLE`)).toBeUndefined()
     }
   })
 })
 
 describe("charts/answerable at 0, 1, 3 and 200 MCPs", () => {
   /** An MCP as the generator writes it into mcps.json: its declaration, two scopes and the grant strings of five tools. */
-  const entry = (name: string, serve: Declared["serve"], database: Declared["database"]) => ({
+  const entry = (name: string, serve: DeclaredMcp["serve"], database: DeclaredMcp["database"]) => ({
     name, serve, database, scopes: [`${name}:read`, `${name}:write`], grants: [name, `${name}/notes`, `${name}/notes.add`, `${name}/notes.list`, `${name}/projects`, `${name}/projects.search`],
   })
   const serves = ["toolbox", "standalone", "both"] as const
-  const lists: Record<string, Declared[]> = {
+  const lists: Record<string, DeclaredMcp[]> = {
     0: [],
     1: [entry("acme", "standalone", "own")],
     3: [entry("alpha", "toolbox", "shared"), entry("beta", "standalone", "own"), entry("gamma", "both", "own")],
@@ -451,7 +449,7 @@ describe("charts/answerable at 0, 1, 3 and 200 MCPs", () => {
     writeFileSync(join(chart, "mcps.json"), text)
     return chart
   }
-  const file = (mcps: Declared[]) => `${JSON.stringify({ $comment: "Written by bun mcp", mcps }, null, 2)}\n`
+  const file = (mcps: DeclaredMcp[]) => `${JSON.stringify({ $comment: "Written by bun mcp", mcps }, null, 2)}\n`
   const set = { "image.tag": tag, ...allJobs }
   const flags = (chart: string) => ["--namespace", "answerable", "--values", join(chart, "values-civo-production.yaml"), ...Object.entries(set).flatMap(([key, value]) => ["--set", `${key}=${value}`])]
   const renderCopy = (chart: string) => {
@@ -475,7 +473,7 @@ describe("charts/answerable at 0, 1, 3 and 200 MCPs", () => {
       // Each own MCP's database: its runtime login for the Toolbox, which serves every MCP, its owner for the migration; a shared MCP needs no variable.
       const ownVariables = (workload: Manifest, pattern: RegExp) => containersOf(workload).flatMap((container: { env: { name: string; valueFrom?: { secretKeyRef?: unknown } }[] }) => container.env)
         .filter(variable => pattern.test(variable.name)).map(variable => [variable.name, variable.valueFrom?.secretKeyRef])
-      const own = (list: Declared[], prefix: string, secret: string, key: string) => list.filter(mcp => mcp.database === "own").map(({ name }) => [`${prefix}MCP_${name.toUpperCase()}_DATABASE${key === "DATABASE_URL" ? "" : "_MIGRATION"}_URL`, { name: `mcp-${name}-${secret}`, key }])
+      const own = (list: DeclaredMcp[], prefix: string, secret: string, key: string) => list.filter(mcp => mcp.database === "own").map(({ name }) => [`${prefix}MCP_${name.toUpperCase()}_DATABASE${key === "DATABASE_URL" ? "" : "_MIGRATION"}_URL`, { name: `mcp-${name}-${secret}`, key }])
       expect(ownVariables(named(manifests, "Deployment", "toolbox")!, /^TOOLBOX_MCP_/)).toEqual(own(mcps, "TOOLBOX_", "database", "DATABASE_URL"))
       expect(ownVariables(named(manifests, "Job", "toolbox-migrate")!, /^MCP_/)).toEqual(own(mcps, "", "database-owner", "DATABASE_MIGRATION_URL"))
       for (const [job, variable] of [["ops-bootstrap", "OPS_MCPS"], ["ops-register", "OPS_MCPS"], ["toolbox-migrate", "MCPS_DECLARED"]]) expect(JSON.parse(env(named(manifests, "Job", job!)!, variable!).value), job).toEqual(listed(mcps))

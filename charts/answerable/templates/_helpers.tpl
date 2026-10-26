@@ -156,11 +156,9 @@ volumes:
 {{/* The servers the ops register Job starts once their client Secrets exist, at the replicas they run: name=replicas,… */}}
 {{- define "answerable.opsStartDeployments" -}}
 {{- $start := list -}}
-{{- range $server := list (dict "name" "toolbox" "values" .Values.toolbox "enabled" .Values.toolbox.enabled) (dict "name" "admin-mcp" "values" .Values.adminMcp "enabled" .Values.adminMcp.enabled) -}}
-{{- if $server.enabled -}}
+{{- range $server := list (dict "name" "toolbox" "values" .Values.toolbox) (dict "name" "admin-mcp" "values" .Values.adminMcp) -}}
 {{- $replicas := ternary $server.values.autoscaling.minReplicas $server.values.replicas (and $server.values.autoscaling.enabled true) -}}
 {{- $start = append $start (printf "%s=%v" $server.name $replicas) -}}
-{{- end -}}
 {{- end -}}
 {{- join "," $start -}}
 {{- end -}}

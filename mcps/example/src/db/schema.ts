@@ -13,12 +13,6 @@ import * as pg from "drizzle-orm/pg-core"
 //     organisation_id: pg.uuid().notNull(),
 //     name: pg.text().notNull(),
 //   }, table => [organisationIsolation(table.organisation_id)]).enableRLS()
-//
-// The serving login reads and writes every table here. To narrow that, export grants from src/db/grants.ts, which
-// bun mcp db example migrate reads:
-//
-//   import type { Grant } from "@answerable/mcp-postgres"
-//   export const grants: Grant[] = [{ table: "projects", privileges: ["select", "insert"] }]
 export const exampleSchema = pg.pgSchema("example")
 
 //#region notes

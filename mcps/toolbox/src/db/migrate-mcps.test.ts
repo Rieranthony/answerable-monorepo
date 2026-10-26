@@ -2,13 +2,13 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { ensureLocalMcpDatabases, provisionMcps, provisionOwnMcp, sharedMcps, sqlOf } from "@answerable/mcp-postgres"
+import { provisionMcps, provisionOwnMcp, sharedMcps, sqlOf } from "@answerable/mcp-postgres"
 import { mcpPostgresTestConfig } from "@answerable/mcp-postgres/testing"
 import { Client } from "pg"
 import { migrateDeclared } from "./migrate-mcps"
 
-// Three MCPs laid out as bun mcp lays them out, in a repository of the test's own: two shared, one of them narrowing its grants in
-// src/db/grants.ts, and one with a database of its own; each provisioned as the bootstrap provisions it, then migrated by the Job's code.
+// Three MCPs laid out as bun mcp lays them out, in a repository of the test's own: two shared, and one with a database of its own; each
+// provisioned as the bootstrap provisions it, then migrated by the Job's code.
 const root = mkdtempSync(join(tmpdir(), "answerable-migrate-mcps-"))
 const shared = "answerable_toolbox_test_migrate"
 const own = { database: "answerable_toolbox_test_migrate_own", owner: "answerable_mcp_tbxmigc_owner", runtime: "answerable_mcp_tbxmigc_runtime" }
@@ -31,20 +31,18 @@ async function on(database: string, ...statements: string[]) {
   }
 }
 
-/** Write an MCP's drizzle folder of one migration, `statements` joined as drizzle-kit joins them, and its grants file when given. */
-async function mcp(name: string, statements: string[], grants?: string) {
+/** Write an MCP's drizzle folder of one migration, `statements` joined as drizzle-kit joins them. */
+async function mcp(name: string, statements: string[]) {
   const dir = join(root, "mcps", name)
   await Bun.write(join(dir, "mcp.json"), JSON.stringify({ name }))
   await Bun.write(join(dir, "drizzle/0000_initial.sql"), statements.join("\n--> statement-breakpoint\n"))
   await Bun.write(join(dir, "drizzle/meta/_journal.json"), JSON.stringify({ version: "7", dialect: "postgresql", entries: [{ idx: 0, version: "7", when: 1792949252412, tag: "0000_initial", breakpoints: true }] }))
-  if (grants) await Bun.write(join(dir, "src/db/grants.ts"), grants)
 }
 const notes = (name: string) => [`CREATE TABLE "${name}"."notes" ("id" serial PRIMARY KEY NOT NULL, "body" text NOT NULL);`]
 
 beforeAll(async () => {
-  await ensureLocalMcpDatabases(superuser("postgres"))
   await mcp("tbxmiga", notes("tbxmiga"))
-  await mcp("tbxmigb", notes("tbxmigb"), `export const grants = [{ table: "notes", privileges: ["select"] }]\n`)
+  await mcp("tbxmigb", notes("tbxmigb"))
   await mcp("tbxmigc", notes("tbxmigc"))
   await mcp("tbxmigd", ['CREATE TABLE "tbxmigd"."broken" ("id" serial PRIMARY KEY NOT NULL, "body" text NOT NULL REFERENCES "tbxmigd"."missing"("id"));'])
   await Bun.write(join(root, "mcps/tbxmige/mcp.json"), JSON.stringify({ name: "tbxmige" }))
@@ -94,18 +92,18 @@ test("the first failure stops the run and names the MCP; the MCPs after it are n
   expect(await tables(shared, "tbxmiga")).toEqual([])
 })
 
-test("each MCP in the list's order: a shared one as the migrator, granting the serving login, an own one as its owner login, granting its runtime login; the grants from src/db/grants.ts when it exports them; a second run changes nothing", async () => {
+test("each MCP in the list's order: a shared one as the migrator, granting the serving login, an own one as its owner login, granting its runtime login, each table read and written; a second run changes nothing", async () => {
   const lines: string[] = []
   await migrate(["tbxmigb", "tbxmigc", "tbxmiga"], lines)
   expect(lines).toEqual([
-    "tbxmigb: migrating in answerable_toolbox_test_migrate as answerable_mcps_migrator, with src/db/grants.ts",
+    "tbxmigb: migrating in answerable_toolbox_test_migrate as answerable_mcps_migrator",
     `tbxmigc: migrating in ${own.database} as ${own.owner}`,
     "tbxmiga: migrating in answerable_toolbox_test_migrate as answerable_mcps_migrator",
   ])
   const migrated = { a: await tables(shared, "tbxmiga"), b: await tables(shared, "tbxmigb"), c: await tables(own.database, "tbxmigc") }
   const migrator = sharedMcps.logins.migrator
   expect(migrated.a).toContainEqual({ relname: "notes", owner: migrator, acl: `{${migrator}=arwdDxtm/${migrator},${serving}=arwd/${migrator}}` })
-  expect(migrated.b).toContainEqual({ relname: "notes", owner: migrator, acl: `{${migrator}=arwdDxtm/${migrator},${serving}=r/${migrator}}` })
+  expect(migrated.b).toContainEqual({ relname: "notes", owner: migrator, acl: `{${migrator}=arwdDxtm/${migrator},${serving}=arwd/${migrator}}` })
   expect(migrated.c).toContainEqual({ relname: "notes", owner: own.owner, acl: `{${own.owner}=arwdDxtm/${own.owner},${own.runtime}=arwd/${own.owner}}` })
   await migrate(["tbxmigb", "tbxmigc", "tbxmiga"])
   expect({ a: await tables(shared, "tbxmiga"), b: await tables(shared, "tbxmigb"), c: await tables(own.database, "tbxmigc") }).toEqual(migrated)

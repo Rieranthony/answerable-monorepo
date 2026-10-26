@@ -66,7 +66,7 @@ Your tool receives `person` and `organisation` in its context, and nothing to as
 
 | Field | Where it comes from |
 | --- | --- |
-| `person.id`, `person.membershipId`, `organisation.id`, `client.id` | The token, checked on every call |
+| `person.id`, `person.membershipId`, `organisation.id` | The token, checked on every call |
 | `person.name`, `person.email`, `person.groups`, `organisation.name`, `organisation.slug` | Answerable ID's admin API, read for you before your code runs and kept for 60 seconds. The Toolbox has a machine client of its own for this, for its hub and every MCP it serves alone |
 
 If Answerable ID cannot be read, the call answers `UPSTREAM_UNAVAILABLE` and your code does not run. A person whose membership is no longer in force is refused with `PERMISSION_DENIED`. [The caller](/docs/mcp/tools#the-caller) has the fields and an example, and [Add a tool](/docs/mcp/add-a-tool#what-every-tool-receives) the whole context.

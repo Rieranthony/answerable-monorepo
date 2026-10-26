@@ -2,7 +2,7 @@
 // provisioned and migrated as the deployment does it (@answerable/mcp-postgres).
 import { existsSync, readdirSync } from "node:fs"
 import { dirname, join } from "node:path"
-import { ensureLocalMcpDatabases, migrateMcp, ownMcpDatabase, provisionMcps, provisionOwnMcp, sharedMcps, sqlOf, withoutSchemaCreation, type Grant } from "@answerable/mcp-postgres"
+import { migrateMcp, ownMcpDatabase, provisionMcps, provisionOwnMcp, sharedMcps, sqlOf, withoutSchemaCreation } from "@answerable/mcp-postgres"
 import { is } from "drizzle-orm"
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core"
 import { Client } from "pg"
@@ -57,29 +57,25 @@ async function connected(url: URL, work: (client: Client) => Promise<unknown>) {
 }
 
 /**
- * Provision and migrate the MCP's local development schema, as the deployment does: the local databases first when missing, then, shared, its
- * schema in `answerable_mcps`, provisioned as the administrator and migrated as the migrator login, granting the Toolbox's serving login; or,
- * own, its database `answerable_mcp_<name>` and its two logins, migrated as its owner login, granting its runtime login. The logins have the
- * development password. The grants are those `src/db/grants.ts` exports as `grants`, else every table read and written. The admin URL is the root
- * `.env`'s, wherever it runs (`readSettings`). What it did, in words.
+ * Provision and migrate the MCP's local development schema, as the deployment does: shared, its schema in `answerable_mcps`, provisioned as the
+ * administrator and migrated as the migrator login, granting the Toolbox's serving login every table read and written; or, own, its database
+ * `answerable_mcp_<name>` and its two logins, migrated as its owner login, granting its runtime login the same. The logins have the development
+ * password. The admin URL is the root `.env`'s, wherever it runs (`readSettings`). What it did, in words.
  */
 export async function migrateLocal(root: string, { name, database }: Declaration): Promise<string> {
   const admin = new URL((await readSettings(root)).settings.MCPS_DATABASE_ADMIN_URL)
   const cluster = new URL(admin)
   cluster.pathname = "/postgres"
-  await ensureLocalMcpDatabases(cluster.href).catch(unreachable(cluster))
   const dir = join(root, "mcps", name)
   const folder = join(dir, "drizzle")
   const migrations = existsSync(join(folder, "meta/_journal.json"))
-  const grantsFile = join(dir, "src/db/grants.ts")
-  const grants = existsSync(grantsFile) ? ((await import(grantsFile)) as { grants?: readonly Grant[] }).grants : undefined
-  const done = `${migrations ? "migrated" : "provisioned; no migration yet"}${grants ? ", with src/db/grants.ts" : ""}`
+  const done = migrations ? "migrated" : "provisioned; no migration yet"
   // `admin`'s server and database as `login`, with the development password.
   const as = (login: string, pathname = admin.pathname) => Object.assign(new URL(admin), { username: login, password: "answerable", pathname })
   if (database === "shared") {
     const { migrator, toolbox } = sharedMcps.logins
     await connected(admin, client => provisionMcps(sqlOf(client), { mcps: [{ name }], logins: sharedMcps.logins }))
-    if (migrations) await connected(as(migrator), client => migrateMcp({ client, name, folder, serving: toolbox, grants }))
+    if (migrations) await connected(as(migrator), client => migrateMcp({ client, name, folder, serving: toolbox }))
     return `schema ${name} in ${admin.pathname.slice(1)}: ${done}`
   }
   const { database: own, owner, runtime } = ownMcpDatabase(name)
@@ -92,7 +88,7 @@ export async function migrateLocal(root: string, { name, database }: Declaration
   })
   await connected(as(owner, `/${own}`), async client => {
     await provisionOwnMcp(sqlOf(client), { name, owner, runtime })
-    if (migrations) await migrateMcp({ client, name, folder, serving: runtime, grants })
+    if (migrations) await migrateMcp({ client, name, folder, serving: runtime })
   })
   return `schema ${name} in ${own}: ${done}`
 }

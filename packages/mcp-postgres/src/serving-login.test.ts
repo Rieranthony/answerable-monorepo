@@ -1,12 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { Pool } from "pg"
 import { connect } from "./connect"
-import { ensureLocalMcpDatabases } from "./local"
 import { migrateMcp } from "./migrate-mcp"
 import { roleLock, sharedMcps } from "./names"
 import { provisionMcps, sqlOf } from "./provision"
 import { assertServingLogin } from "./serving-login"
-import { as, clientOf, clusterUrl, fixtureFolder, forget, mcpsUrl, testLogin } from "./test/mcps"
+import { as, clientOf, fixtureFolder, forget, mcpsUrl, testLogin } from "./test/mcps"
 
 const admin = new Pool({ connectionString: mcpsUrl, max: 1 })
 // Under the lock statements on a database's privileges take: provisioning in another suite grants on answerable_mcps_test's own catalogue row meanwhile.
@@ -14,7 +13,6 @@ const run = (statements: string) => admin.query(`begin; select pg_advisory_xact_
 let login: Awaited<ReturnType<typeof testLogin>>
 let db: ReturnType<typeof connect>
 beforeAll(async () => {
-  await ensureLocalMcpDatabases(clusterUrl)
   await forget(admin, "mpgfixa", "mpgfixb")
   login = await testLogin(admin)
   await provisionMcps(sqlOf(admin), { mcps: [{ name: "mpgfixa" }, { name: "mpgfixb" }], logins: { ...sharedMcps.logins, toolbox: login.name } })

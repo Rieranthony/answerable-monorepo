@@ -6,11 +6,10 @@ import { ConfigError } from "@answerable/config"
 import { mcpCliConfig } from "./config"
 import { Refusal } from "./io"
 
-/** The variables of the root `.env` with the process's own on top, as Bun gives a script run with `--env-file=.env`; an empty value counts as unset. */
+/** The variables of the root `.env` with the process's own on top, as Bun gives a script run with `--env-file=.env`. */
 async function readEnvironment(root: string): Promise<Record<string, string>> {
   const file = Bun.file(join(root, ".env"))
-  const merged: Record<string, string | undefined> = { ...((await file.exists()) ? parseEnv(await file.text()) : {}), ...process.env }
-  return Object.fromEntries(Object.entries(merged).filter((entry): entry is [string, string] => Boolean(entry[1])))
+  return { ...((await file.exists()) ? parseEnv(await file.text()) : {}), ...process.env } as Record<string, string>
 }
 
 /**

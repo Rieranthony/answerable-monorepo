@@ -69,12 +69,6 @@ export function schemaTs({ name, tool }: Answers) {
 //     organisation_id: pg.uuid().notNull(),
 //     name: pg.text().notNull(),
 //   }, table => [organisationIsolation(table.organisation_id)]).enableRLS()
-//
-// The serving login reads and writes every table here. To narrow that, export grants from src/db/grants.ts, which
-// bun mcp db ${name} migrate reads:
-//
-//   import type { Grant } from "@answerable/mcp-postgres"
-//   export const grants: Grant[] = [{ table: "projects", privileges: ["select", "insert"] }]
 export const ${schemaBinding(name)} = pg.pgSchema("${name}")
 ${domain ? tableTs(name, domain) : ""}`
 }

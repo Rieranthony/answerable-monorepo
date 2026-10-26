@@ -120,10 +120,10 @@ test("inside a pod it reads the mounted ServiceAccount's token, certificate auth
     const kube = inClusterKubernetes({ KUBERNETES_SERVICE_HOST: "10.96.0.1", KUBERNETES_SERVICE_PORT: "6443" }, { directory, fetch: recorded.fetch })
     await kube.readSecret("id-database")
     expect(recorded.calls[0]).toMatchObject({ url: `https://10.96.0.1:6443${secretPath}/id-database`, headers: { Authorization: "Bearer mounted-token" }, ca: "MOUNTED CA" })
-    // OPS_NAMESPACE overrides the mounted namespace; without the service variables the in-cluster name is used.
+    // Without the service variables the in-cluster name is used.
     const other = recordedFetch({})
-    await inClusterKubernetes({ OPS_NAMESPACE: "elsewhere" }, { directory, fetch: other.fetch }).readSecret("x")
-    expect(other.calls[0]!.url).toBe("https://kubernetes.default.svc/api/v1/namespaces/elsewhere/secrets/x")
+    await inClusterKubernetes({}, { directory, fetch: other.fetch }).readSecret("x")
+    expect(other.calls[0]!.url).toBe(`https://kubernetes.default.svc${secretPath}/x`)
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }

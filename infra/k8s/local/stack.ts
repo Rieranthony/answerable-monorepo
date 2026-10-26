@@ -1,6 +1,7 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import type { DeclaredMcp } from "@answerable/mcp-postgres"
 import { generatedFiles } from "../../../scripts/mcp/generate"
 import pipelineImages from "../../pipeline/images.json"
 import { buildDependencies, charts, helmEnv, repo } from "../helm"
@@ -17,10 +18,8 @@ export const origin = (host: string) => `https://${host}:48443`
 export const images = pipelineImages
 export const image = (name: string) => `ghcr.io/rieranthony/answerable/${name}:local`
 
-/** An MCP of charts/answerable/mcps.json: where it runs, its database mode and its manifest's scopes. */
-type Declared = { name: string; serve: "toolbox" | "standalone" | "both"; database: "shared" | "own"; scopes: string[] }
 /** The MCPs the chart renders from charts/answerable/mcps.json, which every proof below reads rather than naming one. */
-export const declared = (JSON.parse(readFileSync(join(charts, "answerable/mcps.json"), "utf8")) as { mcps: Declared[] }).mcps
+export const declared = (JSON.parse(readFileSync(join(charts, "answerable/mcps.json"), "utf8")) as { mcps: DeclaredMcp[] }).mcps
 /** The MCPs the Toolbox serves alone, each at its path on the mcp host. */
 export const servedAlone = declared.filter(mcp => mcp.serve !== "toolbox")
 /** The servers the register Job starts. */
@@ -237,7 +236,7 @@ async function nextRelease(workdir: string, change: (declaration: { name: string
   const dockerfile = join(workdir, "next-image")
   await Bun.write(join(dockerfile, "mounted.generated.ts"), files["mcps/toolbox/src/mounted.generated.ts"]!)
   await Bun.write(join(dockerfile, "Dockerfile"), `FROM ${image("mcps")}\nCOPY mounted.generated.ts /app/mcps/toolbox/src/mounted.generated.ts\n`)
-  return { chart, image: dockerfile, declared: (JSON.parse(files["charts/answerable/mcps.json"]!) as { mcps: Declared[] }).mcps }
+  return { chart, image: dockerfile, declared: (JSON.parse(files["charts/answerable/mcps.json"]!) as { mcps: DeclaredMcp[] }).mcps }
 }
 
 /** How long any Helm call may wait: well inside the 10 minutes of the slowest test, so that a hang fails with its diagnosis. */

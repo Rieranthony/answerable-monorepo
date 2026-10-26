@@ -1,7 +1,8 @@
+import type { DeclaredMcp } from "@answerable/mcp-postgres"
 import type { EnvironmentName, Hosts } from "./environments"
 
-/** An MCP as `charts/answerable/mcps.json` declares it: what the smoke test needs of it. */
-export type DeclaredMcp = { name: string; serve: "toolbox" | "standalone" | "both" }
+/** An MCP of `charts/answerable/mcps.json`, as far as the smoke test reads it. */
+type Served = Pick<DeclaredMcp, "name" | "serve">
 
 /** The part of `fetch` the smoke test uses; tests pass a fake. */
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>
@@ -127,7 +128,7 @@ function resourceMetadata(name: string, host: string, issuer: string, path = "")
   }
 }
 
-function checksFor(hosts: Hosts, mcps: readonly DeclaredMcp[]): Check[] {
+function checksFor(hosts: Hosts, mcps: readonly Served[]): Check[] {
   const issuer = `https://${hosts.id}`
   const discoveryUrl = `${issuer}/.well-known/openid-configuration`
   return [
@@ -169,7 +170,7 @@ function checksFor(hosts: Hosts, mcps: readonly DeclaredMcp[]): Check[] {
  * metadata; and each `standalone` and `both` MCP's metadata on the `mcp` host, where the Toolbox serves it alone. A failing check is retried
  * until the shared `timeoutMs` has passed, because a rollout and a first certificate take time.
  */
-export async function runSmoke(hosts: Hosts, mcps: readonly DeclaredMcp[], options: SmokeOptions): Promise<CheckResult[]> {
+export async function runSmoke(hosts: Hosts, mcps: readonly Served[], options: SmokeOptions): Promise<CheckResult[]> {
   const context = createContext(options)
   const deadline = options.now() + options.timeoutMs
   const results: CheckResult[] = []

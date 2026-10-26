@@ -15,7 +15,6 @@
 {{ include "answerable.secretEnv" (dict "name" "ADMIN_ID_CLIENT_SECRET" "secret" "admin-id-client" "key" "ADMIN_ID_CLIENT_SECRET") }}
 {{ include "answerable.secretEnv" (dict "name" "ADMIN_DATABASE_URL" "secret" "admin-database" "key" "ADMIN_DATABASE_URL") }}
 {{- end -}}
-{{- if .Values.adminMcp.enabled }}
 {{ include "answerable.server" (dict
   "root" .
   "component" "admin-mcp"
@@ -28,4 +27,3 @@
   "readiness" "/health"
   "liveness" ""
   "clientSecret" "admin-id-client") }}
-{{- end }}

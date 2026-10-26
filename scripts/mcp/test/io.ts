@@ -13,7 +13,7 @@ function capture() {
 }
 
 /** A prompt as the stand-ins saw it: which, its message, and its choices and default for a select, or what its check refused for a text. */
-export type Asked = { kind: "text" | "select" | "password"; message: string; placeholder?: string; initialValue?: unknown; options?: unknown[]; refused: string[] }
+type Asked = { kind: "text" | "select" | "password"; message: string; placeholder?: string; initialValue?: unknown; options?: unknown[]; refused: string[] }
 
 /**
  * Prompts that answer from `answers`, in order. A text answer its check refuses is recorded, and the next answer is tried, as a person retyping

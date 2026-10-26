@@ -40,7 +40,7 @@ Define it in `src/db/schema.ts`, with `acmeSchema.table(…)`. This is `mcps/exa
 
 **The rule for filtering by organisation.** A query on a table with the policy needs no filter on the organisation: Postgres adds it. Data from anywhere else, such as an upstream API or a table without the policy, is constrained by `organisation.id` in your code, so that another organisation's data is not found, never forbidden.
 
-**A table with no `organisation_id` is shared by every organisation.** That is an exception, and a reviewer should see why. Write the reason in a comment above the table. The serving login can read and write every table. To narrow it, export `grants` from `src/db/grants.ts`, as the comment in the schema file shows; `bun mcp db acme migrate` and every deploy read it.
+**A table with no `organisation_id` is shared by every organisation.** That is an exception, and a reviewer should see why. Write the reason in a comment above the table. The serving login can read and write every table; row-level security, not grants, limits which rows.
 
 Then, in order:
 

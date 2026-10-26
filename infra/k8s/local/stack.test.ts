@@ -631,13 +631,11 @@ describe("after the root lock, a deploy with a new standalone MCP", () => {
     return (await viaIngress(`${origin(hosts.id)}/api/admin/v1${path}`, { headers: { authorization: `Bearer ${token}` } })).json() as Promise<Record<string, unknown>>
   }
 
-  test("registers it as ops-register, with no root secret and no staff token: its resource, its Claude Code client and their link", () => watched("the deploy after the lock", 540_000, async () => {
+  test("registers it as ops-register, with no root secret: its resource, its Claude Code client and their link", () => watched("the deploy after the lock", 540_000, async () => {
     next = await step("build the next release: example served both", () => stack!.next(declaration => {
       if (declaration.name === added) declaration.serve = "both"
     }))
     expect(next.declared.find(mcp => mcp.name === added)?.serve).toBe("both")
-    // Nobody placed a staff token.
-    expect((await stack!.kubectl(["get", "secret", "ops-staff-token", "-n", "answerable"], { allowFailure: true })).exitCode).toBe(1)
     // As the deploy runs it: bootstrap and register on, the new image.
     await step("deploy the next release", () => stack!.release(["ops.bootstrap=true", "ops.register=true", ...next.sets], { chart: next.chart }))
     const log = await jobLog("ops-register")

@@ -1,6 +1,6 @@
 import { ToolError, type Profile, type UserPrincipal } from "@answerable/mcp"
 import { z } from "zod"
-import { found, type IdAdmin } from "./index"
+import { found, type IdAdmin } from "@answerable/id-admin"
 
 // The fields of ID's member and organisation reads that a profile needs (apps/id/openapi.admin.json).
 const window = { validFrom: z.string().nullable(), validUntil: z.string().nullable() }

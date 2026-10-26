@@ -1,12 +1,12 @@
 // The variables bun mcp reads: the development Postgres's shared MCP database, and the local ID's machine client and organisation that bun mcp setup makes.
-import { defineConfig, locally } from "@answerable/config"
+import { defineConfig } from "@answerable/config"
 import { z } from "zod"
 import { idConfig } from "../../apps/id/src/config"
 
 /** An organisation's slug: lowercase letters and digits, words joined by single hyphens. */
 export const organisationSlug = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
-// ID's root secret as ID's own definition defaults it locally, so that the two never differ.
+// ID's root secret as ID's own definition sets it locally, so that the two never differ.
 const idRootSecret = idConfig.fields.find(field => field.name === "ROOT_ADMIN_SECRET")!
 
 export const mcpCliConfig = defineConfig("bun mcp", {
@@ -26,13 +26,13 @@ export const mcpCliConfig = defineConfig("bun mcp", {
   },
   MCP_DEV_ORGANISATION: {
     schema: z.string().regex(organisationSlug, "an organisation's slug: lowercase letters and digits, words joined by single hyphens"),
-    defaults: locally("answerable"),
+    local: "answerable",
     doc: "The slug of the organisation bun mcp dev gives access to the MCP it runs, so that you can call every tool: your local ID's platform organisation unless bun mcp setup --organisation says another",
   },
   ROOT_ADMIN_SECRET: {
     schema: z.string().min(32).optional(),
     secret: true,
-    defaults: idRootSecret.defaults,
+    local: idRootSecret.local,
     doc: "ID's root bearer, which bun mcp setup uses while ID's root is unlocked: ID's own local default unless .env sets another",
   },
 })

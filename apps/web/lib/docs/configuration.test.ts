@@ -61,9 +61,8 @@ test("several groups make one table, each variable once under the first group th
   const names = rows.map((row) => row[0])
 
   expect(names.filter((name) => name === "`NODE_ENV`")).toHaveLength(1)
-  expect(names.slice(-5)).toEqual([
+  expect(names.slice(-4)).toEqual([
     "`TOOLBOX_DATABASE_MIGRATION_URL`",
-    "`TOOLBOX_DATABASE_RUNTIME_ROLE`",
     "`MCPS_DATABASE_MIGRATION_URL`",
     "`MCPS_DECLARED`",
     "`TOOLBOX_TEST_DATABASE_URL`",
@@ -98,17 +97,10 @@ test("a row says what the variable defaults to and where a deployment's value co
     configurationRow({ ...field, secret: true, source: "deploy" }).slice(1, 4),
   ).toEqual(["Yes", "Required", "The deploy step, from the GitHub environment"])
   expect(configurationRow({ ...field, optional: true })[2]).toBe("Optional")
-  expect(
-    configurationRow({
-      ...field,
-      defaults: { development: "a", test: "a" },
-    })[2],
-  ).toBe("`a` locally; required in production")
-  expect(
-    configurationRow({
-      ...field,
-      optional: true,
-      defaults: { development: "a", test: "b" },
-    })[2],
-  ).toBe("`a` in development, `b` in test; optional in production")
+  expect(configurationRow({ ...field, local: "a" })[2]).toBe(
+    "`a` locally; required in production",
+  )
+  expect(configurationRow({ ...field, optional: true, local: "a" })[2]).toBe(
+    "`a` locally; optional in production",
+  )
 })

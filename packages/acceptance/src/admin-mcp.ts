@@ -89,7 +89,7 @@ export async function startAdminStack(id: Id, { adminHost, toolboxHost, fetch }:
   return {
     /** The admin MCP, for a critical operation to need a company sign-in at most `freshSeconds` old (by default 1,800). Each call makes a server on the same database and the same machine client. */
     adminMcp: (freshSeconds?: number) => createAdminMcp({
-      auth: { issuer: manifest.idOrigin, resource: adminResource }, db: adminDb.runtime, id: ids, platform: learned, freshSeconds, toolbox: { resource: toolboxAdmin }, standaloneOrigin: new URL(toolboxResource).origin,
+      auth: { issuer: manifest.idOrigin, resource: adminResource }, db: adminDb.runtime, id: ids, platform: learned, freshSeconds: freshSeconds ?? 1800, toolbox: { resource: toolboxAdmin }, standaloneOrigin: new URL(toolboxResource).origin,
     }),
     toolbox,
     /** Each role's group in the platform organisation. */

@@ -3,7 +3,7 @@
 import inventory from "../../../../packages/config/inventory.json"
 import type { FieldMeta } from "../../../../packages/config/src"
 
-type Group = { name: string; reader: string; fields: FieldMeta[] }
+type Group = { name: string; fields: FieldMeta[] }
 
 const groups = inventory as Group[]
 
@@ -16,21 +16,10 @@ const deployedFrom: Record<NonNullable<FieldMeta["source"]>, string> = {
   operator: "An operator, when needed",
 }
 
-function defaultOf({ fallback, defaults, optional }: FieldMeta) {
+function defaultOf({ fallback, local, optional }: FieldMeta) {
   if (fallback !== undefined) return fallback ? `\`${fallback}\`` : "Empty"
-  if (!defaults) return optional ? "Optional" : "Required"
-  const { development, test } = defaults
-  const local =
-    development === test
-      ? `\`${development}\` locally`
-      : [
-          development && `\`${development}\` in development`,
-          test && `\`${test}\` in test`,
-        ]
-          .filter(Boolean)
-          .join(", ")
-
-  return `${local}; ${optional ? "optional" : "required"} in production`
+  if (local === undefined) return optional ? "Optional" : "Required"
+  return `\`${local}\` locally; ${optional ? "optional" : "required"} in production`
 }
 
 export const configurationHeaders = [
@@ -54,7 +43,7 @@ export function configurationRow(field: FieldMeta) {
 
 /**
  * The rows of one inventory group, or of several in one table: each variable once, under the first group that reads
- * it, as `default.env` lists them. An unknown group name throws, so the page fails to build.
+ * it. An unknown group name throws, so the page fails to build.
  */
 export function configurationRows(group: string | string[]) {
   const seen = new Set<string>()

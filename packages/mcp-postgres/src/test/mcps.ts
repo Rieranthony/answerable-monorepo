@@ -1,13 +1,10 @@
 import { fileURLToPath } from "node:url"
 import { Client, Pool } from "pg"
 import { roleLock } from "../names"
-import { mcpPostgresTestConfig } from "../testing"
+import { mcpPostgresTestConfig } from "../mcp-test-database"
 
 /** The shared MCP test database, `answerable_mcps_test`, as the development superuser (`MCPS_TEST_DATABASE_URL`). */
 export const mcpsUrl = mcpPostgresTestConfig.read(process.env).MCPS_TEST_DATABASE_URL
-
-/** A superuser URL to the development cluster's `postgres` database, which `ensureLocalMcpDatabases` takes. */
-export const clusterUrl = Object.assign(new URL(mcpsUrl), { pathname: "/postgres" }).href
 
 /** `url` with `login` and its password in place of the superuser's. */
 export function as(login: string, password = "answerable", url = mcpsUrl) {

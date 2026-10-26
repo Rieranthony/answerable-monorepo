@@ -42,7 +42,7 @@ The hostnames follow from the environment name (`staging` is `answerable-staging
 
 **A changed secret rolls ID on the next tag.** `idEnvChecksum` is the SHA-256 of `id-env`'s values (keys sorted, as JSON), which the chart puts on ID's pods. A new tag of the same commit resolves the same digests, so without it Helm would change nothing in ID's pods and they would keep the old values. The Toolbox and the admin MCP do not read `id-env`.
 
-**Every deploy registers.** `ops-register` runs in every upgrade, as its own machine client, `ops-register`, which the first run mints with the root secret and keeps in `ops-id-client`: it registers what the release's list of MCPs needs in ID, changing only what differs, and starts the servers that wait at zero replicas for their client Secrets (`toolbox-id-client`, `admin-id-client`). A failed `register` fails the upgrade and Helm rolls the release back, as a failed migration does: the release is its images and what they need, ID's rows included, and ID itself rolls in the same release. An environment whose root locked before `ops-register` existed needs a staff token in `ops-staff-token` for that one deploy ([Register again](#register-again)), or it rolls back.
+**Every deploy registers.** `ops-register` runs in every upgrade, as its own machine client, `ops-register`, which the first run mints with the root secret and keeps in `ops-id-client`: it registers what the release's list of MCPs needs in ID, changing only what differs, and starts the servers that wait at zero replicas for their client Secrets (`toolbox-id-client`, `admin-id-client`). A failed `register` fails the upgrade and Helm rolls the release back, as a failed migration does: the release is its images and what they need, ID's rows included, and ID itself rolls in the same release. An environment whose root locked before `ops-register` existed needs break glass for that one deploy ([Register again](#register-again)), or it rolls back.
 
 `helm history answerable -n answerable` is the deploy log.
 
@@ -55,13 +55,7 @@ The hostnames follow from the environment name (`staging` is `answerable-staging
 
 ## Register again
 
-Every deploy registers, so a changed registration needs only a tag. `ops.yml` with `register` runs it without a deploy, to rotate a machine client's secret (empty its key first), and restarts the servers afterwards so that they read the new client secrets. It needs a staff token only to mint or rotate `register`'s own client once root has locked: put the token in the Secret the Job reads,
-
-```bash
-kubectl -n answerable create secret generic ops-staff-token --from-literal=OPS_ID_TOKEN=<staff token>
-```
-
-then run the workflow, or tag, and delete the Secret when you are done.
+Every deploy registers, so a changed registration needs only a tag. `ops.yml` with `register` runs it without a deploy, to rotate a machine client's secret (empty its key first), and restarts the servers afterwards so that they read the new client secrets. It needs the root secret only to mint or rotate `register`'s own client, which once root has locked takes break glass: `ROOT_ADMIN_BREAK_GLASS: "true"` under `id.env` in the environment's overlay for one tag, and a tag without it after ([the runbook](../README.md#register-again)).
 
 ## Roll back
 
@@ -77,7 +71,7 @@ export KUBE_SERVER=https://… KUBE_CA=… KUBE_TOKEN=…   # the deployer Servi
 export BETTER_AUTH_SECRET=… ROOT_ADMIN_SECRET=… MICROSOFT_CLIENT_ID=… MICROSOFT_CLIENT_SECRET=…   # deploy only
 
 bun infra/pipeline/src/cli.ts deploy --environment staging --image-tag sha-<40 hex> [--image-digest <image>=sha256:<hex> for each image] [--timeout 10m]
-bun infra/pipeline/src/cli.ts run-job <bootstrap|register|make-admin> --environment staging [--email you@answerable.org] [--timeout 10m]
+bun infra/pipeline/src/cli.ts run-job <register|make-admin> --environment staging [--email you@answerable.org] [--timeout 10m]
 bun infra/pipeline/src/cli.ts smoke --environment staging --wait 60
 ```
 

@@ -3,11 +3,10 @@ import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Client, Pool } from "pg"
-import { ensureLocalMcpDatabases } from "./local"
 import { migrateMcp, migrateMcps, withoutSchemaCreation, type McpMigration } from "./migrate-mcp"
 import { sharedMcps } from "./names"
 import { provisionMcps, sqlOf } from "./provision"
-import { as, clientOf, clusterUrl, fixtureFolder, forget, mcpsUrl, testLogin } from "./test/mcps"
+import { as, clientOf, fixtureFolder, forget, mcpsUrl, testLogin } from "./test/mcps"
 
 const admin = new Pool({ connectionString: mcpsUrl, max: 1 })
 const serving = sharedMcps.logins.toolbox
@@ -16,7 +15,6 @@ const a: McpMigration = { name: "mpgfixa", folder: fixtureFolder("mpgfixa"), ser
 const b: McpMigration = { name: "mpgfixb", folder: fixtureFolder("mpgfixb"), serving }
 const provision = () => provisionMcps(sqlOf(admin), { mcps: [{ name: "mpgfixa" }, { name: "mpgfixb" }], logins: sharedMcps.logins })
 beforeAll(async () => {
-  await ensureLocalMcpDatabases(clusterUrl)
   migrator = await clientOf(as(sharedMcps.logins.migrator))
 })
 // Each test starts from freshly provisioned, empty schemas, as the migration Job finds a new MCP.
@@ -77,17 +75,10 @@ test("a second run with nothing pending changes nothing", async () => {
   expect(await receipts()).toEqual(applied)
 })
 
-test("by default the serving login reads and writes every table and uses its sequence, and has nothing of the journal; PUBLIC has nothing", async () => {
+test("the serving login reads and writes every table and uses its sequence, and has nothing of the journal; PUBLIC has nothing", async () => {
   await migrateMcp({ ...a, client: migrator })
   expect(await reach(serving)).toEqual({ notes: "DELETE, INSERT, SELECT, UPDATE", notes_id_seq: "USAGE", projects: "DELETE, INSERT, SELECT, UPDATE" })
   expect(await rows("select count(*)::int as public from pg_class c, aclexplode(c.relacl) acl where c.relnamespace = 'mpgfixa'::regnamespace and acl.grantee = 0")).toEqual([{ public: 0 }])
-})
-
-test("narrowed grants are exact, and the default comes back when they go", async () => {
-  await migrateMcp({ ...a, client: migrator, grants: [{ table: "notes", privileges: ["select", "insert"] }, { table: "projects", privileges: [] }] })
-  expect(await reach(serving)).toEqual({ notes: "INSERT, SELECT", notes_id_seq: "USAGE" })
-  await migrateMcp({ ...a, client: migrator })
-  expect(await reach(serving)).toEqual({ notes: "DELETE, INSERT, SELECT, UPDATE", notes_id_seq: "USAGE", projects: "DELETE, INSERT, SELECT, UPDATE" })
 })
 
 test("every privilege granted on the schema and its objects outside the grants is revoked, PUBLIC's and another login's included", async () => {
@@ -151,12 +142,8 @@ test("only a login that may create in the database migrates: the serving login i
   expect(await relations()).toEqual([])
 })
 
-test("a grant on the journal, an unknown privilege or a bad name is refused before any SQL runs", async () => {
+test("a bad MCP or login name is refused before any SQL runs", async () => {
   const unused = { query: () => { throw new Error("no SQL may run") } } as unknown as Client
-  await expect(migrateMcp({ ...a, client: unused, grants: [{ table: "__drizzle_migrations", privileges: ["select"] }] })).rejects.toThrow('A grant names "__drizzle_migrations", which is not a table the serving login may be granted')
-  await expect(migrateMcp({ ...a, client: unused, grants: [{ table: "notes; drop", privileges: ["select"] }] })).rejects.toThrow('A grant names "notes; drop"')
-  // @ts-expect-error a privilege the type does not allow
-  await expect(migrateMcp({ ...a, client: unused, grants: [{ table: "notes", privileges: ["truncate"] }] })).rejects.toThrow('Invalid privilege "truncate" on notes')
   await expect(migrateMcp({ ...a, client: unused, name: "Acme" })).rejects.toThrow('MCP name "Acme" must be')
   await expect(migrateMcp({ ...a, serving: "runtime; drop", client: unused })).rejects.toThrow('Invalid serving login name "runtime; drop"')
 })

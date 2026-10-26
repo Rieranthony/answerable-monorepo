@@ -61,7 +61,6 @@ test("a handler gets person, organisation and client with the resolver's values;
   expect((await client.callTool({ name: "people_whoami", arguments: {} })).structuredContent).toEqual({ name: "Ada Lovelace" })
   expect(seen[0]!.context.person).toEqual({ id: userId, membershipId, name: "Ada Lovelace", email: "ada@acme.example", groups: ada.person.groups })
   expect(seen[0]!.context.organisation).toEqual({ id: organizationId, name: "Acme", slug: "acme" })
-  expect(seen[0]!.context.client).toEqual({ id: "claude-code" })
   const renamed = await mcp.connect({ person: { name: "Grace Hopper" }, organisation: { slug: "navy" } })
   await renamed.callTool({ name: "people_whoami", arguments: {} })
   expect(seen[1]!.context.person).toMatchObject({ name: "Grace Hopper", email: "ada@acme.example" })

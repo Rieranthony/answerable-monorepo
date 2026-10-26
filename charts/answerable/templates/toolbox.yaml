@@ -25,7 +25,6 @@ hub and /health stay off that host.
 {{- end }}
 {{- end }}
 {{- end -}}
-{{- if .Values.toolbox.enabled }}
 {{ include "answerable.server" (dict
   "root" .
   "component" "toolbox"
@@ -47,5 +46,4 @@ hub and /health stay off that host.
 {{- if $paths }}
 ---
 {{ include "answerable.ingress" (dict "root" . "name" "mcp" "component" "toolbox" "host" .Values.hostnames.mcp "paths" $paths) }}
-{{- end }}
 {{- end }}

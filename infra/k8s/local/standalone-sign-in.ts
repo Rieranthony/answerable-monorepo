@@ -21,7 +21,7 @@ const input = JSON.parse(await Bun.stdin.text()) as StandaloneSignInInput
 const idOrigin = origin(hosts.id)
 const adminResource = `${origin(hosts.adminMcp)}/mcp`
 const mcpResource = `${origin(hosts.mcp)}/${input.mcp}/mcp`
-// Claude Code's callback, as register gave every host client (ops.claudeCallbackPort).
+// Claude Code's callback, as register gave every host client (OPS_CLAUDE_CALLBACK_PORT's 47700).
 const callback = "http://localhost:47700/callback"
 const tls = { ca: input.stackCa, ...input.originPullCert }
 

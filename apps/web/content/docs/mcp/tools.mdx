@@ -51,7 +51,7 @@ The description is what a model reads to choose a tool. Write operational docume
 
 | Field | Source |
 | --- | --- |
-| `person.id`, `person.membershipId`, `organisation.id`, `client.id` | The access token, verified offline against ID's published keys |
+| `person.id`, `person.membershipId`, `organisation.id` | The access token, verified offline against ID's published keys |
 | `person.name`, `person.email`, `person.groups`, `organisation.name`, `organisation.slug` | The server's [`profiles`](/docs/mcp/servers#who-is-calling), which reads them from Answerable ID's admin API before the handler runs, cached 60 seconds per member and per organisation |
 | `executionId`, `signal` | The server, for this call |
 

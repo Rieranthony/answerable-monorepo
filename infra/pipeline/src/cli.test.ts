@@ -133,7 +133,8 @@ describe("run-job", () => {
     for (const args of [
       ["run-job", "--environment", "staging"],
       ["run-job", "migrate", "--environment", "staging"],
-      ["run-job", "register", "bootstrap", "--environment", "staging"],
+      ["run-job", "register", "make-admin", "--environment", "staging"],
+      ["run-job", "bootstrap", "--environment", "staging"],
       ["run-job", "register"],
       ["run-job", "make-admin", "--environment", "staging"],
       ["run-job", "register", "--environment", "staging", "--image-tag", TAG],
@@ -235,7 +236,7 @@ describe("main", () => {
     const f = await fixture(() => {
       throw new Error("the runner broke")
     })
-    expect(await main(["run-job", "bootstrap", "--environment", "staging"], f.deps)).toBe(1)
+    expect(await main(["run-job", "register", "--environment", "staging"], f.deps)).toBe(1)
     expect(f.err()).toContain("unexpected error: ")
     expect(f.err()).toContain("the runner broke")
   })
@@ -246,7 +247,7 @@ describe("main", () => {
       error.stack = "Error\n    at somewhere"
       throw error
     })
-    expect(await main(["run-job", "bootstrap", "--environment", "staging"], f.deps)).toBe(1)
+    expect(await main(["run-job", "register", "--environment", "staging"], f.deps)).toBe(1)
     expect(f.err()).toContain("unexpected error: the runner broke\nError\n    at somewhere")
   })
 
@@ -254,7 +255,7 @@ describe("main", () => {
     const f = await fixture(() => {
       throw "plain text"
     })
-    expect(await main(["run-job", "bootstrap", "--environment", "staging"], f.deps)).toBe(1)
+    expect(await main(["run-job", "register", "--environment", "staging"], f.deps)).toBe(1)
     expect(f.err()).toContain("unexpected error: plain text")
   })
 })

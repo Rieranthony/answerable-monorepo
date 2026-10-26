@@ -1,5 +1,5 @@
 import { findInvalidTrustedProxies } from "@better-auth/core/utils/ip";
-import { defineConfig, locally } from "@answerable/config";
+import { defineConfig } from "@answerable/config";
 import { z } from "zod";
 
 const applicationSecrets = z.string().transform((value, context) => {
@@ -35,13 +35,7 @@ const applicationSecrets = z.string().transform((value, context) => {
 /** The largest value a Postgres integer setting accepts. */
 const maxInt32 = 2_147_483_647;
 
-const optionalCredential = z.preprocess(
-  (value) =>
-    typeof value === "string" && value.trim() === "" ? undefined : value,
-  z.string().min(1).optional(),
-);
-
-/** Every variable the service reads, with its local defaults; default.env at the repository root lists each one. */
+/** Every variable the service reads, with its local values; packages/config/inventory.json lists each one. */
 export const idConfig = defineConfig(
   "ID",
   {
@@ -61,25 +55,21 @@ export const idConfig = defineConfig(
     DATABASE_URL: {
       schema: z.url(),
       secret: true,
-      defaults: locally(
-        "postgres://answerable_id_runtime:answerable@localhost:47432/answerable_id",
-      ),
+      local: "postgres://answerable_id_runtime:answerable@localhost:47432/answerable_id",
       doc: "ID's Postgres URL as its restricted runtime login, never the schema owner",
       source: "cluster",
     },
     BETTER_AUTH_URL: {
       // One spelling of the origin, without a trailing slash, for the issuer, the pages and the admin audience.
       schema: z.url().transform((url) => url.replace(/\/+$/, "")),
-      defaults: locally("http://localhost:47300"),
+      local: "http://localhost:47300",
       doc: "ID's origin: the issuer, the pages' origin and the base of the admin API's audience",
       source: "chart",
     },
     BETTER_AUTH_SECRET: {
       schema: z.string().min(32),
       secret: true,
-      defaults: locally(
-        "development-only-better-auth-secret-never-for-production",
-      ),
+      local: "development-only-better-auth-secret-never-for-production",
       doc: "The application secret, at least 32 characters: signs cookies and encrypts what ID stores",
       source: "deploy",
     },
@@ -90,23 +80,23 @@ export const idConfig = defineConfig(
       source: "deploy",
     },
     GOOGLE_CLIENT_ID: {
-      schema: optionalCredential,
+      schema: z.string().optional(),
       doc: "The Google platform application's client ID; set it with GOOGLE_CLIENT_SECRET or leave both unset",
       source: "deploy",
     },
     GOOGLE_CLIENT_SECRET: {
-      schema: optionalCredential,
+      schema: z.string().optional(),
       secret: true,
       doc: "The Google platform application's client secret",
       source: "deploy",
     },
     MICROSOFT_CLIENT_ID: {
-      schema: optionalCredential,
+      schema: z.string().optional(),
       doc: "The Entra platform application's client ID; set it with MICROSOFT_CLIENT_SECRET or leave both unset",
       source: "deploy",
     },
     MICROSOFT_CLIENT_SECRET: {
-      schema: optionalCredential,
+      schema: z.string().optional(),
       secret: true,
       doc: "The Entra platform application's client secret",
       source: "deploy",
@@ -120,9 +110,7 @@ export const idConfig = defineConfig(
     ROOT_ADMIN_SECRET: {
       schema: z.string().min(32).optional(),
       secret: true,
-      defaults: locally(
-        "development-only-root-admin-secret-never-for-production",
-      ),
+      local: "development-only-root-admin-secret-never-for-production",
       doc: "The root bearer, at least 32 characters, for the first run; it stops working once a person holds platform:write",
       source: "deploy",
     },

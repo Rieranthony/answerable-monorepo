@@ -4,7 +4,8 @@ import { deploy, parseDigests, parseJob, runJob, type Deps } from "./deploy"
 import { CHART, hostsFor, parseEnvironment } from "./environments"
 import { PipelineError, UsageError } from "./errors"
 import { systemRunner, type Output, type Runner } from "./run"
-import { formatReport, runSmoke, smokePassed, type DeclaredMcp, type Fetch } from "./smoke"
+import type { DeclaredMcp } from "@answerable/mcp-postgres"
+import { formatReport, runSmoke, smokePassed, type Fetch } from "./smoke"
 
 /** Everything the command line touches outside itself. Tests pass fakes; {@link systemDeps} passes the real ones. */
 export type CliDeps = {
@@ -37,7 +38,7 @@ export function systemDeps(): CliDeps {
 
 const USAGE = `Usage:
   bun infra/pipeline/src/cli.ts deploy --environment <staging|production> --image-tag <sha-commit> [--image-digest <image>=sha256:<hex> for each image] [--timeout <10m>]
-  bun infra/pipeline/src/cli.ts run-job <bootstrap|register|make-admin> --environment <staging|production> [--email <address>] [--timeout <10m>]
+  bun infra/pipeline/src/cli.ts run-job <register|make-admin> --environment <staging|production> [--email <address>] [--timeout <10m>]
   bun infra/pipeline/src/cli.ts smoke --environment <staging|production> [--wait <seconds>] [--interval <seconds>]
 
 deploy pins the images of infra/pipeline/images.json (id, mcps, ops) by manifest digest: given with --image-digest for

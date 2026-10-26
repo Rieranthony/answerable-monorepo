@@ -26,8 +26,6 @@ export type ToolContext = Readonly<{
   person: Readonly<{ id: string; membershipId: string; name: string; email: string; groups: readonly Readonly<{ id: string; slug: string; name: string }>[] }>
   /** The organisation the person signed in to: `id` from the token (`principal.organizationId`); `name` and `slug` from the server's `profiles`. */
   organisation: Readonly<{ id: string; name: string; slug: string }>
-  /** The AI app the person uses, such as Claude Code: `id` is the token's OAuth client (`principal.clientId`). */
-  client: Readonly<{ id: string }>
   /** The verified token: person, organisation, membership, client and scopes, for anything the fields above do not cover. */
   principal: UserPrincipal
   /** A UUIDv7 minted for this call: the error envelope's `request_id`, and the id the server log names. */

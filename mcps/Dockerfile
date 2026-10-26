@@ -2,8 +2,8 @@
 # docker build -f mcps/Dockerfile -t answerable/mcps .
 # Each Deployment and Job chooses its server or script by command: bun mcps/toolbox/src/server.ts or bun mcps/admin/src/server.ts, and the
 # migrations bun mcps/toolbox/scripts/migrate.ts (the Toolbox's database, then every MCP) and bun mcps/admin/scripts/migrate.ts. A new MCP
-# needs no line here: every workspace under mcps/ is installed and copied. e2e's view is bundled when it is first imported, so there is no
-# build stage.
+# needs no line here: every workspace under mcps/ is installed and copied, and so is every package. e2e's view is bundled when it is first
+# imported, so there is no build stage.
 ARG BUN_IMAGE=oven/bun:1.3.1-slim@sha256:86604aff15a156a8854137896af174e2d29e2310f9c9f1aa63de13882e25893d
 
 # The lockfile, bunfig.toml (the linker) and every workspace's package.json, alone, so that the install layers change only when they do.
@@ -24,12 +24,8 @@ LABEL org.opencontainers.image.title="Answerable MCPs" \
       org.opencontainers.image.revision="${REVISION}"
 WORKDIR /app
 COPY --from=dependencies /app ./
-COPY packages/auth packages/auth
-COPY packages/config packages/config
-COPY packages/id-admin packages/id-admin
-COPY packages/mcp packages/mcp
-COPY packages/mcp-platform packages/mcp-platform
-COPY packages/mcp-postgres packages/mcp-postgres
+# Every package, so that an MCP may use any of them; .dockerignore leaves out their tests, Markdown, coverage and the acceptance kit.
+COPY packages packages
 COPY mcps mcps
 # Bun's transpiler cache would write under the home directory; the root filesystem is read-only. Each server listens on every address of its
 # pod, on its own port (47400, 47520).
