@@ -25,7 +25,7 @@ A **schema** is a named set of tables inside a Postgres database. Your MCP's sch
 | Schema `acme` | Your tables, and the record of the migrations applied to them | Through `src/db/schema.ts` |
 | Role `mcp_acme_owner` | Owns the schema. Migrations run as it. It cannot log in | No |
 | Role `mcp_acme` | What your tools run as. It can read and write the tables, and nothing outside the schema. It cannot log in | No |
-| Three logins in all, whatever the number of MCPs: `answerable_mcps_migrator`, `answerable_mcps_toolbox` and `answerable_mcps_standalone` | The migration Job, the Toolbox and the standalone server. Each takes your MCP's role for the length of a query | No |
+| Two logins in all, whatever the number of MCPs: `answerable_mcps_migrator` and `answerable_mcps_toolbox` | The migration Job and the Toolbox, which serves every MCP. Each takes your MCP's role for the length of a query | No |
 
 The logins and the Secrets that hold them do not grow with the number of MCPs. `src/db/schema.ts` starts like this:
 
@@ -66,7 +66,7 @@ Each action prints one line:
 
 ## Migrations ship by themselves
 
-Commit the migration with the code that needs it. On every deploy, to staging and to production, a Job named `mcps-migrate` applies each MCP's pending migrations in turn, before the new version of the servers starts. Each MCP's migrations are applied in one transaction. A migration that fails fails the deploy, which rolls back, and its log names the MCP. Another Job, `ops-bootstrap`, runs before it and makes the schema and roles of an MCP that is new. [Ship an MCP](/docs/mcp/deploy) lists the order.
+Commit the migration with the code that needs it. On every deploy, to staging and to production, the Job `toolbox-migrate` migrates the Toolbox's database, then applies each MCP's pending migrations in turn, before the new version of the servers starts. Each MCP's migrations are applied in one transaction. A migration that fails fails the deploy, which rolls back, and its log names the MCP. Another Job, `ops-bootstrap`, runs before it and makes the schema and roles of an MCP that is new. [Ship an MCP](/docs/mcp/deploy) lists the order.
 
 **Write every migration so the previous version still works.** The version before yours keeps serving while a deploy rolls out, and after a rollback. So add a column in one release, and remove the column the code stopped using in a later one. A migration that cannot be written that way needs a restore, not a rollback.
 
@@ -101,4 +101,4 @@ The code is the same in both. Tables are `pgSchema("acme")` tables either way, s
 
 <CliErrors ids={["unknown-action", "unexpected-flag", "mcp-required", "mcp-not-found", "table-outside-schema", "database-down", "migration-refused", "migration-edited"]} />
 
-A migration that fails in Postgres itself ends `database failed: acme: 0001_notes.sql failed: …`, with Postgres's own message. Fix the SQL in a migration that has not been applied, or write a new migration. The migration Job's log names the MCP: `kubectl -n answerable logs job/mcps-migrate`.
+A migration that fails in Postgres itself ends `database failed: acme: 0001_notes.sql failed: …`, with Postgres's own message. Fix the SQL in a migration that has not been applied, or write a new migration. The migration Job's log names the MCP: `kubectl -n answerable logs job/toolbox-migrate`.

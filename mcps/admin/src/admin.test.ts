@@ -5,7 +5,7 @@ import { errorOf, type TestMcp } from "@answerable/mcp/testing"
 import { connect, createEvidence } from "@answerable/mcp-postgres"
 import { rowsOf } from "@answerable/mcp-postgres/testing"
 import { createAdminMcp } from "./admin"
-import { createAdmin, resource, seed, type FakeId } from "./test/admin"
+import { createAdmin, resource, seed, standaloneOrigin, type FakeId } from "./test/admin"
 import { serving } from "./test/database"
 
 const login = await serving()
@@ -164,7 +164,7 @@ test("every call leaves one evidence row on the platform organisation's chain, a
 test("health answers ok only while the database answers", async () => {
   const own = connect(login.url, { max: 1 })
   const id = createFakeId({ clientId: "admin-mcp" })
-  const server = createAdminMcp({ auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(id.config), platform: id.organizationId })
+  const server = createAdminMcp({ auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(id.config), platform: id.organizationId, standaloneOrigin })
   const health = async () => {
     const response = await server.fetch(new Request("https://mcp.test/health"))
     return [response.status, await response.json()]

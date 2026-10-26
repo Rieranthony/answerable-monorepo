@@ -27,7 +27,7 @@ beforeAll(async () => {
   await ensureLocalMcpDatabases(clusterUrl)
   await forget(admin, "mpgfixa", "mpgfixb")
   login = await testLogin(admin)
-  await provisionMcps(sqlOf(admin), { mcps: [{ name: "mpgfixa", servedBy: ["toolbox"] }, { name: "mpgfixb", servedBy: ["toolbox"] }], prefix: "mcp_test", logins: { ...sharedMcps.logins, toolbox: login.name } })
+  await provisionMcps(sqlOf(admin), { mcps: [{ name: "mpgfixa" }, { name: "mpgfixb" }], prefix: "mcp_test", logins: { ...sharedMcps.logins, toolbox: login.name } })
   const migrator = await clientOf(as(sharedMcps.logins.migrator))
   try {
     await migrateMcps((["mpgfixa", "mpgfixb"] as const).map(name => ({ name, folder: fixtureFolder(name), mode: "shared", prefix: "mcp_test" })), () => migrator)

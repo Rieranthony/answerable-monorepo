@@ -2906,7 +2906,7 @@
       "name": "standalone_enable",
       "version": "2026-10-01",
       "kind": "mutate",
-      "description": "Prepare giving an organisation access to a standalone MCP, which the standalone server serves at its own URL: for each host client (claude-code-<name> unless named) its link to the MCP, the organisation's sign-in and MCP capabilities for both grant kinds, and the sign-in entitlement for everyone in it. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. People then need the MCP's scopes through that host client: access_grant them with clientId set to it, to the organisation, a group or a person, or pass everyone: true to grant them to the whole organisation in the same intent. Undo it with access_revoke. Safe to repeat.",
+      "description": "Prepare giving an organisation access to a standalone MCP, which the Toolbox serves at its own URL: for its host client, claude-code-<name>, its link to the MCP, the organisation's sign-in and MCP capabilities for both grant kinds, and the sign-in entitlement for everyone in it. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. People then need the MCP's scopes through that host client: access_grant them with clientId set to it, to the organisation, a group or a person, or pass everyone: true to grant them to the whole organisation in the same intent. Undo it with access_revoke. Safe to repeat.",
       "scopes": [
         "admin"
       ],
@@ -2938,19 +2938,8 @@
             "pattern": "^[a-z][a-z0-9]{0,11}$",
             "description": "The standalone MCP's name, as bun mcp list shows it, such as acme"
           },
-          "hostClientIds": {
-            "description": "The OAuth clients people use the MCP from; omit it for claude-code-<name>, which the deploy registers",
-            "minItems": 1,
-            "maxItems": 20,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200
-            }
-          },
           "everyone": {
-            "description": "Also grant the MCP's scopes to everyone in the organisation, through each host client; omit it to grant them with access_grant",
+            "description": "Also grant the MCP's scopes to everyone in the organisation, through its host client; omit it to grant them with access_grant",
             "type": "boolean"
           }
         },

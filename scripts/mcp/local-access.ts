@@ -21,7 +21,7 @@ async function widen(registrar: Registrar, path: string, key: string, needed: re
  */
 export async function giveStandaloneAccess(call: Call, organization: string, name: string, stack: Stack = local) {
   const registrar = createRegistrar(call)
-  const resource = `${stack.standalone}/${name}/mcp`
+  const resource = `${stack.toolbox}/${name}/mcp`
   const hostClientId = `claude-code-${name}`
   const registered = (await registrar.read(`/resources/${encodeURIComponent(resource)}`))!.body
   const mcpScopes = (registered.allowedScopes as string[]).filter(scope => scope !== "offline_access")

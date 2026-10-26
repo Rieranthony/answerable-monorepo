@@ -22,7 +22,7 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 | `packages/acceptance` | The acceptance kit and journeys: real ID, the official MCP OAuth client, a browser and ID's pages | Locally tested |
 | `scripts` | Repository scripts: `bun mcp`, which makes MCPs and tools and checks them, and `bun run env:inventory` | Locally tested |
 | `infra/civo` | Terraform for the two Civo environments, one root and a var file each: network, cluster, PostgreSQL 17, firewalls, the platform chart, the deployer, the Cloudflare zone with its certificates, and the GitHub environment's own settings and deploy secrets | Validated and tested with mocked providers; not applied |
-| `charts/answerable` | The Helm chart of ID, the Toolbox, the admin MCP and the standalone server, with every MCP of `mcps.json`, their migrations and the ops Jobs | Proved in the kind stack |
+| `charts/answerable` | The Helm chart of ID, the Toolbox, which serves every MCP of `mcps.json`, and the admin MCP, with their migrations and the ops Jobs | Proved in the kind stack |
 | `charts/platform` | The Helm chart of the cluster's edge: Traefik with the TLS option that demands Cloudflare's origin-pull certificate | Proved in the kind stack |
 | `infra/k8s` | The kind stack (`infra/k8s/local`): both charts and the images of `infra/pipeline/images.json` in a local cluster, `bun run infra:test`; and the chart tests | Locally tested |
 | `infra/ops` | The ops image: `bootstrap` (the database's certificate, databases and logins), `register` (the MCPs in ID, the staff domain and SSO provider) and `make-admin` (the first administrator), run as Kubernetes Jobs | Locally tested |
@@ -62,11 +62,10 @@ No `.env` is needed: every variable has a development default in code. A root `.
 | ---------- | --------- | ------------------------------------------------------------- |
 | `web`      | 47100     | Public site                                                   |
 | `id`       | 47300     | Answerable ID API and browser pages                           |
-| `toolbox`  | 47400     | The Toolbox MCP (`bun run toolbox:dev`)                       |
-| `standalone` | 47510   | Every standalone MCP at its path, e2e at `/e2e/mcp` (`bun run standalone:dev`) |
+| `toolbox`  | 47400     | The Toolbox MCP, and every standalone MCP at its path, e2e at `/e2e/mcp` (`bun run toolbox:dev`) |
 | `admin MCP` | 47520    | The admin MCP (`bun run admin:dev`)                           |
 | `kind stack` | 48443  | Traefik in the local cluster of `bun run infra:test`, with 47710 and 47700 below |
-| `postgres` | 47432     | `answerable_id`, plus `answerable_id_test` for the test suite; `answerable_toolbox` and `answerable_toolbox_test` for the Toolbox; `answerable_admin` and `answerable_admin_test` for the admin MCP; `answerable_standalone` and `answerable_standalone_test` for the standalone server; `answerable_mcp_postgres_test` for `packages/mcp-postgres`; `answerable_mcps` and `answerable_mcps_test` for every MCP made by `bun mcp`, a schema each |
+| `postgres` | 47432     | `answerable_id`, plus `answerable_id_test` for the test suite; `answerable_toolbox` and `answerable_toolbox_test` for the Toolbox; `answerable_admin` and `answerable_admin_test` for the admin MCP; `answerable_mcp_postgres_test` for `packages/mcp-postgres`; `answerable_mcps` and `answerable_mcps_test` for every MCP made by `bun mcp`, a schema each |
 
 The kind stack (`bun run infra:test`, cluster `answerable-local`, one per machine) owns `127.0.0.1:48443` (Traefik), `[::1]:48443` (the browser's edge), 47710 (the stand-in company directory) and 47700 (the OAuth callback), which the acceptance's lanes also use, so it runs on its own. The MCP acceptance (`bun run mcp:test:e2e`) owns 47532 (its own disposable PostgreSQL), 47600, 47602, 47603, 47604, 47605 and 47606 (the admin MCP), and never touches the normal ID database; run one acceptance at a time. `bun packages/acceptance/scripts/admin-lane.ts` keeps ID, the admin MCP and the Toolbox up on the same ports, with 47700 and 47701 for Claude Code's callbacks, for trying the onboarding story from Claude Code by hand ([Set up the admin MCP](apps/web/content/docs/admin/setup.mdx)); the admin journeys run the same story headlessly, and the lane cannot run beside the acceptance. Uncommon host ports so nothing clashes with other local projects. Answerable ID itself runs on the host at `http://localhost:47300`. Other commands: `bun run env:down` · `bun run env:reset` (wipes data) · `bun run test` (Answerable ID against Postgres, plus the web unit tests) · `bun run build` · `bun run lint`.
 
@@ -91,8 +90,8 @@ Every MCP gets a database linked to it and its sign-in through Answerable ID, se
 - [`packages/id-admin`](packages/id-admin/README.md) is the machine client on ID's admin API, with the fake ID for tests.
 - [`packages/mcp-postgres`](packages/mcp-postgres/README.md) is the Postgres side of every MCP: the intent store, the evidence chain, the drizzle base schema and a database for each MCP.
 - [`packages/mcp-platform`](packages/mcp-platform/README.md) is what every server Answerable runs shares: evidence, spans, health and each MCP's database.
-- [`scripts`](scripts) holds `bun mcp`: `new`, `add tool`, `list`, `check`, `db`, `setup`, `dev` and the generator of the lists the servers and the chart read.
-- [`mcps/toolbox`](mcps/toolbox/README.md) is the Toolbox, `mcps/standalone` serves every MCP that runs on its own URL, and [`mcps/admin`](mcps/admin/README.md) is the admin MCP for Answerable staff, each with databases of its own.
+- [`scripts`](scripts) holds `bun mcp`: `new`, `add tool`, `list`, `check`, `db`, `setup`, `dev` and the generator of the lists the Toolbox and the chart read.
+- [`mcps/toolbox`](mcps/toolbox/README.md) is the Toolbox, which also serves every MCP that runs on its own URL, and [`mcps/admin`](mcps/admin/README.md) is the admin MCP for Answerable staff, each with databases of its own.
 - [`mcps/e2e`](mcps/e2e/README.md) is the reference server and [`mcps/example`](mcps/example/README.md) the finished example.
 - [`packages/acceptance`](packages/acceptance/README.md) holds the real-ID acceptance kit and journeys.
 
@@ -102,7 +101,7 @@ Every MCP gets a database linked to it and its sign-in through Answerable ID, se
 | `bun run mcp:check <workspace>` | Typecheck, lint and test one workspace, such as `@answerable/mcp-e2e` |
 | `bun run mcp:test` | The suites of `packages/auth`, `packages/id-admin`, `packages/mcp`, `packages/mcp-postgres`, every server under `mcps/` and `bun mcp`'s; the Toolbox, the admin MCP, `packages/mcp-postgres`, `bun mcp` and every MCP with a database need the development Postgres |
 | `bun run mcp:test:e2e` | The journeys against real ID, a browser and the official MCP OAuth client (Docker) |
-| `bun run toolbox:dev` | Serve the Toolbox on 47400; `bun run standalone:dev` serves the standalone server on 47510 and `bun run admin:dev` the admin MCP on 47520 |
+| `bun run toolbox:dev` | Serve the Toolbox on 47400, with every standalone MCP at its path; `bun run admin:dev` serves the admin MCP on 47520 |
 
 The [standard](apps/web/content/docs/mcp/standard.mdx) says which rules the SDK, the conformance kit and the Toolbox enforce. [Connect Claude Code](apps/web/content/docs/mcp/claude-code.mdx) covers a real host; [The admin MCP](apps/web/content/docs/admin/index.mdx) covers the server for Answerable staff. Decisions: [MCP foundation](docs/07-mcp-platform-draft.md), [the capability platform](docs/08-capability-platform.md) and [the admin MCP](docs/11-admin-mcp.md); results: [evidence](reports/mcp-foundation-evidence.md). `mcps/retired.json` lists the names of MCPs that were removed: `bun mcp new` refuses them for ever, because what a name had in the databases and in ID would come back with it. Normal `bun dev` starts apps only.
 

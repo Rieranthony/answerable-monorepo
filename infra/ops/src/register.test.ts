@@ -12,9 +12,8 @@ const declared: RegisteredMcp[] = [
 ]
 
 // The first run: register's own client with the bearer, then, as that client, the docs' keys of apps/web/content/docs/toolbox/admin.mdx (Register
-// the Toolbox in ID) and apps/web/content/docs/admin/setup.mdx (Register the admin MCP), in their order, the standalone server's machine client,
-// and each standalone MCP. The Toolbox's staff client is the operator's, not the services', and is left out. A link's key carries the revision
-// its client had when register read it.
+// the Toolbox in ID) and apps/web/content/docs/admin/setup.mdx (Register the admin MCP), in their order, and each standalone MCP. The Toolbox's
+// staff client is the operator's, not the services', and is left out. A link's key carries the revision its client had when register read it.
 const minting = ["ops-register-v1", "ops-register-link-v1-r1", "ops-register-capability-v1"]
 const keys = [
   "toolbox-resource-v1", "toolbox-admin-resource-v1", "toolbox-hub-v1", "toolbox-hub-link-v1-r1", "toolbox-hub-capability-v1", "claude-code-toolbox-v1",
@@ -23,10 +22,9 @@ const keys = [
   "admin-login-entitlement-v1", "admin-resource-entitlement-v1",
   "admin-group-team-v1", "admin-role-team-v1", "admin-group-admin-v1", "admin-role-admin-v1", "admin-group-owner-v1", "admin-role-owner-v1",
   "admin-mcp-v1", "admin-mcp-link-id-v1-r1", "admin-mcp-capability-id-v1", "admin-mcp-link-toolbox-v1-r1", "admin-mcp-capability-toolbox-v1",
-  "standalone-hub-v1", "standalone-hub-link-v1-r1", "standalone-hub-capability-v1",
   "mcp-acme-resource-v1", "claude-code-acme-v1", "claude-code-acme-link-v1-r1",
 ]
-const secrets = ["ops-id-client/OPS_ID_CLIENT_SECRET", "toolbox-id-client/TOOLBOX_ID_CLIENT_SECRET", "admin-id-client/ADMIN_ID_CLIENT_SECRET", "standalone-id-client/STANDALONE_ID_CLIENT_SECRET"]
+const secrets = ["ops-id-client/OPS_ID_CLIENT_SECRET", "toolbox-id-client/TOOLBOX_ID_CLIENT_SECRET", "admin-id-client/ADMIN_ID_CLIENT_SECRET"]
 
 function setup(id = fakeIdAdmin(), memory = memoryStore()) {
   const lines: string[] = []
@@ -50,14 +48,12 @@ describe("register's own machine client", () => {
     expect(id.state.links).toContain(`ops-register ${admin}`)
     expect(id.state.capabilities).toContain(JSON.stringify([id.platform, "ops-register", admin, "client_credentials"]))
     expect([...id.state.resources.keys()]).toEqual([toolboxResource, "https://toolbox.example/admin", "https://admin-mcp.example/mcp", acme])
-    expect([...id.state.clients.keys()]).toEqual(["ops-register", "toolbox-hub", "claude-code-toolbox", "claude-code-admin", "admin-mcp", "standalone-hub", "claude-code-acme"])
+    expect([...id.state.clients.keys()]).toEqual(["ops-register", "toolbox-hub", "claude-code-toolbox", "claude-code-admin", "admin-mcp", "claude-code-acme"])
     expect(id.state.links).toEqual(new Set([
-      `ops-register ${admin}`, `toolbox-hub ${admin}`, "claude-code-admin https://admin-mcp.example/mcp", `admin-mcp ${admin}`, "admin-mcp https://toolbox.example/admin", `standalone-hub ${admin}`, `claude-code-acme ${acme}`,
+      `ops-register ${admin}`, `toolbox-hub ${admin}`, "claude-code-admin https://admin-mcp.example/mcp", `admin-mcp ${admin}`, "admin-mcp https://toolbox.example/admin", `claude-code-acme ${acme}`,
     ]))
-    // The standalone server's client reads ID only: platform:read, on ID's admin API.
-    expect(id.state.clients.get("standalone-hub")!.clientCredentialsScopes).toEqual(["platform:read"])
     expect(memory.writes).toEqual(secrets)
-    for (const [index, clientId] of ["ops-register", "toolbox-hub", "admin-mcp", "standalone-hub"].entries()) expect(memory.values[secrets[index]!]).toBe(id.state.clients.get(clientId)!.secret!)
+    for (const [index, clientId] of ["ops-register", "toolbox-hub", "admin-mcp"].entries()) expect(memory.values[secrets[index]!]).toBe(id.state.clients.get(clientId)!.secret!)
     expect(result).toEqual({ platform: id.platform, ownerGroup: id.state.groups.get("answerable-owner")! })
     expect(printed()).toContain("ops-register is minted: register goes on as its own machine client, and needs no root secret or staff token again")
     expect(printed()).toMatch(new RegExp(`Registered in \\d+\\.\\d s: ${minting.length + keys.length} created, 0 changed, 0 as declared already; 1 standalone MCP\\.`))
@@ -240,7 +236,7 @@ describe("the MCPs of the list", () => {
     const many = Array.from({ length: 200 }, (_, index) => ({ name: `m${index}`, serve: "standalone" as const, scopes: [`m${index}:read`] }))
     await run({ mcps: many })
     expect(id.state.resources.size).toBe(3 + 200)
-    expect(id.state.clients.size).toBe(6 + 200)
+    expect(id.state.clients.size).toBe(5 + 200)
     const from = id.state.calls.length
     await run({ token: undefined, mcps: many })
     const later = id.state.calls.slice(from)

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import { runtimeGrants } from "./db/migrate"
 import { database } from "./test/database"
+import { mounted } from "./mounted.generated"
 import { databases, healthy, ownUrls, prefix } from "./test/mcps"
 
 const directory = new URL("../", import.meta.url).pathname
@@ -16,19 +17,21 @@ function start(databaseUrl: string, overrides: Record<string, string> = {}, hot 
   const origin = `http://127.0.0.1:${port}`
   const id = "http://127.0.0.1:1"
   const env = {
-    ...process.env, ...mcps, TOOLBOX_DATABASE_URL: databaseUrl, TOOLBOX_ID_ISSUER: id, TOOLBOX_RESOURCE_URL: `${origin}/mcp`, TOOLBOX_PORT: String(port),
-    TOOLBOX_ID_CLIENT_ID: "toolbox-hub", TOOLBOX_ID_CLIENT_SECRET: "secret", TOOLBOX_ID_ADMIN_RESOURCE: `${id}/api/admin`, ...overrides,
+    ...process.env, ...mcps, TOOLBOX_DATABASE_URL: databaseUrl, TOOLBOX_ID_ISSUER: id, TOOLBOX_RESOURCE_URL: `${origin}/mcp`, TOOLBOX_STANDALONE_ORIGIN: origin,
+    TOOLBOX_PORT: String(port), TOOLBOX_ID_CLIENT_ID: "toolbox-hub", TOOLBOX_ID_CLIENT_SECRET: "secret", TOOLBOX_ID_ADMIN_RESOURCE: `${id}/api/admin`, ...overrides,
   }
   const server = Bun.spawn([process.execPath, ...(hot ? ["--hot"] : []), "src/server.ts"], { cwd: directory, env, stdout: "pipe", stderr: "pipe" })
   return { origin, server }
 }
 
-test("the entry point serves as the runtime login, answers /health with the mounted providers and exits on SIGTERM, even under bun --hot", async () => {
+test("the entry point serves as the runtime login the hub and each MCP served alone at its path, answers /health with every MCP and exits on SIGTERM, even under bun --hot", async () => {
   const login = await database.runtimeLogin(runtimeGrants)
   const { origin, server } = start(login.url, {}, true)
   try {
-    expect(new TextDecoder().decode((await server.stdout.getReader().read()).value)).toContain(`Toolbox serving ${origin}/mcp`)
+    const alone = mounted.filter(({ serve }) => serve !== "toolbox").map(({ provider }) => provider.id)
+    expect(new TextDecoder().decode((await server.stdout.getReader().read()).value)).toBe(`Toolbox serving ${[`${origin}/mcp`, ...alone.map(name => `${origin}/${name}/mcp`)].join(", ")}\n`)
     expect(await (await fetch(`${origin}/health`)).json()).toEqual(healthy)
+    for (const name of alone) expect((await (await fetch(`${origin}/.well-known/oauth-protected-resource/${name}/mcp`)).json()).resource).toBe(`${origin}/${name}/mcp`)
     server.kill("SIGTERM")
     // bun --hot keeps a process alive once its server stops, watching for changes: the entry point ends it.
     expect(await Promise.race([server.exited, Bun.sleep(5000).then(() => "still running")])).toBe(0)
@@ -58,7 +61,7 @@ test("the entry point listens on TOOLBOX_HOST", async () => {
   probe.stop(true)
   const id = "http://127.0.0.1:1"
   const env = {
-    ...process.env, ...mcps, TOOLBOX_DATABASE_URL: login.url, TOOLBOX_ID_ISSUER: id, TOOLBOX_RESOURCE_URL: `http://[::1]:${port}/mcp`, TOOLBOX_PORT: String(port),
+    ...process.env, ...mcps, TOOLBOX_DATABASE_URL: login.url, TOOLBOX_ID_ISSUER: id, TOOLBOX_RESOURCE_URL: `http://[::1]:${port}/mcp`, TOOLBOX_STANDALONE_ORIGIN: `http://[::1]:${port}`, TOOLBOX_PORT: String(port),
     TOOLBOX_HOST: "::1", TOOLBOX_ID_CLIENT_ID: "toolbox-hub", TOOLBOX_ID_CLIENT_SECRET: "secret", TOOLBOX_ID_ADMIN_RESOURCE: `${id}/api/admin`,
   }
   const server = Bun.spawn([process.execPath, "src/server.ts"], { cwd: directory, env, stdout: "pipe", stderr: "ignore" })

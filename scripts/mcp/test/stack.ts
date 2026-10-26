@@ -1,12 +1,12 @@
-// Test support for bun mcp dev: the local stack in memory. The local ID (the fake of @answerable/id-admin), the Toolbox's health and admin API, the
-// standalone server's health, and a start that records each server and brings its health up until it is stopped.
+// Test support for bun mcp dev: the local stack in memory. The local ID (the fake of @answerable/id-admin), the Toolbox's health and admin API, and a
+// start that records the Toolbox and brings its health up until it is stopped.
 import type { Fetch } from "../io"
 import { servers } from "./io"
 import type { LocalId } from "./id"
 
 /**
- * `fetch` for every address of the local stack and `start` for the two servers. A server answers `/health` listing `mounted` from the moment it is
- * started until it is stopped or has ended. The Toolbox's enable operation answers `422 unknown_provider` for a provider not in `mounted`, and `401`
+ * `fetch` for every address of the local stack and `start` for the Toolbox. It answers `/health` listing `mounted` from the moment it is started
+ * until it is stopped or has ended. The Toolbox's enable operation answers `422 unknown_provider` for a provider not in `mounted`, and `401`
  * for a token ID did not issue for its admin resource with `toolbox:admin`; each call is kept in `enabled`.
  */
 export function localStack(id: LocalId, { mounted = ["acme"], end, refuse }: {
@@ -19,14 +19,13 @@ export function localStack(id: LocalId, { mounted = ["acme"], end, refuse }: {
   const enabled: { organisation: string; body: { hostClientIds: string[]; providers: string[] } }[] = []
   // What the enable operation made, by organisation: repeating it makes nothing.
   const done = new Map<string, Set<string>>()
-  const up = (workspace: string) => started.some(server => server.cwd.endsWith(workspace) && !server.stopped && !server.ended)
+  const up = () => started.some(server => server.cwd.endsWith("mcps/toolbox") && !server.stopped && !server.ended)
   const fetch: Fetch = async (input, init) => {
     const request = new Request(input, init)
     const url = new URL(request.url)
     if (url.port === "47300") return id.config.fetch(request)
-    const workspace = url.port === "47400" ? "mcps/toolbox" : "mcps/standalone"
     if (url.pathname === "/health") {
-      if (!up(workspace)) throw new TypeError("Unable to connect")
+      if (!up()) throw new TypeError("Unable to connect")
       return Response.json({ status: "ok", databases: {}, providers: mounted })
     }
     const enable = /^\/admin\/v1\/organisations\/([^/]+)\/enable$/.exec(url.pathname)

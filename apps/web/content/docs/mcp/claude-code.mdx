@@ -15,7 +15,7 @@ Run this once the Toolbox is running and your organisation is enabled for it ([b
 **An MCP you are making.** `bun mcp dev <mcp>` registers it in your local ID, gives your organisation access and prints the command that connects Claude Code to it ([Run an MCP on your machine](/docs/mcp/local-testing#run-an-mcp-on-your-machine)). For an MCP that runs on its own URL, the command is:
 
 ```bash
-claude mcp add --transport http acme http://localhost:47510/acme/mcp \
+claude mcp add --transport http acme http://localhost:47400/acme/mcp \
   --client-id claude-code-acme --callback-port 47700
 ```
 
@@ -74,11 +74,11 @@ Set `ID` to the ID origin, `TOKEN` to a [staff token](/docs/id/onboard#get-a-sta
 ## The e2e server
 
 ```bash
-claude mcp add --transport http answerable-e2e http://localhost:47510/e2e/mcp \
+claude mcp add --transport http answerable-e2e http://localhost:47400/e2e/mcp \
   --client-id claude-code-local --callback-port 47700
 ```
 
-e2e runs on [the standalone server](/docs/mcp/servers#the-standalone-server), at its own path. `bun mcp dev e2e` registers everything below, with the client `claude-code-e2e`, and prints its own command; the steps are what it does, by hand. Run this once the resource and client below are registered. Then open Claude Code, run `/mcp`, select `answerable-e2e` and choose **Authenticate**. Ask Claude to call `identity_get`; it returns your organisation.
+The Toolbox serves e2e [alone](/docs/mcp/servers#served-alone), at its own path, beside its hub. `bun mcp dev e2e` registers everything below, with the client `claude-code-e2e`, and prints its own command; the steps are what it does, by hand. Run this once the resource and client below are registered. Then open Claude Code, run `/mcp`, select `answerable-e2e` and choose **Authenticate**. Ask Claude to call `identity_get`; it returns your organisation.
 
 **Writes.** Ask Claude to create a test record: it calls `records_create`, which prepares an intent and changes nothing, then `e2e_commit`. Deleting calls `records_delete`, then `e2e_commit_confirmed` with the preview's summary. See [mutations](/docs/mcp/mutations).
 
@@ -88,8 +88,8 @@ Set `ID` to the ID origin, `TOKEN` to a [staff token](/docs/id/onboard#get-a-sta
 
 ```bash
 export ID=http://localhost:47300
-export MCP=http://localhost:47510/e2e/mcp
-export MCP_PATH=http%3A%2F%2Flocalhost%3A47510%2Fe2e%2Fmcp
+export MCP=http://localhost:47400/e2e/mcp
+export MCP_PATH=http%3A%2F%2Flocalhost%3A47400%2Fe2e%2Fmcp
 
 curl "$ID/api/admin/v1/resources" \
   -H "Idempotency-Key: e2e-resource-v1" -H "Authorization: Bearer $TOKEN" \
@@ -97,7 +97,7 @@ curl "$ID/api/admin/v1/resources" \
   -d '{"classification":"platform_shared","organizationId":null,"identifier":"'"$MCP"'","name":"E2E MCP","allowedScopes":["e2e:identity","e2e:read","e2e:write","offline_access"],"accessTokenTtl":900}'
 ```
 
-**Resource.** The URL is the token audience. It must be `STANDALONE_ORIGIN` and the MCP's path exactly: `localhost` and `127.0.0.1` are different resources.
+**Resource.** The URL is the token audience. It must be `TOOLBOX_STANDALONE_ORIGIN` and the MCP's path exactly: `localhost` and `127.0.0.1` are different resources.
 
 **Lifetime.** Claude Code refreshes an access token that is close to expiry before using it. With a 300-second lifetime it refreshed before every request; with 900 seconds it did not. A shorter lifetime ends access sooner after a revocation, at the cost of those refreshes.
 
@@ -144,38 +144,15 @@ curl "$ID/api/admin/v1/organizations/$ORG/entitlements" \
 
 **Registered before writes existed?** Add `e2e:write` with `PATCH` to the resource's `allowedScopes`, the client's `scopes`, and the `scopes` of each capability and entitlement above, each call with its own `Idempotency-Key`. See [manage](/docs/id/manage).
 
-### Register the server's machine client
-
-The standalone server reads who is calling, their name, email and groups and their organisation's name, from ID's admin API, through a machine client of the platform organisation with `platform:read`, `standalone-hub` ([Who is calling](/docs/mcp/servers#who-is-calling)). Register it once, for every MCP it serves. Set `PLATFORM_ORG` to the platform organisation's id. The first call answers `clientSecret` once.
-
-```bash
-export PLATFORM_ORG=...   # the platform organisation's id
-export ID_ADMIN_PATH=http%3A%2F%2Flocalhost%3A47300%2Fapi%2Fadmin
-
-curl "$ID/api/admin/v1/clients" \
-  -H "Idempotency-Key: standalone-hub-v1" -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"clientId":"standalone-hub","name":"Standalone server","organizationId":"'"$PLATFORM_ORG"'","tokenEndpointAuthMethod":"client_secret_basic","grantTypes":["client_credentials"],"clientCredentialsScopes":["platform:read"]}'
-
-curl -X PUT "$ID/api/admin/v1/clients/standalone-hub/resources/$ID_ADMIN_PATH" \
-  -H "Idempotency-Key: standalone-hub-link-v1" -H "Authorization: Bearer $TOKEN"
-curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/capabilities" \
-  -H "Idempotency-Key: standalone-hub-capability-v1" -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"clientId":"standalone-hub","resource":"'"$ID"'/api/admin","grantKind":"client_credentials","scopes":["platform:read"]}'
-```
-
-Put the client's id and secret in the root `.env`: `STANDALONE_ID_CLIENT_ID=standalone-hub` and `STANDALONE_ID_CLIENT_SECRET`. Without them the standalone server does not start.
-
 ### Start the server
 
 ```bash
 bun mcp db e2e migrate
-bun --filter @answerable/mcp-standalone db:migrate
-bun run standalone:dev
+bun --filter @answerable/mcp-toolbox db:migrate
+bun run toolbox:dev
 ```
 
-The first two make e2e's schema in the shared database `answerable_mcps` and the standalone server's own database, `answerable_standalone`, on the development Postgres; run them again after a migration changes. The last reads the root `.env` and serves every standalone MCP at its path, e2e at `http://localhost:47510/e2e/mcp`; the issuer, the origin, the databases and ID's admin API default to the local ones.
+The first two make e2e's schema in the shared database `answerable_mcps` and the Toolbox's own database, `answerable_toolbox`, on the development Postgres; run them again after a migration changes. The last reads the root `.env` and starts the Toolbox, which serves e2e in its hub and at `http://localhost:47400/e2e/mcp`, and reads who is calling through its machine client, registered as [Run it locally](/docs/toolbox#run-it-locally) shows; the issuer, the origins, the databases and ID's admin API default to the local ones.
 
 ## The admin MCP
 
@@ -211,10 +188,10 @@ For Answerable staff: [the admin MCP](/docs/admin) onboards and manages organisa
 | `invalid_target` | The resource is unknown, not linked to the client, or written differently | Use the exact registered URL and link it; the enable call links the Toolbox's host client |
 | `invalid_client` | The client ID is unknown or disabled | Check `claude mcp get answerable-toolbox` (or `answerable-e2e`) against the registration |
 | `claude mcp login`: `stdin isn't a terminal, so authentication can't be completed here` | It needs a terminal to read the redirect | Run it in an interactive terminal (`ssh -t` for a remote machine) |
-| `401` after signing in | The server's issuer or resource differs from ID's | Set `TOOLBOX_ID_ISSUER` and `TOOLBOX_RESOURCE_URL`, or `STANDALONE_ID_ISSUER` and `STANDALONE_ORIGIN`, to ID's origin and the registered URL's |
-| `Invalid standalone server configuration: STANDALONE_ID_CLIENT_ID: …` at start | The standalone server has no machine client to read who is calling | [Register it](#register-the-servers-machine-client) and set `STANDALONE_ID_CLIENT_ID` and `STANDALONE_ID_CLIENT_SECRET` in the root `.env` |
-| `The standalone server cannot start: Database role answerable_mcps_standalone may not serve MCPs: is not a member of mcp_e2e…` | The MCP's schema and roles are not made in your local `answerable_mcps` | `bun mcp db e2e migrate`, for each MCP the message names |
-| A tool call answers `UPSTREAM_UNAVAILABLE`, `Who you are could not be read…` | ID refused the server's machine client, or did not answer | Check `STANDALONE_ID_CLIENT_ID`, `STANDALONE_ID_CLIENT_SECRET` and the client's `platform:read` capability on ID's admin API; the server log says what ID answered |
+| `401` after signing in | The server's issuer or resource differs from ID's | Set `TOOLBOX_ID_ISSUER` and `TOOLBOX_RESOURCE_URL`, or `TOOLBOX_STANDALONE_ORIGIN` for an MCP served alone, to ID's origin and the registered URL's |
+| `Invalid Toolbox configuration: TOOLBOX_ID_CLIENT_ID: …` at start | The Toolbox has no machine client to read who is calling | Register it as [Run it locally](/docs/toolbox#run-it-locally) shows, or run `bun mcp setup` and `bun mcp dev <mcp>` |
+| `The Toolbox cannot start: Database role answerable_mcps_toolbox may not serve MCPs: is not a member of mcp_e2e…` | The MCP's schema and roles are not made in your local `answerable_mcps` | `bun mcp db e2e migrate`, for each MCP the message names |
+| A tool call answers `UPSTREAM_UNAVAILABLE`, `Who you are could not be read…` | ID refused the Toolbox's machine client, or did not answer | Check `TOOLBOX_ID_CLIENT_ID`, `TOOLBOX_ID_CLIENT_SECRET` and the client's capability on ID's admin API; the Toolbox's log says what ID answered |
 | `Tool <name> not found`, and `toolbox_whoami` lists no grants or too few | The Toolbox: no grant string covers the tool, its provider is not enabled for your organisation, or the token lacks `toolbox`. The e2e server: the token lacks the scope, for example `e2e:write` for `records_create` | The Toolbox: ask for an entitlement, [entitle people](#the-toolbox). The e2e server: add the scope as above, then choose **Authenticate** again |
 | A commit tool answers an error | The intent cannot be committed as it is | See [MCP errors](/docs/mcp/errors) |
 

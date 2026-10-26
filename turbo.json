@@ -98,16 +98,6 @@
     "@answerable/mcp-postgres#test": {
       "cache": false
     },
-    "@answerable/mcp-standalone#test": {
-      "cache": false,
-      "dependsOn": ["^build"],
-      "passThroughEnv": ["STANDALONE_*"]
-    },
-    "@answerable/mcp-standalone#dev": {
-      "cache": false,
-      "persistent": true,
-      "passThroughEnv": ["STANDALONE_*", "OTEL_EXPORTER_OTLP_ENDPOINT"]
-    },
     "@answerable/mcp-toolbox#test": {
       "cache": false,
       "dependsOn": ["^build"],

@@ -35,17 +35,15 @@ The product is the Toolbox. The capability platform is what makes it work: the S
 ```mermaid
 flowchart TB
     HOSTS["Hosts<br/>OmniChat cells · Claude.ai · Claude Code · ChatGPT · Copilot Studio"]
-    TB["Toolbox (mcps/toolbox)<br/>MCP endpoint · projections · policy · intents · operations · evidence · approval pages"]
+    TB["Toolbox (mcps/toolbox)<br/>MCP endpoint · projections · policy · intents · operations · evidence · approval pages<br/>and every standalone MCP, at its own path"]
     ID["Answerable ID (apps/id)<br/>identity · groups · entitlements · tokens · audit"]
     PROV["MCPs (mcps/*)<br/>each a provider on @answerable/mcp, with its own database schema"]
     UP["Upstream systems<br/>vendor APIs · Answerable services"]
-    STANDALONE["Standalone server (mcps/standalone)<br/>every standalone MCP, at its own path"]
 
     HOSTS -- "OAuth 2.1, audience = the Toolbox" --> TB
-    HOSTS -. "OAuth 2.1, audience = that MCP" .-> STANDALONE
+    HOSTS -. "OAuth 2.1, audience = a standalone MCP's path" .-> TB
     TB -- "verify tokens offline; read effective grants (machine client)" --> ID
     TB -- "in-process calls (v1); token exchange later" --> PROV
-    STANDALONE --> PROV
     PROV --> UP
 ```
 
@@ -54,8 +52,7 @@ flowchart TB
 | `packages/auth` | Verify Answerable ID access tokens. Unchanged, plus an opt-in list of accepted subject types later. |
 | `packages/mcp` | The SDK: `defineTool`, `defineMutation`, `defineProvider`, `createMcpServer`, the manifest export, the conformance kit, the in-process test client. Becomes the public SDK. |
 | `mcps/toolbox` | The hub: Hono service with the MCP endpoint, the grants reader, the catalogue, intents, approvals, receipts, operations, evidence, the approval pages, the platform-tier admin API and the worker. |
-| `mcps/*` | The MCPs: capability modules, each a provider on `@answerable/mcp` with a manifest, a conformance test and its own schema in Postgres, declared in `mcps/<name>/mcp.json` and made by `bun mcp`. Each runs in the Toolbox, on its own path of the standalone server, or both. An upstream client of its own: Not yet. `mcps/e2e` stays the reference MCP, served both ways, and the acceptance's. |
-| `mcps/standalone` | The standalone server: every MCP whose `serve` is `standalone` or `both`, each at `https://mcp.<zone>/<name>/mcp` with its own resource and audience. |
+| `mcps/*` | The MCPs: capability modules, each a provider on `@answerable/mcp` with a manifest, a conformance test and its own schema in Postgres, declared in `mcps/<name>/mcp.json` and made by `bun mcp`. Each runs in the Toolbox's hub, on its own path, which the Toolbox also serves, or both. An upstream client of its own: Not yet. `mcps/e2e` stays the reference MCP, served both ways, and the acceptance's. |
 | `packages/mcp-postgres`, `packages/mcp-platform` | The database of every MCP and the intents and evidence of every server; what every server Answerable runs shares: evidence, spans, health. |
 | `packages/acceptance` | The acceptance kit extracted from `mcps/e2e`: the ID fixture, the SDK OAuth client and the browser sign-in, shared by every acceptance journey. |
 | `apps/id` | Unchanged data model. Gains a tenant-tier write surface for groups and entitlements, host registration (CIMD and policy-gated DCR) and, later, token exchange. |
@@ -156,7 +153,7 @@ commit(plan, context)    -> result { results, applied_changes[], effects_perform
 
 The SDK wraps them. It validates the input, records the intent, mints the commit token, decides the policy class, enforces expiry, staleness, single use, idempotent replay and the approval, and writes the evidence. An author never touches a token.
 
-**Intent.** Stored by the hub (or by a standalone server through the same store interface):
+**Intent.** Stored by the hub (or, for an MCP the Toolbox serves alone, by its server through the same store interface):
 
 | Field | Value |
 | --- | --- |
@@ -218,7 +215,7 @@ Design, fixed now so the earlier steps leave room for it:
 
 Tables in the hub's Postgres: `providers` (id; the manifest is read from the code), `capabilities` (provider_id, identity, version, kind, risk, title, description, schemas, search vector), `organisation_catalogue` (organisation_id, provider_id, enabled, overrides, updated_at), `host_clients` (client_id, projection, direct_limit). **Not yet:** `host_clients.text_only` and `pinned`, and `pins`.
 
-**Registering a provider.** An internal provider is an MCP, a workspace under `mcps/` declared in `mcps/<name>/mcp.json`; `bun mcp` writes the lists the Toolbox, the standalone server and the deployment read from the declarations and the manifests. The Toolbox ingests every mounted provider's manifest when it boots, in one batch, which upserts `providers` and `capabilities` and fails on a breaking change without a new version. A standalone MCP registers with ID on every deploy: the register Job makes its resource, its Claude Code client and their link, and staff give an organisation access with `standalone_enable` and `access_grant` in the admin MCP. An external developer's provider follows the same manifest contract; **Not yet:** the trust record, review and hosting for third-party providers, and the public npm release of `@answerable/mcp` and `@answerable/auth`.
+**Registering a provider.** An internal provider is an MCP, a workspace under `mcps/` declared in `mcps/<name>/mcp.json`; `bun mcp` writes the lists the Toolbox and the deployment read from the declarations and the manifests. The Toolbox ingests every mounted provider's manifest when it boots, in one batch, which upserts `providers` and `capabilities` and fails on a breaking change without a new version. A standalone MCP registers with ID on every deploy: the register Job makes its resource, its Claude Code client and their link, and staff give an organisation access with `standalone_enable` and `access_grant` in the admin MCP. An external developer's provider follows the same manifest contract; **Not yet:** the trust record, review and hosting for third-party providers, and the public npm release of `@answerable/mcp` and `@answerable/auth`.
 
 **Enabling the Toolbox for an organisation** is one operation in the hub's admin API that performs the ID calls (the pair capabilities and entitlements for each host client the organisation uses, carrying `toolbox`) and writes the catalogue rows. Today that is nine ID calls per organisation and host, so the operation exists to keep them consistent.
 

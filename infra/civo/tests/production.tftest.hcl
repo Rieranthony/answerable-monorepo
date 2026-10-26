@@ -83,7 +83,7 @@ run "serves_answerable_org_without_touching_www" {
 
   assert {
     condition     = output.hostnames == tolist(["admin-mcp.answerable.org", "id.answerable.org", "mcp.answerable.org", "toolbox.answerable.org"])
-    error_message = "Production serves id, toolbox, admin-mcp and mcp, the standalone server, under answerable.org (D12)."
+    error_message = "Production serves id, toolbox, admin-mcp and mcp, the standalone MCPs, under answerable.org (D12)."
   }
 
   assert {

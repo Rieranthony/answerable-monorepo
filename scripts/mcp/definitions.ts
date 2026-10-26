@@ -44,7 +44,7 @@ export const definitions = {
     },
     steps: [
       { name: "write", does: "Writes `mcps/<name>`" },
-      { name: "generate", does: "Writes `charts/answerable/mcps.json` and the lists the Toolbox and the standalone server serve, with their dependencies" },
+      { name: "generate", does: "Writes `charts/answerable/mcps.json` and the list the Toolbox serves, with its dependencies" },
       { name: "install", does: "Runs `bun install`, which links the new workspace" },
       { name: "database", does: "Creates the MCP's schema and its two roles on the development Postgres" },
       { name: "migration", does: "Writes the first migration, `drizzle/0000_initial.sql`" },
@@ -130,12 +130,11 @@ export const definitions = {
   dev: {
     name: "dev",
     usage: "bun mcp dev [mcp]",
-    summary: "Run an MCP on this machine, migrated, in the Toolbox or the standalone server as its serve says, with hot reload; register it in your local ID, give your organisation access, and print the claude mcp add command that connects Claude Code. It runs until Ctrl-C, which stops what it started. Needs bun mcp setup once",
+    summary: "Run an MCP on this machine, migrated, in the Toolbox, which serves it in its hub, at its own URL or both, as its serve says, with hot reload; register it in your local ID, give your organisation access, and print the claude mcp add command that connects Claude Code. It runs until Ctrl-C, which stops what it started. Needs bun mcp setup once",
     flags: {},
     steps: [
-      { name: "database", does: "Migrates the schema of every MCP the servers it starts mount, and each server's own database" },
-      { name: "toolbox", does: "Starts the Toolbox when the MCP's serve is toolbox or both, and waits for it to list the MCP" },
-      { name: "standalone", does: "Starts the standalone server when the MCP's serve is standalone or both, and waits for it to list the MCP" },
+      { name: "database", does: "Migrates the schema of every MCP the Toolbox serves, and the Toolbox's own database" },
+      { name: "toolbox", does: "Starts the Toolbox, and waits for it to list the MCP" },
       { name: "register", does: "Standalone only: registers the MCP's resource and its client, `claude-code-<name>`, in your local ID" },
       { name: "access", does: "Standalone only: gives your organisation sign-in and the MCP's scopes" },
       { name: "enable", does: "Toolbox only: enables the MCP for your organisation in the Toolbox and grants it" },

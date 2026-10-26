@@ -1,13 +1,13 @@
 # E2E MCP
 
-The reference MCP, and the proof that Answerable ID signs people into MCP servers. Laid out as `bun mcp new` lays an MCP out, with its records in Postgres, and served both ways (`"serve": "both"` in `mcp.json`): mounted in the Toolbox, and on its own URL by the standalone server. It ships to every environment, as `charts/answerable/mcps.json` declares it.
+The reference MCP, and the proof that Answerable ID signs people into MCP servers. Laid out as `bun mcp new` lays an MCP out, with its records in Postgres, and served both ways (`"serve": "both"` in `mcp.json`): mounted in the Toolbox, and on its own URL, which the Toolbox serves too. It ships to every environment, as `charts/answerable/mcps.json` declares it.
 
 ```sh
 (cd packages/acceptance && bun x playwright install chromium)
 bun run mcp:test:e2e
 ```
 
-The acceptance lives in [`packages/acceptance`](../../packages/acceptance/README.md): it provisions a real ID through its admin API, serves this MCP at its path on the standalone server and in the Toolbox, and signs organisations in with the official MCP SDK's OAuth client and a real browser. [What it proves](../../apps/web/content/docs/mcp/local-testing.mdx#what-the-e2e-journeys-prove).
+The acceptance lives in [`packages/acceptance`](../../packages/acceptance/README.md): it provisions a real ID through its admin API, serves this MCP at its path and in the Toolbox's hub, and signs organisations in with the official MCP SDK's OAuth client and a real browser. [What it proves](../../apps/web/content/docs/mcp/local-testing.mdx#what-the-e2e-journeys-prove).
 
 ## Tools
 
@@ -37,11 +37,10 @@ Rewrites `manifest.json`, the provider's contract. The conformance kit's `manife
 
 ```sh
 bun mcp db e2e migrate
-bun run standalone:dev   # http://localhost:47510/e2e/mcp
-bun run toolbox:dev      # http://localhost:47400/mcp, as e2e_*
+bun run toolbox:dev      # http://localhost:47400/mcp, as e2e_*, and http://localhost:47400/e2e/mcp
 ```
 
-Register the resource, a client and the servers' machine clients in ID first: [Connect Claude Code](../../apps/web/content/docs/mcp/claude-code.mdx#the-e2e-server).
+Register the resource, a client and the Toolbox's machine client in ID first, or run `bun mcp dev e2e`, which does it: [Connect Claude Code](../../apps/web/content/docs/mcp/claude-code.mdx#the-e2e-server).
 
 ## Tests
 
@@ -50,4 +49,4 @@ bun run mcp:test
 bun run mcp:check @answerable/mcp-e2e
 ```
 
-The tests serve the provider with `createTestMcp` from `@answerable/mcp-postgres/testing`, over schema `e2e` of `answerable_mcps_test` on the development Postgres. `bunfig.toml` gates 100% line and function coverage of `src`. `src/provider.test.ts` runs the conformance kit, with a fresh record made in the caller's organisation for `records.delete` and a version bump as `moveTarget`, and checks the tools an entitled caller sees. The tests in `src/tools` check pagination and cursors, a create in the caller's organisation alone, and a delete's stale target and another organisation's record. `src/apps.test.ts` renders the real view in Chromium through the official MCP Apps host bridge (`src/testing/host.ts`): it creates a record, shows the summary before deleting it, and hides writes from a reader; the view never receives a token. That its records agree between the Toolbox and the standalone server, and survive a restart, is `mcps/standalone/src/both.test.ts` and the MCP journeys. Changes: [CHANGELOG](CHANGELOG.md).
+The tests serve the provider with `createTestMcp` from `@answerable/mcp-postgres/testing`, over schema `e2e` of `answerable_mcps_test` on the development Postgres. `bunfig.toml` gates 100% line and function coverage of `src`. `src/provider.test.ts` runs the conformance kit, with a fresh record made in the caller's organisation for `records.delete` and a version bump as `moveTarget`, and checks the tools an entitled caller sees. The tests in `src/tools` check pagination and cursors, a create in the caller's organisation alone, and a delete's stale target and another organisation's record. `src/apps.test.ts` renders the real view in Chromium through the official MCP Apps host bridge (`src/testing/host.ts`): it creates a record, shows the summary before deleting it, and hides writes from a reader; the view never receives a token. That its records agree between the Toolbox's hub and its path, and survive a restart, is `mcps/toolbox/src/alone.test.ts` and the MCP journeys. Changes: [CHANGELOG](CHANGELOG.md).

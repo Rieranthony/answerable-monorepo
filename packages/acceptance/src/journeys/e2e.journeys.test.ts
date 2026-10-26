@@ -1,4 +1,4 @@
-// Real Answerable ID, a real browser and the official MCP OAuth client against the e2e MCP, at its path on the standalone server.
+// Real Answerable ID, a real browser and the official MCP OAuth client against the e2e MCP, at its path on the Toolbox, which serves it alone there.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import type { Client } from "@modelcontextprotocol/client"
 import { decodeJwt } from "jose"
@@ -22,10 +22,10 @@ import {
   type Id,
   type OAuthSession,
 } from "../index"
-import { startStandaloneStack } from "../standalone"
+import { prepareToolbox } from "../toolbox"
 
-// The standalone server serves e2e at its path; a second one, at another origin, serves it as another resource.
-const origin = "http://127.0.0.1:47602"
+// The Toolbox serves e2e at its path; a second Toolbox, at another origin, serves it as another resource.
+const origin = "http://127.0.0.1:47604"
 const resource = `${origin}/e2e/mcp`
 const otherOrigin = "http://127.0.0.1:47605"
 const otherResource = `${otherOrigin}/e2e/mcp`
@@ -72,10 +72,10 @@ beforeAll(async () => {
     const { organizationId } = manifest.tenants.find(({ slug }) => slug === tenant.slug)!
     await grantOrganisation(admin, organizationId, { clientId, resource, scopes, entitledScopes: tenant.scopes })
   }
-  // The standalone server reads who is calling from ID through its own platform:read machine client, in the platform organisation.
-  const { start } = await startStandaloneStack(id)
-  serve(47_602, start(origin).fetch)
-  serve(47_605, start(otherOrigin).fetch)
+  // The Toolbox reads who is calling from ID through its machine client, in the platform organisation.
+  const { start } = await prepareToolbox(id, { database: "answerable_toolbox_acceptance" })
+  serve(47_604, (await start(origin)).fetch)
+  serve(47_605, (await start(otherOrigin)).fetch)
   serveCallback(callback)
   browser = await launchBrowser()
 })

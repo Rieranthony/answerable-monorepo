@@ -3,7 +3,7 @@ import { hostsFor } from "./environments"
 import { formatReport, runSmoke, smokePassed, type DeclaredMcp, type Fetch, type SmokeOptions } from "./smoke"
 
 const hosts = hostsFor("staging")
-/** An MCP in each place: the Toolbox and the standalone server, the Toolbox alone, the standalone server alone. */
+/** An MCP in each place: the Toolbox's hub and its own URL, the hub alone, its own URL alone. */
 const MCPS: DeclaredMcp[] = [{ name: "e2e", serve: "both" }, { name: "example", serve: "toolbox" }, { name: "solo", serve: "standalone" }]
 const ISSUER = `https://${hosts.id}`
 const url = (host: string, path: string) => `https://${host}${path}`
@@ -18,7 +18,7 @@ function healthy(): Record<string, Answer> {
     [url(hosts.id, "/.well-known/openid-configuration")]: () =>
       Response.json({ issuer: ISSUER, jwks_uri: `${ISSUER}/auth/jwks` }),
     [url(hosts.id, "/auth/jwks")]: Response.json({ keys: [{ kid: "one" }, { kid: "two" }] }),
-    [url(hosts.toolbox, "/health")]: Response.json({ status: "ok", databases: { toolbox: "ok", mcps: "ok" }, providers: ["example", "e2e"] }),
+    [url(hosts.toolbox, "/health")]: Response.json({ status: "ok", databases: { toolbox: "ok", mcps: "ok" }, providers: ["example", "e2e", "solo"] }),
     [url(hosts.toolbox, "/.well-known/oauth-protected-resource/mcp")]: Response.json({
       resource: `https://${hosts.toolbox}/mcp`,
       authorization_servers: [ISSUER],
@@ -119,28 +119,28 @@ describe("runSmoke", () => {
     expect(detail["id discovery"]).toBe(`issuer ${ISSUER}`)
     expect(detail["id jwks"]).toBe("2 signing keys")
     expect(detail["toolbox resource metadata"]).toBe(`names ${ISSUER}`)
-    expect(detail["toolbox /health"]).toBe('status "ok", 2 providers mounted')
+    expect(detail["toolbox /health"]).toBe('status "ok", 3 MCPs served')
   })
 
-  test("with no MCP, the Toolbox mounts none and nothing is asked of the standalone server's host", async () => {
+  test("with no MCP, the Toolbox serves none and nothing is asked of the mcp host", async () => {
     const h = harness({ ...healthy(), [url(hosts.toolbox, "/health")]: Response.json({ status: "ok", providers: [] }) })
     const results = await runSmoke(hosts, [], h.options)
     expect(smokePassed(results)).toBe(true)
-    expect(results.find((result) => result.name === "toolbox /health")!.detail).toBe('status "ok", 0 providers mounted')
+    expect(results.find((result) => result.name === "toolbox /health")!.detail).toBe('status "ok", 0 MCPs served')
     expect(h.requests.some((request) => request.url.startsWith(`https://${hosts.mcp}/`))).toBe(false)
     const one = await runSmoke(hosts, [{ name: "example", serve: "toolbox" }], harness({ ...healthy(), [url(hosts.toolbox, "/health")]: Response.json({ status: "ok", providers: ["example"] }) }).options)
-    expect(one.find((result) => result.name === "toolbox /health")!.detail).toBe('status "ok", 1 provider mounted')
+    expect(one.find((result) => result.name === "toolbox /health")!.detail).toBe('status "ok", 1 MCP served')
   })
 
-  test("fails the Toolbox's health when it mounts other providers than the list's, or names none", async () => {
+  test("fails the Toolbox's health when it serves other MCPs than the list's, or names none", async () => {
     const health = url(hosts.toolbox, "/health")
     expect(await failures({ ...healthy(), [health]: Response.json({ status: "ok", providers: ["e2e"] }) })).toEqual([
-      'toolbox /health: providers are ["e2e"], expected ["e2e","example"]',
+      'toolbox /health: providers are ["e2e"], expected ["e2e","example","solo"]',
     ])
     expect(await failures({ ...healthy(), [health]: Response.json({ status: "ok" }) })).toEqual([
-      'toolbox /health: providers are undefined, expected ["e2e","example"]',
+      'toolbox /health: providers are undefined, expected ["e2e","example","solo"]',
     ])
-    expect(await failures({ ...healthy(), [health]: Response.json({ status: "unavailable", providers: ["e2e", "example"] }) })).toEqual([
+    expect(await failures({ ...healthy(), [health]: Response.json({ status: "unavailable", providers: ["e2e", "example", "solo"] }) })).toEqual([
       'toolbox /health: status is "unavailable", expected "ok"',
     ])
   })

@@ -89,7 +89,7 @@ run "serves_the_staging_zone" {
 
   assert {
     condition     = output.hostnames == tolist(["admin-mcp.answerable-staging.uk", "id.answerable-staging.uk", "mcp.answerable-staging.uk", "toolbox.answerable-staging.uk"])
-    error_message = "Staging serves id, toolbox, admin-mcp and mcp, the standalone server, under answerable-staging.uk (D12)."
+    error_message = "Staging serves id, toolbox, admin-mcp and mcp, the standalone MCPs, under answerable-staging.uk (D12)."
   }
 }
 

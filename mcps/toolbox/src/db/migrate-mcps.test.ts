@@ -10,9 +10,9 @@ import { migrateDeclared } from "./migrate-mcps"
 // Three MCPs laid out as bun mcp lays them out, in a repository of the test's own: two shared, one of them narrowing its grants in
 // src/db/grants.ts, and one with a database of its own; each provisioned as the bootstrap provisions it, then migrated by the Job's code.
 const root = mkdtempSync(join(tmpdir(), "answerable-migrate-mcps-"))
-const prefix = "mcp_stdm"
-const shared = "answerable_standalone_test_migrate"
-const own = { database: "answerable_standalone_test_migrate_own", owner: "answerable_mcp_stdmigc_owner", runtime: "answerable_mcp_stdmigc_runtime" }
+const prefix = "mcp_tbxm"
+const shared = "answerable_toolbox_test_migrate"
+const own = { database: "answerable_toolbox_test_migrate_own", owner: "answerable_mcp_tbxmigc_owner", runtime: "answerable_mcp_tbxmigc_runtime" }
 const serving = `mcp_test_login_${crypto.randomUUID().replaceAll("-", "")}`
 const superuser = (database: string, login?: string) => {
   const url = new URL(mcpPostgresTestConfig.read(process.env).MCPS_TEST_DATABASE_URL)
@@ -44,11 +44,11 @@ const notes = (name: string) => [`CREATE TABLE "${name}"."notes" ("id" serial PR
 
 beforeAll(async () => {
   await ensureLocalMcpDatabases(superuser("postgres"))
-  await mcp("stdmiga", notes("stdmiga"))
-  await mcp("stdmigb", notes("stdmigb"), `export const grants = [{ table: "notes", privileges: ["select"] }]\n`)
-  await mcp("stdmigc", notes("stdmigc"))
-  await mcp("stdmigd", ['CREATE TABLE "stdmigd"."broken" ("id" serial PRIMARY KEY NOT NULL, "body" text NOT NULL REFERENCES "stdmigd"."missing"("id"));'])
-  await Bun.write(join(root, "mcps/stdmige/mcp.json"), JSON.stringify({ name: "stdmige" }))
+  await mcp("tbxmiga", notes("tbxmiga"))
+  await mcp("tbxmigb", notes("tbxmigb"), `export const grants = [{ table: "notes", privileges: ["select"] }]\n`)
+  await mcp("tbxmigc", notes("tbxmigc"))
+  await mcp("tbxmigd", ['CREATE TABLE "tbxmigd"."broken" ("id" serial PRIMARY KEY NOT NULL, "body" text NOT NULL REFERENCES "tbxmigd"."missing"("id"));'])
+  await Bun.write(join(root, "mcps/tbxmige/mcp.json"), JSON.stringify({ name: "tbxmige" }))
   await on("postgres",
     `drop database if exists ${shared} with (force)`, `drop database if exists ${own.database} with (force)`,
     `create database ${shared} owner ${sharedMcps.logins.migrator}`, `create role ${serving} login noinherit`,
@@ -57,27 +57,27 @@ beforeAll(async () => {
   const admin = new Client({ connectionString: superuser(shared) })
   await admin.connect()
   try {
-    await provisionMcps(sqlOf(admin), { mcps: ["stdmiga", "stdmigb", "stdmigd", "stdmige"].map(name => ({ name, servedBy: ["standalone"] })), prefix, logins: { ...sharedMcps.logins, toolbox: serving, standalone: serving } })
+    await provisionMcps(sqlOf(admin), { mcps: ["tbxmiga", "tbxmigb", "tbxmigd", "tbxmige"].map(name => ({ name })), prefix, logins: { ...sharedMcps.logins, toolbox: serving } })
   } finally {
     await admin.end()
   }
   const owner = new Client({ connectionString: superuser(own.database, own.owner) })
   await owner.connect()
   try {
-    await provisionOwnMcp(sqlOf(owner), { name: "stdmigc", ...own })
+    await provisionOwnMcp(sqlOf(owner), { name: "tbxmigc", ...own })
   } finally {
     await owner.end()
   }
 })
 afterAll(async () => {
   rmSync(root, { recursive: true, force: true })
-  const roles = ["stdmiga", "stdmigb", "stdmigd", "stdmige"].flatMap(name => [`${prefix}_${name}`, `${prefix}_${name}_owner`])
+  const roles = ["tbxmiga", "tbxmigb", "tbxmigd", "tbxmige"].flatMap(name => [`${prefix}_${name}`, `${prefix}_${name}_owner`])
   await on("postgres", `drop database ${shared} with (force)`, `drop database ${own.database} with (force)`, `drop role ${[serving, own.owner, own.runtime, ...roles].join(", ")}`)
 })
 
 const migrate = (names: string[], lines: string[] = []) => migrateDeclared({
   root,
-  mcps: names.map(name => ({ name, database: name === "stdmigc" ? "own" : "shared" })),
+  mcps: names.map(name => ({ name, database: name === "tbxmigc" ? "own" : "shared" })),
   shared: superuser(shared, sharedMcps.logins.migrator),
   own: name => superuser(own.database, `answerable_mcp_${name}_owner`),
   prefix,
@@ -88,31 +88,31 @@ const tables = (database: string, schema: string) => on(database, `select relnam
 
 test("the first failure stops the run and names the MCP; the MCPs after it are not migrated", async () => {
   const lines: string[] = []
-  await expect(migrate(["stdmigd", "stdmiga"], lines)).rejects.toThrow(/^Migrating MCP stdmigd failed: stdmigd: 0000_initial.sql failed: relation "stdmigd.missing" does not exist/)
-  expect(lines).toEqual(["stdmigd: migrating in answerable_standalone_test_migrate as mcp_stdm_stdmigd_owner"])
-  expect(await tables(shared, "stdmigd")).toEqual([])
-  expect(await tables(shared, "stdmiga")).toEqual([])
+  await expect(migrate(["tbxmigd", "tbxmiga"], lines)).rejects.toThrow(/^Migrating MCP tbxmigd failed: tbxmigd: 0000_initial.sql failed: relation "tbxmigd.missing" does not exist/)
+  expect(lines).toEqual(["tbxmigd: migrating in answerable_toolbox_test_migrate as mcp_tbxm_tbxmigd_owner"])
+  expect(await tables(shared, "tbxmigd")).toEqual([])
+  expect(await tables(shared, "tbxmiga")).toEqual([])
 })
 
 test("each MCP in the list's order: a shared one through the migrator as its owner role, an own one as its owner login; the grants from src/db/grants.ts when it exports them; a second run changes nothing", async () => {
   const lines: string[] = []
-  await migrate(["stdmigb", "stdmigc", "stdmiga"], lines)
+  await migrate(["tbxmigb", "tbxmigc", "tbxmiga"], lines)
   expect(lines).toEqual([
-    "stdmigb: migrating in answerable_standalone_test_migrate as mcp_stdm_stdmigb_owner, with src/db/grants.ts",
-    `stdmigc: migrating in ${own.database} as ${own.owner}`,
-    "stdmiga: migrating in answerable_standalone_test_migrate as mcp_stdm_stdmiga_owner",
+    "tbxmigb: migrating in answerable_toolbox_test_migrate as mcp_tbxm_tbxmigb_owner, with src/db/grants.ts",
+    `tbxmigc: migrating in ${own.database} as ${own.owner}`,
+    "tbxmiga: migrating in answerable_toolbox_test_migrate as mcp_tbxm_tbxmiga_owner",
   ])
-  const migrated = { a: await tables(shared, "stdmiga"), b: await tables(shared, "stdmigb"), c: await tables(own.database, "stdmigc") }
-  expect(migrated.a).toContainEqual({ relname: "notes", owner: "mcp_stdm_stdmiga_owner", acl: "{mcp_stdm_stdmiga_owner=arwdDxtm/mcp_stdm_stdmiga_owner,mcp_stdm_stdmiga=arwd/mcp_stdm_stdmiga_owner}" })
-  expect(migrated.b).toContainEqual({ relname: "notes", owner: "mcp_stdm_stdmigb_owner", acl: "{mcp_stdm_stdmigb_owner=arwdDxtm/mcp_stdm_stdmigb_owner,mcp_stdm_stdmigb=r/mcp_stdm_stdmigb_owner}" })
+  const migrated = { a: await tables(shared, "tbxmiga"), b: await tables(shared, "tbxmigb"), c: await tables(own.database, "tbxmigc") }
+  expect(migrated.a).toContainEqual({ relname: "notes", owner: "mcp_tbxm_tbxmiga_owner", acl: "{mcp_tbxm_tbxmiga_owner=arwdDxtm/mcp_tbxm_tbxmiga_owner,mcp_tbxm_tbxmiga=arwd/mcp_tbxm_tbxmiga_owner}" })
+  expect(migrated.b).toContainEqual({ relname: "notes", owner: "mcp_tbxm_tbxmigb_owner", acl: "{mcp_tbxm_tbxmigb_owner=arwdDxtm/mcp_tbxm_tbxmigb_owner,mcp_tbxm_tbxmigb=r/mcp_tbxm_tbxmigb_owner}" })
   expect(migrated.c).toContainEqual({ relname: "notes", owner: own.owner, acl: `{${own.owner}=arwdDxtm/${own.owner},${own.runtime}=arwd/${own.owner}}` })
-  await migrate(["stdmigb", "stdmigc", "stdmiga"])
-  expect({ a: await tables(shared, "stdmiga"), b: await tables(shared, "stdmigb"), c: await tables(own.database, "stdmigc") }).toEqual(migrated)
+  await migrate(["tbxmigb", "tbxmigc", "tbxmiga"])
+  expect({ a: await tables(shared, "tbxmiga"), b: await tables(shared, "tbxmigb"), c: await tables(own.database, "tbxmigc") }).toEqual(migrated)
 })
 
 test("an MCP with no migration yet is skipped, and one this repository does not hold is refused, naming it", async () => {
   const lines: string[] = []
-  await migrate(["stdmige"], lines)
-  expect(lines).toEqual(["stdmige: no migration yet"])
-  await expect(migrate(["stdmigf"])).rejects.toThrow("mcps/stdmigf is not in this image: the chart's list and the image come from different commits")
+  await migrate(["tbxmige"], lines)
+  expect(lines).toEqual(["tbxmige: no migration yet"])
+  await expect(migrate(["tbxmigf"])).rejects.toThrow("mcps/tbxmigf is not in this image: the chart's list and the image come from different commits")
 })

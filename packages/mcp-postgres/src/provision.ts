@@ -9,11 +9,8 @@ export type Sql = (text: string, params?: unknown[]) => Promise<Record<string, u
 /** The `Sql` of a connected pg client, or of a pool. */
 export const sqlOf = (client: Pick<Client, "query"> | Pick<Pool, "query">): Sql => async (text, params) => (await client.query(text, params)).rows
 
-/** The serving logins that may take an MCP's runtime role: `toolbox`, `standalone`, or both. */
-export type ServedBy = "toolbox" | "standalone"
-
-/** The shared database's three logins: `answerable_mcps_migrator`, `answerable_mcps_toolbox` and `answerable_mcps_standalone` when deployed. */
-export type McpLogins = { migrator: string; toolbox: string; standalone: string }
+/** The shared database's two logins: `answerable_mcps_migrator`, which migrates, and `answerable_mcps_toolbox`, which serves every MCP, when deployed. */
+export type McpLogins = { migrator: string; toolbox: string }
 
 // What a role of an MCP must never be. A CREATEROLE login may clear the rest, but only a superuser can clear these.
 const unfixable = [["rolsuper", "SUPERUSER"], ["rolreplication", "REPLICATION"], ["rolbypassrls", "BYPASSRLS"]] as const
@@ -22,25 +19,21 @@ const unfixable = [["rolsuper", "SUPERUSER"], ["rolreplication", "REPLICATION"],
  * Make, or bring back in line, every MCP of `mcps` in the connected shared database, as an administrative login with `CREATEROLE` that holds
  * the database owner's privileges (a member of `logins.migrator`, which must own it), not necessarily a superuser. In one transaction, under
  * the lock every role statement takes:
- * - the database: no privilege for `PUBLIC`, `CONNECT` for the three logins, no `TEMPORARY` for the two serving ones;
+ * - the database: no privilege for `PUBLIC`, `CONNECT` for the two logins, no `TEMPORARY` for the serving one;
  * - for each MCP, its owner role `<prefix>_<name>_owner` and runtime role `<prefix>_<name>`, both `NOLOGIN NOINHERIT`; schema `<name>`,
  *   owned by the owner role; `USAGE` on it for the runtime role; the owner role for the migrator and for the administrative login itself, and
- *   the runtime role for each login in `servedBy`, granted `WITH INHERIT FALSE, SET TRUE`; and the runtime role revoked from a serving login
- *   not in `servedBy`. So the administrative login inherits no MCP's owner role.
+ *   the runtime role for the serving login, which serves every MCP, granted `WITH INHERIT FALSE, SET TRUE`. So the administrative login
+ *   inherits no MCP's owner role.
  *
  * `prefix` is `mcp` unless given (tests use `mcp_test`). Every name is checked before any SQL runs. Running it twice changes nothing, and it
  * never drops anything.
  */
-export async function provisionMcps(sql: Sql, { mcps, prefix = "mcp", logins }: { mcps: readonly { name: string; servedBy: readonly ServedBy[] }[]; prefix?: string; logins: McpLogins }): Promise<void> {
-  const planned = mcps.map(mcp => {
-    const unknown = mcp.servedBy.find(server => server !== "toolbox" && server !== "standalone")
-    if (unknown) throw new Error(`MCP ${mcp.name} is served by "${unknown}"; servedBy lists toolbox and standalone`)
-    return { name: mcp.name, servedBy: mcp.servedBy, ...mcpRoles(prefix, mcp.name) }
-  })
+export async function provisionMcps(sql: Sql, { mcps, prefix = "mcp", logins }: { mcps: readonly { name: string }[]; prefix?: string; logins: McpLogins }): Promise<void> {
+  const planned = mcps.map(mcp => ({ name: mcp.name, ...mcpRoles(prefix, mcp.name) }))
   const duplicate = planned.find((mcp, index) => planned.findIndex(other => other.name === mcp.name) !== index)
   if (duplicate) throw new Error(`MCP ${duplicate.name} is listed twice`)
   for (const login of Object.values(logins)) if (!identifier.test(login)) throw new Error(`Invalid login name "${login}"`)
-  const [migrator, toolbox, standalone] = [logins.migrator, logins.toolbox, logins.standalone].map(quote)
+  const [migrator, toolbox] = [logins.migrator, logins.toolbox].map(quote)
 
   await sql("begin")
   try {
@@ -49,8 +42,8 @@ export async function provisionMcps(sql: Sql, { mcps, prefix = "mcp", logins }: 
     if (database!.owner !== logins.migrator) throw new Error(`Database ${database!.name} is owned by ${database!.owner}; the migrator login, ${logins.migrator}, must own it`)
     const name = quote(database!.name as string)
     await sql(`revoke all on database ${name} from public`)
-    await sql(`grant connect on database ${name} to ${migrator}, ${toolbox}, ${standalone}`)
-    await sql(`revoke temporary on database ${name} from ${toolbox}, ${standalone}`)
+    await sql(`grant connect on database ${name} to ${migrator}, ${toolbox}`)
+    await sql(`revoke temporary on database ${name} from ${toolbox}`)
     for (const mcp of planned) {
       await role(sql, mcp.owner)
       await role(sql, mcp.runtime)
@@ -62,14 +55,7 @@ export async function provisionMcps(sql: Sql, { mcps, prefix = "mcp", logins }: 
       await sql(`grant usage on schema ${quote(mcp.name)} to ${quote(mcp.runtime)}`)
       await sql("reset role")
       await sql(`grant ${quote(mcp.owner)} to ${migrator} with inherit false, set true`)
-      for (const server of ["toolbox", "standalone"] as const) {
-        if (mcp.servedBy.includes(server)) {
-          await sql(`grant ${quote(mcp.runtime)} to ${quote(logins[server])} with inherit false, set true`)
-          continue
-        }
-        const grants = await sql(`select pg_get_userbyid(grantor) as grantor from pg_auth_members where roleid = to_regrole($1) and member = to_regrole($2)`, [mcp.runtime, logins[server]])
-        for (const { grantor } of grants) await sql(`revoke ${quote(mcp.runtime)} from ${quote(logins[server])} granted by ${quote(grantor as string)}`)
-      }
+      await sql(`grant ${quote(mcp.runtime)} to ${toolbox} with inherit false, set true`)
     }
     await sql("commit")
   } catch (error) {

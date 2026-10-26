@@ -20,9 +20,9 @@ export const adminConfig = defineConfig("admin MCP", {
   ADMIN_ID_ADMIN_RESOURCE: { schema: z.url(), defaults: locally("http://localhost:47300/api/admin"), doc: "ID's admin API, the audience of the machine client's tokens", source: "chart" },
   ADMIN_TOOLBOX_ADMIN_RESOURCE: { schema: z.url().optional(), defaults: locally("http://localhost:47400/admin"), doc: "The Toolbox's admin API, for enabling the Toolbox for an organisation; unset, that is refused", source: "chart" },
   ADMIN_STANDALONE_ORIGIN: {
-    schema: z.url().transform(url => url.replace(/\/+$/, "")).optional(),
-    defaults: locally("http://localhost:47510"),
-    doc: "The standalone server's origin, whose <origin>/<name>/mcp is each standalone MCP's resource, for giving an organisation access to one; unset, that is refused",
+    schema: z.url().transform(url => url.replace(/\/+$/, "")),
+    defaults: locally("http://localhost:47400"),
+    doc: "The origin of the MCPs the Toolbox serves alone, whose <origin>/<name>/mcp is each one's resource, for giving an organisation access to one",
     source: "chart",
   },
   ADMIN_FRESH_SECONDS: { schema: z.coerce.number().int().min(1).optional(), doc: "How recent an upstream sign-in a critical operation needs, in seconds; unset, 1,800", source: "operator" },
@@ -40,7 +40,7 @@ export function readAdminEnvironment(env: Record<string, string | undefined>) {
     id: { issuer: data.ADMIN_ID_ISSUER, adminResource: data.ADMIN_ID_ADMIN_RESOURCE, clientId: data.ADMIN_ID_CLIENT_ID, clientSecret: data.ADMIN_ID_CLIENT_SECRET },
     /** The Toolbox's admin resource, for enabling the Toolbox for an organisation; unset, that is refused. */
     toolboxAdminResource: data.ADMIN_TOOLBOX_ADMIN_RESOURCE,
-    /** The standalone server's origin, for giving an organisation access to a standalone MCP; unset, that is refused. */
+    /** The origin of the MCPs the Toolbox serves alone, for giving an organisation access to one. */
     standaloneOrigin: data.ADMIN_STANDALONE_ORIGIN,
     /** How recent an upstream sign-in a critical operation needs, in seconds; unset, `createAdminMcp`'s 1,800. */
     freshSeconds: data.ADMIN_FRESH_SECONDS,

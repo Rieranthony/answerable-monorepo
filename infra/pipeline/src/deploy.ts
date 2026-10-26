@@ -35,7 +35,7 @@ export function parseJob(value: string | undefined): OpsJob {
 /** An image tag the pipeline accepts: the full commit SHA, never a branch or `latest`. */
 const IMAGE_TAG = /^sha-[0-9a-f]{40}$/
 
-/** The Deployments whose pods read the machine-client secrets that `register` writes; the standalone server's exists only while it serves an MCP. */
+/** The Deployments whose pods read the machine-client secrets that `register` writes. */
 const REGISTERED_SERVERS = ["toolbox", "admin-mcp"]
 
 /** Jobs whose logs are printed when an upgrade fails. */
@@ -291,7 +291,7 @@ async function restartServers(session: Session, timeout: string): Promise<void> 
   const find = (server: string) => names.find((name) => name.endsWith(`/${server}`) || name.endsWith(`-${server}`))
   if (REGISTERED_SERVERS.some((server) => !find(server)))
     throw new PipelineError(`expected Deployments for ${REGISTERED_SERVERS.join(" and ")} in ${NAMESPACE}, found: ${names.filter(Boolean).join(", ") || "none"}`)
-  const found = [...REGISTERED_SERVERS, "standalone"].flatMap((server) => find(server) ?? [])
+  const found = REGISTERED_SERVERS.map((server) => find(server)!)
   const restarted = await session.show(["kubectl", "rollout", "restart", "-n", NAMESPACE, ...found])
   if (restarted.exitCode !== 0) throw new PipelineError(`kubectl rollout restart failed with exit code ${restarted.exitCode}`)
   for (const target of found) {

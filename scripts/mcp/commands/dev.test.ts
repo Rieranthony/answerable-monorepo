@@ -12,7 +12,7 @@ isolateEnvironment()
 let repository: Awaited<ReturnType<typeof tempRepository>>
 afterEach(() => repository.remove())
 
-const acme = "http://localhost:47510/acme/mcp"
+const acme = "http://localhost:47400/acme/mcp"
 const toolbox = "http://localhost:47400/mcp"
 const manifest = (scopes: string[]) => JSON.stringify({
   description: "Notes.",
@@ -36,7 +36,7 @@ async function prepare(serve: "toolbox" | "standalone" | "both", { scopes = ["ac
   return { id, stack }
 }
 
-// bun mcp dev, started: its output, and the means to Ctrl-C it, wait for it, or stop one of its servers.
+// bun mcp dev, started: its output, and the means to Ctrl-C it, wait for it, or stop the Toolbox.
 function start(stack: Stack, argv = ["acme"], { cwd = repository.root, listening = async (_host: string, port: number) => port === 47432, answer }: { cwd?: string; listening?: (host: string, port: number) => Promise<boolean>; answer?: Parameters<typeof recorder>[0] } = {}) {
   const controller = new AbortController()
   const { exec, ran } = recorder(answer)
@@ -56,17 +56,17 @@ async function dev(stack: Stack, argv?: string[], options?: Parameters<typeof st
   return { ...running, code: await running.finished }
 }
 
-test("a standalone MCP: migrates, starts the standalone server as mcp-dev, registers its resource and client, gives the organisation access, prints what to do and stops on Ctrl-C", async () => {
+test("a standalone MCP: migrates, starts the Toolbox as mcp-dev, which serves it at its path, registers its resource and client, gives the organisation access, prints what to do and stops on Ctrl-C", async () => {
   const { id, stack } = await prepare("standalone")
   const before = writesTo(id).length
   const { code, ran, stdout, stderr } = await dev(stack)
   expect([code, stderr()]).toEqual([0, ""])
   expect(ran.map(({ command, cwd }) => [command.slice(1), cwd])).toEqual([
-    [[cli, "db", "acme", "migrate"], repository.root], [["run", "db:migrate"], join(repository.root, "mcps/standalone")],
+    [[cli, "db", "acme", "migrate"], repository.root], [["run", "db:migrate"], join(repository.root, "mcps/toolbox")],
   ])
   expect(stack.started).toHaveLength(1)
-  expect(stack.started[0]).toMatchObject({ command: [process.execPath, "run", "--silent", "dev"], cwd: join(repository.root, "mcps/standalone"), stopped: true })
-  expect(stack.started[0]!.env).toMatchObject({ STANDALONE_ID_CLIENT_ID: "mcp-dev", STANDALONE_ID_CLIENT_SECRET: expect.stringMatching(/^secret-/) })
+  expect(stack.started[0]).toMatchObject({ command: [process.execPath, "run", "--silent", "dev"], cwd: join(repository.root, "mcps/toolbox"), stopped: true })
+  expect(stack.started[0]!.env).toMatchObject({ TOOLBOX_ID_CLIENT_ID: "mcp-dev", TOOLBOX_ID_CLIENT_SECRET: expect.stringMatching(/^secret-/) })
   expect(writesTo(id).slice(before)).toEqual([
     "POST /resources", "POST /clients", `PUT /clients/claude-code-acme/resources/${encodeURIComponent(acme)}`,
     ...[1, 2, 3, 4].map(() => `POST /organizations/${id.organizationId}/capabilities`), ...[1, 2].map(() => `POST /organizations/${id.organizationId}/entitlements`),
@@ -74,20 +74,20 @@ test("a standalone MCP: migrates, starts the standalone server as mcp-dev, regis
   expect(id.resourceOf(acme)).toMatchObject({ allowedScopes: ["acme:read", "acme:write", "offline_access"], accessTokenTtl: 900, clients: ["claude-code-acme"] })
   expect(id.entitlements(id.organizationId).map(row => [row.clientId, row.resource, row.scopes])).toEqual([["claude-code-acme", null, ["openid", "offline_access"]], ["claude-code-acme", acme, ["acme:read", "acme:write"]]])
   expect(lines(stdout())).toEqual([
-    "ok      database   schemas acme; the database of the standalone server",
-    "ok      standalone serving acme at http://localhost:47510/acme/mcp",
-    "ok      register   http://localhost:47510/acme/mcp and claude-code-acme: 3 made, 0 changed, 0 found",
+    "ok      database   schemas acme; the database of the Toolbox",
+    "ok      toolbox    serving acme at http://localhost:47400/acme/mcp",
+    "ok      register   http://localhost:47400/acme/mcp and claude-code-acme: 3 made, 0 changed, 0 found",
     "ok      access     organisation answerable: 6 made, 0 widened",
     "",
-    "acme runs at http://localhost:47510/acme/mcp",
+    "acme runs at http://localhost:47400/acme/mcp",
     "",
-    "  claude mcp add --transport http acme http://localhost:47510/acme/mcp --client-id claude-code-acme --callback-port 47700",
+    "  claude mcp add --transport http acme http://localhost:47400/acme/mcp --client-id claude-code-acme --callback-port 47700",
     "",
     "In Claude Code, run /mcp, choose acme, then Authenticate.",
     "",
-    "Ctrl-C stops the standalone server; an edit to acme reloads it.",
+    "Ctrl-C stops the Toolbox; an edit to acme reloads it.",
     "",
-    "Stopping the standalone server.",
+    "Stopping the Toolbox.",
     "",
   ])
 })
@@ -100,9 +100,9 @@ test("run again it writes nothing to ID: the registration and the access are fou
   expect(again.code).toBe(0)
   expect(writesTo(id)).toHaveLength(written)
   expect(lines(again.stdout()).slice(0, 4)).toEqual([
-    "ok      database   schemas acme; the database of the standalone server",
-    "ok      standalone serving acme at http://localhost:47510/acme/mcp",
-    "ok      register   http://localhost:47510/acme/mcp and claude-code-acme: 0 made, 0 changed, 3 found",
+    "ok      database   schemas acme; the database of the Toolbox",
+    "ok      toolbox    serving acme at http://localhost:47400/acme/mcp",
+    "ok      register   http://localhost:47400/acme/mcp and claude-code-acme: 0 made, 0 changed, 3 found",
     "ok      access     organisation answerable: already in place",
   ])
   expect(lines(again.stdout()).slice(4)).toEqual(lines(first.stdout()).slice(4))
@@ -116,7 +116,7 @@ test("an MCP that gained a scope since: its resource, client and the organisatio
   const { code, stdout } = await dev(stack)
   expect(code).toBe(0)
   expect(lines(stdout()).slice(2, 4)).toEqual([
-    "ok      register   http://localhost:47510/acme/mcp and claude-code-acme: 0 made, 2 changed, 1 found",
+    "ok      register   http://localhost:47400/acme/mcp and claude-code-acme: 0 made, 2 changed, 1 found",
     "ok      access     organisation answerable: 0 made, 3 widened",
   ])
   expect(writesTo(id).slice(written).map(write => write.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, "<id>"))).toEqual([
@@ -191,40 +191,40 @@ test("the Toolbox refusing the enable call, or ID refusing mcp-dev a token for t
   expect([noToken.code, noToken.stderr().split("\n")[0]]).toEqual([1, "enable failed: ID refused mcp-dev a token for the Toolbox's admin API, which needs toolbox:admin: run bun mcp setup again"])
 })
 
-test("an MCP served both ways starts the Toolbox and the standalone server, prints both ways in, and stops them last started first", async () => {
+test("an MCP served both ways starts the Toolbox alone, which serves it in its hub and at its path, prints both ways in, and stops it", async () => {
   const { stack } = await prepare("both")
   const { code, stdout } = await dev(stack)
   expect(code).toBe(0)
-  expect(stack.started.map(server => server.cwd.split("/").slice(-2).join("/"))).toEqual(["mcps/toolbox", "mcps/standalone"])
+  expect(stack.started.map(server => server.cwd.split("/").slice(-2).join("/"))).toEqual(["mcps/toolbox"])
   expect(lines(stdout()).filter(line => line.startsWith("ok")).map(line => line.split(/ +/)[1])).toEqual(definitions.dev.steps.map(step => step.name))
+  expect(lines(stdout())[1]).toBe("ok      toolbox    serving acme at http://localhost:47400/mcp and http://localhost:47400/acme/mcp")
   expect(stdout()).toContain("acme runs in the Toolbox at http://localhost:47400/mcp, as the tools acme_*.")
-  expect(stdout()).toContain("acme runs at http://localhost:47510/acme/mcp")
-  expect(stdout()).toContain("Ctrl-C stops the Toolbox and the standalone server; an edit to acme reloads them.")
-  expect(stdout()).toEndWith("Stopping the Toolbox and the standalone server.\n")
+  expect(stdout()).toContain("acme runs at http://localhost:47400/acme/mcp")
+  expect(stdout()).toContain("Ctrl-C stops the Toolbox; an edit to acme reloads it.")
+  expect(stdout()).toEndWith("Stopping the Toolbox.\n")
 })
 
 test("from inside the MCP's directory it needs no name", async () => {
   const { stack } = await prepare("standalone")
   const { code, stdout } = await dev(stack, [], { cwd: join(repository.root, "mcps/acme") })
   expect(code).toBe(0)
-  expect(stdout()).toContain("acme runs at http://localhost:47510/acme/mcp")
+  expect(stdout()).toContain("acme runs at http://localhost:47400/acme/mcp")
 })
 
 const refused = async (run: { finished: Promise<number>; stderr: () => string; stdout: () => string }) => ({ code: await run.finished, stdout: run.stdout(), stderr: run.stderr() })
 
-test("without bun mcp setup, with ID down, with Postgres down and with both ports taken it refuses once, listing every problem each with its command, and starts nothing", async () => {
+test("without bun mcp setup, with ID down, with Postgres down and with the Toolbox's port taken it refuses once, listing every problem each with its command, and starts nothing", async () => {
   repository = await tempRepository({ "mcps/acme/mcp.json": JSON.stringify({ name: "acme", serve: "both", database: "shared" }), "mcps/acme/manifest.json": manifest(["acme:read", "acme:write"]) })
   const id = localId()
   id.unreachable(true)
   const stack = localStack(id)
-  const { code, stdout, stderr } = await refused(start(stack, ["acme"], { listening: async (_host, port) => port === 47400 || port === 47510 }))
+  const { code, stdout, stderr } = await refused(start(stack, ["acme"], { listening: async (_host, port) => port === 47400 }))
   expect([code, stdout]).toEqual([2, ""])
   expect(stderr.split("\n")).toEqual([
     "bun mcp setup has not run: MCP_DEV_ID_CLIENT_ID and MCP_DEV_ID_CLIENT_SECRET are not in .env. Run bun mcp setup",
     "Answerable ID does not answer on http://localhost:47300. Start it from the main checkout with bun dev, or with bun --filter @answerable/id dev; never bun dev from a worktree, where it runs env:up and recreates the shared Postgres",
     "The development Postgres does not answer on localhost:47432. Start it from the main checkout with bun run env:up; never from a worktree, where it recreates the running one",
     "Port 47400 is taken, and the Toolbox needs it: stop what listens there (lsof -nP -iTCP:47400 -sTCP:LISTEN names it)",
-    "Port 47510 is taken, and the standalone server needs it: stop what listens there (lsof -nP -iTCP:47510 -sTCP:LISTEN names it)",
     "",
     "  bun mcp dev acme",
     "",
@@ -260,35 +260,35 @@ test.each([
   expect([code, stderr.split("\n")[0]]).toEqual([2, message])
 })
 
-test("a server that stops before it lists the MCP is a failed step naming its exit code; what started is stopped and the command to run again is given", async () => {
-  const { stack } = await prepare("both", { stack: { end: (_command, cwd) => (cwd.endsWith("mcps/standalone") ? 1 : undefined) } })
+test("a Toolbox that stops before it lists the MCP is a failed step naming its exit code; it is stopped and the command to run again is given", async () => {
+  const { stack } = await prepare("both", { stack: { end: (_command, cwd) => (cwd.endsWith("mcps/toolbox") ? 1 : undefined) } })
   const { code, stdout, stderr } = await dev(stack)
   expect(code).toBe(1)
-  expect(lines(stdout())).toEqual(["ok      database   schemas acme; the databases of the Toolbox and the standalone server", "ok      toolbox    serving acme at http://localhost:47400/mcp", "failed  standalone", ""])
-  expect(stderr()).toBe("standalone failed: the standalone server stopped with exit code 1 before http://localhost:47510/health listed acme; its output above says why\n\nFinish the job with:\n  bun mcp dev acme\n")
-  expect(stack.started.map(server => server.stopped)).toEqual([true, true])
+  expect(lines(stdout())).toEqual(["ok      database   schemas acme; the database of the Toolbox", "failed  toolbox   ", ""])
+  expect(stderr()).toBe("toolbox failed: the Toolbox stopped with exit code 1 before http://localhost:47400/health listed acme; its output above says why\n\nFinish the job with:\n  bun mcp dev acme\n")
+  expect(stack.started.map(server => server.stopped)).toEqual([true])
 })
 
-test("a server that stops while running ends the command with exit 1, naming it, and stops the other", async () => {
+test("a Toolbox that stops while running ends the command with exit 1, naming it", async () => {
   const { stack } = await prepare("both")
   const running = start(stack)
   await running.printed()
-  stack.started[1]!.exit(70)
+  stack.started[0]!.exit(70)
   expect(await running.finished).toBe(1)
-  expect(running.stderr()).toBe("\nthe standalone server stopped with exit code 70; its output above says why. Run bun mcp dev acme again.\n")
-  expect(stack.started.map(server => server.stopped)).toEqual([true, true])
+  expect(running.stderr()).toBe("\nthe Toolbox stopped with exit code 70; its output above says why. Run bun mcp dev acme again.\n")
+  expect(stack.started.map(server => server.stopped)).toEqual([true])
 })
 
-test("a migration that fails, of the MCP or of a server's database, is a failed step with the output's end and the command to run again; nothing is started", async () => {
+test("a migration that fails, of the MCP or of the Toolbox's database, is a failed step with the output's end and the command to run again; nothing is started", async () => {
   const { stack } = await prepare("standalone")
   const { code, stderr } = await dev(stack, ["acme"], { answer: () => ({ code: 1, output: "the development Postgres does not answer\n" }) })
   expect([code, stderr()]).toEqual([1, "database failed: the development Postgres does not answer\n\nFinish the job with:\n  bun mcp dev acme\n"])
-  const hub = await dev(stack, ["acme"], { answer: command => (command.includes("db:migrate") ? { code: 1, output: "role answerable_standalone_owner does not exist\n" } : { code: 0, output: "" }) })
-  expect([hub.code, hub.stderr().split("\n")[0]]).toEqual([1, "database failed: role answerable_standalone_owner does not exist"])
+  const hub = await dev(stack, ["acme"], { answer: command => (command.includes("db:migrate") ? { code: 1, output: "role answerable_toolbox_owner does not exist\n" } : { code: 0, output: "" }) })
+  expect([hub.code, hub.stderr().split("\n")[0]]).toEqual([1, "database failed: role answerable_toolbox_owner does not exist"])
   expect(stack.started).toEqual([])
 })
 
-test("every MCP the started servers mount is migrated, the MCP's own and the others', and no other: the Toolbox's and the standalone server's lists differ", async () => {
+test("every MCP is migrated, the MCP's own and the others', whatever their serve, since the Toolbox serves them all, then the Toolbox's database", async () => {
   repository = await tempRepository({
     "mcps/acme/mcp.json": JSON.stringify({ name: "acme", serve: "standalone", database: "shared" }), "mcps/acme/manifest.json": manifest(["acme:read", "acme:write"]),
     "mcps/beta/mcp.json": JSON.stringify({ name: "beta", serve: "toolbox", database: "shared" }),
@@ -298,14 +298,11 @@ test("every MCP the started servers mount is migrated, the MCP's own and the oth
   const stack = localStack(id, { mounted: ["acme", "beta", "gamma"] })
   expect(await main(testIo(["setup"], repository.root, { fetch: stack.fetch }).io)).toBe(0)
   const migrated = (ran: { command: string[]; cwd: string }[]) => ran.map(({ command, cwd }) => (command.includes("db:migrate") ? cwd.split("/").slice(-2).join("/") : command.at(-2)))
-  const standalone = await dev(stack, ["acme"])
-  expect([standalone.code, migrated(standalone.ran)]).toEqual([0, ["acme", "gamma", "mcps/standalone"]])
-  expect(lines(standalone.stdout())[0]).toBe("ok      database   schemas acme and gamma; the database of the standalone server")
-  const toolbox = await dev(stack, ["beta"])
-  expect([toolbox.code, migrated(toolbox.ran)]).toEqual([0, ["beta", "gamma", "mcps/toolbox"]])
-  const both = await dev(stack, ["gamma"])
-  expect([both.code, migrated(both.ran)]).toEqual([0, ["acme", "beta", "gamma", "mcps/toolbox", "mcps/standalone"]])
-  expect(lines(both.stdout())[0]).toBe("ok      database   schemas acme, beta and gamma; the databases of the Toolbox and the standalone server")
+  for (const name of ["acme", "beta", "gamma"]) {
+    const run = await dev(stack, [name])
+    expect([run.code, migrated(run.ran)], name).toEqual([0, ["acme", "beta", "gamma", "mcps/toolbox"]])
+    expect(lines(run.stdout())[0], name).toBe("ok      database   schemas acme, beta and gamma; the database of the Toolbox")
+  }
 })
 
 test("a row ID holds that does not fit, such as a disabled entitlement, stops the access step with ID's words and the command to run again", async () => {
@@ -316,7 +313,7 @@ test("a row ID holds that does not fit, such as a disabled entitlement, stops th
   expect(stderr()).toBe(`access failed: Answerable ID already holds the login entitlement of claude-code-acme (${row.id}) with status disabled and scopes openid offline_access; enable it, then run bun mcp dev acme again\n\nFinish the job with:\n  bun mcp dev acme\n`)
 })
 
-test("a Ctrl-C that came before the servers were up still ends the command, stopping what started", async () => {
+test("a Ctrl-C that came before the Toolbox was up still ends the command, stopping what started", async () => {
   const { stack } = await prepare("standalone")
   const controller = new AbortController()
   controller.abort()

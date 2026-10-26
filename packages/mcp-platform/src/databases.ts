@@ -3,17 +3,20 @@ import { assertOwnLogin, assertServingLogin, mcpDatabase } from "@answerable/mcp
 import { drizzle } from "drizzle-orm/node-postgres"
 import { Pool } from "pg"
 
+/** Where an MCP is served: in the Toolbox's hub, alone at `<origin>/<name>/mcp`, or both. */
+export type Serve = "toolbox" | "standalone" | "both"
+
 /**
- * An MCP as a server's generated list declares it: its provider, and where its tables live: `shared`, a schema in the shared database, or `own`,
- * a database of its own, whose URL the server reads from `variable`.
+ * An MCP as the Toolbox's generated list declares it: its provider, where it is served, and where its tables live: `shared`, a schema in the
+ * shared database, or `own`, a database of its own, whose URL the server reads from `variable`.
  */
-export type Declared = Readonly<{ provider: Provider; database: "shared" } | { provider: Provider; database: "own"; variable: string }>
+export type Declared = Readonly<{ provider: Provider; serve: Serve } & ({ database: "shared" } | { database: "own"; variable: string })>
 
 /**
  * The databases of the MCPs a server serves, from its generated list and its configuration: one pool to the shared database at `shared`, as the
  * server's serving login, and one pool to each `own` MCP's database at `own[variable]`, as that MCP's runtime login. Each MCP with a `database`
  * gets its `db`, made once, through `mcpDatabase`, with the organisation of the call running (`callerOrganisation`): in mode `shared` each borrow
- * takes its runtime role `<prefix>_<name>` (`prefix` is `mcp` unless given). Returns `mount`, for `createMcpServer` or `createToolbox`; `pools`,
+ * takes its runtime role `<prefix>_<name>` (`prefix` is `mcp` unless given). Returns `mount`, each MCP with where it is served, for `createToolbox`; `pools`,
  * by name (`mcps`, and each own MCP's name), for `/health`; `assert()`, the serving login's assertion and each own MCP's runtime login's, to
  * await before listening; and `close()`.
  */
@@ -25,10 +28,10 @@ export function mcpDatabases(declared: readonly Declared[], { shared, own, prefi
     if (!url) throw new Error(`Set ${entry.variable} to the database of ${entry.provider.id}, as its runtime login`)
     return [[entry.provider.id, new Pool({ connectionString: url })] as const]
   }))
-  const mount: Mount[] = declared.map(({ provider, database }) => {
-    if (!provider.database) return { provider }
+  const mount: (Mount & { readonly serve: Serve })[] = declared.map(({ provider, serve, database }) => {
+    if (!provider.database) return { provider, serve }
     const db = mcpDatabase(owned.get(provider.id) ?? pool, { name: provider.id, prefix, schema: provider.database.schema, mode: database, organisation: callerOrganisation })
-    return { provider, db }
+    return { provider, serve, db }
   })
   const names = declared.filter(entry => entry.database === "shared").map(entry => entry.provider.id)
   return {

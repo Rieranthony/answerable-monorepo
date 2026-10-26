@@ -90,13 +90,13 @@ test("bootstrap stops before the database when the fetch fails, and removes the 
 })
 
 test("register registers in ID, with each standalone MCP of the list, stores the client secrets, then starts the servers that were waiting at zero replicas", async () => {
-  const kube = fakeKubernetes({ deployments: { toolbox: 0, "admin-mcp": 0, standalone: 0, other: 3 } })
-  const { code, out, id } = await run(["register"], { ...registerEnv, OPS_START_DEPLOYMENTS: "toolbox=2, admin-mcp=1,standalone=2,other=1,missing=1" }, { kube })
+  const kube = fakeKubernetes({ deployments: { toolbox: 0, "admin-mcp": 0, other: 3 } })
+  const { code, out, id } = await run(["register"], { ...registerEnv, OPS_START_DEPLOYMENTS: "toolbox=2, admin-mcp=1,other=1,missing=1" }, { kube })
   expect(code).toBe(0)
-  expect(Object.keys(kube.secrets).sort()).toEqual(["admin-id-client", "ops-id-client", "standalone-id-client", "toolbox-id-client"])
+  expect(Object.keys(kube.secrets).sort()).toEqual(["admin-id-client", "ops-id-client", "toolbox-id-client"])
   expect(id.state.resources.get("https://mcp.example/e2e/mcp")!.allowedScopes).toEqual(["e2e:read", "offline_access"])
   expect(id.state.clients.has("claude-code-acme")).toBe(false)
-  expect(kube.deployments).toEqual({ toolbox: 2, "admin-mcp": 1, standalone: 2, other: 3 })
+  expect(kube.deployments).toEqual({ toolbox: 2, "admin-mcp": 1, other: 3 })
   expect(out).toContain("toolbox: scaled from 0 to 2")
   expect(out).toContain("other: already running")
   expect(out).toContain("missing: no such Deployment")

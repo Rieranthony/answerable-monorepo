@@ -213,7 +213,7 @@ const scenarios: Record<string, () => Promise<Printed>> = {
     return dev(root, local)
   },
   "server-stopped": async () => {
-    const { root, local } = await developer(standalone, { end: (_command, cwd) => (cwd.endsWith("mcps/standalone") ? 1 : undefined) })
+    const { root, local } = await developer(standalone, { end: (_command, cwd) => (cwd.endsWith("mcps/toolbox") ? 1 : undefined) })
     return dev(root, local)
   },
 }

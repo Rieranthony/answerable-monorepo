@@ -27,7 +27,7 @@ You choose when you make the MCP, with `--serve`, and can change it in `mcps/acm
 | **On its own** | `standalone` | `https://mcp.<zone>/acme/mcp` | People whose token carries the MCP's scopes, `acme:read` and `acme:write`. Staff give an organisation the sign-in, then the scopes |
 | **Both** | `both` | Both | Each by its own rule |
 
-The `<zone>` is `answerable-staging.uk` in staging and `answerable.org` in production. On your machine the Toolbox is `http://localhost:47400/mcp` and the standalone server `http://localhost:47510/acme/mcp`. In the Toolbox one connection serves every MCP and every organisation, and staff govern each person's tools in one place. Run on its own when an MCP needs a sign-in of its own, and so a URL of its own. Both run in the same shared server process, so neither needs a deployment of its own.
+The `<zone>` is `answerable-staging.uk` in staging and `answerable.org` in production. On your machine the Toolbox is `http://localhost:47400/mcp`, and an MCP on its own `http://localhost:47400/acme/mcp`. In the Toolbox one connection serves every MCP and every organisation, and staff govern each person's tools in one place. Run on its own when an MCP needs a sign-in of its own, and so a URL of its own. The Toolbox's process serves both, so neither needs a deployment of its own.
 
 ## Reading order
 
@@ -55,7 +55,7 @@ A coding agent can do the first five: [Build with an AI agent](/docs/agents) has
 
 Each definition is plain data, checked when the module loads. A tool is five fields: `name`, `description`, `input`, `output` and `execute`. Everything else has a default.
 
-**In the Toolbox, on its own, or both.** A server runs alone at its own path of the standalone server. Or its provider is mounted in [the Toolbox](/docs/toolbox), one endpoint for every organisation, where staff decide who may use each tool: [Add tools to the Toolbox](/docs/toolbox/add-tools).
+**In the Toolbox, on its own, or both.** The Toolbox serves an MCP alone at its own path, with its own resource. Or its provider is mounted in [the Toolbox](/docs/toolbox)'s hub, one endpoint for every organisation, where staff decide who may use each tool: [Add tools to the Toolbox](/docs/toolbox/add-tools).
 
 ### How a request is authorised
 
@@ -78,7 +78,7 @@ The server never sees a password, never runs Better Auth and never reads ID's da
 
 ## Status
 
-**Built.** `@answerable/mcp` defines read tools, [prepared mutations](/docs/mcp/mutations) and providers, serves them on the official MCP TypeScript SDK, answers every tool failure with one [error envelope](/docs/mcp/errors), exports each provider's contract as a manifest, and checks a provider against [the standard](/docs/mcp/standard) with [the conformance kit](/docs/mcp/testing). `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference MCP, served both in the Toolbox and on its own URL, and `mcps/example` the finished example; `mcps/admin` is [the admin MCP](/docs/admin), for Answerable staff. [The Toolbox](/docs/toolbox) mounts every MCP whose `serve` is `toolbox` or `both`, and [the standalone server](/docs/mcp/servers#the-standalone-server) serves every one whose `serve` is `standalone` or `both` at its own path. `bun mcp new` makes an MCP, `bun mcp add tool` adds a tool and `bun mcp dev` runs one on your machine, [a tag ships it](/docs/mcp/deploy) to staging, which has run, and to production, which has not, and [the acceptance](/docs/mcp/local-testing) signs organisations into the reference server, the Toolbox and the admin MCP through real ID with a browser and the official MCP OAuth client.
+**Built.** `@answerable/mcp` defines read tools, [prepared mutations](/docs/mcp/mutations) and providers, serves them on the official MCP TypeScript SDK, answers every tool failure with one [error envelope](/docs/mcp/errors), exports each provider's contract as a manifest, and checks a provider against [the standard](/docs/mcp/standard) with [the conformance kit](/docs/mcp/testing). `@answerable/auth` verifies Answerable ID access tokens. `mcps/e2e` is the reference MCP, served both in the Toolbox and on its own URL, and `mcps/example` the finished example; `mcps/admin` is [the admin MCP](/docs/admin), for Answerable staff. [The Toolbox](/docs/toolbox) mounts every MCP whose `serve` is `toolbox` or `both` in its hub, and [serves every one](/docs/mcp/servers#served-alone) whose `serve` is `standalone` or `both` at its own path. `bun mcp new` makes an MCP, `bun mcp add tool` adds a tool and `bun mcp dev` runs one on your machine, [a tag ships it](/docs/mcp/deploy) to staging, which has run, and to production, which has not, and [the acceptance](/docs/mcp/local-testing) signs organisations into the reference server, the Toolbox and the admin MCP through real ID with a browser and the official MCP OAuth client.
 
 **Not yet.** Human approvals (a human-class intent waits and answers `APPROVAL_REQUIRED`), operations for long work, `toolbox_run`, the OpenAPI adapter, administration by an organisation's own administrators, remote providers, a production deployment and a public npm release. [The standard](/docs/mcp/standard#not-yet) lists the rules nothing enforces yet.
 
@@ -98,10 +98,9 @@ The server never sees a password, never runs Better Auth and never reads ID's da
 | `@answerable/mcp-example` | The finished example, made with `bun mcp`: `example.status`, `notes.list` and `notes.add` over its database (`mcps/example`) |
 | `@answerable/id-admin` | A server's machine client on Answerable ID's admin API: `createIdAdmin`, `IdError`, `found`, `createIdProfiles` (who is calling, for `createMcpServer`), and the fake ID in `@answerable/id-admin/testing` (`packages/id-admin`) |
 | `@answerable/mcp-postgres` | Postgres storage for MCP servers: the intent store, the evidence chain, the drizzle base schema, and a database for every MCP with `mcpDatabase` (`packages/mcp-postgres`) |
-| `@answerable/mcp-platform` | What every server Answerable runs shares: the evidence and spans of every call and refusal (`createCalls`), the audit-log poller, `/health`, each MCP's database from its server's generated list (`mcpDatabases`), and test databases in `@answerable/mcp-platform/testing` (`packages/mcp-platform`) |
-| `@answerable/mcp-toolbox` | The Toolbox: `createToolbox`, the grants reader, the catalogue and the admin API, mounting the MCPs of its generated list (`mcps/toolbox`) |
-| `@answerable/mcp-standalone` | The standalone server: `createStandalone`, every standalone MCP at its own path (`mcps/standalone`) |
-| `@answerable/scripts` | `bun mcp`: `new`, `add tool`, `list`, `check`, `db`, `setup` and `dev`, their templates and the generator of the lists the servers and the chart read (`scripts/mcp`). [The bun mcp command](/docs/mcp/cli) |
+| `@answerable/mcp-platform` | What every server Answerable runs shares: the evidence and spans of every call and refusal (`createCalls`), the audit-log poller, `/health`, each MCP's database from the Toolbox's generated list (`mcpDatabases`), and test databases in `@answerable/mcp-platform/testing` (`packages/mcp-platform`) |
+| `@answerable/mcp-toolbox` | The Toolbox: `createToolbox`, the grants reader, the catalogue and the admin API, serving the MCPs of its generated list in its hub and at their own paths (`mcps/toolbox`) |
+| `@answerable/scripts` | `bun mcp`: `new`, `add tool`, `list`, `check`, `db`, `setup` and `dev`, their templates and the generator of the lists the Toolbox and the chart read (`scripts/mcp`). [The bun mcp command](/docs/mcp/cli) |
 
 The packages are private to the monorepo: a public npm release is Not yet. Views import the official MCP Apps browser API, `@modelcontextprotocol/ext-apps`, directly. Every export of `@answerable/auth` and `@answerable/mcp` is in the [API reference](/docs/mcp/reference).
 

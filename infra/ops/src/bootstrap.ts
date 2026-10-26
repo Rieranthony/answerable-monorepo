@@ -1,4 +1,4 @@
-import { ownMcpDatabase, provisionMcps, provisionOwnMcp, servedBy, sharedMcps, type DeclaredMcp, type Sql } from "@answerable/mcp-postgres"
+import { ownMcpDatabase, provisionMcps, provisionOwnMcp, sharedMcps, type DeclaredMcp, type Sql } from "@answerable/mcp-postgres"
 import type { SecretRef, SecretStore } from "./secret-store"
 
 type Login = { name: string; ref: SecretRef }
@@ -16,9 +16,9 @@ const server = (name: string, prefix: string): Database => ({
 /**
  * Every database the release runs on (D4, B1), each login's URL a key of a Secret the chart reads: the owners' in the Secrets the migration
  * Jobs mount, the runtime logins' in those the services mount.
- * - ID's, the Toolbox's, the admin MCP's and the standalone server's, each with its owner and one runtime login;
- * - the shared MCP database, owned by its migrator, which the mcps-migrate Job mounts, and served by the Toolbox's and the standalone server's
- *   logins, which take each MCP's runtime role;
+ * - ID's, the Toolbox's and the admin MCP's, each with its owner and one runtime login;
+ * - the shared MCP database, owned by its migrator, which the toolbox-migrate Job mounts, and served by the Toolbox's login, which takes each
+ *   MCP's runtime role;
  * - for each own MCP of the chart's list, `answerable_mcp_<name>`, with its owner and runtime logins in `mcp-<name>-database-owner` and
  *   `mcp-<name>-database`.
  */
@@ -28,11 +28,10 @@ export function databasesFor(mcps: readonly DeclaredMcp[]): Database[] {
     server("id", ""),
     server("toolbox", "TOOLBOX_"),
     server("admin", "ADMIN_"),
-    server("standalone", "STANDALONE_"),
     {
       name: database,
       owner: login(logins.migrator, "mcps-database-owner", "MCPS_DATABASE_MIGRATION_URL"),
-      runtime: [login(logins.toolbox, "toolbox-mcps-database", "TOOLBOX_MCPS_DATABASE_URL"), login(logins.standalone, "standalone-mcps-database", "STANDALONE_MCPS_DATABASE_URL")],
+      runtime: [login(logins.toolbox, "toolbox-mcps-database", "TOOLBOX_MCPS_DATABASE_URL")],
     },
     ...mcps.filter(mcp => mcp.database === "own").map(({ name }) => {
       const own = ownMcpDatabase(name)
@@ -80,7 +79,7 @@ async function bounded(sql: Sql) {
  * Create, or bring back in line, every database of {@link databasesFor} and their logins with an administrative login that may create databases
  * and roles (a managed database's administrator, not necessarily a superuser), and write each login's URL to the store. A login whose Secret
  * holds a URL gets that URL's password; one whose Secret is empty gets a new password, written. Then, on a connection to each, `@answerable/mcp-
- * postgres` provisions the MCPs of `mcps`: in the shared database, each shared MCP's schema and roles for the servers that serve it; in each own
+ * postgres` provisions the MCPs of `mcps`: in the shared database, each shared MCP's schema and roles for the Toolbox, which serves it; in each own
  * MCP's database, its schema. Running it again changes nothing. Never prints a password.
  */
 export async function bootstrap({ sql, database: connect, mcps, store, host, port, sslRootCert, password = generatePassword, log = console.log }: Options) {
@@ -123,7 +122,7 @@ export async function bootstrap({ sql, database: connect, mcps, store, host, por
     log(`${database.name}: only its owner and ${database.runtime.map(({ name }) => name).join(" and ")} may connect`)
   }
   const shared = mcps.filter(mcp => mcp.database === "shared")
-  await on(connect(sharedMcps.database), sql => provisionMcps(sql, { mcps: shared.map(({ name, serve }) => ({ name, servedBy: servedBy[serve] })), logins: sharedMcps.logins }))
+  await on(connect(sharedMcps.database), sql => provisionMcps(sql, { mcps: shared.map(({ name }) => ({ name })), logins: sharedMcps.logins }))
   log(`${sharedMcps.database}: ${shared.length ? `${shared.map(({ name }) => name).join(", ")} provisioned` : "no MCP to provision"}`)
   for (const { name } of mcps.filter(mcp => mcp.database === "own")) {
     const own = ownMcpDatabase(name)

@@ -47,8 +47,8 @@ type AdminProviderConfig = {
   freshSeconds: number
   /** The Toolbox's admin API; without it `toolbox_enable` answers `PRECONDITION_FAILED`. */
   toolbox?: ToolboxAdmin
-  /** The standalone server's origin, whose `/<name>/mcp` is each standalone MCP's resource; without it `standalone_enable` answers `PRECONDITION_FAILED`. */
-  standaloneOrigin?: string
+  /** The origin of the MCPs the Toolbox serves alone, whose `/<name>/mcp` is each one's resource. */
+  standaloneOrigin: string
 }
 
 /** The tools of the admin MCP and the least role each needs, reading and writing ID's admin API as the admin MCP's machine client. */

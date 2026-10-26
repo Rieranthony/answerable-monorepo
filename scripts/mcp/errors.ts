@@ -238,7 +238,7 @@ export const errors: readonly ErrorRow[] = [
   {
     id: "port-taken", code: "port-taken", commands: ["dev"],
     see: "Port 47400 is taken, and the Toolbox needs it: stop what listens there (lsof -nP -iTCP:47400 -sTCP:LISTEN names it)",
-    meaning: "Another process listens on the port of the server `bun mcp dev` would start: 47400 for the Toolbox, 47510 for the standalone server. Often it is a server of an earlier run.",
+    meaning: "Another process listens on 47400, the port of the Toolbox, which `bun mcp dev` starts. Often it is the Toolbox of an earlier run.",
     action: "Find it with the `lsof` command in the message and stop it.",
   },
   {
@@ -332,9 +332,9 @@ export const errors: readonly ErrorRow[] = [
     action: "Run `bun mcp setup`, which makes it.",
   },
   {
-    id: "server-stopped", code: "standalone-failed", commands: ["dev"],
-    see: "standalone failed: the standalone server stopped with exit code 1 before http://localhost:47510/health listed acme; its output above says why",
-    meaning: "The Toolbox or the standalone server crashed while starting. The code is `toolbox-failed` for the Toolbox.",
+    id: "server-stopped", code: "toolbox-failed", commands: ["dev"],
+    see: "toolbox failed: the Toolbox stopped with exit code 1 before http://localhost:47400/health listed acme; its output above says why",
+    meaning: "The Toolbox crashed while starting.",
     action: "Read the server's output above the message, fix it, and run `bun mcp dev <name>` again.",
   },
 ]

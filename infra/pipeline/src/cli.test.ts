@@ -164,7 +164,7 @@ describe("smoke", () => {
     expect(await main(["smoke", "--environment", "staging"], f.deps)).toBe(0)
     expect(f.out()).toContain("PASSED: 9 of 9 checks")
     expect(f.out()).toContain("e2e resource metadata")
-    expect(f.out()).toContain('status "ok", 2 providers mounted')
+    expect(f.out()).toContain('status "ok", 2 MCPs served')
     expect(f.out()).toContain("Smoke test of staging: id.answerable-staging.uk")
     expect(f.err()).toBe("")
   })

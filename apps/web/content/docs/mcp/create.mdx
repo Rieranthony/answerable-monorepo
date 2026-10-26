@@ -44,7 +44,7 @@ It checks every answer, then runs these steps and prints a line for each. A step
 
 <CliSteps command="new" />
 
-It makes real objects in your development Postgres: [Undo a local MCP](#undo-a-local-mcp) removes them. It also rewrites the lists the deployment and the servers read: `charts/answerable/mcps.json`, and the list and dependencies of each server that serves it, the Toolbox for `toolbox`, the standalone server for `standalone`, both for `both`. Never edit them by hand. Commit them with the MCP, and with `bun.lock`, which `bun install` updates: CI and the image build install from it and refuse a stale one. The last line says which files to `git add`.
+It makes real objects in your development Postgres: [Undo a local MCP](#undo-a-local-mcp) removes them. It also rewrites the lists the deployment and the Toolbox read: `charts/answerable/mcps.json`, and the Toolbox's list and dependencies, which carry every MCP whatever its `serve`. Never edit them by hand. Commit them with the MCP, and with `bun.lock`, which `bun install` updates: CI and the image build install from it and refuse a stale one. The last line says which files to `git add`.
 
 ## What it writes
 
@@ -62,7 +62,7 @@ It makes real objects in your development Postgres: [Undo a local MCP](#undo-a-l
 | `tsconfig.json`, `eslint.config.mjs`, `bunfig.toml` | Compiler and lint settings, and the gate of 100% line and function coverage |
 | `README.md` | What it is, where it runs, its commands and these guides |
 
-There is no server and no port to choose. The Toolbox mounts the MCP, or the standalone server serves it, from the lists `bun mcp` writes, so your MCP runs the same way on your machine and in production.
+There is no server and no port to choose. The Toolbox mounts the MCP in its hub, serves it alone at its own path, or both, from the list `bun mcp` writes, so your MCP runs the same way on your machine and in production.
 
 **`mcp.json`** declares where it runs:
 
@@ -107,7 +107,7 @@ claude mcp add --transport http answerable-toolbox http://localhost:47400/mcp --
 
 Run it, open Claude Code, run `/mcp`, choose `answerable-toolbox` and choose **Authenticate**. Your browser opens Answerable ID: sign in with your work account. Then ask Claude to call `acme_acme_status`. It answers your name and your organisation's, as Answerable ID holds them.
 
-For `--serve standalone` the command is `claude mcp add --transport http acme http://localhost:47510/acme/mcp --client-id claude-code-acme --callback-port 47700`, and the tool is `acme_status`. [Test MCPs locally](/docs/mcp/local-testing#run-an-mcp-on-your-machine) says what each step of `bun mcp dev` does, and [Connect Claude Code](/docs/mcp/claude-code) the errors you can meet.
+For `--serve standalone` the command is `claude mcp add --transport http acme http://localhost:47400/acme/mcp --client-id claude-code-acme --callback-port 47700`, and the tool is `acme_status`. [Test MCPs locally](/docs/mcp/local-testing#run-an-mcp-on-your-machine) says what each step of `bun mcp dev` does, and [Connect Claude Code](/docs/mcp/claude-code) the errors you can meet.
 
 ## Undo a local MCP
 

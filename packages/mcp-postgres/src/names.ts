@@ -27,10 +27,10 @@ export function mcpRoles(prefix: string, name: string): { owner: string; runtime
   return roles
 }
 
-/** The shared MCP database and its three logins, as the deployment's bootstrap and the development Postgres name them. */
+/** The shared MCP database and its two logins, as the deployment's bootstrap and the development Postgres name them. */
 export const sharedMcps = {
   database: "answerable_mcps",
-  logins: { migrator: "answerable_mcps_migrator", toolbox: "answerable_mcps_toolbox", standalone: "answerable_mcps_standalone" },
+  logins: { migrator: "answerable_mcps_migrator", toolbox: "answerable_mcps_toolbox" },
 } as const
 
 /** An own MCP's database, `answerable_mcp_<name>`, and its two logins: its owner, `…_owner`, which migrates it, and its runtime login, `…_runtime`. */

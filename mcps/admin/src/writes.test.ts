@@ -17,7 +17,7 @@ const servers: TestMcp[] = []
 afterEach(async () => { await Promise.all(servers.splice(0).map(mcp => mcp.close())) })
 
 // The provider served alone on a fake ID seeded with Newco and the platform's role groups, and a fake Toolbox; the intents in memory.
-async function setup({ toolbox: withToolbox = true, standalone = true } = {}) {
+async function setup({ toolbox: withToolbox = true } = {}) {
   const id = createIdFake()
   const world = seed(id)
   const toolbox = createFakeToolbox(id)
@@ -25,7 +25,7 @@ async function setup({ toolbox: withToolbox = true, standalone = true } = {}) {
   const intents = createMemoryIntentStore()
   const { provider } = createAdminProvider({
     id: admin, authority: createRoles({ id: admin, platform: world.platform, resource }), platform: world.platform, resource, issuer: "https://id.test", freshSeconds: 1800,
-    toolbox: withToolbox ? createToolboxAdmin({ id: admin, resource: toolboxResource, fetch: toolbox.fetch }) : undefined, standaloneOrigin: standalone ? standaloneOrigin : undefined,
+    toolbox: withToolbox ? createToolboxAdmin({ id: admin, resource: toolboxResource, fetch: toolbox.fetch }) : undefined, standaloneOrigin,
   })
   const calls: ToolCall[] = []
   const mcp = await createTestMcp(serving => createMcpServer({ ...serving, provider, intents, wrapCall: (call, run) => (calls.push(call), run()) }))
@@ -416,18 +416,15 @@ describe("standalone_enable", () => {
     })
   })
 
-  test("names the host clients asked for, and refuses an MCP ID does not know, a client it does not hold, a row that does not fit, and a missing origin", async () => {
-    const { id, world: { newco }, prepare, refusal } = await setup()
-    registered(id)
-    id.client("cursor-acme")
-    const both = await prepare("standalone_enable", { organizationId: newco.id, mcp: "acme", hostClientIds: ["cursor-acme", "claude-code-acme", "cursor-acme"] })
-    expect(both.preview.summary).toBe("Enable acme for organisation “Newco” (newco) from claude-code-acme, cursor-acme")
-    expect(both.preview.changes.filter(change => change.path.startsWith("link"))).toHaveLength(2)
+  test("refuses an MCP whose resource or Claude Code client ID does not hold, a name that is not an MCP's, and a row that does not fit", async () => {
+    const { id, world: { newco }, refusal } = await setup()
+    id.resource(acme, ["acme:read", "acme:write", "offline_access"])
+    expect(await refusal("standalone_enable", { organizationId: newco.id, mcp: "acme" })).toMatchObject({
+      code: "NOT_FOUND", message: "Answerable ID has no client claude-code-acme: ship acme with serve standalone or both, and the deploy's register Job registers it",
+    })
+    id.client("claude-code-acme")
     expect(await refusal("standalone_enable", { organizationId: newco.id, mcp: "beta" })).toMatchObject({
       code: "NOT_FOUND", message: `Answerable ID has no resource ${standaloneOrigin}/beta/mcp: ship beta with serve standalone or both, and the deploy's register Job registers it`,
-    })
-    expect(await refusal("standalone_enable", { organizationId: newco.id, mcp: "acme", hostClientIds: ["nobody"] })).toMatchObject({
-      code: "INVALID_INPUT", message: "Answerable ID has no client nobody; register it first", details: { field_violations: [{ field: "hostClientIds" }] },
     })
     expect((await refusal("standalone_enable", { organizationId: newco.id, mcp: "Acme" })).code).toBe("INVALID_INPUT")
     const narrow = id.entitlement(newco.id, { clientId: "claude-code-acme", scopes: ["openid"] })
@@ -437,11 +434,6 @@ describe("standalone_enable", () => {
     })
     Object.assign(narrow, { scopes: signIn, status: "disabled" })
     expect((await refusal("standalone_enable", { organizationId: newco.id, mcp: "acme" })).message).toContain("with status disabled and scopes openid offline_access; enable it, then prepare again")
-    const { refusal: unconfigured } = await setup({ standalone: false })
-    expect(await unconfigured("standalone_enable", { organizationId: newco.id, mcp: "acme" })).toMatchObject({
-      code: "PRECONDITION_FAILED", message: "The admin MCP does not know the standalone server: set ADMIN_STANDALONE_ORIGIN to its origin, such as http://localhost:47510, and restart it",
-      details: { preconditions: [{ variable: "ADMIN_STANDALONE_ORIGIN" }] },
-    })
   })
 
   test("access_grant refuses a standalone MCP's resource without a client, since ID counts the entitlement only through the client signing in, and names the client and everyone: true; with the client it prepares", async () => {
@@ -458,11 +450,8 @@ describe("standalone_enable", () => {
     expect(granted.preview.summary).toBe(`Grant acme:read on ${acme} through claude-code-acme to everyone in organisation “Newco” (newco)`)
     await committed(granted)
     expect(id.entitlements(newco.id).at(-1)).toMatchObject({ clientId: "claude-code-acme", resource: acme, scopes: ["acme:read"] })
-    // The Toolbox reads access live, so it needs no client; and a server that does not know the standalone server's origin cannot tell.
+    // The Toolbox reads access live, so it needs no client.
     expect((await prepare("access_grant", { ...args, resource: toolboxMcp, scopes: ["e2e"] })).preview.summary).toBe(`Grant e2e on ${toolboxMcp} to everyone in organisation “Newco” (newco)`)
-    const { id: bare, world, prepare: unconfigured } = await setup({ standalone: false })
-    registered(bare)
-    expect((await unconfigured("access_grant", { ...args, organizationId: world.newco.id })).preview.summary).toBe(`Grant acme:read on ${acme} to everyone in organisation “Newco” (newco)`)
   })
 
   test("a failure of ID other than a conflict ends the commit; preparing and committing again finishes it", async () => {

@@ -7,7 +7,7 @@ import { BatchSpanProcessor, InMemorySpanExporter, SimpleSpanProcessor, TracerPr
 const traceparent = /^(?!ff)[0-9a-f]{2}-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})(-.*)?$/
 
 /**
- * A tracer for `service` (`answerable-toolbox`, `answerable-standalone`) whose spans go to `endpoint` (`OTEL_EXPORTER_OTLP_ENDPOINT`) over
+ * A tracer for `service`, such as `answerable-toolbox`, whose spans go to `endpoint` (`OTEL_EXPORTER_OTLP_ENDPOINT`) over
  * OTLP/HTTP as JSON, in batches; without one, spans get ids but go nowhere.
  */
 export function createTracer(service: string, endpoint?: string) {

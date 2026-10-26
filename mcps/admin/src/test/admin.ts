@@ -10,7 +10,7 @@ export const resource = "https://mcp.test/mcp"
 export const toolboxResource = "https://toolbox.test/admin"
 /** The Toolbox's MCP resource, which entitlements for people name. */
 export const toolboxMcp = "https://toolbox.test/mcp"
-/** The standalone server's origin in the tests: each standalone MCP is the resource `<origin>/<name>/mcp`. */
+/** The origin of the MCPs the Toolbox serves alone, in the tests: each standalone MCP is the resource `<origin>/<name>/mcp`. */
 export const standaloneOrigin = "https://mcp.test"
 export const entraIssuer = "https://login.microsoftonline.com/00000000-0000-0000-0000-00000000000a/v2.0"
 

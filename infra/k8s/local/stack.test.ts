@@ -4,7 +4,7 @@ import { X509Certificate } from "node:crypto"
 import { runSmoke, smokePassed } from "../../pipeline/src/smoke"
 import type { SignInInput } from "./sign-in"
 import type { StandaloneSignInInput } from "./standalone-sign-in"
-import { databaseAdmin, declared, exec, hosts, image, images, mounted, origin, registered, servedAlone, type Stack, startStack, step, timings } from "./stack"
+import { databaseAdmin, declared, exec, hosts, image, images, origin, registered, servedAlone, type Stack, startStack, step, timings } from "./stack"
 
 // bun run infra:test: the images of infra/pipeline/images.json, a kind cluster with charts/platform and charts/answerable as a
 // cloud runs them, a TLS-only PostgreSQL 17 holding only an administrative login, the ops Jobs that bootstrap the databases and
@@ -40,7 +40,7 @@ beforeAll(async () => {
   tenant = { slug, email, organizationId }
 })
 
-/** A standalone MCP's protected-resource metadata on the standalone server's host. */
+/** A standalone MCP's protected-resource metadata on the mcp host, where the Toolbox serves it. */
 const metadataUrl = (name: string) => `${origin(hosts.mcp)}/.well-known/oauth-protected-resource/${name}/mcp`
 
 /** Wait up to `ms` for `url`, through the edge, to answer 200 with `{ status: "ok" }` or a resource's metadata; otherwise diagnose the cluster and fail, naming the last answer. */
@@ -336,7 +336,7 @@ describe("inside the cluster", () => {
   test("the migrations and the two ops Jobs ran to completion as the release's hooks", async () => {
     const { stdout } = await stack!.kubectl(["get", "jobs", "-n", "answerable", "-o", "json"])
     const jobs = (JSON.parse(stdout) as { items: { metadata: { name: string }; status: { succeeded?: number } }[] }).items
-    for (const name of ["id-migrate", "toolbox-migrate", "admin-migrate", "standalone-migrate", "mcps-migrate", "ops-bootstrap", "ops-register"]) expect(jobs.find(job => job.metadata.name === name)?.status.succeeded, name).toBe(1)
+    for (const name of ["id-migrate", "toolbox-migrate", "admin-migrate", "ops-bootstrap", "ops-register"]) expect(jobs.find(job => job.metadata.name === name)?.status.succeeded, name).toBe(1)
   })
 })
 
@@ -366,17 +366,14 @@ const urlSecrets = [
   ["toolbox-database", "TOOLBOX_DATABASE_URL", "answerable_toolbox_runtime", "answerable_toolbox"],
   ["admin-database-owner", "ADMIN_DATABASE_MIGRATION_URL", "answerable_admin_owner", "answerable_admin"],
   ["admin-database", "ADMIN_DATABASE_URL", "answerable_admin_runtime", "answerable_admin"],
-  ["standalone-database-owner", "STANDALONE_DATABASE_MIGRATION_URL", "answerable_standalone_owner", "answerable_standalone"],
-  ["standalone-database", "STANDALONE_DATABASE_URL", "answerable_standalone_runtime", "answerable_standalone"],
   ["mcps-database-owner", "MCPS_DATABASE_MIGRATION_URL", "answerable_mcps_migrator", "answerable_mcps"],
   ["toolbox-mcps-database", "TOOLBOX_MCPS_DATABASE_URL", "answerable_mcps_toolbox", "answerable_mcps"],
-  ["standalone-mcps-database", "STANDALONE_MCPS_DATABASE_URL", "answerable_mcps_standalone", "answerable_mcps"],
   ...declared.filter(mcp => mcp.database === "own").flatMap(({ name }) => [
     [`mcp-${name}-database-owner`, "DATABASE_MIGRATION_URL", `answerable_mcp_${name}_owner`, `answerable_mcp_${name}`],
     [`mcp-${name}-database`, "DATABASE_URL", `answerable_mcp_${name}_runtime`, `answerable_mcp_${name}`],
   ]),
 ] as const
-const clientSecrets = [["ops-id-client", "OPS_ID_CLIENT_SECRET"], ["toolbox-id-client", "TOOLBOX_ID_CLIENT_SECRET"], ["admin-id-client", "ADMIN_ID_CLIENT_SECRET"], ["standalone-id-client", "STANDALONE_ID_CLIENT_SECRET"]] as const
+const clientSecrets = [["ops-id-client", "OPS_ID_CLIENT_SECRET"], ["toolbox-id-client", "TOOLBOX_ID_CLIENT_SECRET"], ["admin-id-client", "ADMIN_ID_CLIENT_SECRET"]] as const
 
 /** Every value the ops Jobs generated, for checking that no log prints one. */
 async function generatedValues() {
@@ -450,58 +447,52 @@ describe("the ops Jobs", () => {
 describe("the MCPs of charts/answerable/mcps.json", () => {
   const shared = declared.filter(mcp => mcp.database === "shared")
 
-  test("bootstrap provisioned each one's schema and roles for the servers that serve it, and mcps-migrate migrated each in turn, as its owner role", async () => {
+  test("bootstrap provisioned each one's schema and roles for the Toolbox, which serves every one, and toolbox-migrate migrated each in turn, as its owner role", async () => {
     expect(await psql("select nspname || ' ' || pg_get_userbyid(nspowner) from pg_namespace where nspname !~ '^pg_' and nspname not in ('public', 'information_schema') order by 1", "answerable_mcps"))
       .toEqual(shared.map(({ name }) => `${name} mcp_${name}_owner`).sort())
-    for (const { name, serve } of shared) {
-      // inherit, set, admin: each serving login may take the role and inherits nothing; the administrative login, which created it, holds it
+    for (const { name } of shared) {
+      // inherit, set, admin: the serving login may take the role and inherits nothing; the administrative login, which created it, holds it
       // with ADMIN OPTION alone, as PostgreSQL 16 and later give a role's creator.
       const members = await psql(`select m.rolname || ' ' || a.inherit_option || ' ' || a.set_option || ' ' || a.admin_option from pg_auth_members a join pg_roles m on m.oid = a.member where a.roleid = 'mcp_${name}'::regrole order by 1`)
-      expect(members, name).toEqual([
-        ...(serve === "toolbox" ? [] : ["answerable_mcps_standalone false true false"]),
-        ...(serve === "standalone" ? [] : ["answerable_mcps_toolbox false true false"]),
-        `${databaseAdmin} false false true`,
-      ])
+      expect(members, name).toEqual(["answerable_mcps_toolbox false true false", `${databaseAdmin} false false true`])
       // The administrative login may take each owner role, which giving it the schema needs, and inherits none.
       expect(await psql(`select bool_or(a.inherit_option) from pg_auth_members a where a.roleid = 'mcp_${name}_owner'::regrole and a.member = '${databaseAdmin}'::regrole`), name).toEqual(["f"])
       expect(Number((await psql(`select count(*) from "${name}".__drizzle_migrations`, "answerable_mcps"))[0]), name).toBeGreaterThan(0)
     }
-    const log = await jobLog("mcps-migrate")
+    const log = await jobLog("toolbox-migrate")
+    expect(log).toContain("Migrated answerable_toolbox; provisioned answerable_toolbox_runtime")
     for (const { name } of shared) expect(log).toContain(`${name}: migrating in answerable_mcps as mcp_${name}_owner`)
     const took = log.match(/Migrated (\d+) MCPs? in ([\d.]+) s/)
     expect(Number(took?.[1])).toBe(declared.length)
-    console.log(`mcps-migrate migrated ${took?.[1]} MCPs in ${took?.[2]} s, as its log says`)
+    console.log(`toolbox-migrate migrated ${took?.[1]} MCPs in ${took?.[2]} s, as its log says`)
   })
 
-  test("the Toolbox mounts every toolbox and both MCP: its health lists them, its MCP database answering", async () => {
+  test("the Toolbox serves every MCP, in its hub or alone: its health lists them, its MCP database answering", async () => {
     const health = await (await viaIngress(`${origin(hosts.toolbox)}/health`)).json() as { status: string; databases: Record<string, string>; providers: string[] }
     expect(health.status).toBe("ok")
     expect(health.databases.mcps).toBe("ok")
-    expect([...health.providers].sort()).toEqual(mounted.map(({ name }) => name).sort())
+    expect([...health.providers].sort()).toEqual(declared.map(({ name }) => name).sort())
   })
 
-  test("the standalone server serves each standalone and both MCP at /<name>/mcp through Traefik on the mcp host: a challenge naming its own metadata, the metadata naming its resource and ID, and nothing else there", async () => {
+  test("the Toolbox serves each standalone and both MCP at /<name>/mcp through Traefik on the mcp host: a challenge naming its own metadata, the metadata naming its resource and ID, and nothing else there", async () => {
     for (const { name } of servedAlone) {
       const challenge = await viaIngress(`${origin(hosts.mcp)}/${name}/mcp`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: "{}" })
       expect(challenge.status, name).toBe(401)
       expect(challenge.headers.get("www-authenticate"), name).toContain(metadataUrl(name))
       expect(await (await viaIngress(metadataUrl(name))).json(), name).toMatchObject({ resource: `${origin(hosts.mcp)}/${name}/mcp`, authorization_servers: [origin(hosts.id)] })
     }
-    // The Ingress routes each MCP's two paths only: no other name, no unprefixed metadata, and the server's /health stays inside the cluster.
+    // The Ingress routes each MCP's two paths only: no other name, no unprefixed metadata, and the hub and the Toolbox's /health stay on its own host.
     for (const path of ["/nosuchmcp/mcp", "/.well-known/oauth-protected-resource/mcp", "/health", "/mcp"]) expect((await viaIngress(`${origin(hosts.mcp)}${path}`)).status, path).toBe(404)
   })
 
-  test("the standalone server keeps the SDK's Host check: under another host it refuses each MCP; its health, inside the cluster, lists what it serves", async () => {
-    const forward = Bun.spawn(["kubectl", "port-forward", "-n", "answerable", "svc/standalone", "47398:47510"], { env: { ...process.env, KUBECONFIG: stackKubeconfig() }, stdout: "pipe", stderr: "pipe" })
+  test("the Toolbox keeps the SDK's Host check at each MCP's path: inside the cluster, under another host, it refuses each MCP and the hub", async () => {
+    const forward = Bun.spawn(["kubectl", "port-forward", "-n", "answerable", "svc/toolbox", "47398:47400"], { env: { ...process.env, KUBECONFIG: stackKubeconfig() }, stdout: "pipe", stderr: "pipe" })
     try {
       await forward.stdout.getReader().read()
-      for (const { name } of servedAlone) {
-        const refused = await fetch(`http://127.0.0.1:47398/${name}/mcp`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: "{}" })
-        expect(refused.status, name).toBe(403)
+      for (const path of [...servedAlone.map(({ name }) => `/${name}/mcp`), "/mcp"]) {
+        const refused = await fetch(`http://127.0.0.1:47398${path}`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: "{}" })
+        expect(refused.status, path).toBe(403)
       }
-      const health = await (await fetch("http://127.0.0.1:47398/health")).json() as { status: string; providers: string[] }
-      expect(health.status).toBe("ok")
-      expect([...health.providers].sort()).toEqual(servedAlone.map(({ name }) => name).sort())
     } finally {
       forward.kill()
       await forward.exited
@@ -623,11 +614,11 @@ describe("the first administrator", () => {
   }), 300_000)
 })
 
-// Last of all, as the first ship after the lock: a deploy registers a new standalone MCP with register's own client, and an organisation that
-// staff enable signs in to it.
+// Last of all, as the first ship after the lock: a deploy registers a new standalone MCP with register's own client, the Toolbox serves it at its
+// path, and an organisation that staff enable signs in to it.
 describe("after the root lock, a deploy with a new standalone MCP", () => {
   let next: Awaited<ReturnType<Stack["next"]>>
-  // The MCP the commit adds to the standalone server: example, which the Toolbox mounts, now served by both.
+  // The MCP the commit has the Toolbox serve alone: example, which its hub mounts, now served both ways.
   const added = "example"
   const mcpUrl = () => `${origin(hosts.mcp)}/${added}/mcp`
   /** ID's admin API as ops-register, with its client's secret from ops-id-client, as the register Job calls it. */

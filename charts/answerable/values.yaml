@@ -15,8 +15,7 @@ images:
   id:
     repository: ghcr.io/rieranthony/answerable/id
     digest: ""
-  # The Toolbox, the admin MCP, the standalone server, their migrations and every MCP (mcps/Dockerfile): each Deployment and Job names its
-  # command.
+  # The Toolbox, the admin MCP, their migrations and every MCP (mcps/Dockerfile): each Deployment and Job names its command.
   mcps:
     repository: ghcr.io/rieranthony/answerable/mcps
     digest: ""
@@ -25,8 +24,8 @@ images:
     repository: ghcr.io/rieranthony/answerable/ops
     digest: ""
 
-# The public origins are https://<hostname>, with :<publicPort> when it is not 443 (the kind stack's 48443). mcp is the standalone server's:
-# each standalone or both MCP of mcps.json is the resource https://<mcp>/<name>/mcp.
+# The public origins are https://<hostname>, with :<publicPort> when it is not 443 (the kind stack's 48443). mcp is that of the MCPs the
+# Toolbox serves alone: each standalone or both MCP of mcps.json is the resource https://<mcp>/<name>/mcp, routed to the Toolbox.
 hostnames:
   id: id.answerable.org
   toolbox: toolbox.answerable.org
@@ -114,20 +113,6 @@ adminMcp:
   runtimeRole: answerable_admin_runtime
   env: {}
 
-# The standalone server (templates/standalone.yaml), rendered only while mcps.json has a standalone or both MCP: there is no switch.
-standalone:
-  replicas: 2
-  autoscaling:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 4
-  resources:
-    requests: { cpu: 100m, memory: 128Mi }
-    limits: { memory: 512Mi }
-  clientId: standalone-hub
-  runtimeRole: answerable_standalone_runtime
-  env: {}
-
 migrations:
   resources:
     requests: { cpu: 100m, memory: 128Mi }
@@ -138,10 +123,9 @@ migrations:
 # The ops image's Jobs (infra/ops/README.md): bootstrap writes the database's certificate authority on first use, creates
 # the databases and their logins, the MCPs' schemas and roles from mcps.json, and writes their Secrets before the migrations;
 # register, as its own machine client (ops-register, kept in ops-id-client), registers the Toolbox, the admin MCP and each
-# standalone MCP of mcps.json in ID after the release, mints the standalone server's client, writes the client Secrets and
-# starts the servers; make-admin makes adminEmail's member, who has signed in once, an owner and a platform administrator,
-# which locks ID's root secret. The deploy switches bootstrap and register on every time; deploy.ts run-job switches one on
-# for one upgrade.
+# standalone MCP of mcps.json in ID after the release, writes the client Secrets and starts the servers; make-admin makes
+# adminEmail's member, who has signed in once, an owner and a platform administrator, which locks ID's root secret. The
+# deploy switches bootstrap and register on every time; deploy.ts run-job switches one on for one upgrade.
 ops:
   bootstrap: false
   register: false

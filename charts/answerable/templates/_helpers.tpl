@@ -33,35 +33,6 @@ MCP at all, so anything but { "mcps": [...] } fails the render.
 {{- toJson $mcps -}}
 {{- end -}}
 
-{{/* The MCPs a server serves, as JSON: those whose serve is one of serves. Takes root and serves. */}}
-{{- define "answerable.mcpsServed" -}}
-{{- $served := list -}}
-{{- range fromJsonArray (include "answerable.mcps" .root) -}}
-{{- if has .serve $.serves -}}
-{{- $served = append $served . -}}
-{{- end -}}
-{{- end -}}
-{{- toJson $served -}}
-{{- end -}}
-
-{{/* The standalone server's MCPs: the server and everything of it renders only while there is one. */}}
-{{- define "answerable.standaloneMcps" -}}
-{{ include "answerable.mcpsServed" (dict "root" . "serves" (list "standalone" "both")) }}
-{{- end -}}
-
-{{/*
-The database URL of each own MCP a server serves, as its runtime login, for a server whose variables start with prefix:
-<prefix>_MCP_<NAME>_DATABASE_URL, the variable its generated list names, from the Secret mcp-<name>-database the ops bootstrap writes. Takes
-root, serves (as answerable.mcpsServed) and prefix.
-*/}}
-{{- define "answerable.ownMcpEnv" -}}
-{{- range fromJsonArray (include "answerable.mcpsServed" .) }}
-{{- if eq .database "own" }}
-{{ include "answerable.secretEnv" (dict "name" (printf "%s_MCP_%s_DATABASE_URL" $.prefix (upper .name)) "secret" (printf "mcp-%s-database" .name) "key" "DATABASE_URL") }}
-{{- end }}
-{{- end }}
-{{- end -}}
-
 {{/* Selector labels of a component: the stable subset of its labels. */}}
 {{- define "answerable.selectorLabels" -}}
 app.kubernetes.io/name: answerable
@@ -185,8 +156,7 @@ volumes:
 {{/* The servers the ops register Job starts once their client Secrets exist, at the replicas they run: name=replicas,… */}}
 {{- define "answerable.opsStartDeployments" -}}
 {{- $start := list -}}
-{{- $standalone := fromJsonArray (include "answerable.standaloneMcps" .) | empty | not -}}
-{{- range $server := list (dict "name" "toolbox" "values" .Values.toolbox "enabled" .Values.toolbox.enabled) (dict "name" "admin-mcp" "values" .Values.adminMcp "enabled" .Values.adminMcp.enabled) (dict "name" "standalone" "values" .Values.standalone "enabled" $standalone) -}}
+{{- range $server := list (dict "name" "toolbox" "values" .Values.toolbox "enabled" .Values.toolbox.enabled) (dict "name" "admin-mcp" "values" .Values.adminMcp "enabled" .Values.adminMcp.enabled) -}}
 {{- if $server.enabled -}}
 {{- $replicas := ternary $server.values.autoscaling.minReplicas $server.values.replicas (and $server.values.autoscaling.enabled true) -}}
 {{- $start = append $start (printf "%s=%v" $server.name $replicas) -}}

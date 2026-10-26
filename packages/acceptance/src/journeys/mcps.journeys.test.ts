@@ -1,16 +1,14 @@
 // Real Answerable ID, a real browser and the official MCP OAuth client against the MCPs as the deployment serves them: the Toolbox mounting its
-// generated list, and the standalone server serving e2e at its path, both over the shared MCP database.
+// generated list in its hub and serving e2e alone at its path, in one process, over the shared MCP database.
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import type { Client } from "@modelcontextprotocol/client"
 import { decodeJwt } from "jose"
 import { z } from "zod"
 import { connect, grantOrganisation, intentSchema, launchBrowser, linkClient, refusal, registerClient, registerResource, serve, serveCallback, signIn, startId, step, tool, type Id, type OAuthSession } from "../index"
-import { startStandaloneStack } from "../standalone"
 import { startToolboxStack, toolboxResource } from "../toolbox"
 
 const callback = "http://127.0.0.1:47603/callback"
-const origin = "http://127.0.0.1:47602"
-const e2eResource = `${origin}/e2e/mcp`
+const e2eResource = `${new URL(toolboxResource).origin}/e2e/mcp`
 const e2eScopes = ["e2e:identity", "e2e:read", "e2e:write"]
 const [toolboxClient, e2eClient] = ["mcps-toolbox", "mcps-e2e"]
 // One sign-in each to the Toolbox and to e2e's path.
@@ -19,9 +17,8 @@ const tenants = ["mcps-alpha", "mcps-beta"]
 let id: Id
 let browser: Awaited<ReturnType<typeof launchBrowser>>
 let stack: Awaited<ReturnType<typeof startToolboxStack>>
-let standalone: Awaited<ReturnType<typeof startStandaloneStack>>
-// The standalone server behind port 47602, which a test restarts on fresh pools.
-let current: ReturnType<Awaited<ReturnType<typeof startStandaloneStack>>["start"]>
+// The Toolbox behind port 47604, which a test restarts on fresh pools.
+let current: { fetch: (request: Request) => Promise<Response>; close: () => Promise<void> }
 const sessions = new Map<string, { organizationId: string; toolbox: OAuthSession; e2e: OAuthSession }>()
 const tenant = (slug: string) => id.manifest.tenants.find(entry => entry.slug === slug)!
 function session(slug: string) {
@@ -37,10 +34,8 @@ beforeAll(async () => {
   id = await startId({ tenants: tenants.map(slug => ({ slug, signIns: 2 })) })
   const { admin } = id
   stack = await startToolboxStack(id, { hosts: [{ clientId: toolboxClient, redirectUri: callback }], database: "answerable_toolbox_acceptance" })
-  standalone = await startStandaloneStack(id)
-  current = standalone.start(origin)
-  serve(47_602, request => current.fetch(request))
-  serve(47_604, stack.toolbox.fetch)
+  current = { fetch: stack.toolbox.fetch, close: stack.stop }
+  serve(47_604, request => current.fetch(request))
   serveCallback(callback)
   step("Registering e2e's path resource and its client, and giving both organisations e2e there and e2e and example in the Toolbox")
   await registerResource(admin, { identifier: e2eResource, scopes: e2eScopes, accessTokenTtl: 60 })
@@ -57,7 +52,7 @@ beforeAll(async () => {
 })
 afterAll(() => id?.stop())
 
-test("each organisation signs in to the Toolbox and to e2e at its path on the standalone server", async () => {
+test("each organisation signs in to the Toolbox and to e2e at its path, which the Toolbox serves alone", async () => {
   for (const slug of tenants) {
     step(`${slug}: signing in to the Toolbox, then to e2e at its path`)
     const { organizationId, email } = tenant(slug)
@@ -115,9 +110,9 @@ test("two organisations, through real tokens, see only their own e2e records, at
   expect((await refusal(beta, "e2e_records_delete", { id: record.id })).code).toBe("NOT_FOUND")
 })
 
-test("the records survive a restart: the standalone server started again on fresh pools lists what the first one wrote", async () => {
+test("the records survive a restart: the Toolbox started again on fresh pools lists at e2e's path what the first one wrote", async () => {
   await current.close()
-  current = standalone.start(origin)
-  step("mcps-alpha: listing at e2e's path after the standalone server restarted")
+  current = await stack.start()
+  step("mcps-alpha: listing at e2e's path after the Toolbox restarted")
   expect(await titles(await atPath("mcps-alpha"), "records_list")).toEqual(["Alpha's"])
 })

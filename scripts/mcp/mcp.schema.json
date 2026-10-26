@@ -16,7 +16,7 @@
         "standalone",
         "both"
       ],
-      "description": "Where it runs: in the Toolbox, on its own URL in the standalone server, or both"
+      "description": "Where it runs: in the Toolbox, on its own URL, or both"
     },
     "database": {
       "type": "string",

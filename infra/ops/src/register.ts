@@ -17,7 +17,7 @@ type Options = {
   toolbox: string
   /** The admin MCP's origin: `/mcp` is its resource. */
   adminMcp: string
-  /** The standalone server's origin: each standalone or both MCP is the resource `<origin>/<name>/mcp`. */
+  /** The origin of the MCPs the Toolbox serves alone: each standalone or both MCP is the resource `<origin>/<name>/mcp`. */
   mcpOrigin: string
   /** The MCPs of charts/answerable/mcps.json: each standalone or both one is registered. */
   mcps: readonly RegisteredMcp[]
@@ -34,15 +34,14 @@ type Options = {
   timeoutMs?: number
 }
 
-/** Where each machine client's secret goes: register's own, and the Secrets the Toolbox, the admin MCP and the standalone server read. */
+/** Where each machine client's secret goes: register's own, and the Secrets the Toolbox and the admin MCP read. */
 const clientSecrets = {
   "ops-register": { secret: "ops-id-client", key: "OPS_ID_CLIENT_SECRET" },
   "toolbox-hub": { secret: "toolbox-id-client", key: "TOOLBOX_ID_CLIENT_SECRET" },
   "admin-mcp": { secret: "admin-id-client", key: "ADMIN_ID_CLIENT_SECRET" },
-  "standalone-hub": { secret: "standalone-id-client", key: "STANDALONE_ID_CLIENT_SECRET" },
 } as const satisfies Record<string, SecretRef>
 type Machine = keyof typeof clientSecrets
-const clientNames: Record<Machine, string> = { "ops-register": "Ops register", "toolbox-hub": "Toolbox", "admin-mcp": "Admin MCP", "standalone-hub": "Standalone server" }
+const clientNames: Record<Machine, string> = { "ops-register": "Ops register", "toolbox-hub": "Toolbox", "admin-mcp": "Admin MCP" }
 
 /** The one-time remedy when register has no client of its own and nothing to mint it with. */
 const once = "Once: put a staff token in the Secret ops-staff-token (key OPS_ID_TOKEN) and run register again; it mints its client, ops-register, and needs no token after that (infra/README.md#register-again)"
@@ -58,8 +57,8 @@ const roles = ["team", "admin", "owner"] as const
  * Register in ID what the deployment needs, as register's own machine client, `ops-register` (`platform:read platform:write`): the run that finds no
  * secret in `ops-id-client` mints that client with `token` first, stores its secret, and goes on with it; every later run needs neither the root
  * secret nor a staff token. Then the Toolbox and the admin MCP, as their docs register them (apps/web/content/docs/toolbox/admin.mdx and
- * admin/setup.mdx), the standalone server's machine client, `standalone-hub`, and for each standalone or both MCP of `mcps` its resource,
- * `<mcpOrigin>/<name>/mcp`, its Claude Code client, `claude-code-<name>`, and their link.
+ * admin/setup.mdx), and for each standalone or both MCP of `mcps`, which the Toolbox serves alone, its resource, `<mcpOrigin>/<name>/mcp`, its
+ * Claude Code client, `claude-code-<name>`, and their link.
  *
  * Every resource and client is read first: one ID lacks is created with its docs' `Idempotency-Key`; one that differs is changed with `If-Match`,
  * under `<key>-r<revision>`, in the fields that differ. Scopes and redirect URIs only widen: the Toolbox's resource keeps what enable calls added. An
@@ -123,8 +122,9 @@ export async function register({ id, token, toolbox, adminMcp, mcpOrigin, mcps, 
     log("ops-register is minted: register goes on as its own machine client, and needs no root secret or staff token again")
   }
 
-  // The Toolbox: its resource and admin resource, its machine client on ID's admin API, and Claude Code as its host client. The first enable
-  // call that names the host client links it and approves it for the organisation (docs/toolbox/admin).
+  // The Toolbox: its resource and admin resource, its machine client on ID's admin API, which also reads who is calling for the MCPs it serves
+  // alone, and Claude Code as its host client. The first enable call that names the host client links it and approves it for the organisation
+  // (docs/toolbox/admin).
   const toolboxed = toolboxRows(toolbox, callback)
   for (const [key, fields] of toolboxed.resources) await registrar.resource(key, fields)
   await machine("toolbox-hub", [["", admin, ["platform:read", "platform:write"]]])
@@ -150,8 +150,7 @@ export async function register({ id, token, toolbox, adminMcp, mcpOrigin, mcps, 
   }
   await machine("admin-mcp", [["-id", admin, ["platform:read", "platform:write"]], ["-toolbox", toolboxAdmin, ["toolbox:admin"]]])
 
-  // The standalone server's machine client, which reads who is calling from ID's admin API, as the Toolbox's does; then each MCP it serves.
-  await machine("standalone-hub", [["", admin, ["platform:read"]]])
+  // Each MCP the Toolbox serves alone.
   const standalone = mcps.filter(mcp => mcp.serve !== "toolbox")
   for (const mcp of standalone) await registerStandalone(registrar, mcp, { mcpOrigin, callback })
 

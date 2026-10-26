@@ -1,6 +1,6 @@
 # Postgres storage for MCP servers
 
-The intent store, the hash-chained evidence and the drizzle base schema that an MCP server with a Postgres database shares, on the model Answerable ID uses: drizzle-orm over `pg`, with drizzle-kit migrations. Used by the Toolbox, the standalone server and the admin MCP. Private to the monorepo; no npm release.
+The intent store, the hash-chained evidence and the drizzle base schema that an MCP server with a Postgres database shares, on the model Answerable ID uses: drizzle-orm over `pg`, with drizzle-kit migrations. Used by the Toolbox and the admin MCP. Private to the monorepo; no npm release.
 
 ```ts
 import { assertRuntimeRole, configureRuntimeRole, connect, createEvidence, createPostgresIntentStore, legacyBaseline, migrate, runtimeGrants } from "@answerable/mcp-postgres"
@@ -45,19 +45,19 @@ Each MCP keeps its tables in a schema named after it, in one of two modes ([desi
 | Database | `answerable_mcps`, owned by `answerable_mcps_migrator`; tests use `answerable_mcps_test` | `answerable_mcp_<name>` |
 | Schema `<name>` owned by | the role `mcp_<name>_owner` (`NOLOGIN`), which the migrations run as | the login `answerable_mcp_<name>_owner` |
 | Queries run as | the role `mcp_<name>` (`NOLOGIN NOINHERIT`), taken on every borrow | the login `answerable_mcp_<name>_runtime` |
-| Logins | three, whatever the number of MCPs: `answerable_mcps_migrator`, `answerable_mcps_toolbox`, `answerable_mcps_standalone` | two per MCP |
+| Logins | two, whatever the number of MCPs: `answerable_mcps_migrator` and `answerable_mcps_toolbox`, which serves every MCP | two per MCP |
 
 `<name>` is the provider id (a lowercase letter, then up to 11 lowercase letters or digits); `public` and `drizzle` are refused. Tests use the role prefix `mcp_test` in place of `mcp`. Every table is limited to the caller's organisation by row-level security, through the setting `answerable.organisation_id`.
 
 ```ts
 // As the shared database's administrator, then as the migrator login, then as a serving login.
-await provisionMcps(sql, { mcps: [{ name: "acme", servedBy: ["toolbox"] }], logins: sharedMcps.logins })
+await provisionMcps(sql, { mcps: [{ name: "acme" }], logins: sharedMcps.logins })
 await migrateMcp({ client: migrator, name: "acme", folder: "mcps/acme/drizzle", mode: "shared" })
 await assertServingLogin(serving, { names: ["acme"] })
 const db = mcpDatabase(serving.$client, { name: "acme", schema, mode: "shared", organisation: () => organisationOfTheCall() })
 ```
 
-- **`provisionMcps(sql, { mcps, prefix?, logins })`.** On `answerable_mcps`, as a `CREATEROLE` login holding the migrator's privileges: locks the database to the three logins, then makes or brings back in line each MCP's two roles, its schema and the memberships its `servedBy` needs (`WITH INHERIT FALSE, SET TRUE`), revoking the rest. The login itself takes each owner role the same way, which giving it the schema needs, and grants `USAGE` as that role, so it inherits no MCP's owner. Idempotent; never drops anything. `sql` must be one connection: it runs in one transaction; `sqlOf(client)` makes it of a connected pg client.
+- **`provisionMcps(sql, { mcps, prefix?, logins })`.** On `answerable_mcps`, as a `CREATEROLE` login holding the migrator's privileges: locks the database to the two logins, then makes or brings back in line each MCP's two roles, its schema, and the memberships the migrator and the serving login need (`WITH INHERIT FALSE, SET TRUE`). The login itself takes each owner role the same way, which giving it the schema needs, and grants `USAGE` as that role, so it inherits no MCP's owner. Idempotent; never drops anything. `sql` must be one connection: it runs in one transaction; `sqlOf(client)` makes it of a connected pg client.
 - **`provisionOwnMcp(sql, { name, owner, runtime })`.** On `answerable_mcp_<name>`, as its owner login: the schema and `USAGE` for the runtime login.
 - **`migrateMcp({ client, name, folder, mode, … })`, `migrateMcps(list, connection)`.** Pending migrations, the journal (`<name>.__drizzle_migrations`) and the grants, in one transaction as the owner. drizzle's own migrator cannot run there: it creates its journal's schema, and the owner has no `CREATE` on the database. Refuses a changed applied file, and a pending one that creates a schema, grants, takes a role or names another schema, with its file and line. The runtime role gets read and write on every table but the journal, or exactly `grants`; everything else is revoked, `PUBLIC`'s included.
 - **`withoutSchemaCreation(text, name)`.** A migration drizzle-kit has just generated, without its `CREATE SCHEMA "<name>";` line.
@@ -65,9 +65,9 @@ const db = mcpDatabase(serving.$client, { name: "acme", schema, mode: "shared", 
 - **`mcpDatabase(pool, { name, prefix?, schema, mode, organisation })`.** The drizzle database an MCP's tools use. Each borrow takes the runtime role, the schema and the organisation in one round trip; the release resets them, and a connection whose reset fails, or that is released inside a transaction, is destroyed.
 - **`assertServingLogin(db, { prefix?, names })`.** Refuses a serving login that holds anything but its MCPs' runtime roles, naming each problem.
 - **`assertOwnLogin(db, { name })`.** Refuses, on an own MCP's pool, a login that is more than its runtime login: an attribute beyond `LOGIN`, a membership, anything it owns, `CREATE` or `TEMPORARY` on the database, `CREATE` on schema `<name>`, or no `USAGE` on it.
-- **`sharedMcps`, `ownMcpDatabase(name)`.** The names the deployment and the development Postgres give: `answerable_mcps` and its three logins; `answerable_mcp_<name>` and its `_owner` and `_runtime` logins.
-- **`declaredMcps`.** The zod schema of the chart's list as a variable holds it, JSON `[{ name, serve, database }]`, for the ops bootstrap's `OPS_MCPS` and the migration Job's `MCPS_DECLARED`. `servedBy[serve]` is the servers an MCP of that `serve` gives to `provisionMcps`.
-- **`ensureLocalMcpDatabases(adminUrl)`.** Runs `infra/postgres/init/006-create-mcps-databases.sql` and `007-create-standalone-databases.sql` on the development Postgres, applying a file's database privileges only to a database it has just created; `provisionMcps` keeps the shared ones on one that exists.
+- **`sharedMcps`, `ownMcpDatabase(name)`.** The names the deployment and the development Postgres give: `answerable_mcps` and its two logins; `answerable_mcp_<name>` and its `_owner` and `_runtime` logins.
+- **`declaredMcps`.** The zod schema of the chart's list as a variable holds it, JSON `[{ name, serve, database }]`, for the ops bootstrap's `OPS_MCPS` and the migration Job's `MCPS_DECLARED`.
+- **`ensureLocalMcpDatabases(adminUrl)`.** Runs `infra/postgres/init/006-create-mcps-databases.sql` on the development Postgres, applying its database privileges only to a database it has just created; `provisionMcps` keeps them on one that exists.
 
 **The trust boundary.** A serving login may take the runtime role of every MCP its process serves, and a provider runs in that process, so provider code is trusted first-party code. Two guards: the scan in `scripts/mcp/role-switching.ts` (its test, and every `bun mcp check`) fails on `set role`, `reset role`, `set session authorization` or `answerable.organisation_id` in `mcps/*/src`, and `assertServingLogin` checks the login has nothing of its own. Migrations are refused the same role switches.
 

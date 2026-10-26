@@ -5,7 +5,7 @@ import { readToolboxEnvironment } from "./environment"
 import { mounted } from "./mounted.generated"
 import { createToolbox } from "./toolbox"
 
-const { databaseUrl, mcps: databases, auth, hostname, port, id: idConfig, otlpEndpoint } = readToolboxEnvironment(process.env)
+const { databaseUrl, mcps: databases, auth, origin, hostname, port, id: idConfig, otlpEndpoint } = readToolboxEnvironment(process.env)
 const db = connect(databaseUrl)
 const mcps = mcpDatabases(mounted, databases)
 // Serve as the restricted logins only, both checked before the boot's ingest writes anything: the owner could drop the evidence triggers, and a
@@ -17,10 +17,11 @@ await Promise.all([assertRuntimeRole(db), mcps.assert()]).catch(async (error: Er
 })
 const telemetry = createTracer("answerable-toolbox", otlpEndpoint)
 const id = createIdAdmin(idConfig)
-const toolbox = await createToolbox({ mount: mcps.mount, pools: mcps.pools, auth, db, id, spans: telemetry.tracer })
+const toolbox = await createToolbox({ mount: mcps.mount, pools: mcps.pools, auth, origin, db, id, spans: telemetry.tracer })
 const poller = startAuditPoller({ id, caches: [toolbox.grants, toolbox.profiles] })
 const server = Bun.serve({ hostname, port, fetch: toolbox.fetch })
-console.log(`Toolbox serving ${auth.resource}`)
+const alone = mounted.filter(({ serve }) => serve !== "toolbox").map(({ provider }) => `${origin}/${provider.id}/mcp`)
+console.log(`Toolbox serving ${[auth.resource, ...alone].join(", ")}`)
 let closing = false
 // Stop serving, then exit: under bun --hot, as the dev script runs it, the process would otherwise stay alive with its port closed.
 async function close() {

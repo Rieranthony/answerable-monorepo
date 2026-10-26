@@ -450,7 +450,7 @@ describe("runJob", () => {
   }
   const restarts = (call: RecordedCall) =>
     call.argv.join(" ") === "kubectl get deployments -n answerable -o name"
-      ? { stdout: "deployment.apps/answerable-id\ndeployment.apps/answerable-toolbox\ndeployment.apps/answerable-admin-mcp\ndeployment.apps/answerable-standalone\n" }
+      ? { stdout: "deployment.apps/answerable-id\ndeployment.apps/answerable-toolbox\ndeployment.apps/answerable-admin-mcp\n" }
       : call.argv[1] === "logs"
         ? { stdout: "the Job's log\n" }
         : deployed(call)
@@ -477,10 +477,9 @@ describe("runJob", () => {
       jobUpgrade("--set ops.bootstrap=false --set ops.register=true --set ops.makeAdmin=false"),
       "kubectl logs -n answerable job/ops-register --all-containers",
       "kubectl get deployments -n answerable -o name",
-      "kubectl rollout restart -n answerable deployment.apps/answerable-toolbox deployment.apps/answerable-admin-mcp deployment.apps/answerable-standalone",
+      "kubectl rollout restart -n answerable deployment.apps/answerable-toolbox deployment.apps/answerable-admin-mcp",
       "kubectl rollout status -n answerable deployment.apps/answerable-toolbox --timeout=10m",
       "kubectl rollout status -n answerable deployment.apps/answerable-admin-mcp --timeout=10m",
-      "kubectl rollout status -n answerable deployment.apps/answerable-standalone --timeout=10m",
     ])
     // git runs in the checkout, and the chart's directory is gone afterwards.
     for (const call of f.runner.calls.filter((each) => each.argv[0] === "git")) expect(call.options.cwd).toBe(f.root)
@@ -581,12 +580,7 @@ describe("runJob", () => {
     expect(f.runner.commands()).toContain("kubectl logs -n answerable -l job-name=ops-make-admin --all-containers --prefix --tail=200")
   })
 
-  test("restarts the standalone server only when it exists, and fails when the Toolbox or the admin MCP is missing, or there are none", async () => {
-    const without = await fixture((call) =>
-      call.argv.join(" ") === "kubectl get deployments -n answerable -o name" ? { stdout: "deployment.apps/answerable-toolbox\ndeployment.apps/answerable-admin-mcp\n" } : restarts(call),
-    )
-    await runJob({ environment: "staging", job: "register" }, without.deps)
-    expect(without.runner.commands()).toContain("kubectl rollout restart -n answerable deployment.apps/answerable-toolbox deployment.apps/answerable-admin-mcp")
+  test("fails when the Toolbox or the admin MCP is missing, or there are none", async () => {
     const one = await fixture((call) =>
       call.argv.join(" ") === "kubectl get deployments -n answerable -o name" ? { stdout: "deployment.apps/answerable-id\ndeployment.apps/answerable-toolbox\n" } : restarts(call),
     )

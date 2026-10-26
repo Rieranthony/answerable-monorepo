@@ -1,5 +1,5 @@
-// The kind stack's proof that an organisation reaches a standalone MCP once staff enable it, in a process of its own for the reason sign-in.ts
-// gives: `bun infra/k8s/local/standalone-sign-in.ts`, with its input as JSON on standard input and its result as JSON on the last line of
+// The kind stack's proof that an organisation reaches a standalone MCP, which the Toolbox serves at its path on the mcp host, once staff enable it,
+// in a process of its own for the reason sign-in.ts gives: `bun infra/k8s/local/standalone-sign-in.ts`, with its input as JSON on standard input and its result as JSON on the last line of
 // standard output. stack.test.ts runs it after the root lock, once a deploy has registered the MCP.
 import { connect, intentSchema, serveCallback, signIn, signInRefused, tool } from "@answerable/acceptance"
 import { chromium } from "@playwright/test"

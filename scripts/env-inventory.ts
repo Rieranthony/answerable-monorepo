@@ -11,9 +11,6 @@ import { adminTestDatabaseConfig } from "../mcps/admin/src/test/database"
 import { toolboxConfig } from "../mcps/toolbox/src/environment"
 import { toolboxMigrationConfig } from "../mcps/toolbox/scripts/env"
 import { toolboxTestDatabaseConfig } from "../mcps/toolbox/src/test/database"
-import { mcpsMigrationConfig, standaloneMigrationConfig } from "../mcps/standalone/scripts/env"
-import { standaloneConfig } from "../mcps/standalone/src/environment"
-import { standaloneTestDatabaseConfig } from "../mcps/standalone/src/test/database"
 import { mcpPostgresTestConfig } from "../packages/mcp-postgres/src/testing"
 import { mcpCliConfig } from "./mcp/config"
 
@@ -28,15 +25,11 @@ const groups: Group[] = [
   defined(idMigrationConfig, "apps/id/scripts/env.ts, read by scripts/migrate.ts"),
   defined(idTestDatabaseConfig, "apps/id/src/__tests__/test-database.ts, for ID's tests"),
   defined(toolboxConfig, "mcps/toolbox/src/environment.ts, read from the root .env by bun run toolbox:dev"),
-  defined(toolboxMigrationConfig, "mcps/toolbox/scripts/env.ts, read by scripts/migrate.ts"),
+  defined(toolboxMigrationConfig, "mcps/toolbox/scripts/env.ts, read by scripts/migrate.ts, the Job toolbox-migrate; each own MCP adds MCP_<NAME>_DATABASE_MIGRATION_URL"),
   defined(toolboxTestDatabaseConfig, "mcps/toolbox/src/test/database.ts, for the Toolbox's tests"),
   defined(adminConfig, "mcps/admin/src/environment.ts, read from the root .env by bun run admin:dev"),
   defined(adminMigrationConfig, "mcps/admin/scripts/env.ts, read by scripts/migrate.ts"),
   defined(adminTestDatabaseConfig, "mcps/admin/src/test/database.ts, for the admin MCP's tests"),
-  defined(standaloneConfig, "mcps/standalone/src/environment.ts, read from the root .env by bun run standalone:dev"),
-  defined(standaloneMigrationConfig, "mcps/standalone/scripts/env.ts, read by scripts/migrate.ts"),
-  defined(mcpsMigrationConfig, "mcps/standalone/scripts/env.ts, read by scripts/migrate-mcps.ts, the Job mcps-migrate; each own MCP adds MCP_<NAME>_DATABASE_MIGRATION_URL"),
-  defined(standaloneTestDatabaseConfig, "mcps/standalone/src/test/database.ts, for the standalone server's tests"),
   defined(opsConfig, "infra/ops/src/commands.ts, set by charts/answerable for the bootstrap, register and make-admin Jobs (infra/ops/README.md)"),
   defined(mcpPostgresTestConfig, "packages/mcp-postgres/src/testing.ts, for the package's own tests and every MCP's (testMcpDatabase)"),
   defined(mcpCliConfig, "scripts/mcp/config.ts, read by bun mcp db migrate (which bun mcp new runs), bun mcp setup and bun mcp dev"),
@@ -80,7 +73,7 @@ const groups: Group[] = [
 // What a developer supplies because another system issues it: the platform applications and the machine clients the local ID registers.
 const issuedElsewhere = [
   "MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "TOOLBOX_ID_CLIENT_ID", "TOOLBOX_ID_CLIENT_SECRET",
-  "ADMIN_ID_CLIENT_ID", "ADMIN_ID_CLIENT_SECRET", "STANDALONE_ID_CLIENT_ID", "STANDALONE_ID_CLIENT_SECRET",
+  "ADMIN_ID_CLIENT_ID", "ADMIN_ID_CLIENT_SECRET",
 ]
 
 const lines = (fields: FieldMeta[]) => fields.flatMap(({ name, doc }) => [`# ${doc}`, `${name}=`])

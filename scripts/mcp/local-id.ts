@@ -48,9 +48,9 @@ export async function registerToolbox(registrar: Registrar, stack: Stack = local
   await registrar.client(...host)
 }
 
-/** A standalone MCP in ID at the stack's standalone server, as the register Job registers it. Answers the resource's identifier. */
+/** A standalone MCP in ID at the stack's Toolbox, which serves it at its path, as the register Job registers it. Answers the resource's identifier. */
 export const registerStandalone = (registrar: Registrar, mcp: { name: string; scopes: readonly string[] }, stack: Stack = local) =>
-  registerAt(registrar, mcp, { mcpOrigin: stack.standalone, callback: stack.callback })
+  registerAt(registrar, mcp, { mcpOrigin: stack.toolbox, callback: stack.callback })
 
 /** bun mcp's machine client in ID. */
 export const machine = "mcp-dev"

@@ -91,7 +91,7 @@ function health(name: string, host: string, path: string): Check {
   }
 }
 
-/** The Toolbox's health, which lists the providers it mounts: every `toolbox` and `both` MCP of the list, and no other. */
+/** The Toolbox's health, which lists the MCPs it serves, in its hub or alone: every MCP of the list, and no other. */
 function mounted(host: string, providers: readonly string[]): Check {
   const url = `https://${host}/health`
   const expected = [...providers].sort()
@@ -103,7 +103,7 @@ function mounted(host: string, providers: readonly string[]): Check {
       if (status !== "ok") throw new Error(`status is ${JSON.stringify(status)}, expected "ok"`)
       const listed = Array.isArray(found) ? [...found].sort() : found
       if (!Bun.deepEquals(listed, expected)) throw new Error(`providers are ${JSON.stringify(listed)}, expected ${JSON.stringify(expected)}`)
-      return `status "ok", ${expected.length} provider${expected.length === 1 ? "" : "s"} mounted`
+      return `status "ok", ${expected.length} MCP${expected.length === 1 ? "" : "s"} served`
     },
   }
 }
@@ -155,7 +155,7 @@ function checksFor(hosts: Hosts, mcps: readonly DeclaredMcp[]): Check[] {
         return `${keys.length} signing key${keys.length === 1 ? "" : "s"}`
       },
     },
-    mounted(hosts.toolbox, mcps.filter((mcp) => mcp.serve !== "standalone").map((mcp) => mcp.name)),
+    mounted(hosts.toolbox, mcps.map((mcp) => mcp.name)),
     resourceMetadata("toolbox", hosts.toolbox, issuer),
     health("admin-mcp", hosts.admin, "/health"),
     resourceMetadata("admin-mcp", hosts.admin, issuer),
@@ -165,8 +165,8 @@ function checksFor(hosts: Hosts, mcps: readonly DeclaredMcp[]): Check[] {
 
 /**
  * Check an environment through its public hostnames: ID's health, discovery and signing keys; the Toolbox's health, which
- * must list every `toolbox` and `both` MCP of `mcps`, and its protected-resource metadata; the admin MCP's health and
- * metadata; and each `standalone` and `both` MCP's metadata on the standalone server's host. A failing check is retried
+ * must list every MCP of `mcps`, and its protected-resource metadata; the admin MCP's health and
+ * metadata; and each `standalone` and `both` MCP's metadata on the `mcp` host, where the Toolbox serves it alone. A failing check is retried
  * until the shared `timeoutMs` has passed, because a rollout and a first certificate take time.
  */
 export async function runSmoke(hosts: Hosts, mcps: readonly DeclaredMcp[], options: SmokeOptions): Promise<CheckResult[]> {

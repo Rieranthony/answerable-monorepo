@@ -23,7 +23,7 @@ Have these in place, in order, from the main checkout. Never run `bun dev` or `b
 | Your local ID | `bun dev`, or `bun --filter @answerable/id dev` | `47300` |
 | A sign-in for your email domain on the platform organisation | [First run](/docs/id/onboard#first-run), steps 3 and 4, once | |
 
-The first run of ID makes the platform organisation, `answerable`. Step 3 puts your email domain and your company's directory on it, and step 4 signs you in once, so that a sign-in from Claude Code can complete. Run them against `http://localhost:47300`, with `ROOT_ADMIN_SECRET` at ID's development default, and with the directory's `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET`, or the Google pair, in the root `.env` when ID starts. The Toolbox and the standalone server are started by `bun mcp dev`.
+The first run of ID makes the platform organisation, `answerable`. Step 3 puts your email domain and your company's directory on it, and step 4 signs you in once, so that a sign-in from Claude Code can complete. Run them against `http://localhost:47300`, with `ROOT_ADMIN_SECRET` at ID's development default, and with the directory's `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET`, or the Google pair, in the root `.env` when ID starts. The Toolbox, which serves every MCP, is started by `bun mcp dev`.
 
 ### Connect the CLI to your local ID
 
@@ -60,32 +60,32 @@ bun mcp dev acme
 
 From inside `mcps/acme` the name can be left out. In order, it:
 
-1. migrates the schema of every MCP that the servers it starts mount, and each server's own database; the generated lists mount every MCP, so one that was never provisioned on your machine stops the server from starting;
-2. starts the Toolbox (`serve` `toolbox`), the standalone server (`standalone`) or both, with hot reload, as `mcp-dev`, and waits for each `/health` to list the MCP;
-3. for a standalone MCP, registers its resource, `http://localhost:47510/acme/mcp`, and its client, `claude-code-acme`, field for field as [the register Job](/docs/admin/setup) does, then gives your organisation access with the rows `standalone_enable` makes with `everyone: true`;
+1. migrates the schema of every MCP, and the Toolbox's own database; the Toolbox serves every MCP of its generated list, so one that was never provisioned on your machine stops it from starting;
+2. starts the Toolbox, with hot reload, as `mcp-dev`, which serves the MCP in its hub (`serve` `toolbox`), at its own path (`standalone`) or both, and waits for its `/health` to list the MCP;
+3. for a standalone MCP, registers its resource, `http://localhost:47400/acme/mcp`, and its client, `claude-code-acme`, field for field as [the register Job](/docs/admin/setup) does, then gives your organisation access with the rows `standalone_enable` makes with `everyone: true`;
 4. for a Toolbox MCP, enables it for your organisation through the Toolbox's admin API and grants your organisation its grant string, `acme`, widening the one entitlement that ID keeps for your organisation on the Toolbox;
 5. prints what to do, then runs until Ctrl-C, which stops what it started.
 
 Every step is safe to run again. A scope that the MCP gained since the last run widens the rows ID holds; nothing narrows what your organisation holds.
 
 ```text
-ok      database   schemas acme; the database of the standalone server
-ok      standalone serving acme at http://localhost:47510/acme/mcp
-ok      register   http://localhost:47510/acme/mcp and claude-code-acme: 3 made, 0 changed, 0 found
+ok      database   schemas acme; the database of the Toolbox
+ok      toolbox    serving acme at http://localhost:47400/acme/mcp
+ok      register   http://localhost:47400/acme/mcp and claude-code-acme: 3 made, 0 changed, 0 found
 ok      access     organisation answerable: 6 made, 0 widened
 
-acme runs at http://localhost:47510/acme/mcp
+acme runs at http://localhost:47400/acme/mcp
 
-  claude mcp add --transport http acme http://localhost:47510/acme/mcp --client-id claude-code-acme --callback-port 47700
+  claude mcp add --transport http acme http://localhost:47400/acme/mcp --client-id claude-code-acme --callback-port 47700
 
 In Claude Code, run /mcp, choose acme, then Authenticate.
 
-Ctrl-C stops the standalone server; an edit to acme reloads it.
+Ctrl-C stops the Toolbox; an edit to acme reloads it.
 ```
 
 For an MCP in the Toolbox, it prints the Toolbox's command instead, `claude mcp add --transport http answerable-toolbox http://localhost:47400/mcp --client-id claude-code-toolbox --callback-port 47700`, and says that enabling and granting are local conveniences: in staging and production, staff do both with `toolbox_enable` and `access_grant` in [the admin MCP](/docs/admin). An MCP served both ways prints both.
 
-**Measured.** On a development machine with the stack running and four MCPs mounted by the standalone server, `bun mcp dev` printed its commands 1.9 seconds after it started for an MCP it had not run before, and 1.55, 1.57 and 1.60 seconds for one it had. The migrations are most of it: about 0.2 seconds for each MCP a started server mounts. `bun mcp setup` took 0.5 seconds. On Ctrl-C each server closes its port and its connections, then exits; one that has not ended a second later is killed with its process group.
+**Measured** on 25 October 2026, when a server of its own served standalone MCPs: with the stack running and four MCPs, `bun mcp dev` printed its commands 1.9 seconds after it started for an MCP it had not run before, and 1.55, 1.57 and 1.60 seconds for one it had. The migrations were most of it: about 0.2 seconds for each MCP. `bun mcp setup` took 0.5 seconds. Not measured since the Toolbox serves every MCP. On Ctrl-C the Toolbox closes its port and its connections, then exits; if it has not ended a second later it is killed with its process group.
 
 **Claude Code.** Run the printed command, then `/mcp` in Claude Code, choose the connection and **Authenticate**. [Connect Claude Code](/docs/mcp/claude-code) covers what you see and the errors you can hit there. Signing in by hand through a browser, with your work account, is the one step that no command does for you.
 
@@ -109,7 +109,7 @@ Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs 
 
 `packages/acceptance/src/journeys/e2e.journeys.test.ts` starts ID once and runs the tests below in order.
 
-**Setup.** ID starts from production migrations, served through the restricted runtime role, and is provisioned only through its admin API: the MCP resource with a 60-second token lifetime, a public client, and three organisations with company sign-in, capabilities and entitlements. The third organisation, `mcp-gamma`, is entitled to `e2e:identity` and `e2e:read` only. [The standalone server](/docs/mcp/servers#the-standalone-server) runs in the test process on port `47602` (`src/standalone.ts`, `startStandaloneStack`) and serves e2e at its path, `http://127.0.0.1:47602/e2e/mcp`, with its own machine client, `standalone-hub`, its database `answerable_standalone_acceptance`, and e2e's records in the shared MCP database `answerable_mcps_acceptance`, as its serving login (`src/mcps.ts`, `mcpsDatabase`).
+**Setup.** ID starts from production migrations, served through the restricted runtime role, and is provisioned only through its admin API: the MCP resource with a 60-second token lifetime, a public client, and three organisations with company sign-in, capabilities and entitlements. The third organisation, `mcp-gamma`, is entitled to `e2e:identity` and `e2e:read` only. The Toolbox's process runs in the test process on port `47604` (`src/toolbox.ts`, `prepareToolbox`) and [serves e2e alone](/docs/mcp/servers#served-alone) at its path, `http://127.0.0.1:47604/e2e/mcp`, with its machine client, `toolbox-hub`, its database `answerable_toolbox_acceptance`, and e2e's records in the shared MCP database `answerable_mcps_acceptance`, as its serving login (`src/mcps.ts`, `mcpsDatabase`).
 
 1. Each organisation signs in through ID with the SDK's OAuth client and a real browser. The client follows the MCP's `401` to its metadata, discovers ID and builds the request: PKCE S256, the MCP URL as `resource`, the advertised scopes (`e2e:identity`, `e2e:read`, `e2e:write`) plus `offline_access`. The browser completes ID's pages: email, company sign-in, organisation, and consent listing every entitled scope. The consent of `mcp-gamma` names `e2e:write` as not approved. The callback carries ID's `iss` (RFC 9207), which the client checks.
 2. Each access token is bound to the MCP, lives 60 seconds and carries exactly the entitled scopes.
@@ -125,7 +125,7 @@ The commit rules in which ID plays no part, a repeated commit, a stale target, a
 
 5. Each of the first two organisations lists only its own record, and preparing to delete another organisation's record answers `NOT_FOUND`.
 6. `mcp-gamma` lists no records, and `records_create`, `records_delete`, `e2e_commit` and `e2e_commit_confirmed` are unknown tools to it.
-7. A second standalone server, at another origin on port `47605`, serves e2e as another resource and refuses the token with `401`, after the MCP it was issued for accepted the same token.
+7. A second Toolbox, at another origin on port `47605`, serves e2e as another resource and refuses the token with `401`, after the MCP it was issued for accepted the same token.
 8. The client refreshes an expired access token by itself, ID rotates the refresh token, and the new tokens keep the same scopes.
 9. Disabling the organisation through the admin API makes refresh fail with `invalid_grant`; the access token already issued keeps working until it expires.
 
@@ -235,16 +235,16 @@ The admin API's evidence check and host client rows are held by the Toolbox's ow
 
 ## What the MCP journeys prove
 
-`packages/acceptance/src/journeys/mcps.journeys.test.ts` starts its own ID with two organisations, `mcps-alpha` and `mcps-beta`, and runs the MCPs as the deployment serves them: the Toolbox on port `47604`, mounting `e2e` and `example`, and the standalone server on port `47602`, serving e2e at its path, both over the one shared MCP database. Each organisation is entitled to e2e at its path, and the Toolbox is enabled for it with `e2e` and `example` and the grant strings `e2e` and `example`.
+`packages/acceptance/src/journeys/mcps.journeys.test.ts` starts its own ID with two organisations, `mcps-alpha` and `mcps-beta`, and runs the MCPs as the deployment serves them: the Toolbox on port `47604`, mounting `e2e` and `example` in its hub and serving e2e at its path, in one process over the one shared MCP database. Each organisation is entitled to e2e at its path, and the Toolbox is enabled for it with `e2e` and `example` and the grant strings `e2e` and `example`.
 
 1. Each organisation signs in to the Toolbox and to e2e at its path, through ID with a real browser.
 2. A person's name and their organisation's, which only ID holds and no token carries, reach a tool: `example_example_status` through the Toolbox answers the name of the member the token names and the organisation's name, as ID's admin API gives them.
-3. Two organisations, through real tokens, see only their own e2e records: `mcps-alpha` creates one at e2e's path and `mcps-beta` one in the Toolbox; each lists only its own, at the path and in the Toolbox alike, so both servers read the same rows of schema `e2e`; and preparing to delete the other's answers `NOT_FOUND` on both.
-4. The records survive a restart: the standalone server, started again on fresh pools, lists what it wrote before.
+3. Two organisations, through real tokens, see only their own e2e records: `mcps-alpha` creates one at e2e's path and `mcps-beta` one in the Toolbox; each lists only its own, at the path and in the Toolbox alike, so the hub and the path read the same rows of schema `e2e`; and preparing to delete the other's answers `NOT_FOUND` on both.
+4. The records survive a restart: the Toolbox, started again on fresh pools, lists at e2e's path what it wrote before.
 
 ## What the CLI journeys prove
 
-`packages/acceptance/src/journeys/mcp-cli.journeys.test.ts` starts its own ID with two organisations, `cli-alpha` and `cli-beta`, the Toolbox on port `47604` and the standalone server on port `47602`. It registers ID as `bun mcp setup` and `bun mcp dev` do, with the code they run (`scripts/mcp/local-id.ts` and `local-access.ts`, on the acceptance's addresses): with the root secret, the Toolbox's resources and host client, `claude-code-toolbox`, and `mcp-dev`; then, as `mcp-dev`, e2e's resource and client, `claude-code-e2e`, and for each organisation its access to e2e and `example` in the Toolbox.
+`packages/acceptance/src/journeys/mcp-cli.journeys.test.ts` starts its own ID with two organisations, `cli-alpha` and `cli-beta`, and the Toolbox on port `47604`, which serves e2e at its path. It registers ID as `bun mcp setup` and `bun mcp dev` do, with the code they run (`scripts/mcp/local-id.ts` and `local-access.ts`, on the acceptance's addresses): with the root secret, the Toolbox's resources and host client, `claude-code-toolbox`, and `mcp-dev`; then, as `mcp-dev`, e2e's resource and client, `claude-code-e2e`, and for each organisation its access to e2e and `example` in the Toolbox.
 
 1. Each organisation signs in to the Toolbox through `claude-code-toolbox` and to e2e at its path through `claude-code-e2e`, with a real browser. The e2e token is bound to the path and carries the three e2e scopes.
 2. `example`, made by the CLI and mounted in the Toolbox: `cli-alpha` prepares a note with `example_notes_add`, whose summary names its organisation as ID holds it, confirms it with `toolbox_commit_confirmed`, and `example_notes_list` returns it; `cli-beta` lists none.
@@ -253,7 +253,7 @@ The admin API's evidence check and host client rows are held by the Toolbox's ow
 5. Registering again, as `bun mcp dev` does on every run, changes nothing in ID, and one secret opens both of `mcp-dev`'s admin APIs.
 6. A scope an MCP gains later, and a second MCP enabled in the Toolbox, widen the rows ID holds, a resource, a client, two capabilities and an entitlement, and the organisation's one entitlement on the Toolbox, instead of making second ones.
 
-A third MCP, made by `bun mcp new` in a temporary checkout and served as a process of its own, is not in the acceptance: e2e is served both ways by the same standalone code, which the e2e and MCP journeys prove.
+A third MCP, made by `bun mcp new` in a temporary checkout, is not in the acceptance: e2e is served both ways by the same code, which the e2e and MCP journeys prove.
 
 ## Ports
 
@@ -261,13 +261,12 @@ A third MCP, made by `bun mcp new` in a temporary checkout and served as a proce
 | --- | --- |
 | Disposable PostgreSQL | `47532` |
 | ID | `47600` |
-| The standalone server, e2e at `/e2e/mcp` | `47602` |
 | OAuth callback | `47603` |
-| Toolbox | `47604` |
-| A second standalone server | `47605` |
+| Toolbox, and e2e at `/e2e/mcp` | `47604` |
+| A second Toolbox, for the e2e journeys | `47605` |
 | Admin MCP | `47606` |
 
-Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e` and holds ID's database, the Toolbox's `answerable_toolbox_acceptance`, the standalone server's `answerable_standalone_acceptance` and the shared MCP database `answerable_mcps_acceptance`, with its three logins; the run never reads your `DATABASE_URL`. Journey files run one after another, each starting and stopping its own ID, so they share these ports and cannot run in parallel. Two runs at once cannot either: the Compose project name is fixed, so one run's cleanup removes the other's PostgreSQL. Run one at a time.
+Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e` and holds ID's database, the Toolbox's `answerable_toolbox_acceptance` and the shared MCP database `answerable_mcps_acceptance`, with its two logins; the run never reads your `DATABASE_URL`. Journey files run one after another, each starting and stopping its own ID, so they share these ports and cannot run in parallel. Two runs at once cannot either: the Compose project name is fixed, so one run's cleanup removes the other's PostgreSQL. Run one at a time.
 
 ## The kit
 
@@ -303,9 +302,9 @@ Save this as `packages/acceptance/src/journeys/records.journeys.test.ts` and run
 ```ts
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { connect, grantOrganisation, launchBrowser, linkClient, registerClient, registerResource, serve, serveCallback, signIn, startId, tool, type Id, type OAuthSession } from "../index"
-import { startStandaloneStack } from "../standalone"
+import { prepareToolbox } from "../toolbox"
 
-const origin = "http://127.0.0.1:47602"
+const origin = "http://127.0.0.1:47604"
 const resource = `${origin}/e2e/mcp`
 const callback = "http://127.0.0.1:47603/callback"
 const clientId = "my-journey"
@@ -321,8 +320,8 @@ beforeAll(async () => {
   await registerClient(admin, { clientId, redirectUri: callback, scopes })
   await linkClient(admin, clientId, resource)
   await grantOrganisation(admin, acme.organizationId, { clientId, resource, scopes })
-  const { start } = await startStandaloneStack(id)
-  serve(47_602, start(origin).fetch)
+  const { start } = await prepareToolbox(id, { database: "answerable_toolbox_acceptance" })
+  serve(47_604, (await start(origin)).fetch)
   serveCallback(callback)
   oauth = await signIn(await launchBrowser(), { idOrigin: manifest.idOrigin, resource, clientId, callback, scopes }, { slug: acme.slug, email: acme.email, scopes })
 })
@@ -334,7 +333,7 @@ test("a new organisation has no records", async () => {
 })
 ```
 
-**Serve the MCPs in the test process.** `startStandaloneStack(id)` (`src/standalone.ts`) and `startToolboxStack(id, …)` (`src/toolbox.ts`) start the servers as the deployment runs them, with the MCPs of their generated lists over `answerable_mcps_acceptance`; each journey registers the resources and clients it signs in to. `start(origin)` builds a standalone server at another origin, or the same one again on fresh pools, when a journey needs a token refused elsewhere or a restart.
+**Serve the MCPs in the test process.** `prepareToolbox(id, …)` and `startToolboxStack(id, …)` (`src/toolbox.ts`) start the Toolbox as the deployment runs it, with the MCPs of its generated list over `answerable_mcps_acceptance`, in its hub and at their paths; each journey registers the resources and clients it signs in to. `start(origin)` builds a Toolbox at another origin, or the same one again on fresh pools, when a journey needs a token refused elsewhere or a restart.
 
 **`signIns`** counts the company sign-ins a directory may perform: one per `signIn`, `signInRefused` or `verifySignIn`, for a tenant, the platform organisation or a spare. A person who signs in more often than queued fails at the company directory. The platform organisation's list form queues several people in the order they sign in.
 
@@ -348,7 +347,7 @@ Copy `e2e.journeys.test.ts` for a fuller one: several organisations, a partial e
 bun run mcp:test
 ```
 
-This runs the `@answerable/auth`, `@answerable/id-admin`, `@answerable/mcp`, `@answerable/mcp-postgres`, `@answerable/mcp-platform`, e2e, Toolbox, standalone server and admin MCP suites and `bun mcp`'s with a local test issuer, including Chromium rendering the real MCP Apps view through the official host bridge. It also runs every MCP that `bun mcp new` has added under `mcps/`. These suites need the development PostgreSQL on port `47432` (`bun run env:up`): the servers' reset their own test databases first, each MCP's resets its own schema in `answerable_mcps_test`, and the Toolbox's, the standalone server's and `@answerable/mcp-platform`'s make shared MCP databases of their own, with role prefixes of their own, and drop them at the end. It does not include the acceptance.
+This runs the `@answerable/auth`, `@answerable/id-admin`, `@answerable/mcp`, `@answerable/mcp-postgres`, `@answerable/mcp-platform`, e2e, Toolbox and admin MCP suites and `bun mcp`'s with a local test issuer, including Chromium rendering the real MCP Apps view through the official host bridge. It also runs every MCP that `bun mcp new` has added under `mcps/`. These suites need the development PostgreSQL on port `47432` (`bun run env:up`): the servers' reset their own test databases first, each MCP's resets its own schema in `answerable_mcps_test`, and the Toolbox's and `@answerable/mcp-platform`'s make shared MCP databases of their own, with role prefixes of their own, and drop them at the end. It does not include the acceptance.
 
 ## Run the e2e MCP by hand
 
@@ -356,7 +355,7 @@ This runs the `@answerable/auth`, `@answerable/id-admin`, `@answerable/mcp`, `@a
 bun mcp dev e2e
 ```
 
-e2e is served both ways, so this starts the Toolbox and the standalone server, with e2e at `http://localhost:47510/e2e/mcp` and in the Toolbox, and prints both commands. [Run an MCP on your machine](#run-an-mcp-on-your-machine) says what it does; [Connect Claude Code](/docs/mcp/claude-code#the-e2e-server) shows by hand what it registers.
+e2e is served both ways, so this starts the Toolbox with e2e in its hub and at `http://localhost:47400/e2e/mcp`, and prints both commands. [Run an MCP on your machine](#run-an-mcp-on-your-machine) says what it does; [Connect Claude Code](/docs/mcp/claude-code#the-e2e-server) shows by hand what it registers.
 
 ## Host lane
 
@@ -400,7 +399,7 @@ bun packages/acceptance/scripts/admin-lane.ts
 | --- | --- | --- |
 | `Executable not found in $PATH: "docker"` | Docker is not installed, or not on `PATH` | Install Docker with Compose v2 and start it |
 | `Command failed: docker compose -p answerable-mcp-e2e`, often with `ports are not available` | Compose could not start PostgreSQL: port `47532` is taken (often by another run), or the Docker daemon is not running | Wait for the other run, or free the port; start Docker |
-| `Failed to start server. Is port 47602 in use?` (or `47603`, `47605`) | A journey could not listen | Find the holder with `lsof -nP -iTCP:47602 -sTCP:LISTEN` and stop it |
+| `Failed to start server. Is port 47604 in use?` (or `47603`, `47605`) | A journey could not listen | Find the holder with `lsof -nP -iTCP:47604 -sTCP:LISTEN` and stop it |
 | `ID fixture stopped (1)`, after `Failed to start server. Is port 47600 in use?` | ID could not listen on `47600` | Free the port and run again |
 | `Timed out after 90000 ms waiting for the ID fixture` | ID was not ready within 90 seconds. Seen at a load average of 132 | Run again on a quieter machine, or pass a larger `timeoutMs` to `startId` |
 | `launch: Executable doesn't exist at …` | Playwright's Chromium is not installed | Run `(cd packages/acceptance && bun x playwright install chromium)` |

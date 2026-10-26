@@ -2,7 +2,7 @@
 // provisioned and migrated as the deployment does it (@answerable/mcp-postgres).
 import { existsSync, readdirSync } from "node:fs"
 import { dirname, join } from "node:path"
-import { ensureLocalMcpDatabases, migrateMcp, ownMcpDatabase, provisionMcps, provisionOwnMcp, servedBy, sharedMcps, sqlOf, withoutSchemaCreation, type Grant } from "@answerable/mcp-postgres"
+import { ensureLocalMcpDatabases, migrateMcp, ownMcpDatabase, provisionMcps, provisionOwnMcp, sharedMcps, sqlOf, withoutSchemaCreation, type Grant } from "@answerable/mcp-postgres"
 import { is } from "drizzle-orm"
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core"
 import { Client } from "pg"
@@ -62,7 +62,7 @@ async function connected(url: URL, work: (client: Client) => Promise<unknown>) {
  * The grants are those `src/db/grants.ts` exports as `grants`, else every table read and written. The admin URL is the root `.env`'s, wherever
  * it runs (`readSettings`). What it did, in words.
  */
-export async function migrateLocal(root: string, { name, serve, database }: Declaration): Promise<string> {
+export async function migrateLocal(root: string, { name, database }: Declaration): Promise<string> {
   const admin = new URL((await readSettings(root)).settings.MCPS_DATABASE_ADMIN_URL)
   const cluster = new URL(admin)
   cluster.pathname = "/postgres"
@@ -75,7 +75,7 @@ export async function migrateLocal(root: string, { name, serve, database }: Decl
   const done = `${migrations ? "migrated" : "provisioned; no migration yet"}${grants ? ", with src/db/grants.ts" : ""}`
   if (database === "shared") {
     await connected(admin, async client => {
-      await provisionMcps(sqlOf(client), { mcps: [{ name, servedBy: servedBy[serve] }], logins: sharedMcps.logins })
+      await provisionMcps(sqlOf(client), { mcps: [{ name }], logins: sharedMcps.logins })
       if (migrations) await migrateMcp({ client, name, folder, mode: "shared", grants })
     })
     return `schema ${name} in ${admin.pathname.slice(1)}: ${done}`

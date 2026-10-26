@@ -46,7 +46,7 @@ bun mcp help
 
 <CliReference command="list" />
 
-Each MCP takes two lines. The first is its name, where it runs, its database mode, how many tools it has, the first sentence of its description and its local URL. The second is its staging and its production URL. The URLs are those the deployment gives it: the Toolbox's `/mcp` for a `toolbox` MCP, and the standalone server's `/<name>/mcp` for a `standalone` one. An MCP that runs `both` has both.
+Each MCP takes two lines. The first is its name, where it runs, its database mode, how many tools it has, the first sentence of its description and its local URL. The second is its staging and its production URL. The URLs are those the deployment gives it: the Toolbox's `/mcp` for a `toolbox` MCP, and `/<name>/mcp` on the `mcp` host, where the Toolbox serves it alone, for a `standalone` one; locally both are on the Toolbox's origin. An MCP that runs `both` has both.
 
 ## bun mcp check
 

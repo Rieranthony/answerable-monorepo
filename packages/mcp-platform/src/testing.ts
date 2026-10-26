@@ -38,7 +38,7 @@ function assertDisposable(name: string) {
 /**
  * A shared MCP database of a suite's own, `name` (`answerable_<suite>_test…`), made as the deployment makes `answerable_mcps`: owned by the
  * migrator login, each provider of `mcps` provisioned with `prefix`, a role prefix of the suite's own, and migrated from its `database`, and a
- * fresh serving login that may take their runtime roles, as the Toolbox's or the standalone server's. `url` is the serving login's. `close()`
+ * fresh serving login that may take their runtime roles, as the Toolbox's. `url` is the serving login's. `close()`
  * drops the database, the login and the roles `prefix` made, so suites with different prefixes run at once.
  */
 export async function testSharedMcps({ name, prefix, mcps }: { name: string; prefix: string; mcps: readonly Provider[] }) {
@@ -47,7 +47,7 @@ export async function testSharedMcps({ name, prefix, mcps }: { name: string; pre
   const serving = login(name)
   await statements(`drop database if exists ${name} with (force)`, `create database ${name} owner ${sharedMcps.logins.migrator}`, `create role ${serving.role} login password '${serving.password}' noinherit`)
   await asSuperuser(name, async client => {
-    await provisionMcps(sqlOf(client), { mcps: mcps.map(({ id }) => ({ name: id, servedBy: ["toolbox", "standalone"] })), prefix, logins: { migrator: sharedMcps.logins.migrator, toolbox: serving.role, standalone: serving.role } })
+    await provisionMcps(sqlOf(client), { mcps: mcps.map(({ id }) => ({ name: id })), prefix, logins: { migrator: sharedMcps.logins.migrator, toolbox: serving.role } })
     for (const provider of mcps) await migrateMcp({ client, name: provider.id, folder: folderOf(provider), mode: "shared", prefix })
   })
   return {

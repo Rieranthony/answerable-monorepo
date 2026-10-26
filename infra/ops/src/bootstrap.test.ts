@@ -35,7 +35,6 @@ function fakePostgres({ roles = {}, owners = {} }: { roles?: Record<string, Part
       return owner ? [{ owner }] : []
     }
     if (text.startsWith("select datname as name")) return [{ name: database, owner: state.owners[database!] }]
-    if (text.startsWith("select pg_get_userbyid(grantor)")) return state.memberships.has(`${params[0]}>${params[1]}`) ? [{ grantor: "dbadmin" }] : []
     if ((match = text.match(/^create role "(\w+)" with login password '((?:[^']|'')*)'(.*)$/))) {
       state.roles[match[1]!] = { password: match[2]!, rolsuper: false, rolreplication: false, rolbypassrls: false, restricted: match[3]!.includes("nobypassrls"), login: true }
       return []
@@ -48,7 +47,6 @@ function fakePostgres({ roles = {}, owners = {} }: { roles?: Record<string, Part
       return []
     }
     if ((match = text.match(/^grant "(\w+)" to "?(\w+)"? with inherit false, set true$/))) state.memberships.add(`${match[1]}>${match[2]}`)
-    if ((match = text.match(/^revoke "(\w+)" from "(\w+)" granted by/))) state.memberships.delete(`${match[1]}>${match[2]}`)
     if ((match = text.match(/^create schema if not exists "(\w+)" authorization "(\w+)"$/))) state.schemas.add(`${database}.${match[1]}`)
     if ((match = text.match(/^create database "(\w+)" owner "(\w+)"$/))) state.owners[match[1]!] = match[2]!
     if ((match = text.match(/^alter database "(\w+)" owner to "(\w+)"$/))) state.owners[match[1]!] = match[2]!
@@ -68,14 +66,14 @@ const run = (pg: ReturnType<typeof fakePostgres>, store = memoryStore().store, m
   bootstrap({ sql: pg.sql, database: pg.database, store, ...options, password, log: () => {}, ...more })
 const mcps: DeclaredMcp[] = [{ name: "e2e", serve: "both", database: "shared" }, { name: "example", serve: "toolbox", database: "shared" }, { name: "acme", serve: "standalone", database: "own" }]
 
-test("on an empty cluster: five databases owned by their owners, their logins, the serving ones restricted, every URL written", async () => {
+test("on an empty cluster: four databases owned by their owners, their logins, the serving ones restricted, every URL written", async () => {
   const pg = fakePostgres()
   const { store, values, writes } = memoryStore()
   const lines: string[] = []
   await bootstrap({ sql: pg.sql, database: pg.database, store, ...options, log: line => lines.push(line) })
   // No statement waits on a lock or runs for long: the Job fails with the reason instead of hanging.
   expect(pg.state.statements.slice(0, 2)).toEqual(["set lock_timeout = '10s'", "set statement_timeout = '60s'"])
-  expect(Object.keys(pg.state.owners).sort()).toEqual(["answerable_admin", "answerable_id", "answerable_mcps", "answerable_standalone", "answerable_toolbox"])
+  expect(Object.keys(pg.state.owners).sort()).toEqual(["answerable_admin", "answerable_id", "answerable_mcps", "answerable_toolbox"])
   for (const database of databasesFor([])) {
     expect(pg.state.owners[database.name]).toBe(database.owner.name)
     expect(pg.state.roles[database.owner.name]!.restricted).toBe(false)
@@ -98,25 +96,22 @@ test("on an empty cluster: five databases owned by their owners, their logins, t
     "admin-database-owner/ADMIN_DATABASE_MIGRATION_URL", "admin-database/ADMIN_DATABASE_URL",
     "id-database-owner/DATABASE_MIGRATION_URL", "id-database/DATABASE_URL",
     "mcps-database-owner/MCPS_DATABASE_MIGRATION_URL",
-    "standalone-database-owner/STANDALONE_DATABASE_MIGRATION_URL", "standalone-database/STANDALONE_DATABASE_URL",
-    "standalone-mcps-database/STANDALONE_MCPS_DATABASE_URL",
     "toolbox-database-owner/TOOLBOX_DATABASE_MIGRATION_URL", "toolbox-database/TOOLBOX_DATABASE_URL",
     "toolbox-mcps-database/TOOLBOX_MCPS_DATABASE_URL",
   ])
-  // The shared database is owned by the migrator and served by the Toolbox's and the standalone server's logins; with no MCP, provisioning
-  // only keeps its privileges.
+  // The shared database is owned by the migrator and served by the Toolbox's login; with no MCP, provisioning only keeps its privileges.
   expect(pg.state.owners.answerable_mcps).toBe("answerable_mcps_migrator")
   expect(pg.state.connections).toEqual(["answerable_mcps"])
   expect(lines).toContain("answerable_mcps: no MCP to provision")
   // Generated passwords: 32 random bytes, base64url, each different.
   const passwords = Object.values(pg.state.roles).map(role => role.password)
   for (const value of passwords) expect(value).toMatch(/^[A-Za-z0-9_-]{43}$/)
-  expect(new Set(passwords).size).toBe(11)
+  expect(new Set(passwords).size).toBe(8)
   // What it says names logins, databases and Secrets, never a password.
   for (const line of lines) for (const value of passwords) expect(line).not.toContain(value)
 })
 
-test("with the chart's list: each shared MCP's schema and roles in answerable_mcps, for the servers that serve it; a database and two logins for each own one", async () => {
+test("with the chart's list: each shared MCP's schema and roles in answerable_mcps, for the Toolbox, which serves every one; a database and two logins for each own one", async () => {
   const pg = fakePostgres()
   const { store, values, writes } = memoryStore()
   const lines: string[] = []
@@ -129,7 +124,7 @@ test("with the chart's list: each shared MCP's schema and roles in answerable_mc
   // provisionMcps for the shared ones, as the administrative login, which takes each owner role without inheriting it.
   expect([...pg.state.schemas].sort()).toEqual(["answerable_mcp_acme.acme", "answerable_mcps.e2e", "answerable_mcps.example"])
   expect([...pg.state.memberships].sort()).toEqual([
-    "mcp_e2e>answerable_mcps_standalone", "mcp_e2e>answerable_mcps_toolbox", "mcp_e2e_owner>answerable_mcps_migrator", "mcp_e2e_owner>current_user",
+    "mcp_e2e>answerable_mcps_toolbox", "mcp_e2e_owner>answerable_mcps_migrator", "mcp_e2e_owner>current_user",
     "mcp_example>answerable_mcps_toolbox", "mcp_example_owner>answerable_mcps_migrator", "mcp_example_owner>current_user",
   ])
   // provisionOwnMcp in the own MCP's database: its schema, owned by its owner login, USAGE for its runtime login.
@@ -148,26 +143,26 @@ test("a second run writes nothing and creates nothing: each password is set to t
   await run(pg, memory.store, { mcps })
   expect(memory.writes).toEqual([])
   expect(pg.state.statements.filter(statement => /^(\w+: )?create (role|database)/.test(statement))).toEqual([])
-  expect(pg.state.statements.filter(statement => statement.startsWith("alter role"))).toHaveLength(13)
+  expect(pg.state.statements.filter(statement => statement.startsWith("alter role"))).toHaveLength(10)
   expect({ roles: pg.state.roles, memberships: [...pg.state.memberships], schemas: [...pg.state.schemas] }).toEqual(before)
 })
 
-test("an MCP whose servedBy changed keeps its schema and loses the role of the server that no longer serves it", async () => {
+test("an MCP whose serve changed keeps its schema and its role for the Toolbox, which serves it in its hub and alone alike", async () => {
   const pg = fakePostgres()
   const memory = memoryStore()
   await run(pg, memory.store, { mcps })
   await run(pg, memory.store, { mcps: [{ name: "e2e", serve: "standalone", database: "shared" }, { name: "example", serve: "both", database: "shared" }] })
-  expect([...pg.state.memberships].filter(membership => !membership.includes("_owner>")).sort()).toEqual(["mcp_e2e>answerable_mcps_standalone", "mcp_example>answerable_mcps_standalone", "mcp_example>answerable_mcps_toolbox"])
-  expect(pg.state.statements).toContain('answerable_mcps: revoke "mcp_e2e" from "answerable_mcps_toolbox" granted by "dbadmin"')
+  expect([...pg.state.memberships].filter(membership => !membership.includes("_owner>")).sort()).toEqual(["mcp_e2e>answerable_mcps_toolbox", "mcp_example>answerable_mcps_toolbox"])
+  expect(pg.state.statements.filter(statement => statement.includes("revoke \"mcp_"))).toEqual([])
 })
 
 test("the Secrets of the list's own MCPs are named after them, as the chart names them for the ops Role", () => {
   const refs = (list: DeclaredMcp[]) => databasesFor(list).flatMap(database => [database.owner, ...database.runtime]).map(login => login.ref.secret)
   expect(refs([])).toEqual([
     "id-database-owner", "id-database", "toolbox-database-owner", "toolbox-database", "admin-database-owner", "admin-database",
-    "standalone-database-owner", "standalone-database", "mcps-database-owner", "toolbox-mcps-database", "standalone-mcps-database",
+    "mcps-database-owner", "toolbox-mcps-database",
   ])
-  expect(refs(mcps).slice(11)).toEqual(["mcp-acme-database-owner", "mcp-acme-database"])
+  expect(refs(mcps).slice(8)).toEqual(["mcp-acme-database-owner", "mcp-acme-database"])
 })
 
 test("a login that lost its Secret gets a new password, written; a Secret whose login is missing recreates it with that password", async () => {

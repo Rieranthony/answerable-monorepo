@@ -16,7 +16,7 @@ const admin = new Pool({ connectionString: mcpsUrl, max: 1 })
 let migrator: Client
 const a: McpMigration = { name: "mpgfixa", folder: fixtureFolder("mpgfixa"), mode: "shared", prefix: "mcp_test" }
 const b: McpMigration = { name: "mpgfixb", folder: fixtureFolder("mpgfixb"), mode: "shared", prefix: "mcp_test" }
-const provision = () => provisionMcps(sqlOf(admin), { mcps: [{ name: "mpgfixa", servedBy: ["toolbox"] }, { name: "mpgfixb", servedBy: ["toolbox"] }], prefix: "mcp_test", logins: sharedMcps.logins })
+const provision = () => provisionMcps(sqlOf(admin), { mcps: [{ name: "mpgfixa" }, { name: "mpgfixb" }], prefix: "mcp_test", logins: sharedMcps.logins })
 beforeAll(async () => {
   await ensureLocalMcpDatabases(clusterUrl)
   migrator = await clientOf(as(sharedMcps.logins.migrator))

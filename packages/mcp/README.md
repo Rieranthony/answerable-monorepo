@@ -20,7 +20,7 @@ const identityGet = defineTool({
 
 export const provider = defineProvider({ id: "example", description: "Tells you who you are to Answerable ID, and your organisation.", version: "2026-09-29", tools: [identityGet] })
 
-// The Toolbox and the standalone server serve an MCP as its mcp.json says. Served by hand, with a machine client that reads who is calling:
+// The Toolbox serves an MCP as its mcp.json says, in its hub or at its own path. Served by hand, with a machine client that reads who is calling:
 const id = createIdAdmin({ issuer: "http://localhost:47300", adminResource: "http://localhost:47300/api/admin", clientId: "my-server", clientSecret: process.env.MY_SERVER_ID_CLIENT_SECRET! })
 const server = createMcpServer({ provider, auth: { issuer: "http://localhost:47300", resource: "http://localhost:47510/example/mcp" }, profiles: createIdProfiles(id) })
 Bun.serve({ hostname: "127.0.0.1", port: 47510, fetch: server.fetch })

@@ -1,6 +1,6 @@
 # Toolbox
 
-One MCP endpoint on Answerable ID that serves each person exactly the capabilities their organisation granted them, directly or through its meta tools. It mounts every MCP whose `mcp.json` says `"serve": "toolbox"` or `"both"`, from `src/mounted.generated.ts`. Deployed to staging since 2026-10-23 ([evidence](../../reports/staging-evidence.md)); production: Not yet.
+One MCP endpoint on Answerable ID that serves each person exactly the capabilities their organisation granted them, directly or through its meta tools. It mounts every MCP whose `mcp.json` says `"serve": "toolbox"` or `"both"`, from `src/mounted.generated.ts`, and serves every one that says `"standalone"` or `"both"` alone, at `<TOOLBOX_STANDALONE_ORIGIN>/<name>/mcp`, with its own resource ([Served alone](../../apps/web/content/docs/mcp/servers.mdx#served-alone)). Deployed to staging since 2026-10-23 ([evidence](../../reports/staging-evidence.md)); production: Not yet.
 
 ```sh
 bun run --filter @answerable/mcp-toolbox test
@@ -21,7 +21,7 @@ The Toolbox serves as a restricted login and refuses to start as the owner, or a
 
 It reaches the mounted MCPs' tables in `answerable_mcps` as the serving login `answerable_mcps_toolbox` (`TOOLBOX_MCPS_DATABASE_URL`), taking each MCP's runtime role for each query, and refuses to start when that login holds more than those roles or misses one. Register the Toolbox in ID, then enable an organisation with one call to the admin API: [Administer the Toolbox](../../apps/web/content/docs/toolbox/admin.mdx). To mount another MCP: [Add tools to the Toolbox](../../apps/web/content/docs/toolbox/add-tools.mdx). The variables are listed in `default.env`. Changes: [CHANGELOG](CHANGELOG.md).
 
-It builds on three shared packages: `@answerable/mcp-platform` (the evidence and spans of every call and refusal, the audit-log poller, `/health` and each mounted MCP's database, shared with the standalone server and the admin MCP), `@answerable/id-admin` (`createIdAdmin`, the Toolbox's one machine client on ID's admin API, shared by the grants reader, who is calling (`createIdProfiles`), the poller and the enable operation: reads with `platform:read`, the enable operation with `platform:read platform:write`; `found` makes ID's 404 an answer; the fake ID for tests) and `@answerable/mcp-postgres` (`connect`, `createEvidence`, `createPostgresIntentStore`, which records every step of an intent as evidence, the drizzle base schema and `migrate`).
+It builds on three shared packages: `@answerable/mcp-platform` (the evidence and spans of every call and refusal, the audit-log poller, `/health` and each MCP's database, shared with the admin MCP), `@answerable/id-admin` (`createIdAdmin`, the Toolbox's one machine client on ID's admin API, shared by the grants reader, who is calling (`createIdProfiles`), the poller and the enable operation: reads with `platform:read`, the enable operation with `platform:read platform:write`; `found` makes ID's 404 an answer; the fake ID for tests) and `@answerable/mcp-postgres` (`connect`, `createEvidence`, `createPostgresIntentStore`, which records every step of an intent as evidence, the drizzle base schema and `migrate`).
 
 | File | Job |
 | --- | --- |
@@ -41,4 +41,4 @@ It builds on three shared packages: `@answerable/mcp-platform` (the evidence and
 | `scripts/migrate.ts` | `db:migrate` and `db:test:migrate`: the migrations, then `configureRuntimeRole` with `runtimeGrants` |
 | `src/server.ts` | The entry point: `assertRuntimeRole` and the serving login's assertion before the boot's ingest, the audit-log poller over the grants and the profiles; `src/server.test.ts` starts it against the test databases, as a runtime login, as the owner, and with a serving login that misses a role, which it refuses |
 
-`manifest.json` is the `toolbox` provider's contract; `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-toolbox test` rewrites it. The journeys against real ID are `packages/acceptance/src/journeys/toolbox.journeys.test.ts`, run by `bun run mcp:test:e2e`. The acceptance and the standalone server's tests import this package through its `exports` (`./admin`, `./grants`, `./migrate`, `./mounted`, `./toolbox`).
+`manifest.json` is the `toolbox` provider's contract; `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-toolbox test` rewrites it. The journeys against real ID are `packages/acceptance/src/journeys/toolbox.journeys.test.ts`, run by `bun run mcp:test:e2e`. The acceptance imports this package through its `exports` (`./admin`, `./grants`, `./migrate`, `./mounted`, `./toolbox`).

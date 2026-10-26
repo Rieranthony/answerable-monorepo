@@ -139,7 +139,7 @@ The provider's code is the same; how hosts reach it changes.
 
 **A changed contract** needs a new version. A capability stored at the same version with another kind, risk, input or output refuses the boot, naming it. Give the tool a new `version`, or change the provider's, and regenerate its manifest. Titles and descriptions update in place.
 
-**Taking an MCP out of the Toolbox,** by changing its `serve` to `standalone`, stops serving its tools there at the next boot. Entitlements in ID that name its grant strings stay, and cover nothing. Removing an MCP for good puts its name in `mcps/retired.json`: `bun mcp retire` is Not yet.
+**Taking an MCP out of the Toolbox's hub,** by changing its `serve` to `standalone`, stops serving its tools there at the next boot; the Toolbox then serves it at its own path only. Entitlements in ID that name its grant strings stay, and cover nothing. Removing an MCP for good puts its name in `mcps/retired.json`: `bun mcp retire` is Not yet.
 
 ## Not yet
 

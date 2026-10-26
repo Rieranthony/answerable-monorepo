@@ -13,7 +13,7 @@ The lane starts a throwaway ID, the admin MCP and the Toolbox, registers them as
 
 ## Register the admin MCP
 
-**In a deployment, nobody runs this.** The deploy's register Job makes these registrations, with these keys, on every deploy, as its own machine client, `ops-register`, which its first run mints with the root secret; no later deploy needs the root secret or a staff token. It also registers each standalone MCP: its resource, its Claude Code client and their link.
+**In a deployment, nobody runs this.** The deploy's register Job makes these registrations, with these keys, on every deploy, as its own machine client, `ops-register`, which its first run mints with the root secret; no later deploy needs the root secret or a staff token. It also registers each standalone MCP, which the Toolbox serves at its own path: its resource, its Claude Code client and their link.
 
 **Who.** Answerable staff, once per ID of your own, such as a local one. Use the root secret as `TOKEN` while no person is a platform administrator; ID then answers `403 root_locked` and `TOKEN` is a [staff token](/docs/id/onboard#get-a-staff-token). Each write sends its own `Idempotency-Key`, so a lost answer can be retried.
 
@@ -198,7 +198,6 @@ claude mcp remove answerable-toolbox
 | `admin_whoami` answers `role: null` | The member is in no group whose entitlement holds a role string | Step 4 and step 6; `members_get` shows the member's access |
 | `tools/list` is empty | The token is for another organisation than the platform organisation | Sign in with a work account of the platform organisation |
 | `toolbox_enable` answers `PRECONDITION_FAILED` naming `ADMIN_TOOLBOX_ADMIN_RESOURCE` | The variable is unset | Set it and restart the admin MCP |
-| `standalone_enable` answers `PRECONDITION_FAILED` naming `ADMIN_STANDALONE_ORIGIN` | The variable is unset | Set it to the standalone server's origin, `http://localhost:47510` locally, and restart the admin MCP |
 | `toolbox_enable` answers `UPSTREAM_REJECTED` that ID refused the client credentials | The machine client has no link or capability for the Toolbox's admin resource | The last two calls of step 5 |
 | `Failed to start server. Is port 47606 in use?` (or `47604`, `47600`, `47700`, `47701`) | Something holds a port the lane needs; the acceptance or another lane may be running | Find it with `lsof -nP -iTCP:47606 -sTCP:LISTEN` and stop what you started |
 | `Command failed: docker compose -p answerable-mcp-e2e` | Docker is not running, or port `47532` is taken | [Test MCPs locally](/docs/mcp/local-testing#errors) |

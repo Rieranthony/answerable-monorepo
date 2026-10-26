@@ -1,7 +1,7 @@
-// The one place the declared MCPs become data for the servers and the deployment, from every mcps/*/mcp.json and manifest:
+// The one place the declared MCPs become data for the Toolbox and the deployment, from every mcps/*/mcp.json and manifest:
 // - charts/answerable/mcps.json, the chart's list;
-// - mcps/toolbox/src/mounted.generated.ts and mcps/standalone/src/served.generated.ts, the MCPs each server serves;
-// - the dependencies of mcps/toolbox/package.json and mcps/standalone/package.json, on the workspaces of those MCPs.
+// - mcps/toolbox/src/mounted.generated.ts, every MCP the Toolbox serves, in its hub, alone at /<name>/mcp, or both;
+// - the dependencies of mcps/toolbox/package.json, on the workspaces of those MCPs.
 // bun mcp new, add tool and check write them; generate.test.ts fails when a committed file differs. Never edit them by hand.
 import { existsSync } from "node:fs"
 import { join } from "node:path"
@@ -12,35 +12,31 @@ import { declarations, manifestOf, type Declaration, type Manifest } from "./wor
 /** The file the chart reads, with an object root: Helm's `fromJson` turns an array into an error map. */
 const chartList = "charts/answerable/mcps.json"
 
-/** The two servers that serve MCPs: the workspace, its list's file and binding, the `serve` values it takes and the prefix of its variables. */
-const servers = [
-  { workspace: "mcps/toolbox", list: "src/mounted.generated.ts", binding: "mounted", serves: ["toolbox", "both"], variables: "TOOLBOX", what: "the Toolbox mounts" },
-  { workspace: "mcps/standalone", list: "src/served.generated.ts", binding: "served", serves: ["standalone", "both"], variables: "STANDALONE", what: "the standalone server serves" },
-] as const
-type Server = (typeof servers)[number]
+/** The Toolbox's workspace and its list, which every MCP is in. */
+const toolbox = { workspace: "mcps/toolbox", list: "mcps/toolbox/src/mounted.generated.ts" }
 
 // An MCP's workspace is @answerable/mcp-<name>.
 const prefix = "@answerable/mcp-"
 const packageOf = (name: string) => `${prefix}${name}`
 
-// A server's list: each MCP it serves, its provider imported from its workspace, and where its tables live; an own MCP's, from the variable
-// named here, such as TOOLBOX_MCP_ACME_DATABASE_URL.
-function listOf(server: Server, mcps: readonly Declaration[]) {
-  const variable = (name: string) => `${server.variables}_MCP_${name.toUpperCase()}_DATABASE_URL`
-  const entries = mcps.map(({ name, database }) => `  { provider: ${name}Provider, database: "${database}"${database === "own" ? `, variable: "${variable(name)}"` : ""} },`)
+// The Toolbox's list: each MCP, its provider imported from its workspace, where it is served, and where its tables live; an own MCP's, from the
+// variable named here, such as TOOLBOX_MCP_ACME_DATABASE_URL.
+function listOf(mcps: readonly Declaration[]) {
+  const variable = (name: string) => `TOOLBOX_MCP_${name.toUpperCase()}_DATABASE_URL`
+  const entries = mcps.map(({ name, serve, database }) => `  { provider: ${name}Provider, serve: "${serve}", database: "${database}"${database === "own" ? `, variable: "${variable(name)}"` : ""} },`)
   return [
-    `// Written by bun mcp from mcps/*/mcp.json (scripts/mcp/generate.ts): every MCP ${server.what}, serve ${server.serves.join(" or ")}. Never edit it by hand.`,
+    "// Written by bun mcp from mcps/*/mcp.json (scripts/mcp/generate.ts): every MCP the Toolbox serves, in its hub, alone, or both. Never edit it by hand.",
     `import type { Declared } from "@answerable/mcp-platform"`,
     ...mcps.map(({ name }) => `import { provider as ${name}Provider } from "${packageOf(name)}/provider"`),
     "",
-    `/** The MCPs ${server.what}: each provider, and where its tables live. */`,
-    `export const ${server.binding}: readonly Declared[] = [${entries.length ? `\n${entries.join("\n")}\n` : ""}]`,
+    "/** The MCPs the Toolbox serves: each provider, where it is served, and where its tables live. */",
+    `export const mounted: readonly Declared[] = [${entries.length ? `\n${entries.join("\n")}\n` : ""}]`,
     "",
   ].join("\n")
 }
 
-// A server's package.json with a dependency on the workspace of every MCP it serves, and on no other MCP's. A reserved name is never an
-// MCP's, so the platform's own packages, such as @answerable/mcp-platform, stay.
+// The Toolbox's package.json with a dependency on the workspace of every MCP, and on no other MCP's. A reserved name is never an MCP's, so the
+// platform's own packages, such as @answerable/mcp-platform, stay.
 async function packageJsonOf(path: string, served: readonly Declaration[]) {
   const file = await Bun.file(path).json() as { dependencies: Record<string, string> }
   const kept = Object.entries(file.dependencies).filter(([dependency]) => !dependency.startsWith(prefix) || reservedNames.includes(dependency.slice(prefix.length)))
@@ -51,7 +47,7 @@ async function packageJsonOf(path: string, served: readonly Declaration[]) {
 /** The scopes a manifest's tools, prompts and resources ask for, sorted: those of the MCP's resource in ID, `offline_access` aside. */
 export const scopesOf = (manifest: Manifest) => [...new Set([...manifest.tools, ...manifest.prompts, ...manifest.resources].flatMap(item => item.scopes))].sort()
 
-/** Every generated file's text, by path. A server's list and dependencies are written only where its workspace is. */
+/** Every generated file's text, by path. The Toolbox's list and dependencies are written only where its workspace is. */
 export async function generatedFiles(root: string): Promise<Record<string, string>> {
   const declared = await declarations(root)
   const mcps = await Promise.all(declared.map(async ({ name, serve, database }) => {
@@ -62,11 +58,9 @@ export async function generatedFiles(root: string): Promise<Record<string, strin
   }))
   const list = { $comment: "Written by bun mcp from mcps/*/mcp.json and each manifest.json (scripts/mcp/generate.ts); never edit it by hand", mcps }
   const files: Record<string, string> = { [chartList]: json(list) }
-  const present = servers.filter(({ workspace }) => existsSync(join(root, workspace, "package.json")))
-  for (const server of present) {
-    const served = declared.filter(({ serve }) => (server.serves as readonly string[]).includes(serve))
-    files[`${server.workspace}/${server.list}`] = listOf(server, served)
-    files[`${server.workspace}/package.json`] = await packageJsonOf(join(root, server.workspace, "package.json"), served)
+  if (existsSync(join(root, toolbox.workspace, "package.json"))) {
+    files[toolbox.list] = listOf(declared)
+    files[`${toolbox.workspace}/package.json`] = await packageJsonOf(join(root, toolbox.workspace, "package.json"), declared)
   }
   return files
 }

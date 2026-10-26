@@ -67,6 +67,6 @@ variable "zone_name" {
 }
 
 variable "hostnames" {
-  description = "The four service hostnames in the zone, keyed id, toolbox, admin_mcp and mcp (the standalone server, which serves every standalone MCP by path)."
+  description = "The four service hostnames in the zone, keyed id, toolbox, admin_mcp and mcp (where the Toolbox serves every standalone MCP by path)."
   type        = map(string)
 }

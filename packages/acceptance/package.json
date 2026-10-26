@@ -17,7 +17,6 @@
     "@answerable/mcp-admin": "workspace:*",
     "@answerable/mcp-platform": "workspace:*",
     "@answerable/mcp-postgres": "workspace:*",
-    "@answerable/mcp-standalone": "workspace:*",
     "@answerable/mcp-toolbox": "workspace:*",
     "@answerable/scripts": "workspace:*",
     "@modelcontextprotocol/client": "2.4.0",

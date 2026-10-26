@@ -1,12 +1,8 @@
 import { z } from "zod"
 import { assertMcpName } from "./names"
-import type { ServedBy } from "./provision"
 
 /** An MCP as `charts/answerable/mcps.json` declares it, which the chart hands the bootstrap and the migration Job. */
 export type DeclaredMcp = z.output<typeof declaredMcps>[number]
-
-/** The servers that serve an MCP of each `serve`. */
-export const servedBy: Record<DeclaredMcp["serve"], readonly ServedBy[]> = { toolbox: ["toolbox"], standalone: ["standalone"], both: ["toolbox", "standalone"] }
 
 const validName = (name: string) => {
   try {

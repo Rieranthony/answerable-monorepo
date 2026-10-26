@@ -73,7 +73,7 @@ const opsFields = {
   OPS_ID_ROOT_SECRET: { schema: nonEmpty.optional(), secret: true, doc: "register and make-admin: ID's root secret, ROOT_ADMIN_SECRET; make-admin requires it, and register mints its own client with it when ops-id-client is empty and OPS_ID_TOKEN is unset", source: "deploy" },
   OPS_TOOLBOX_URL: { schema: origin, doc: "register: the Toolbox's origin", source: "chart" },
   OPS_ADMIN_MCP_URL: { schema: origin, doc: "register: the admin MCP's origin", source: "chart" },
-  OPS_MCP_URL: { schema: origin, doc: "register: the standalone server's origin; <origin>/<name>/mcp is each standalone or both MCP's resource", source: "chart" },
+  OPS_MCP_URL: { schema: origin, doc: "register: the origin of the MCPs the Toolbox serves alone; <origin>/<name>/mcp is each standalone or both MCP's resource", source: "chart" },
   OPS_PLATFORM_SLUG: { schema: nonEmpty, fallback: "answerable", doc: "register and make-admin: the platform organisation's slug" },
   OPS_CLAUDE_CALLBACK_PORT: { schema: z.coerce.number().int().min(1).max(65535), fallback: "47700", doc: "register: the port of Claude Code's OAuth callback that the clients allow", source: "chart" },
   OPS_START_DEPLOYMENTS: {

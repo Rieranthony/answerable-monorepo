@@ -102,7 +102,7 @@ Each journey runs against real Answerable ID through `packages/acceptance` unles
 
 ## After the goal
 
-**Done since this plan.** The admin MCP for Answerable staff ([`11-admin-mcp.md`](11-admin-mcp.md)). Hosted deployment on Civo ([`12-deployment.md`](12-deployment.md)): staging has run, and production: Not yet. The MCP CLI and shipping goal ([`goals/mcp-cli`](goals/mcp-cli/task_plan.md)): `bun mcp` makes, checks and runs an MCP, which gets a database schema of its own and its sign-in through Answerable ID automatically, the Toolbox mounts or the standalone server serves it from one declaration, `mcps/<name>/mcp.json`, and a tag ships it to staging and then production.
+**Done since this plan.** The admin MCP for Answerable staff ([`11-admin-mcp.md`](11-admin-mcp.md)). Hosted deployment on Civo ([`12-deployment.md`](12-deployment.md)): staging has run, and production: Not yet. The MCP CLI and shipping goal ([`goals/mcp-cli`](goals/mcp-cli/task_plan.md)): `bun mcp` makes, checks and runs an MCP, which gets a database schema of its own and its sign-in through Answerable ID automatically, the Toolbox mounts it in its hub or serves it on its own URL from one declaration, `mcps/<name>/mcp.json`, and a tag ships it to staging and then production.
 
 Still to do, in order, each with the exit evidence the design names.
 

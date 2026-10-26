@@ -1,11 +1,11 @@
 ---
 title: Providers and servers
-description: "Group tools in a provider and serve it with createMcpServer: its description and database, who is calling, the workspace, where it runs, the standalone server and its configuration, what the server answers, change notices, hubs, the manifest, prompts, resources and views."
+description: "Group tools in a provider and serve it with createMcpServer: its description and database, who is calling, the workspace, where it runs, MCPs the Toolbox serves alone and their configuration, what the server answers, change notices, hubs, the manifest, prompts, resources and views."
 ---
 
-<include lang="ts" meta='title="mcps/standalone/src/standalone.ts"'>../../../../../mcps/standalone/src/standalone.ts#servers</include>
+<include lang="ts" meta='title="mcps/toolbox/src/toolbox.ts"'>../../../../../mcps/toolbox/src/toolbox.ts#alone</include>
 
-A **provider** is a named, dated set of tools, prompts and resources. A **server** serves one provider over HTTP: it signs callers in through Answerable ID, lists what their token allows and runs their calls. An MCP made by [`bun mcp new`](/docs/mcp/create) has a provider, and its `mcp.json` says where it runs: [the Toolbox](/docs/toolbox) mounts it, [the standalone server](#the-standalone-server) serves it with `createMcpServer` on a path of its own, as above, or both do. `mcps/e2e` runs both ways.
+A **provider** is a named, dated set of tools, prompts and resources. A **server** serves one provider over HTTP: it signs callers in through Answerable ID, lists what their token allows and runs their calls. An MCP made by [`bun mcp new`](/docs/mcp/create) has a provider, and its `mcp.json` says where it runs: [the Toolbox](/docs/toolbox) mounts it in its hub, [serves it alone](#served-alone) with `createMcpServer` on a path of its own, as above, or both. `mcps/e2e` runs both ways.
 
 ## The provider
 
@@ -41,7 +41,7 @@ It returns:
 
 ### Who is calling
 
-<include lang="ts" meta='title="mcps/standalone/src/standalone.ts"'>../../../../../mcps/standalone/src/standalone.ts#profiles</include>
+<include lang="ts" meta='title="mcps/toolbox/src/toolbox.ts"'>../../../../../mcps/toolbox/src/toolbox.ts#profiles</include>
 
 The token carries only ids. `profiles` gives the rest every handler receives: the person's name, email and groups, and the organisation's name and slug ([the caller](/docs/mcp/tools#the-caller)). It is required: a server that cannot say who is calling does not start.
 
@@ -50,7 +50,7 @@ The token carries only ids. `profiles` gives the rest every handler receives: th
 - **When ID does not answer.** The last value is served for up to `staleMs` (an hour) after it expired. With none, the call answers `UPSTREAM_UNAVAILABLE` and the handler does not run.
 - **Who is refused.** A member whose membership is not in force (ID's `effective: false`), or whom ID no longer knows, gets `PERMISSION_DENIED`, whatever an earlier read cached. A group membership counts while its `validFrom` is past and its `validUntil` unset or future.
 
-The Toolbox, the standalone server and the admin MCP use `createIdProfiles`, each through its own machine client; the standalone server's is `STANDALONE_ID_CLIENT_ID` ([Configure](#configure)). Tests use a [test person](/docs/mcp/testing#who-is-calling).
+The Toolbox and the admin MCP use `createIdProfiles`, each through its own machine client; the Toolbox's, `TOOLBOX_ID_CLIENT_ID`, reads who is calling for its hub and for every MCP it serves alone ([Configure](#configure)). Tests use a [test person](/docs/mcp/testing#who-is-calling).
 
 ### Changes
 
@@ -78,35 +78,30 @@ bun mcp new acme --description "Notes for construction projects: list, read and 
 
 [Make an MCP](/docs/mcp/create) walks through the questions and the files it writes, and [the bun mcp command](/docs/mcp/cli#bun-mcp-new) lists every flag.
 
-It writes no server. `bun mcp` generates the list each server reads: `mcps/toolbox/src/mounted.generated.ts`, every MCP whose `serve` is `toolbox` or `both`, which the Toolbox mounts, and `mcps/standalone/src/served.generated.ts`, every one whose `serve` is `standalone` or `both`, which the standalone server serves; and each server's dependencies on those workspaces. Never edit them by hand: change `serve` in `mcp.json` and run `bun mcp check <name>`. `bun run mcp:test` runs every MCP under `mcps/`.
+It writes no server. `bun mcp` generates the list the Toolbox reads, `mcps/toolbox/src/mounted.generated.ts`: every MCP with its `serve`, which says whether the Toolbox mounts it in its hub, serves it alone, or both; and the Toolbox's dependencies on those workspaces. Never edit them by hand: change `serve` in `mcp.json` and run `bun mcp check <name>`. `bun run mcp:test` runs every MCP under `mcps/`.
 
-## The standalone server
+## Served alone
 
 ```sh
-bun mcp db e2e migrate
-bun run standalone:dev
+bun mcp dev e2e
 ```
 
-`mcps/standalone` is one process that serves every MCP whose `serve` is `standalone` or `both`, each at its own path: `http://localhost:47510/e2e/mcp` locally. Each has its own `createMcpServer`, whose resource is that URL, so a token for one MCP is refused by another (`401`). A request goes to the MCP its path names, `/<name>/…`, or `/.well-known/oauth-protected-resource/<name>/mcp` for its metadata; `GET /health` answers at the root, and any other path `404`.
+The Toolbox serves every MCP whose `serve` is `standalone` or `both` at its own path, beside its hub at `/mcp`: `https://mcp.<zone>/e2e/mcp` deployed, and `http://localhost:47400/e2e/mcp` locally, where both share the Toolbox's origin. Each has its own `createMcpServer`, whose resource is that URL, so a token for one MCP, or for the hub, is refused by another (`401`). A request goes to the MCP its path names, `/<name>/…`, or `/.well-known/oauth-protected-resource/<name>/mcp` for its metadata; every other path goes to the hub. Deployed, the `mcp` host routes only those two paths per MCP to the Toolbox, and each server's `Host` check refuses the other host.
 
-- **Its database.** `answerable_standalone` holds the intents and the evidence of every MCP it serves, migrated by `bun --filter @answerable/mcp-standalone db:migrate` as its owner; the server serves as the restricted runtime login, and refuses to start as anything more.
-- **The MCPs' databases.** One pool to the shared database `answerable_mcps`, as its serving login `answerable_mcps_standalone`, which takes each served MCP's runtime role, and one pool per MCP whose database is its own. Before it listens, it refuses a serving login that holds more than the served MCPs' runtime roles, or misses one, naming it.
-- **Who is calling.** Through its own `platform:read` machine client, cached and dropped by the audit-log poller.
-- **Evidence.** Every call and every refusal, a refusal because ID did not answer included, is a row on the caller's organisation's chain, with a span (`@answerable/mcp-platform`). A tool whose scopes the token lacks is refused, and the refusal recorded.
-- **Stopping.** `SIGTERM` stops the poller and the listener and closes every pool.
-- **Starting.** Serving e2e and example, it printed its serving line 202 to 204 ms after the process began, in three local runs: Bun's start, the imports, the view's bundle, both databases' checks and the listener.
+- **Its database.** The intents and the evidence of an MCP served alone are in the Toolbox's database, `answerable_toolbox`, beside the hub's, on the caller's organisation's chain.
+- **The MCPs' databases.** The Toolbox's pool to `answerable_mcps`, as its serving login `answerable_mcps_toolbox`, and one pool per MCP whose database is its own, serve its hub and every MCP served alone.
+- **Who is calling.** Through the Toolbox's machine client, `toolbox-hub`, from the same cache as the hub's, dropped by the audit-log poller.
+- **Evidence.** Every call and every refusal, a refusal because ID did not answer included, is a row on the caller's organisation's chain, with a span (`@answerable/mcp-platform`). A tool whose scopes the token lacks is refused, and the refusal recorded. A read served alone has no size limit, where the hub's is 100 KiB.
 
 ## Configure
 
-<Configuration group={["standalone server", "standalone server migration", "standalone server test database"]} />
+The Toolbox's variables are on [its page](/docs/toolbox#environment). `TOOLBOX_STANDALONE_ORIGIN` is the origin of the MCPs it serves alone, `https://mcp.<zone>` deployed and `http://localhost:47400` locally. An MCP whose database is its own adds a variable, `TOOLBOX_MCP_<NAME>_DATABASE_URL`, which the generated list names.
 
-Outside production (`NODE_ENV` unset, `development` or `test`), every variable but the machine client's id and secret has the local default above, so `bun run standalone:dev` needs only `STANDALONE_ID_CLIENT_ID` and `STANDALONE_ID_CLIENT_SECRET` in the root `.env`: a machine client with `platform:read`, registered as [Connect Claude Code](/docs/mcp/claude-code#register-the-servers-machine-client) shows. An MCP whose database is its own adds a variable, `STANDALONE_MCP_<NAME>_DATABASE_URL`, which the generated list names.
-
-**A server of your own.** A server with variables of its own lists them with `defineConfig` from `@answerable/config` and reads them with `parseEnvironment(config, env, names)`, as the Toolbox, the standalone server and the admin MCP do: it reads `env` with the definition, checks the issuer and resource URL in the two variables `names` gives, and throws `Invalid <label> configuration: <VARIABLE>: <problem>`.
+**A server of your own.** A server with variables of its own lists them with `defineConfig` from `@answerable/config` and reads them with `parseEnvironment(config, env, names)`, as the Toolbox and the admin MCP do: it reads `env` with the definition, checks the issuer and resource URL in the two variables `names` gives, and throws `Invalid <label> configuration: <VARIABLE>: <problem>`.
 
 **Issuer.** The Answerable ID origin. The verifier reads ID's signing keys from the issuer's metadata; never take an issuer from a token.
 
-**Resource.** The MCP's canonical URL, exactly as registered in ID: on the standalone server, `STANDALONE_ORIGIN` and the MCP's path. It is the token audience, and its path is the MCP endpoint.
+**Resource.** The MCP's canonical URL, exactly as registered in ID: for an MCP the Toolbox serves alone, `TOOLBOX_STANDALONE_ORIGIN` and the MCP's path. It is the token audience, and its path is the MCP endpoint.
 
 **HTTP.** Both URLs must use HTTPS, except on `localhost`, `127.0.0.1` or `[::1]`.
 
@@ -114,7 +109,7 @@ Register each MCP's resource, a client and its access in ID before the first sig
 
 ## Health
 
-`createMcpServer` answers `GET /health` with `{ "status": "ok" }` without authentication, whatever the `Host` header, so load balancers and container probes can call it by address. The Toolbox, the standalone server and the admin MCP answer it themselves: `200` with `{ "status": "ok", "databases": { … }, "providers": […] }` while their own database answers `select 1`, else `503` with `"status": "unavailable"`. `databases` names each database's state, the MCP databases included; an MCP database that fails, or takes more than 250 ms, is `unavailable` there and never fails the check. `providers` lists the MCPs they serve.
+`createMcpServer` answers `GET /health` with `{ "status": "ok" }` without authentication, whatever the `Host` header, so load balancers and container probes can call it by address. The Toolbox and the admin MCP answer it themselves: `200` with `{ "status": "ok", "databases": { … }, "providers": […] }` while their own database answers `select 1`, else `503` with `"status": "unavailable"`. `databases` names each database's state, the MCP databases included; an MCP database that fails, or takes more than 250 ms, is `unavailable` there and never fails the check. `providers` lists the MCPs they serve: the Toolbox's, every MCP of its list, in its hub or alone.
 
 ## Manifest
 

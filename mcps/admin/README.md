@@ -29,7 +29,7 @@ It needs its registrations in ID and the `ADMIN_*` variables, which `default.env
 | `src/access.ts` | `groups.create`, `.addmember` and `.dropmember`, `access.grant`, `.revoke` and `.enable` |
 | `src/staff.ts` | `staff.grant` and `staff.revoke`: a role through the group whose entitlement on the admin MCP's resource carries it |
 | `src/toolbox.ts` | `createToolboxAdmin`, the Toolbox's admin API with a `toolbox:admin` token for its admin resource, and `toolbox.enable` |
-| `src/standalone.ts`, `src/enablement.ts` | `standalone.enable`: an organisation's access to a standalone MCP at `<standaloneOrigin>/<name>/mcp`, from `enablementSteps`, the plan `bun mcp dev` also makes locally |
+| `src/standalone.ts`, `src/enablement.ts` | `standalone.enable`: an organisation's access, through `claude-code-<name>`, to a standalone MCP the Toolbox serves at `<standaloneOrigin>/<name>/mcp`, from `enablementSteps`, the plan `bun mcp dev` also makes locally |
 | `src/fresh.ts` | `requireFresh`: the critical operations' rule on the token's `upstream_auth_time`, and `ADMIN_REAUTHENTICATION_REQUIRED` |
 | `src/platform.ts` | `readPlatform`: the platform organisation's id from ID's `GET /me`, refusing a machine client of any other organisation |
 | `src/environment.ts` | `readAdminEnvironment` |

@@ -26,6 +26,7 @@ The shared mode in detail:
 - **Alternative: a Deployment per MCP.** About 50 GiB of memory requests at 200 MCPs (F6), and an image or entry in every list per MCP.
 - **Alternative: a subdomain per MCP.** A DNS record and a reissued origin certificate for each new MCP (F1, F3).
 - **The cost:** standalone MCPs share one process, as Toolbox providers already do. An MCP that needs its own process is Not yet (trigger: an MCP with a dependency or load the others must not share).
+- **Reversed in part on 2026-10-26** by D-1 of the pull request 13 audit ([decisions](../pr13-audit/decisions.md)): the Toolbox's process serves every standalone MCP at `https://mcp.<zone>/<name>/mcp`, beside its hub, so there is no separate standalone server, database, serving login, machine client or migration Job. The `mcp.<zone>` hostname, each MCP's resource and `claude-code-<name>` client, and `standalone_enable` stay.
 
 **D3. The order: typed configuration's B1 and B2 first, then this goal.** Owner.
 - **Why:** typed configuration was approved on 2026-10-21 and isn't started. It moves `readMcpEnvironment` and every service's variables onto `@answerable/config`, with generated inventories (F8). This goal adds variables to the Toolbox and the standalone server, so building it first would mean writing them twice.

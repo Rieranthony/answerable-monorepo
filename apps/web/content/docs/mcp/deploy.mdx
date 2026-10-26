@@ -19,7 +19,7 @@ A **tag** is a name attached to a commit. A tag that starts with `staging/` ship
 
 ## Before you tag
 
-Commit your MCP and land it on `main`: the folder `mcps/acme`, and the files `bun mcp` rewrote, `charts/answerable/mcps.json`, the lists and `package.json` of the Toolbox and the standalone server, and `bun.lock`. The last line of `bun mcp new` lists them. `bun mcp check acme` passes and has nothing left to commit. A tag on any other commit is refused. Only the owner pushes to `main` and pushes tags, because write access to `main` is access to every deploy secret. A coding agent commits to a branch and tells the owner the two tags, and the owner lands the branch.
+Commit your MCP and land it on `main`: the folder `mcps/acme`, and the files `bun mcp` rewrote, `charts/answerable/mcps.json`, the Toolbox's list and `package.json`, and `bun.lock`. The last line of `bun mcp new` lists them. `bun mcp check acme` passes and has nothing left to commit. A tag on any other commit is refused. Only the owner pushes to `main` and pushes tags, because write access to `main` is access to every deploy secret. A coding agent commits to a branch and tells the owner the two tags, and the owner lands the branch.
 
 ## What happens
 
@@ -28,11 +28,11 @@ On a `staging/` tag, in this order. Each step stops the run when it fails.
 1. **The tag names a commit of `main`.**
 2. **CI runs:** typecheck, lint, build, every test suite, and the checks of the charts and the Terraform.
 3. **Staging's infrastructure is applied.** It changes nothing unless Terraform or a chart for it changed.
-4. **The images are built once** for the commit, signed, and named `sha-<commit>`. One image, `mcps`, holds the Toolbox, the standalone server, the admin MCP and every MCP, so a new MCP needs no image of its own.
+4. **The images are built once** for the commit, signed, and named `sha-<commit>`. One image, `mcps`, holds the Toolbox, the admin MCP and every MCP, so a new MCP needs no image of its own.
 5. **The release is deployed,** by the digest of each image. Before the servers start, these Jobs run one after another:
    1. **`ops-bootstrap` makes your MCP's database.** It makes the schema and roles of an MCP that is new, from `charts/answerable/mcps.json`. It changes nothing when everything exists.
-   2. **The migrations run.** `id-migrate`, `toolbox-migrate`, `admin-migrate`, `standalone-migrate`, then `mcps-migrate`, which applies your MCP's pending migrations. [Your MCP's database](/docs/mcp/database#migrations-ship-by-themselves).
-6. **The servers roll.** The Toolbox starts with your MCP mounted, if it runs in the Toolbox. The standalone server starts with its new path, `/acme/mcp`, if it runs on its own URL. The deploy waits until they are ready.
+   2. **The migrations run.** `id-migrate`, then `toolbox-migrate`, which migrates the Toolbox's database and applies your MCP's pending migrations, then `admin-migrate`. [Your MCP's database](/docs/mcp/database#migrations-ship-by-themselves).
+6. **The servers roll.** The Toolbox starts with your MCP mounted in its hub, if it runs in the Toolbox, and with its new path, `/acme/mcp`, if it runs on its own URL. The deploy waits until the servers are ready.
 7. **`ops-register` registers your MCP in Answerable ID,** on every deploy. For an MCP on its own URL it makes the resource `https://mcp.<zone>/acme/mcp`, its Claude Code client `claude-code-acme` and their link. An MCP in the Toolbox registers nothing: the Toolbox's resource covers it, and staff enable it later. [Its sign-in](/docs/mcp/sign-in).
 8. **The smoke test runs** through the public hostnames, and retries for five minutes.
 
@@ -54,13 +54,13 @@ The run's summary says which commit each environment runs, and ends with the smo
 | `id /readyz` | Answerable ID is ready |
 | `id discovery` | Its discovery document names the issuer |
 | `id jwks` | It publishes at least one signing key |
-| `toolbox /health` | The Toolbox is `ok` and lists **every MCP of `toolbox` or `both`**, yours included, in `providers` |
+| `toolbox /health` | The Toolbox is `ok` and lists **every MCP**, yours included, in `providers` |
 | `toolbox resource metadata` | The Toolbox's resource names itself and Answerable ID |
 | `admin-mcp /health` | The admin MCP is `ok` |
 | `admin-mcp resource metadata` | Its resource names itself and Answerable ID |
 | `<name> resource metadata` | For each MCP of `standalone` or `both`: its resource, `https://mcp.<zone>/<name>/mcp`, names itself and Answerable ID |
 
-You can ask the same questions yourself. For an MCP in the Toolbox, `providers` lists `acme`:
+You can ask the same questions yourself. `providers` lists `acme`:
 
 ```sh
 curl https://toolbox.answerable-staging.uk/health
@@ -88,7 +88,7 @@ When the smoke test passes, the MCP is reachable and signed in. **Nobody can use
 ## Where things stand
 
 - **The whole sequence above has run in the local Kubernetes stack** (`bun run infra:test`), for one MCP in the Toolbox and one on its own URL: schema, migration, mounting, path, registration and smoke test.
-- **On Civo, staging has run the release before this one.** `staging/fourth` passed its smoke test on 2026-10-23. The first tag that ships the `mcps` image and the standalone server has not been pushed: Not yet. It needs steps from the owner, once: Terraform adds the `mcp.<zone>` hostname and reissues the origin certificate by itself, but the new `mcps` package on GHCR is private, so the owner makes it public and reruns the failed jobs, and, only when Answerable ID's root secret is already locked, puts a staff token in the cluster first. `infra/README.md` in the repository lists them under "The first ship with the standalone server".
+- **On Civo, staging has run the release before this one.** `staging/fourth` passed its smoke test on 2026-10-23. The first tag that ships the `mcps` image and the `mcp` hostname has not been pushed: Not yet. It needs steps from the owner, once: Terraform adds the `mcp.<zone>` hostname and reissues the origin certificate by itself, but the new `mcps` package on GHCR is private, so the owner makes it public and reruns the failed jobs, and, only when Answerable ID's root secret is already locked, puts a staff token in the cluster first. `infra/README.md` in the repository lists them under "The first ship of the mcps image".
 - **Production: Not yet.** No `production/` tag has shipped. The owner's first one waits for the production rehearsal, which `docs/12-deployment.md` describes. Until then there are no production URLs to open.
 
 ## What is not automatic
@@ -105,8 +105,8 @@ The first two rows are in the workflow's log, as an error. The others are in the
 | --- | --- | --- |
 | `<tag> points at <commit>, which is not on main; tag a commit of main` | The tag is on a commit that is not on `main` | Land the commit on `main`, then tag it |
 | `<registry>/<image>:sha-<commit> does not exist: staging has not shipped <commit>; tag it staging/<name> first` | A production tag on a commit staging never shipped | Tag the commit `staging/<name>` first, and wait for it to pass |
-| `The upgrade failed. The logs of the migration and ops Jobs follow.` | A migration or an ops Job failed, or the pods did not become ready. Helm rolled the release back | Read the Job log printed below the message: `mcps-migrate` names the MCP whose migration failed, and `ops-register` the row it could not make. Fix it, commit and tag again with a new name |
+| `The upgrade failed. The logs of the migration and ops Jobs follow.` | A migration or an ops Job failed, or the pods did not become ready. Helm rolled the release back | Read the Job log printed below the message: `toolbox-migrate` names the MCP whose migration failed, and `ops-register` the row it could not make. Fix it, commit and tag again with a new name |
 | `helm upgrade failed with exit code <code>` | The last line of the same failure | As above |
 | `providers are <list>, expected <list>` | The Toolbox's smoke check: `/health` lists other MCPs than `charts/answerable/mcps.json` declares. The release that serves is not the one you shipped | Check the deploy finished. Run `bun mcp check <name>` and commit what it rewrites |
-| `HTTP <status>` on `<name> resource metadata` | The check got an answer other than 200. With 404, the standalone server does not serve the MCP's path | Check that `serve` is `standalone` or `both` in `mcp.json` and that the generated lists are committed |
+| `HTTP <status>` on `<name> resource metadata` | The check got an answer other than 200. With 404, the Toolbox does not serve the MCP's path | Check that `serve` is `standalone` or `both` in `mcp.json` and that the generated lists are committed |
 | `no answer: …` | The environment did not answer the smoke test within the five minutes. A rollout or a first certificate can take longer | Run the workflow's smoke job again; if it still fails, the owner reads the pods' logs |

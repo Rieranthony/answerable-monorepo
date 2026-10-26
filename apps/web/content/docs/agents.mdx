@@ -17,7 +17,7 @@ In the Answerable monorepo, make an MCP named <name> that <what it does>, with b
 Read first: AGENTS.md, then https://www.answerable.org/docs/mcp/create.md and https://www.answerable.org/docs/mcp/database.md. mcps/example is a finished MCP made with the same commands.
 
 1. Run `bun mcp new <name> --description "<what it is for, 40 to 1,000 characters>" --serve toolbox`. Use --serve standalone only when it needs its own URL, and say why.
-2. Run `bun mcp check <name>` and commit what it rewrites: mcps/<name>, charts/answerable/mcps.json, and the lists and dependencies of mcps/toolbox and mcps/standalone. Never edit a *.generated.* file or charts/answerable/mcps.json by hand.
+2. Run `bun mcp check <name>` and commit what it rewrites: mcps/<name>, charts/answerable/mcps.json, and the list and dependencies of mcps/toolbox. Never edit a *.generated.* file or charts/answerable/mcps.json by hand.
 3. Run `bun mcp list` and check that <name> is listed with its tools and URLs.
 
 Its database and its sign-in through Answerable ID are made for you. Do not add a Better Auth instance, a database connection or a login, and do not read Answerable ID's database. Never run `bun run env:up` from a worktree.

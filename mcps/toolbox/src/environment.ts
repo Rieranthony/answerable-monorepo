@@ -27,6 +27,12 @@ export const toolboxConfig = defineConfig("Toolbox", {
   TOOLBOX_MCPS_ROLE_PREFIX: { schema: z.string().regex(/^[a-z][a-z0-9_]*$/), fallback: "mcp", doc: "The prefix of the MCPs' roles in the shared database: mcp; a test that serves its own database names its own" },
   TOOLBOX_ID_ISSUER: { schema: z.url(), defaults: locally("http://localhost:47300"), doc: "The Answerable ID issuer whose tokens the Toolbox accepts", source: "chart" },
   TOOLBOX_RESOURCE_URL: { schema: z.url(), defaults: locally("http://localhost:47400/mcp"), doc: "The Toolbox's own URL, the audience of the tokens it accepts", source: "chart" },
+  TOOLBOX_STANDALONE_ORIGIN: {
+    schema: z.url(),
+    defaults: locally("http://localhost:47400"),
+    doc: "The origin of the MCPs the Toolbox serves alone, standalone or both: each is the resource <origin>/<name>/mcp, the audience of its tokens",
+    source: "chart",
+  },
   TOOLBOX_HOST: { schema: z.union([z.ipv4(), z.ipv6()]), fallback: "127.0.0.1", doc: "The address to listen on: loopback unless a container or a proxy in front needs another", source: "image" },
   TOOLBOX_PORT: { schema: z.coerce.number().int().min(1).max(65535), fallback: "47400", doc: "The port the Toolbox listens on" },
   TOOLBOX_ID_CLIENT_ID: { schema: z.string().min(1), doc: "The Toolbox's machine client in ID, toolbox-hub, with platform:read and platform:write, registered as the Toolbox's docs show", source: "chart" },
@@ -38,11 +44,15 @@ export const toolboxConfig = defineConfig("Toolbox", {
 /** Read the Toolbox's configuration from the environment; throws naming the variable that is missing or invalid. */
 export function readToolboxEnvironment(env: Record<string, string | undefined>) {
   const { data, auth } = parseEnvironment(toolboxConfig, env, { issuer: "TOOLBOX_ID_ISSUER", resource: "TOOLBOX_RESOURCE_URL" })
+  // The origin is checked as a resource is: an MCP's resource is the origin with its path.
+  const { auth: alone } = parseEnvironment(toolboxConfig, env, { issuer: "TOOLBOX_ID_ISSUER", resource: "TOOLBOX_STANDALONE_ORIGIN" })
   return {
     databaseUrl: data.TOOLBOX_DATABASE_URL,
     /** The mounted MCPs' databases, for `mcpDatabases`: the shared one, each own one's URL by its variable, and the role prefix. */
     mcps: { shared: data.TOOLBOX_MCPS_DATABASE_URL, own: own.urls(data), prefix: data.TOOLBOX_MCPS_ROLE_PREFIX },
     auth,
+    /** The origin of the MCPs served alone, each the resource `<origin>/<name>/mcp`. */
+    origin: alone.resource,
     /** The address to listen on: loopback unless a container or a proxy in front needs another. */
     hostname: data.TOOLBOX_HOST,
     port: data.TOOLBOX_PORT,

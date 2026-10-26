@@ -1,6 +1,6 @@
 // Real Answerable ID, a real browser and the official MCP OAuth client against MCPs the CLI made, with ID registered the way bun mcp setup and bun mcp dev
 // register it (scripts/mcp): mcp-dev made with the root secret, then, as mcp-dev, the Toolbox's host client, e2e's resource and client and the
-// organisations' access. mcps/example is the CLI's own, served in the Toolbox; e2e is served both ways, here at its path on the standalone server.
+// organisations' access. mcps/example is the CLI's own, served in the Toolbox; e2e is served both ways, here at its path, which the Toolbox serves.
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { stackAt } from "@answerable/scripts/local"
 import { enableInToolbox, giveStandaloneAccess } from "@answerable/scripts/local-access"
@@ -8,11 +8,10 @@ import { adminCall, createRegistrar, machineToken, makeMcpDev, registerStandalon
 import { decodeJwt } from "jose"
 import { z } from "zod"
 import { connect, intentSchema, launchBrowser, serve, serveCallback, signIn, startId, step, tool, type Id, type OAuthSession } from "../index"
-import { startStandaloneStack } from "../standalone"
 import { startToolboxStack } from "../toolbox"
 
-const stack = stackAt({ id: "http://127.0.0.1:47600", toolbox: "http://127.0.0.1:47604", standalone: "http://127.0.0.1:47602", callbackPort: 47603, callbackHost: "127.0.0.1" })
-const e2e = `${stack.standalone}/e2e/mcp`
+const stack = stackAt({ id: "http://127.0.0.1:47600", toolbox: "http://127.0.0.1:47604", callbackPort: 47603, callbackHost: "127.0.0.1" })
+const e2e = `${stack.toolbox}/e2e/mcp`
 const e2eScopes = ["e2e:identity", "e2e:read", "e2e:write"]
 // Two organisations, each signing in to the Toolbox and to e2e's path.
 const tenants = ["cli-alpha", "cli-beta"]
@@ -35,8 +34,6 @@ const notes = async (slug: string) => z.object({ items: z.array(z.object({ title
 beforeAll(async () => {
   id = await startId({ tenants: tenants.map(slug => ({ slug, signIns: 2 })) })
   const toolbox = await startToolboxStack(id, { hosts: [], database: "answerable_toolbox_cli_acceptance" })
-  const standalone = await startStandaloneStack(id)
-  serve(47_602, standalone.start(stack.standalone).fetch)
   serve(47_604, toolbox.toolbox.fetch)
   serveCallback(stack.callback)
 
@@ -133,7 +130,7 @@ test("registering again, as bun mcp dev does on every run, changes nothing in ID
 test("a scope an MCP gains later, and a second MCP enabled in the Toolbox, widen the rows ID holds, as bun mcp dev does after its first run, rather than making second ones", async () => {
   const { organizationId } = tenant(tenants[0]!)
   step("cli-alpha: gadget gains gadget:write; e2e is enabled in the Toolbox beside example")
-  const gadget = `${stack.standalone}/gadget/mcp`
+  const gadget = `${stack.toolbox}/gadget/mcp`
   await registerStandalone(createRegistrar(mcpDevCall), { name: "gadget", scopes: ["gadget:read"] }, stack)
   expect(await giveStandaloneAccess(mcpDevCall, organizationId, "gadget", stack)).toBe("6 made, 0 widened")
   const gained = createRegistrar(mcpDevCall)

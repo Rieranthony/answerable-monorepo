@@ -41,12 +41,8 @@ toolbox:
   replicas: 1
   autoscaling: { enabled: false }
 
-# The Toolbox, the admin MCP and the standalone server wait at zero replicas until the ops register Job writes their client Secrets.
+# The Toolbox and the admin MCP wait at zero replicas until the ops register Job writes their client Secrets.
 adminMcp:
-  replicas: 1
-  autoscaling: { enabled: false }
-
-standalone:
   replicas: 1
   autoscaling: { enabled: false }
 

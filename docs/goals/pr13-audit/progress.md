@@ -51,3 +51,40 @@
   - web: 120;
   - knip clean;
   - `infra:check` passed.
+- **R2, one process (D-1),** by Opus.
+  - **The Toolbox now serves every standalone or `both` MCP** at `<TOOLBOX_STANDALONE_ORIGIN>/<name>/mcp`:
+    - one `createMcpServer` per such MCP, with its own scope check and its own `createCalls`;
+    - routing by the first path segment, falling back to the hub;
+    - tested in `alone.test.ts` (8 tests), including tokens refused across paths and the hub.
+  - **Deleted:**
+    - `mcps/standalone` (−1,971 lines; 179 moved into the Toolbox);
+    - its database, its logins and `answerable_mcps_standalone`;
+    - `standalone-hub`, `standalone-migrate`, `mcps-migrate` (merged into `toolbox-migrate`), its Deployment and network policy, and init `007`.
+  - **The `mcp` host's Ingress** now points at the Toolbox's Service.
+  - **`standalone_enable`** loses `hostClientIds`, which only a test passed. A missing `claude-code-<name>` now answers `NOT_FOUND`.
+  - **Local standalone URLs move from 47510 to 47400.** Deployed URLs are unchanged.
+  - **Re-measured:**
+    - the release at 200 MCPs: 59,528 bytes, 5.7%;
+    - the connection ceilings: 230 / 320 → 170 / 240.
+  - **Size:** 193 files, +1,278 / −3,366.
+  - **The agent's gates:**
+    - `mcp:test`: 1,019 pass;
+    - the acceptance: 69;
+    - web: 120;
+    - knip clean;
+    - `infra:check` passed.
+
+    `infra:test` stopped at install: Docker Desktop's disk was full (1.4 GB free of 58.4 GB).
+- **The coordinator, on R2:**
+  - **Reviewed** the routing, the merged migration Job and the `mcp` Ingress.
+  - **Removed** the 12 untagged Answerable images this goal's kind runs had left, by ID, with no prune. That freed about 0.4 GB, since they share layers. The rest of Docker's disk is other projects' containers and volumes, plus the shared build cache, which are the owner's to clear.
+  - **Dropped** the standalone databases and logins that init `007` had made on the development Postgres.
+  - **Gates:**
+    - frozen install unchanged;
+    - typecheck and lint forced: 20 of 20;
+    - build: 2 of 2;
+    - `mcp:test`: 13 of 13 tasks in 44 s;
+    - web: 120;
+    - knip clean;
+    - `infra:check` passed.
+  - **The kind stack** runs in CI on the push, on a clean runner.

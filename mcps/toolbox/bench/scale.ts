@@ -115,7 +115,7 @@ try {
 
   const shared = await testSharedMcps({ name: sharedName, prefix, mcps: providers })
   const toolboxDb = await database.scratch("bench")
-  const opened = mcpDatabases(providers.map(provider => ({ provider, database: "shared" as const })), { shared: shared.url, own: {}, prefix })
+  const opened = mcpDatabases(providers.map(provider => ({ provider, serve: "toolbox" as const, database: "shared" as const })), { shared: shared.url, own: {}, prefix })
   try {
     await migrate(toolboxDb.db)
     const pool = opened.pools.mcps!

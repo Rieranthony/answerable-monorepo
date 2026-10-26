@@ -154,7 +154,7 @@ export async function testMcpDatabase<Schema extends Record<string, unknown>>({ 
     // CREATE ROLE takes no parameters; the name and the password are generated here.
     await client.query(`drop schema if exists "${name}" cascade; create role ${login} login password '${password}' noinherit`)
     await provisionMcps(sqlOf(client), {
-      mcps: [{ name, servedBy: ["toolbox"] }], prefix: "mcp_test", logins: { ...sharedMcps.logins, toolbox: login },
+      mcps: [{ name }], prefix: "mcp_test", logins: { ...sharedMcps.logins, toolbox: login },
     })
     await migrateMcp({ client, name, folder, mode: "shared", prefix: "mcp_test" })
   })

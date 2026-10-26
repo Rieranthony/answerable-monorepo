@@ -13,7 +13,7 @@ export type LocalId = ReturnType<typeof localId>
 /** The writes ID received, as `METHOD /path`. */
 export const writesTo = (id: LocalId) => id.received.filter(({ request }) => !request.startsWith("GET")).map(({ request }) => request.replace("/api/admin/v1", ""))
 
-const variables = ["ROOT_ADMIN_SECRET", "MCP_DEV_ID_CLIENT_ID", "MCP_DEV_ID_CLIENT_SECRET", "MCP_DEV_ORGANISATION", "MCPS_DATABASE_ADMIN_URL", "TOOLBOX_ID_CLIENT_ID", "TOOLBOX_ID_CLIENT_SECRET", "STANDALONE_ID_CLIENT_ID", "STANDALONE_ID_CLIENT_SECRET"]
+const variables = ["ROOT_ADMIN_SECRET", "MCP_DEV_ID_CLIENT_ID", "MCP_DEV_ID_CLIENT_SECRET", "MCP_DEV_ORGANISATION", "MCPS_DATABASE_ADMIN_URL", "TOOLBOX_ID_CLIENT_ID", "TOOLBOX_ID_CLIENT_SECRET"]
 
 /** Until each test ends, the process environment holds none of the variables bun mcp reads or sets, whatever the developer exported. */
 export function isolateEnvironment() {

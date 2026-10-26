@@ -21,11 +21,10 @@ export const image = (name: string) => `ghcr.io/rieranthony/answerable/${name}:l
 type Declared = { name: string; serve: "toolbox" | "standalone" | "both"; database: "shared" | "own"; scopes: string[] }
 /** The MCPs the chart renders from charts/answerable/mcps.json, which every proof below reads rather than naming one. */
 export const declared = (JSON.parse(readFileSync(join(charts, "answerable/mcps.json"), "utf8")) as { mcps: Declared[] }).mcps
-/** The MCPs the Toolbox mounts and those the standalone server serves. */
-export const mounted = declared.filter(mcp => mcp.serve !== "standalone")
+/** The MCPs the Toolbox serves alone, each at its path on the mcp host. */
 export const servedAlone = declared.filter(mcp => mcp.serve !== "toolbox")
-/** The servers the register Job starts: the standalone server's only while it serves an MCP. */
-export const registered = ["toolbox", "admin-mcp", ...(servedAlone.length ? ["standalone"] : [])]
+/** The servers the register Job starts. */
+export const registered = ["toolbox", "admin-mcp"]
 
 /** The company directories' ports on the host (apps/id/scripts/stack-directories.ts): the platform organisation's, then a client organisation's. */
 const directoryPort = 47_710
@@ -215,13 +214,13 @@ export function startBrowserEdge({ stackCa, originPullCert, serverCert }: { stac
 const nextImage = "ghcr.io/rieranthony/answerable/mcps-next:local"
 
 /**
- * A next release, as a commit that adds an MCP to the standalone server ships it: `change` applied to the MCPs' declarations, then bun mcp's
- * generator (scripts/mcp/generate.ts) writes the chart's list and the standalone server's, as `bun mcp` does in the tree. Returns a copy of
- * charts/answerable with that list, the list, and a Dockerfile directory for the mcps image with the standalone server's new list.
+ * A next release, as a commit that has the Toolbox serve an MCP alone ships it: `change` applied to the MCPs' declarations, then bun mcp's
+ * generator (scripts/mcp/generate.ts) writes the chart's list and the Toolbox's, as `bun mcp` does in the tree. Returns a copy of
+ * charts/answerable with that list, the list, and a Dockerfile directory for the mcps image with the Toolbox's new list.
  */
 async function nextRelease(workdir: string, change: (declaration: { name: string; serve: string }) => void) {
   const root = join(workdir, "next")
-  for (const file of ["mcps/retired.json", "mcps/toolbox/package.json", "mcps/standalone/package.json"]) {
+  for (const file of ["mcps/retired.json", "mcps/toolbox/package.json"]) {
     mkdirSync(join(root, file, ".."), { recursive: true })
     cpSync(join(repo, file), join(root, file))
   }
@@ -236,8 +235,8 @@ async function nextRelease(workdir: string, change: (declaration: { name: string
   cpSync(join(charts, "answerable"), chart, { recursive: true })
   await Bun.write(join(chart, "mcps.json"), files["charts/answerable/mcps.json"]!)
   const dockerfile = join(workdir, "next-image")
-  await Bun.write(join(dockerfile, "served.generated.ts"), files["mcps/standalone/src/served.generated.ts"]!)
-  await Bun.write(join(dockerfile, "Dockerfile"), `FROM ${image("mcps")}\nCOPY served.generated.ts /app/mcps/standalone/src/served.generated.ts\n`)
+  await Bun.write(join(dockerfile, "mounted.generated.ts"), files["mcps/toolbox/src/mounted.generated.ts"]!)
+  await Bun.write(join(dockerfile, "Dockerfile"), `FROM ${image("mcps")}\nCOPY mounted.generated.ts /app/mcps/toolbox/src/mounted.generated.ts\n`)
   return { chart, image: dockerfile, declared: (JSON.parse(files["charts/answerable/mcps.json"]!) as { mcps: Declared[] }).mcps }
 }
 
@@ -419,7 +418,7 @@ export async function startStack() {
     })
     /**
      * Build and load the next release (`nextRelease`): its chart, its list, and the sets that deploy its image, which `release` takes. The image
-     * is the stack's mcps image with the standalone server's new list, under {@link nextImage}.
+     * is the stack's mcps image with the Toolbox's new list, under {@link nextImage}.
      */
     async function next(change: Parameters<typeof nextRelease>[1]) {
       const prepared = await nextRelease(workdir, change)

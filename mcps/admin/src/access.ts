@@ -13,14 +13,14 @@ const sameScopes = (a: string[], b: string[]) => a.length === b.length && a.ever
  * The refusal for a grant that would give nothing: `resource` is a standalone MCP's, `<origin>/<name>/mcp`, and ID counts an entitlement towards a
  * person's token only when its `clientId` is the client signing in. The message names the client to pass and the other way to grant.
  */
-function standaloneNeedsClient(resource: string, origin: string | undefined) {
+function standaloneNeedsClient(resource: string, origin: string) {
   const name = origin && resource.startsWith(`${origin}/`) ? /^([a-z][a-z0-9]{0,11})\/mcp$/.exec(resource.slice(origin.length + 1))?.[1] : undefined
   if (!name) return
   return invalid("clientId", `${resource} is a standalone MCP's resource, and Answerable ID counts an entitlement towards a person's token only when it names the client they sign in with: pass clientId claude-code-${name} (the client the deploy registers for ${name}), or prepare standalone_enable with everyone: true to grant every scope of ${name} to the whole organisation through each host client`)
 }
 
-/** The writes on who may use what in an organisation: its groups, their members, and its entitlements; `standaloneOrigin` is the standalone server's, whose MCPs' resources a grant must name a client for. */
-export function accessWrites(writes: Writes, standaloneOrigin?: string) {
+/** The writes on who may use what in an organisation: its groups, their members, and its entitlements; `standaloneOrigin` is that of the MCPs served alone, whose resources a grant must name a client for. */
+export function accessWrites(writes: Writes, standaloneOrigin: string) {
   const { calls, role, organisation } = writes
   const missingGroup = (organizationId: string, id: string) => `Answerable ID has no group ${id} in organisation ${organizationId}; groups_list lists them`
   const group = (organizationId: string, id: string, context: ToolContext) =>

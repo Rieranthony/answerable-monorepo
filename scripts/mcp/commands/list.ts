@@ -6,13 +6,13 @@ import { Refusal, type Command } from "../io"
 import { local } from "../local"
 import { declarations, findRoot, manifestOf, type Declaration } from "../workspace"
 
-/** Where an MCP is reached: the Toolbox's one URL, and its own path on the standalone server's origin. */
+/** Where an MCP is reached: the Toolbox's hub, and its own path on the origin where the Toolbox serves it alone. */
 const urlsOf = ({ name, serve }: Pick<Declaration, "name" | "serve">, { toolbox, standalone }: { toolbox: string; standalone: string }) => [
   ...(serve === "standalone" ? [] : [toolbox]),
   ...(serve === "toolbox" ? [] : [`${standalone}/${name}/mcp`]),
 ]
-const here = { toolbox: local.toolboxResource, standalone: local.standalone }
-/** An environment's Toolbox and standalone server, as the deployment names them (infra/pipeline/src/environments.ts). */
+const here = { toolbox: local.toolboxResource, standalone: local.toolbox }
+/** An environment's Toolbox hub and the origin of the MCPs it serves alone, as the deployment names them (infra/pipeline/src/environments.ts). */
 const deployed = (environment: "staging" | "production") => {
   const hosts = hostsFor(environment)
   return { toolbox: `https://${hosts.toolbox}/mcp`, standalone: `https://${hosts.mcp}` }

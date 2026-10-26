@@ -2,7 +2,7 @@
 import { createIdAdmin } from "@answerable/id-admin"
 import { createFakeId } from "@answerable/id-admin/testing"
 import { defineMutation, defineProvider, defineTool, type Mount, type Provider } from "@answerable/mcp"
-import { createMemoryTracer } from "@answerable/mcp-platform"
+import { createMemoryTracer, type Serve } from "@answerable/mcp-platform"
 import type { Database } from "@answerable/mcp-postgres"
 import { createTestMcp } from "@answerable/mcp/testing"
 import { z } from "zod"
@@ -30,20 +30,21 @@ export function records(id: string, { version = "2026-09-29", extra = [] as stri
 export const providerId = () => `a${crypto.randomUUID().slice(0, 8)}`
 
 /**
- * The Toolbox mounting `providers` (the suite's e2e unless given), a provider alone or with its `db`, over the test database and a fake ID.
+ * The Toolbox serving `providers` (the suite's e2e unless given), a provider alone or with its `db` and where it is served, over the test database
+ * and a fake ID.
  * `member` makes a person of a fresh organisation in the fake ID, with the access view that grants them `grants`, the providers enabled in the
  * catalogue, and a `connect` as them.
  */
-export async function createHub(db: Database, providers?: readonly (Provider | Mount)[], { secret, pageSize }: { secret?: string; pageSize?: number } = {}) {
+export async function createHub(db: Database, providers?: readonly (Provider | (Mount & { serve?: Serve }))[], { secret, pageSize }: { secret?: string; pageSize?: number } = {}) {
   const id = createFakeId({ pageSize })
   const { tracer, spans } = createMemoryTracer()
   // The suite's mounted e2e unless `providers` are given, imported only then: importing ./mcps makes the suite's MCP databases.
-  const mount = (providers ?? [(await import("./mcps")).e2e]).map(entry => ("provider" in entry ? entry : { provider: entry }))
+  const mount = (providers ?? [(await import("./mcps")).e2e]).map((entry): Mount & { serve?: Serve } => ("provider" in entry ? entry : { provider: entry }))
   let toolbox!: Awaited<ReturnType<typeof createToolbox>>
   const mcp = await createTestMcp(async ({ auth }) => (toolbox = await createToolbox({
     mount, auth, db, id: createIdAdmin({ ...id.config, ...(secret ? { clientSecret: secret } : {}) }), spans: tracer,
   })))
-  async function member(grants: string[], { enable = mount.map(({ provider }) => provider.id), scopes = ["toolbox"] }: { enable?: string[]; scopes?: string[] } = {}) {
+  async function member(grants: string[], { enable = mount.filter(entry => entry.serve !== "standalone").map(({ provider }) => provider.id), scopes = ["toolbox"] }: { enable?: string[]; scopes?: string[] } = {}) {
     const organizationId = crypto.randomUUID()
     const membershipId = crypto.randomUUID()
     const userId = crypto.randomUUID()

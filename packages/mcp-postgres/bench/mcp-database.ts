@@ -45,7 +45,7 @@ const pool = new Pool({ connectionString: at(`/${database}`, login, "bench"), ma
 const folders = await mkdtemp(join(tmpdir(), "mcp-postgres-bench-"))
 try {
   await admin.connect()
-  const provisioned = await time(() => provisionMcps(sqlOf(admin), { mcps: names.map(name => ({ name, servedBy: ["toolbox"] })), prefix, logins: { ...sharedMcps.logins, toolbox: login } }))
+  const provisioned = await time(() => provisionMcps(sqlOf(admin), { mcps: names.map(name => ({ name })), prefix, logins: { ...sharedMcps.logins, toolbox: login } }))
   const [initial, journal] = await Promise.all([readFile(new URL("0000_initial.sql", fixture), "utf8"), readFile(new URL("meta/_journal.json", fixture), "utf8")])
   const list: McpMigration[] = await Promise.all(names.map(async name => {
     const folder = join(folders, name)

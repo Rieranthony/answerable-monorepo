@@ -2,7 +2,7 @@
 
 import type { Declaration } from "../workspace"
 
-/** Where an MCP runs: in the Toolbox, on its own URL in the standalone server, or both. */
+/** Where an MCP runs: in the Toolbox, on its own URL, or both. */
 export type Serve = Declaration["serve"]
 /** Where an MCP's tables live: a schema in the shared database, or a database of its own. */
 export type DatabaseMode = Declaration["database"]

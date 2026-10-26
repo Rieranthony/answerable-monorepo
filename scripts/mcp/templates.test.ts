@@ -24,7 +24,7 @@ test("a new MCP whose first tool is a read has its domain's table; a mutation's 
   expect(Object.keys(files)).toContain("src/tools/notes-list.ts")
   for (const path of ["src/db/schema.ts", "src/provider.ts", "src/tools/notes-list.ts", "src/tools/notes-list.test.ts", "README.md", "mcp.json"]) expect(files[path]).toMatchSnapshot(path)
   for (const [path, text] of Object.entries(toolFiles("acme", mutation))) expect(text).toMatchSnapshot(path)
-  expect(mcpFiles({ ...answers, serve: "standalone" })["README.md"]).toContain("on its own URL, `/acme/mcp` on the standalone server, which serves it from `mcps/standalone/src/served.generated.ts`: `http://localhost:47510/acme/mcp` locally")
+  expect(mcpFiles({ ...answers, serve: "standalone" })["README.md"]).toContain("on its own URL, `/acme/mcp`, which the Toolbox serves from the same list: `http://localhost:47400/acme/mcp` locally")
 })
 
 test("the package pins the repository's versions, so an MCP never drifts from the packages it shares", async () => {

@@ -8,6 +8,7 @@ const complete = {
   ADMIN_ID_CLIENT_ID: "admin-mcp",
   ADMIN_ID_CLIENT_SECRET: "secret",
   ADMIN_ID_ADMIN_RESOURCE: "http://localhost:47300/api/admin",
+  ADMIN_STANDALONE_ORIGIN: "https://mcp.example.test",
 }
 
 test("reads ID, the resource, the database and the machine client, defaulting the bind address to 127.0.0.1, the port to 47520 and leaving the freshness window to createAdminMcp", () => {
@@ -18,7 +19,7 @@ test("reads ID, the resource, the database and the machine client, defaulting th
     databaseUrl: complete.ADMIN_DATABASE_URL,
     id: { issuer: "http://localhost:47300", adminResource: "http://localhost:47300/api/admin", clientId: "admin-mcp", clientSecret: "secret" },
     toolboxAdminResource: undefined,
-    standaloneOrigin: undefined,
+    standaloneOrigin: "https://mcp.example.test",
     freshSeconds: undefined,
   })
   expect(readAdminEnvironment({ ...complete, ADMIN_PORT: "47521", ADMIN_TOOLBOX_ADMIN_RESOURCE: "http://localhost:47400/admin", ADMIN_STANDALONE_ORIGIN: "https://mcp.example/", ADMIN_FRESH_SECONDS: "600" }))
@@ -36,7 +37,7 @@ test("outside production, everything but the client pair defaults to the local s
       databaseUrl: "postgres://answerable_admin_runtime:answerable@localhost:47432/answerable_admin",
       id: { issuer: "http://localhost:47300", adminResource: "http://localhost:47300/api/admin", clientId: "admin-mcp", clientSecret: "secret" },
       toolboxAdminResource: "http://localhost:47400/admin",
-      standaloneOrigin: "http://localhost:47510",
+      standaloneOrigin: "http://localhost:47400",
       freshSeconds: undefined,
     })
   expect(() => readAdminEnvironment({})).toThrow("Invalid admin MCP configuration: ADMIN_ID_CLIENT_ID: ")

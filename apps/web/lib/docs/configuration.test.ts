@@ -61,9 +61,11 @@ test("several groups make one table, each variable once under the first group th
   const names = rows.map((row) => row[0])
 
   expect(names.filter((name) => name === "`NODE_ENV`")).toHaveLength(1)
-  expect(names.slice(-3)).toEqual([
+  expect(names.slice(-5)).toEqual([
     "`TOOLBOX_DATABASE_MIGRATION_URL`",
     "`TOOLBOX_DATABASE_RUNTIME_ROLE`",
+    "`MCPS_DATABASE_MIGRATION_URL`",
+    "`MCPS_DECLARED`",
     "`TOOLBOX_TEST_DATABASE_URL`",
   ])
 })

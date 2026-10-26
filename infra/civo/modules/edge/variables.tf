@@ -39,7 +39,7 @@ variable "origin_ip" {
 }
 
 variable "hostnames" {
-  description = "The four service hostnames, keyed id, toolbox, admin_mcp and mcp (the standalone server, which serves every standalone MCP by path), each a first-level name in the zone (Universal SSL covers no deeper name)."
+  description = "The four service hostnames, keyed id, toolbox, admin_mcp and mcp (where the Toolbox serves every standalone MCP by path), each a first-level name in the zone (Universal SSL covers no deeper name)."
   type        = map(string)
 
   validation {

@@ -8,7 +8,7 @@ bun install
 bun run mcp:test:e2e
 ```
 
-Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL 17 in a Compose project on port `47532` and ID on `47600`, the standalone server on `47602` and the Toolbox on `47604`, runs every `*.journeys.test.ts` in `src/journeys` one after another, and removes PostgreSQL and ID afterwards, including after Ctrl-C. The kit's own unit tests (`cleanup.test.ts`, `id.test.ts`) run in the same command. The kit is test support: no coverage gate.
+Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL 17 in a Compose project on port `47532` and ID on `47600`, and the Toolbox, with the MCPs it serves alone at their paths, on `47604` (a second one on `47605`), runs every `*.journeys.test.ts` in `src/journeys` one after another, and removes PostgreSQL and ID afterwards, including after Ctrl-C. The kit's own unit tests (`cleanup.test.ts`, `id.test.ts`) run in the same command. The kit is test support: no coverage gate.
 
 | File | Job |
 | --- | --- |
@@ -18,11 +18,10 @@ Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL 17 in a Compose proj
 | `src/browser.ts` | `launchBrowser`, `signIn`, `signInRefused` and `verifySignIn`: the SDK challenge and ID's pages in Chromium |
 | `src/mcp.ts` | `serve`, `serveCallback`, `connect`, `tool`, `refusal` and the journeys' `intentSchema` |
 | `src/cleanup.ts` | What `stop` and Ctrl-C run, and a collection of garbage after them |
-| `src/mcps.ts` | `mcpsDatabase`: the shared MCP database `answerable_mcps_acceptance` with its three logins, and every MCP the Toolbox mounts or the standalone server serves provisioned and migrated, once per start |
-| `src/toolbox.ts` | `startToolboxStack`: the Toolbox registered in ID with its host clients, its machine client and a staff client, its database (migrated as the owner, served as the runtime login), the MCPs of its generated list over the shared MCP database, and its poller; the Toolbox and MCP journeys and the host lane start from it |
-| `src/standalone.ts` | `startStandaloneStack`: the standalone server's machine client and database, and `start(origin)`, a server on fresh pools serving its generated list at `<origin>/<name>/mcp`; the e2e and MCP journeys start from it |
+| `src/mcps.ts` | `mcpsDatabase`: the shared MCP database `answerable_mcps_acceptance` with its two logins, and every MCP the Toolbox serves provisioned and migrated, once per start |
+| `src/toolbox.ts` | `prepareToolbox`: the Toolbox's machine client and database (migrated as the owner, served as the runtime login), and `start(origin)`, a Toolbox on fresh pools serving its generated list in its hub and at `<origin>/<name>/mcp`, with its poller; the e2e journeys start from it. `startToolboxStack`: that, with the Toolbox's resources, host clients and a staff client registered in ID; the Toolbox, MCP and CLI journeys and the host lane start from it |
 | `src/admin-mcp.ts` | `startAdminStack`: the admin MCP and the Toolbox registered in ID as the admin MCP's setup page shows, with a database each (migrated as the owner, served as the runtime login) and the Toolbox's poller; the admin journeys and the admin lane start from it |
-| `src/journeys/e2e.journeys.test.ts` | The e2e MCP at its path on the standalone server: sign-in, tokens, J4 agent-class mutation, isolation, refresh, revocation |
+| `src/journeys/e2e.journeys.test.ts` | The e2e MCP at its path, which the Toolbox serves alone: sign-in, tokens, J4 agent-class mutation, isolation, refresh, revocation |
 | `src/journeys/mcps.journeys.test.ts` | The MCPs as the deployment serves them: who is calling, from ID, in a tool; two organisations' e2e records, at the path and in the Toolbox; a restart |
 | `src/journeys/mcp-cli.journeys.test.ts` | The CLI's registrations in real ID (`bun mcp setup` and `bun mcp dev`, from `scripts/mcp`): mcp-dev, the Toolbox's host client, e2e's resource and client, and each organisation's access; then `example` in the Toolbox and e2e at its path, the audience binding, and widening what ID holds |
 | `src/journeys/admin.journeys.test.ts` | The admin MCP on port `47606` and the Toolbox: A1 roles without re-authorisation (`staff_grant` and `staff_revoke` against real ID), A2 onboarding through the tools, A3 the Toolbox outcome, A8 tool-level access (a grant string naming one capability, to a group and to a member), A4 refusals, A5 idempotency, A6 freshness (Verify sign-in) and A7 evidence |

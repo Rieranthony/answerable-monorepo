@@ -19,8 +19,8 @@ export type AdminMcpConfig = {
   freshSeconds?: number
   /** The Toolbox's admin resource (`ADMIN_TOOLBOX_ADMIN_RESOURCE`) and, for tests, the HTTP client that reaches it; unset, `toolbox_enable` is refused. */
   toolbox?: { resource: string; fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response> }
-  /** The standalone server's origin (`ADMIN_STANDALONE_ORIGIN`); unset, `standalone_enable` is refused. */
-  standaloneOrigin?: string
+  /** The origin of the MCPs the Toolbox serves alone (`ADMIN_STANDALONE_ORIGIN`): each is the resource `<origin>/<name>/mcp`. */
+  standaloneOrigin: string
 }
 
 /**

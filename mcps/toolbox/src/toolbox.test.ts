@@ -288,7 +288,7 @@ test("a database-backed mounted provider runs through its own db, and each organ
 
 test("an own MCP runs through a pool of its own", async () => {
   const database = await testOwnMcp({ name: "answerable_toolbox_test_own", provider: e2e.provider })
-  const own = mcpDatabases([{ provider: e2e.provider, database: "own", variable: "TOOLBOX_MCP_E2E_DATABASE_URL" }], { shared: databases.url, own: { TOOLBOX_MCP_E2E_DATABASE_URL: database.url }, prefix })
+  const own = mcpDatabases([{ provider: e2e.provider, serve: "toolbox", database: "own", variable: "TOOLBOX_MCP_E2E_DATABASE_URL" }], { shared: databases.url, own: { TOOLBOX_MCP_E2E_DATABASE_URL: database.url }, prefix })
   try {
     expect(Object.keys(own.pools)).toEqual(["mcps", "e2e"])
     const { lists, organisation } = await createdAndListed(await hub(own.mount))
