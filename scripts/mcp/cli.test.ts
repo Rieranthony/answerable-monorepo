@@ -26,9 +26,9 @@ test.each([
   [["new", "acme", "--serve"], "flag-value", "--serve takes a value, <toolbox|standalone|both>"],
   [["new", "acme", "--serve", "--mutation"], "flag-value", "--serve takes a value, <toolbox|standalone|both>"],
   [["new", "acme", "--mutation=yes"], "flag-value", "--mutation takes no value"],
-  [["deploy", "acme"], "unknown-command", "bun mcp has no command deploy; its commands are new, add tool, list, check, db, help"],
-  [["add", "prompt"], "unknown-command", "bun mcp has no command add prompt; its commands are new, add tool, list, check, db, help"],
-  [["add"], "unknown-command", "bun mcp has no command add; its commands are new, add tool, list, check, db, help"],
+  [["deploy", "acme"], "unknown-command", "bun mcp has no command deploy; its commands are new, add tool, list, check, db, setup, dev, help"],
+  [["add", "prompt"], "unknown-command", "bun mcp has no command add prompt; its commands are new, add tool, list, check, db, setup, dev, help"],
+  [["add"], "unknown-command", "bun mcp has no command add; its commands are new, add tool, list, check, db, setup, dev, help"],
 ])("refuses %j with %s, exit 2", async (argv, code, message) => {
   const text = await run(argv)
   expect([text.code, text.stderr().split("\n")[0]]).toEqual([2, message])
@@ -37,14 +37,14 @@ test.each([
 
 test("help refuses a command it does not have", async () => {
   const { code, stderr } = await run(["help", "deploy"])
-  expect([code, stderr()]).toEqual([2, "bun mcp has no command deploy; its commands are new, add tool, list, check, db, help\n\n  bun mcp help\n"])
+  expect([code, stderr()]).toEqual([2, "bun mcp has no command deploy; its commands are new, add tool, list, check, db, setup, dev, help\n\n  bun mcp help\n"])
 })
 
 test("help lists every command with its summary; help <command> and --help give its usage, every flag and an example", async () => {
   for (const argv of [[], ["--help"], ["help"]]) {
     const { code, stdout } = await run(argv)
     expect(code).toBe(0)
-    expect(stdout()).toStartWith("bun mcp makes and checks the MCPs of this repository.")
+    expect(stdout()).toStartWith("bun mcp makes, checks and runs the MCPs of this repository.")
     for (const command of commands) expect(stdout()).toContain(`  ${command.name.padEnd(8)}  ${command.summary}\n`)
   }
   const [helped, flagged] = [await run(["help", "add", "tool"]), await run(["add", "tool", "--help"])]

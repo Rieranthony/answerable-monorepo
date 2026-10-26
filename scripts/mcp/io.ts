@@ -3,12 +3,24 @@ import type { Readable, Writable } from "node:stream"
 import type * as clack from "@clack/prompts"
 
 /** The prompts a command asks in a terminal: @clack/prompts' own, so a test passes stand-ins. A cancelled prompt answers a symbol. */
-export type Prompts = Pick<typeof clack, "text" | "select">
+export type Prompts = Pick<typeof clack, "text" | "select" | "password">
 
 /** Run a command to its end: its exit code and its output, stdout then stderr. */
 export type Exec = (command: string[], options: { cwd: string; env?: Record<string, string> }) => Promise<{ code: number; output: string }>
 
-/** What a command runs with: its arguments, where it runs, its streams, whether a person is at a terminal, and how it asks and runs commands. */
+/** The HTTP client a command calls with: the global `fetch`, or a fake of the service it calls. */
+export type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+
+/** A server a command started: it ends with an exit code, or when `stop()` has stopped it. */
+export type Running = { exited: Promise<number>; stop(): Promise<void> }
+
+/** Start a long-running command, whose output goes to the terminal, with exactly `env` as its environment. */
+export type Start = (command: string[], options: { cwd: string; env: Record<string, string> }) => Running
+
+/**
+ * What a command runs with: its arguments, where it runs, its streams, whether a person is at a terminal, how it asks and runs commands, and the
+ * machine around it: HTTP, whether something listens on a port, how to start a server and when the person stops it (Ctrl-C or SIGTERM).
+ */
 export type Io = {
   argv: string[]
   cwd: string
@@ -18,6 +30,12 @@ export type Io = {
   isTTY: boolean
   prompts: Prompts
   exec: Exec
+  fetch: Fetch
+  /** Whether something accepts connections at `host:port`. */
+  listening(host: string, port: number): Promise<boolean>
+  start: Start
+  /** Start listening for Ctrl-C and SIGTERM; the signal aborts when one arrives. A command that runs until it is stopped calls it first. */
+  interrupt(): AbortSignal
 }
 
 /** What is wrong with one answer: a stable kebab-case `code`, one per rule, and the message that says what to do. */

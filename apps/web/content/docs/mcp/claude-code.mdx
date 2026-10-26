@@ -10,6 +10,15 @@ claude mcp add --transport http answerable-toolbox http://localhost:47400/mcp \
 
 Run this once the Toolbox is running and your organisation is enabled for it ([below](#the-toolbox)). Then open Claude Code, run `/mcp`, select `answerable-toolbox` and choose **Authenticate**. Your browser opens Answerable ID: sign in with your work account, choose the organisation and accept. Without a browser on that machine, run `claude mcp login answerable-toolbox --no-browser` in a terminal: it prints the address to open on another machine and asks you to paste back the address you are sent to. Ask Claude to call `toolbox_whoami`; it returns you, your organisation and the grants you hold. To connect the e2e server instead, see [the e2e server](#the-e2e-server).
 
+**An MCP you are making.** `bun mcp dev <mcp>` registers it in your local ID, gives your organisation access and prints the command that connects Claude Code to it ([Run an MCP on your machine](/docs/mcp/local-testing#run-an-mcp-on-your-machine)). For an MCP that runs on its own URL, the command is:
+
+```bash
+claude mcp add --transport http acme http://localhost:47510/acme/mcp \
+  --client-id claude-code-acme --callback-port 47700
+```
+
+For an MCP that runs in the Toolbox it is the Toolbox's command above. Then `/mcp`, choose the connection and **Authenticate**, as above. The sections below show by hand what `bun mcp dev` does.
+
 ## The Toolbox
 
 [The Toolbox](/docs/toolbox) serves the tools your organisation granted you, and no others.
@@ -67,7 +76,7 @@ claude mcp add --transport http answerable-e2e http://localhost:47510/e2e/mcp \
   --client-id claude-code-local --callback-port 47700
 ```
 
-e2e runs on [the standalone server](/docs/mcp/servers#the-standalone-server), at its own path. Run this once the resource and client below are registered. Then open Claude Code, run `/mcp`, select `answerable-e2e` and choose **Authenticate**. Ask Claude to call `identity_get`; it returns your organisation.
+e2e runs on [the standalone server](/docs/mcp/servers#the-standalone-server), at its own path. `bun mcp dev e2e` registers everything below, with the client `claude-code-e2e`, and prints its own command; the steps are what it does, by hand. Run this once the resource and client below are registered. Then open Claude Code, run `/mcp`, select `answerable-e2e` and choose **Authenticate**. Ask Claude to call `identity_get`; it returns your organisation.
 
 **Writes.** Ask Claude to create a test record: it calls `records_create`, which prepares an intent and changes nothing, then `e2e_commit`. Deleting calls `records_delete`, then `e2e_commit_confirmed` with the preview's summary. See [mutations](/docs/mcp/mutations).
 

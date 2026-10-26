@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { Readable, Writable } from "node:stream"
-import type { Exec, Io, Prompts } from "../io"
+import type { Exec, Fetch, Io, Prompts, Running, Start } from "../io"
 
 /** A writable that keeps what it was given. */
 function capture() {
@@ -13,7 +13,7 @@ function capture() {
 }
 
 /** A prompt as the stand-ins saw it: which, its message, and its choices and default for a select, or what its check refused for a text. */
-export type Asked = { kind: "text" | "select"; message: string; placeholder?: string; initialValue?: unknown; options?: unknown[]; refused: string[] }
+export type Asked = { kind: "text" | "select" | "password"; message: string; placeholder?: string; initialValue?: unknown; options?: unknown[]; refused: string[] }
 
 /**
  * Prompts that answer from `answers`, in order. A text answer its check refuses is recorded, and the next answer is tried, as a person retyping
@@ -24,6 +24,18 @@ function prompts(answers: (string | symbol)[]): { prompts: Prompts; asked: Asked
   const stand = {
     async text(options: { message: string; placeholder?: string; validate?: (value: string | undefined) => unknown }) {
       const prompt: Asked = { kind: "text", message: options.message, placeholder: options.placeholder, refused: [] }
+      asked.push(prompt)
+      for (;;) {
+        const answer = answers.shift()
+        if (answer === undefined) throw new Error(`No answer left for: ${options.message}`)
+        if (typeof answer === "symbol") return answer
+        const refusal = options.validate?.(answer)
+        if (!refusal) return answer
+        prompt.refused.push(String(refusal))
+      }
+    },
+    async password(options: { message: string; validate?: (value: string | undefined) => unknown }) {
+      const prompt: Asked = { kind: "password", message: options.message, refused: [] }
       asked.push(prompt)
       for (;;) {
         const answer = answers.shift()
@@ -54,11 +66,39 @@ export function recorder(answer: (command: string[]) => { code: number; output: 
   return { exec, ran }
 }
 
+/** An HTTP client that reaches nothing, as when the server it calls is down. */
+const noFetch: Fetch = async () => { throw new TypeError("Unable to connect") }
+
+/** A server that never started: the stand-in for a command that starts none. */
+const noServer: Start = () => { throw new Error("This test starts no server") }
+
+/** The `start` of a test: each server it is asked for is recorded with its command, directory and environment, and runs until stopped, until `end(command, cwd)` ends it at once, or until the test calls its `exit(code)`. */
+export function servers(end: (command: string[], cwd: string) => number | undefined = () => undefined) {
+  const started: { command: string[]; cwd: string; env: Record<string, string>; stopped: boolean; ended: boolean; exit(code: number): void }[] = []
+  const start: Start = (command, { cwd, env }) => {
+    let finish: (code: number) => void = () => {}
+    const exited = new Promise<number>(resolve => (finish = resolve))
+    const record = { command, cwd, env, stopped: false, ended: false, exit: (code: number) => { record.ended = true; finish(code) } }
+    started.push(record)
+    const code = end(command, cwd)
+    if (code !== undefined) record.exit(code)
+    const running: Running = { exited, async stop() { record.stopped = true; finish(0) } }
+    return running
+  }
+  return { start, started }
+}
+
+/** What a test gives the machine around a command; by default no HTTP answers, nothing listens, no server starts and nobody interrupts. */
+type Machine = Partial<Pick<Io, "fetch" | "listening" | "start">> & { signal?: AbortSignal }
+
 /** An Io for `argv` in `cwd`, without a terminal unless `isTTY`, with its output captured. */
-export function testIo(argv: string[], cwd: string, { isTTY = false, answers = [], exec = recorder().exec }: { isTTY?: boolean; answers?: (string | symbol)[]; exec?: Exec } = {}) {
+export function testIo(argv: string[], cwd: string, { isTTY = false, answers = [], exec = recorder().exec, fetch, listening, start, signal }: { isTTY?: boolean; answers?: (string | symbol)[]; exec?: Exec } & Machine = {}) {
   const [stdout, stderr] = [capture(), capture()]
   const asking = prompts(answers)
-  const io: Io = { argv, cwd, stdin: Readable.from([]), stdout: stdout.stream, stderr: stderr.stream, isTTY, prompts: asking.prompts, exec }
+  const io: Io = {
+    argv, cwd, stdin: Readable.from([]), stdout: stdout.stream, stderr: stderr.stream, isTTY, prompts: asking.prompts, exec,
+    fetch: fetch ?? noFetch, listening: listening ?? (async () => false), start: start ?? noServer, interrupt: () => signal ?? new AbortController().signal,
+  }
   return { io, stdout: stdout.text, stderr: stderr.text, asked: asking.asked }
 }
 

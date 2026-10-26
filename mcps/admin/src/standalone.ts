@@ -1,27 +1,12 @@
 import { defineMutation, ToolError } from "@answerable/mcp"
 import { z } from "zod"
+import { enablementSteps, RowConflict, type Row } from "./enablement"
 import { commitWith, errors, invalid, named, noPrecondition, organizationId, precondition, scopes, target, type Writes } from "./writes"
 
-// A capability or an entitlement of ID, as far as standalone_enable reads it.
-type Row = { id: string; clientId: string | null; resource: string | null; grantKind?: string; memberId?: string | null; groupId?: string | null; scopes: string[]; status: string }
 type Resource = { name: string; allowedScopes: string[] | null; clients: string[] }
-/** One row to make, in order: a host client's link to the resource (`PUT`), or a capability or an entitlement (`POST` with its `body`). */
-type Step = { what: string; method: "PUT" | "POST"; path: string; body?: Record<string, unknown> }
 
-// What ID needs to sign a person in through a host client: the login and the MCP's resource, each for both grant kinds.
-const grantKinds = ["authorization_code", "refresh_token"] as const
-const signIn = ["openid", "offline_access"]
 // bun mcp's rule for an MCP's name.
 const mcpName = z.string().regex(/^[a-z][a-z0-9]{0,11}$/, "A lowercase letter, then up to 11 lowercase letters or digits")
-
-/** A row ID holds counts when it is active and carries what is needed; any other row of the same target stops the preparation, naming it. */
-function held(row: Row | undefined, needed: readonly string[], label: string) {
-  if (!row) return false
-  const lacking = needed.filter(scope => !row.scopes.includes(scope))
-  if (row.status === "active" && !lacking.length) return true
-  const fix = [row.status === "active" ? "" : "enable it", lacking.length ? `give it at least ${needed.join(" ")}` : ""].filter(Boolean).join(" and ")
-  throw precondition(`Answerable ID already holds the ${label} (${row.id}) with status ${row.status} and scopes ${row.scopes.join(" ")}; ${fix}, then prepare again`, { id: row.id, status: row.status, scopes: row.scopes })
-}
 
 /** ID's refusal of a create because the row exists: someone made it after the preparation read. */
 const existed = (error: unknown) => error instanceof ToolError && (error.details?.upstream as { status?: number; code?: string } | undefined)?.code === "conflict"
@@ -58,27 +43,11 @@ export function standaloneWrites(writes: Writes, origin: string | undefined) {
       for (const clientId of hostClientIds) {
         if (await calls.read(`/clients/${encodeURIComponent(clientId)}`, context) === undefined) throw invalid("hostClientIds", `Answerable ID has no client ${clientId}; register it first`)
       }
-      const capabilities = await calls.all<Row>(`/organizations/${id}/capabilities`, context)
-      const steps: Step[] = []
-      for (const clientId of hostClientIds) {
-        if (!registered.body.clients.includes(clientId)) steps.push({ what: `link ${clientId}`, method: "PUT", path: `/clients/${encodeURIComponent(clientId)}/resources/${encodeURIComponent(resource)}` })
-        for (const [name, reach, needed] of [["login", null, signIn], [mcp, resource, mcpScopes]] as const) {
-          for (const grantKind of grantKinds) {
-            const found = capabilities.find(item => item.clientId === clientId && item.resource === reach && item.grantKind === grantKind)
-            if (!held(found, needed, `${name} ${grantKind} capability of ${clientId}`)) {
-              steps.push({ what: `capability ${clientId} ${name} ${grantKind}`, method: "POST", path: `/organizations/${id}/capabilities`, body: { clientId, resource: reach, grantKind, scopes: needed } })
-            }
-          }
-        }
-        // ID counts an entitlement towards a person's token only through its client: the sign-in's, and with everyone the MCP's scopes.
-        const entitlements = await calls.all<Row>(`/organizations/${id}/entitlements?clientId=${encodeURIComponent(clientId)}`, context)
-        for (const [name, reach, needed] of [["login", null, signIn], ...(everyone ? [[mcp, resource, mcpScopes] as const] : [])] as const) {
-          const found = entitlements.find(item => item.resource === reach && !item.memberId && !item.groupId)
-          if (!held(found, needed, `${name} entitlement of ${clientId}`)) {
-            steps.push({ what: `entitlement ${clientId} ${name}`, method: "POST", path: `/organizations/${id}/entitlements`, body: { clientId, ...(reach ? { resource: reach } : {}), scopes: needed } })
-          }
-        }
-      }
+      const steps = await enablementSteps({
+        organizationId: id, mcp, resource, mcpScopes, linked: registered.body.clients, hostClientIds, everyone,
+        capabilities: await calls.all<Row>(`/organizations/${id}/capabilities`, context),
+        entitlements: clientId => calls.all<Row>(`/organizations/${id}/entitlements?clientId=${encodeURIComponent(clientId)}`, context),
+      }).catch((error: unknown) => { throw error instanceof RowConflict ? precondition(`${error.message}, then prepare again`, error.details) : error })
       const reach = `${hostClientIds.join(", ")}${everyone ? `, with ${mcpScopes.join(" ")} for everyone in it` : ""}`
       if (!steps.length) throw precondition(`Organisation ${named(row)} can already sign in to ${mcp} from ${reach}; nothing to enable`, { organizationId: id, resource })
       return {

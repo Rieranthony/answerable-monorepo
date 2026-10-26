@@ -1,10 +1,11 @@
 {
   "name": "@answerable/mcp-admin",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "exports": {
     "./admin": "./src/admin.ts",
+    "./enablement": "./src/enablement.ts",
     "./migrate": "./src/db/migrate.ts",
     "./platform": "./src/platform.ts"
   },

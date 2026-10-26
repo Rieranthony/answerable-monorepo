@@ -94,7 +94,7 @@ Each write is a prepare tool: it changes nothing and returns an intent, which `a
 | `groups_create` | A group: `slug`, `name` | `admin` | [createGroup](/docs/id/admin-api/groups/createGroup) |
 | `groups_addmember` | `memberId` in `groupId`, until `validUntil` if given, or a new end for a membership | `admin` | [putGroupMember](/docs/id/admin-api/groups/putGroupMember) |
 | `groups_dropmember` | `memberId` out of `groupId` | `admin` | [removeGroupMember](/docs/id/admin-api/groups/removeGroupMember) |
-| `access_grant` | An entitlement: `principal` (`{ "kind": "organization" }`, or `group` or `member` with its `id`), `resource`, `clientId` if only one client, `scopes` | `admin` | [createEntitlement](/docs/id/admin-api/entitlements/createEntitlement) |
+| `access_grant` | An entitlement: `principal` (`{ "kind": "organization" }`, or `group` or `member` with its `id`), `resource`, `clientId` if only one client (required on a standalone MCP's resource), `scopes` | `admin` | [createEntitlement](/docs/id/admin-api/entitlements/createEntitlement) |
 | `access_revoke` | `entitlementId` disabled, so that it grants nothing; reversible | `admin` | [disableEntitlement](/docs/id/admin-api/entitlements/disableEntitlement) |
 | `access_enable` | A disabled `entitlementId` enabled, so that it grants its scopes again: the inverse of `access_revoke` | `admin` | [enableEntitlement](/docs/id/admin-api/entitlements/enableEntitlement) |
 | `toolbox_enable` | The Toolbox for the organisation: `providers` and the `hostClientIds` people use it from | `admin` | The Toolbox's [enable call](/docs/toolbox/admin#enable-an-organisation), which writes to ID itself |
@@ -111,7 +111,7 @@ Each write is a prepare tool: it changes nothing and returns an intent, which `a
 A `standalone` or `both` MCP is its own resource, `https://mcp.<zone>/<name>/mcp`, which the deploy's register Job puts in ID, on every deploy, with its Claude Code client, `claude-code-<name>`, and their link. Nobody can sign in to it until staff give their organisation access:
 
 1. `standalone_enable` with the organisation and the MCP's name. Its preview lists each row it would make; commit it.
-2. `access_grant` of the MCP's scopes, such as `acme:read`, on its resource, with `clientId` set to the host client, `claude-code-<name>`, to the organisation, a group or a person. ID puts a scope in a person's token only through the client the entitlement names, so a grant without `clientId` gives a standalone MCP nothing. Or pass `everyone: true` to step 1, which grants every scope to the whole organisation through each host client in the same intent.
+2. `access_grant` of the MCP's scopes, such as `acme:read`, on its resource, with `clientId` set to the host client, `claude-code-<name>`, to the organisation, a group or a person. ID puts a scope in a person's token only through the client the entitlement names, so `access_grant` refuses a standalone MCP's resource without `clientId`. Or pass `everyone: true` to step 1, which grants every scope to the whole organisation through each host client in the same intent.
 
 `access_revoke` undoes it: the sign-in entitlement, which `access_list` shows with the host client and no resource, and, after `everyone: true`, the entitlement with the host client on the MCP's resource.
 
@@ -308,6 +308,7 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | `PRECONDITION_FAILED`: `Organisation <name> can already sign in to <mcp>…` | `standalone_enable` found every row in place | Nothing is needed; grant scopes with `access_grant`, `clientId` the host client |
 | `PRECONDITION_FAILED`: `Answerable ID already holds the <row> (<id>) with status…` | `standalone_enable` found a row for that target that is disabled or lacks scopes | Enable it (`access_enable` for an entitlement) or widen it in ID, then prepare again |
 | Tool result `NOT_FOUND`: `Answerable ID has no resource https://mcp.<zone>/<name>/mcp…` | The MCP is not served standalone, or no deploy has registered it | Ship it with `serve` `standalone` or `both`; the deploy's register Job registers it |
+| `INVALID_INPUT`: `<resource> is a standalone MCP's resource, and Answerable ID counts an entitlement…` | `access_grant` named a standalone MCP's resource, `<origin>/<name>/mcp`, without `clientId`; ID would count the entitlement towards no token | Prepare again with `clientId` `claude-code-<name>`, or use `standalone_enable` with `everyone: true` |
 | `INVALID_INPUT` | An argument failed the schema, or a rule: an issuer `sso_set` does not take, a scope the resource does not allow, a `principal.id` missing or extra, a provider or host client unknown | Fix the field `details.field_violations` names |
 | `INTENT_STALE` | A target moved since prepare, or ID refused the write's precondition; `details.targets` holds both versions | Prepare again and show the new preview |
 | `INTENT_EXPIRED` | 30 minutes passed since prepare | Prepare again |

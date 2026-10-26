@@ -4,12 +4,15 @@ import * as clack from "@clack/prompts"
 import { addTool } from "./commands/add-tool"
 import { check } from "./commands/check"
 import { db } from "./commands/db"
+import { dev } from "./commands/dev"
 import { help, helpText } from "./commands/help"
 import { list } from "./commands/list"
 import { newMcp } from "./commands/new"
+import { setup } from "./commands/setup"
 import { printError, Refusal, spawn, type Args, type Command, type Flag, type Io } from "./io"
+import { interrupt, listening, processStarter } from "./machine"
 
-const made = [newMcp, addTool, list, check, db]
+const made = [newMcp, addTool, list, check, db, setup, dev]
 
 /** Every command of bun mcp, as data: `bun mcp help` prints them, and the docs read them. */
 export const commands: readonly Command[] = [...made, help(made)]
@@ -65,4 +68,4 @@ export async function main(io: Io): Promise<number> {
   }
 }
 
-if (import.meta.main) process.exitCode = await main({ argv: process.argv.slice(2), cwd: process.cwd(), stdin: process.stdin, stdout: process.stdout, stderr: process.stderr, isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY), prompts: clack, exec: spawn })
+if (import.meta.main) process.exitCode = await main({ argv: process.argv.slice(2), cwd: process.cwd(), stdin: process.stdin, stdout: process.stdout, stderr: process.stderr, isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY), prompts: clack, exec: spawn, fetch, listening, start: processStarter(1000), interrupt })

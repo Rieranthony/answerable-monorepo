@@ -1,6 +1,6 @@
 {
   "name": "@answerable/acceptance",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -19,6 +19,7 @@
     "@answerable/mcp-postgres": "workspace:*",
     "@answerable/mcp-standalone": "workspace:*",
     "@answerable/mcp-toolbox": "workspace:*",
+    "@answerable/scripts": "workspace:*",
     "@modelcontextprotocol/client": "2.4.0",
     "@playwright/test": "1.63.0",
     "drizzle-orm": "0.45.4",

@@ -7,6 +7,9 @@ import { jsonFlag, Refusal, runSteps, sh, type Command, type Io, type Step } fro
 import { roleSwitching } from "../role-switching"
 import { declarations, findRoot, resolveMcp } from "../workspace"
 
+// The files `bun run env:inventory` writes (scripts/env-inventory.ts), from every service's configuration, which a generated list can change.
+const inventories = ["default.env", ".env.example", "packages/config/inventory.json"]
+
 // What a test run reports: its counts, and the coverage of every file when the workspace gates it.
 function testSummary(output: string) {
   const [pass, fail] = [/(\d+) pass/, /(\d+) fail/].map(count => output.match(count)?.[1] ?? "0")
@@ -16,7 +19,8 @@ function testSummary(output: string) {
 
 /**
  * The steps that check MCP `name`, and the commands that come next once they ran. The tests run with `UPDATE_MANIFEST=1`, so a stale manifest is
- * rewritten rather than failed; the manifest step then says so, and the generated files are rewritten the same way: both to commit.
+ * rewritten rather than failed; the manifest step then says so, and the generated files, with the inventories the lists can change, are
+ * rewritten the same way: all to commit.
  */
 function checkSteps(io: Io, root: string, name: string): { steps: Step[]; next: () => string[] } {
   const dir = join(root, "mcps", name)
@@ -43,6 +47,12 @@ function checkSteps(io: Io, root: string, name: string): { steps: Step[]; next: 
       {
         name: "generated", fix, run: async () => {
           const stale = await generate(root, { write: true })
+          // The inventories are written by a process of their own, which reads the lists just written.
+          const texts = () => Promise.all(inventories.map(async path => ((await Bun.file(join(root, path)).exists()) ? Bun.file(join(root, path)).text() : undefined)))
+          const held = await texts()
+          await sh(io, [process.execPath, "scripts/env-inventory.ts"], root)
+          const written = await texts()
+          stale.push(...inventories.filter((_, index) => held[index] !== written[index]))
           rewritten.push(...stale)
           return stale.length ? `rewritten: commit ${stale.join(", ")}` : "current"
         },
@@ -92,7 +102,7 @@ const usage = "bun mcp check [mcp] [--json]"
 export const check: Command = {
   name: "check",
   usage,
-  summary: "Typecheck, lint and test an MCP, with the conformance kit and its coverage gate; rewrite a stale manifest and the generated files, to commit; scan its code for role switches",
+  summary: "Typecheck, lint and test an MCP, with the conformance kit and its coverage gate; rewrite a stale manifest, the generated files and the environment inventories, to commit; scan its code for role switches",
   flags: { json: jsonFlag },
   example: "bun mcp check acme",
   async run(io, { positionals, flags }) {

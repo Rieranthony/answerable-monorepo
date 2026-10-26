@@ -5,7 +5,7 @@
 // bun mcp new, add tool and check write them; generate.test.ts fails when a committed file differs. Never edit them by hand.
 import { existsSync } from "node:fs"
 import { join } from "node:path"
-import { declarations, manifestOf, retired, type Declaration } from "./workspace"
+import { declarations, manifestOf, retired, type Declaration, type Manifest } from "./workspace"
 
 /** The file the chart reads, with an object root: Helm's `fromJson` turns an array into an error map. */
 const chartList = "charts/answerable/mcps.json"
@@ -44,15 +44,17 @@ async function packageJsonOf(path: string, served: readonly Declaration[], known
   return json(file)
 }
 
+/** The scopes a manifest's tools, prompts and resources ask for, sorted: those of the MCP's resource in ID, `offline_access` aside. */
+export const scopesOf = (manifest: Manifest) => [...new Set([...manifest.tools, ...manifest.prompts, ...manifest.resources].flatMap(item => item.scopes))].sort()
+
 /** Every generated file's text, by path. A server's list and dependencies are written only where its workspace is. */
 export async function generatedFiles(root: string): Promise<Record<string, string>> {
   const declared = await declarations(root)
   const mcps = await Promise.all(declared.map(async ({ name, serve, database }) => {
     const manifest = await manifestOf(root, name)
-    const definitions = manifest ? [...manifest.tools, ...manifest.prompts, ...manifest.resources] : []
     const capabilities = manifest?.tools.filter(tool => tool.kind !== "commit").map(tool => tool.identity) ?? []
     const grants = manifest ? [name, ...capabilities.map(identity => identity.split(".")[0]!), ...capabilities] : []
-    return { name, serve, database, scopes: [...new Set(definitions.flatMap(item => item.scopes))].sort(), grants: [...new Set(grants)].sort() }
+    return { name, serve, database, scopes: manifest ? scopesOf(manifest) : [], grants: [...new Set(grants)].sort() }
   }))
   const list = { $comment: "Written by bun mcp from mcps/*/mcp.json and each manifest.json (scripts/mcp/generate.ts); never edit it by hand", mcps }
   const files: Record<string, string> = { [chartList]: json(list) }

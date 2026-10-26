@@ -230,7 +230,7 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
     description: "Answerable's staff-only admin MCP: organisations, members, groups, access, single sign-on, the audit log, the Toolbox and standalone MCPs in Answerable ID, each tool behind a staff role.",
     tools: [
       whoami, organisationsList, organisationsGet, membersList, membersGet, groupsList, accessList, auditList, ssoTest, staffList,
-      ...organisationWrites(writes), ...accessWrites(writes), ...toolboxWrites(writes, toolbox), ...standaloneWrites(writes, standaloneOrigin), ...staffWrites(writes),
+      ...organisationWrites(writes), ...accessWrites(writes, standaloneOrigin), ...toolboxWrites(writes, toolbox), ...standaloneWrites(writes, standaloneOrigin), ...staffWrites(writes),
     ],
   })
   /** The least role a tool needs; null: any member of the platform organisation. */

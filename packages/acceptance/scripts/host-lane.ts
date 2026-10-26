@@ -59,6 +59,7 @@ onCleanup(() => clearInterval(watcher))
 
 console.log(`
 Host lane is up. ID ${manifest.idOrigin}, the Toolbox ${resource}. Ctrl-C stops it and removes everything.
+To try an MCP of yours on your machine, use bun mcp dev <mcp> (bun mcp setup once): it is the everyday local loop. This lane is for checking a host.
 At ID's email step type ${tenant.email}; every company sign-in is accepted. The organisation is entitled to e2e/records only.
 
 LibreChat (the client is librechat-lane, the server is named toolbox):

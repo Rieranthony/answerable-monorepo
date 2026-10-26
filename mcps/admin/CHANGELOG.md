@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.0
+
+- `access_grant` refuses, at prepare, a standalone MCP's resource (`<ADMIN_STANDALONE_ORIGIN>/<name>/mcp`) without a `clientId`: ID counts an entitlement towards a person's token only through the client signing in, so the grant gave nothing. The `INVALID_INPUT` names the client to pass, `claude-code-<name>`, and `standalone_enable` with `everyone: true` as the other way.
+- The plan of `standalone_enable`'s rows is `@answerable/mcp-admin/enablement`, which `bun mcp dev` runs too, so the rows it makes for your organisation are the ones staff make.
+
 ## 0.6.0
 
 - `standalone_enable`, an ordinary write for `admin` and above: what Answerable ID needs for an organisation's people to sign in to a standalone MCP, `<ADMIN_STANDALONE_ORIGIN>/<name>/mcp`, which the deploy's register Job registered. For each host client, `claude-code-<name>` unless named: its link to the MCP's resource, the organisation's sign-in and MCP capabilities for both grant kinds, and the sign-in entitlement; with `everyone: true`, the MCP's scopes for everyone through each host client. Prepare previews only what is missing and refuses when nothing is, or when a row of a target is disabled or short of scopes; commit writes each row under `<intent id>.<step>` and counts a conflict as found. Without `ADMIN_STANDALONE_ORIGIN` it stays listed and answers `PRECONDITION_FAILED`.

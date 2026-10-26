@@ -1,7 +1,7 @@
 // bun mcp help [command]: every command in a line, or one command's usage, flags and example, from the commands' own definitions.
 import { Refusal, type Command, type Flag } from "../io"
 
-const intro = "bun mcp makes and checks the MCPs of this repository. In a terminal it asks for what is missing; without one, as in a coding agent's shell, it never waits: a missing answer exits with code 2 and prints the command to run, with placeholders. Exit codes: 0 done, 1 a step failed after files were written, 2 refused before anything was written."
+const intro = "bun mcp makes, checks and runs the MCPs of this repository. In a terminal it asks for what is missing; without one, as in a coding agent's shell, it never waits: a missing answer exits with code 2 and prints the command to run, with placeholders. Exit codes: 0 done, 1 a step failed after files were written, 2 refused before anything was written."
 
 /** The text `bun mcp help` prints: the introduction and every command, or with `name`, that command's usage, flags and example. */
 export function helpText(commands: readonly Command[], name?: string) {

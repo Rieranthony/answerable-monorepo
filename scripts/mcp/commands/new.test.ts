@@ -176,6 +176,7 @@ test("it writes the templates, then runs each step in order, one line each, then
     ["run typecheck", "/mcps/acme", undefined],
     ["run lint", "/mcps/acme", undefined],
     ["run test", "/mcps/acme", { UPDATE_MANIFEST: "1" }],
+    ["scripts/env-inventory.ts", "", undefined],
   ])
   const lines = stdout().split("\n")
   expect(lines.slice(0, 2)).toEqual([

@@ -29,6 +29,7 @@ test("it runs the typecheck, lint and tests in the workspace, the manifest, the 
   expect(code).toBe(0)
   expect(ran.map(({ command, cwd, env }) => [command.slice(1).join(" "), cwd.slice(repository.root.length), env])).toEqual([
     ["run typecheck", "/mcps/acme", undefined], ["run lint", "/mcps/acme", undefined], ["run test", "/mcps/acme", { UPDATE_MANIFEST: "1" }],
+    ["scripts/env-inventory.ts", "", undefined],
   ])
   expect(lines(stdout())).toEqual([
     "ok      typecheck  6 files",
@@ -64,6 +65,18 @@ test("a stale manifest and stale generated files are rewritten, the check passes
   expect(code).toBe(0)
   expect(JSON.parse(stdout())).toMatchObject({ ok: true, next: ["git add mcps/acme/manifest.json charts/answerable/mcps.json"] })
   expect(await Bun.file(join(repository.root, "charts/answerable/mcps.json")).text()).toBe(Object.values(await generatedFiles(repository.root))[0]!)
+})
+
+test("the generated step also runs bun run env:inventory's script, and an inventory it rewrote is listed to commit with the generated files", async () => {
+  const { exec, ran } = recorder(command => {
+    if (command.at(-1)?.endsWith("env-inventory.ts")) writeFileSync(join(repository.root, "default.env"), "# written by the inventory\n")
+    return { code: 0, output: passing }
+  })
+  const { code, stdout } = await run(["acme", "--json"], exec)
+  expect(code).toBe(0)
+  expect(ran.filter(({ command }) => command.at(-1)?.endsWith("env-inventory.ts")).map(({ command, cwd }) => [command.slice(1), cwd])).toEqual([[["scripts/env-inventory.ts"], repository.root]])
+  expect(JSON.parse(stdout())).toMatchObject({ ok: true, next: ["git add default.env"] })
+  expect((await run(["acme"], exec)).stdout()).toContain("ok      generated  current")
 })
 
 test("from inside the MCP's directory it needs no name; a failing step stops the check and exits 1", async () => {

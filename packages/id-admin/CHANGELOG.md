@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+
+The fake ID sets a service up as staff do, for the tests of `bun mcp setup` and `bun mcp dev`:
+
+- A link moves the revision of the resource and of the client it joins, as ID's `touch_client_resource_revision` does, so a change bound to the old ETag is refused with `412`.
+- `createFakeId({ issuer })` names ID's origin; `rootSecret` is a bearer that works as a platform administrator's until `lockRoot(true)`, after which ID answers it `403 root_locked`; `staffToken(token)` makes another bearer one.
+- `POST /resources` and `POST /clients` create a resource or a client, `PATCH` changes a resource's name and lifetimes and a client, and `rotate-secret` answers a new secret. A `client_secret_basic` client's secret is answered once; a created client gets a `client_credentials` token for an audience it is linked to and holds a capability for, on ID's own admin resource without registration.
+- A capability and an entitlement are read by id, and changed with `PATCH` and `If-Match`; ID's `GET /healthz` answers.
+
 ## 0.6.0
 
 `createIdProfiles(id, { ttlMs, staleMs, now })` says who is calling, for `createMcpServer`'s `profiles`: the member and the organisation from ID's admin API, read in parallel and cached 60 seconds per member and per organisation, the last value served for up to an hour when ID does not answer, the groups in force now, and `PERMISSION_DENIED` for a member not in force. `invalidate(organisationIds, userIds)` takes an audit-log poller's events. The package depends on `@answerable/mcp` for `ToolError` and the profile's type.

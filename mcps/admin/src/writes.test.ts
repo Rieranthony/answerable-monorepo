@@ -444,6 +444,27 @@ describe("standalone_enable", () => {
     })
   })
 
+  test("access_grant refuses a standalone MCP's resource without a client, since ID counts the entitlement only through the client signing in, and names the client and everyone: true; with the client it prepares", async () => {
+    const { id, world: { newco }, prepare, refusal, committed } = await setup()
+    registered(id)
+    id.client("claude-code-acme")
+    const args = { organizationId: newco.id, principal: { kind: "organization" }, resource: acme, scopes: ["acme:read"] }
+    expect(await refusal("access_grant", args)).toMatchObject({
+      code: "INVALID_INPUT",
+      message: expect.stringContaining(`pass clientId claude-code-acme (the client the deploy registers for acme), or prepare standalone_enable with everyone: true`),
+      details: { field_violations: [{ field: "clientId" }] },
+    })
+    const granted = await prepare("access_grant", { ...args, clientId: "claude-code-acme" })
+    expect(granted.preview.summary).toBe(`Grant acme:read on ${acme} through claude-code-acme to everyone in organisation “Newco” (newco)`)
+    await committed(granted)
+    expect(id.entitlements(newco.id).at(-1)).toMatchObject({ clientId: "claude-code-acme", resource: acme, scopes: ["acme:read"] })
+    // The Toolbox reads access live, so it needs no client; and a server that does not know the standalone server's origin cannot tell.
+    expect((await prepare("access_grant", { ...args, resource: toolboxMcp, scopes: ["e2e"] })).preview.summary).toBe(`Grant e2e on ${toolboxMcp} to everyone in organisation “Newco” (newco)`)
+    const { id: bare, world, prepare: unconfigured } = await setup({ standalone: false })
+    registered(bare)
+    expect((await unconfigured("access_grant", { ...args, organizationId: world.newco.id })).preview.summary).toBe(`Grant acme:read on ${acme} to everyone in organisation “Newco” (newco)`)
+  })
+
   test("a failure of ID other than a conflict ends the commit; preparing and committing again finishes it", async () => {
     const { id, world: { newco }, prepare, commit, committed } = await setup()
     registered(id)

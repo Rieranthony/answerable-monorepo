@@ -88,6 +88,7 @@ onCleanup(() => clearInterval(watcher))
 
 console.log(`
 Admin lane is up. ID ${manifest.idOrigin}, the admin MCP ${adminResource}, the Toolbox ${toolboxResource}. Ctrl-C stops it and removes everything.
+To try an MCP of yours on your machine, use bun mcp dev <mcp> (bun mcp setup once): it is the everyday local loop. This lane is for checking the admin MCP and a host.
 At ID's email step type the address given below; the company sign-in that follows accepts it.
 
 1. Staff, an owner of the admin MCP: ${platform.email}

@@ -108,7 +108,7 @@ test("it writes the tool and its test, adds the import and the entry above the m
     .replace("    acmeStatus,\n", "    acmeStatus,\n    notesList,\n"))
   expect(await read("src/db/schema.ts")).toBe(`${isolationImport}${acme["src/db/schema.ts"]}${tableTs("acme", "notes")}`)
   expect(ran.map(({ command }) => command.slice(1).join(" ").replace(/^\S*cli\.ts/, "cli.ts"))).toEqual([
-    "cli.ts db acme generate --name notes", "test", "run typecheck", "run lint", "run test",
+    "cli.ts db acme generate --name notes", "test", "run typecheck", "run lint", "run test", "scripts/env-inventory.ts",
   ])
   expect(stdout().split("\n").map(line => line.replace(/ \(\d+ ms\)$/, ""))).toEqual([
     "ok      write      src/tools/notes-list.ts, src/tools/notes-list.test.ts, src/provider.ts, the notes table in src/db/schema.ts",

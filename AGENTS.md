@@ -71,7 +71,7 @@ New tool: bun mcp add tool <name> <domain.operation> --description "…" [--muta
 Check:    bun mcp check <name>        List: bun mcp list [--json]
 Database: bun mcp db <name> generate (after a change to src/db/schema.ts)        bun mcp db <name> migrate (the local schema)
 Never hand-edit charts/answerable/mcps.json, mcps/toolbox/src/mounted.generated.ts, mcps/standalone/src/served.generated.ts or their package.json dependencies: bun mcp writes them. Commit what bun mcp check rewrites.
-Run:      bun mcp db <name> migrate, then bun run toolbox:dev (serve toolbox or both) or bun run standalone:dev (http://localhost:47510/<name>/mcp)
+Run:      bun mcp setup (once, with your local ID running), then bun mcp dev <name>: migrates, serves it, registers it in your local ID, prints the claude mcp add command
 ```
 
 Read `docs/07-mcp-platform-draft.md` (the foundation decisions that still hold) and `docs/08-capability-platform.md` (the platform) before extending the kit, and `docs/11-admin-mcp.md` before changing the admin MCP; `docs/09-mcp-design-standard.md` holds the rules, `apps/web/content/docs/mcp/quickstart.mdx` shows how to create an MCP and `apps/web/content/docs/toolbox/add-tools.mdx` how to mount one in the Toolbox. Build on the official MCP SDK's primitives rather than re-implementing transport or OAuth. Do not add a Better Auth instance to an MCP.

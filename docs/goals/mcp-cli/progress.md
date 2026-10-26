@@ -244,3 +244,24 @@
   - `mcp:test`: 908 pass, 0 fail, 6 runs in a row, after one fix.
 - **The fix:** the CLI's end-to-end test removed its copy and roles in `afterAll`, which timed out at Bun's 5-second hook limit in about 1 run in 5 under load, and Bun 1.3.1 rejects a hook timeout. The clean-up now runs in the test's own `finally`, under its 300 s timeout.
 - **What's left for CI:** the kind stack, on the push of M4 to M6.
+- **M7, the local loop,** by Sonnet.
+  - **What it built:**
+    - `bun mcp setup`: the `mcp-dev` machine client, `.env` written with mode 0600, no secret printed, root or staff token;
+    - `bun mcp dev`: refuses everything first; migrates every mounted MCP and the hubs; starts the Toolbox and/or the standalone server as `mcp-dev`; registers; grants and widens; prints the `claude mcp add` command; Ctrl-C;
+    - `access_grant` refusing a standalone resource without `clientId`;
+    - the fake ID bumping revisions on link;
+    - `bun mcp check` rewriting the inventories;
+    - `standalone_enable`'s plan shared in `@answerable/mcp-admin/enablement`;
+    - `mcp-cli.journeys.test.ts` (7).
+  - **Measured:**
+    - `bun mcp dev` to ready: 1.9 s cold, 1.6 s warm;
+    - `setup`: 0.5 s;
+    - the new journeys: 11.8 s.
+  - **Not done:** the by-hand Claude Code sign-in, which needs the owner at a browser; the steps are in the M7 report and the final summary.
+  - **The coordinator** found and stopped two leftover `bun --hot` processes from B1's clone proof (Toolbox on 47400, ID): `--hot` ignores SIGTERM. M9 makes the servers exit.
+  - **The agent's gates:**
+    - `mcp:test`: 963 pass;
+    - scripts: 159 at 100%;
+    - mcp-admin: 140;
+    - id-admin: 28;
+    - the acceptance: 70 pass in 154 s.

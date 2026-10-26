@@ -1,7 +1,116 @@
 ---
 title: Test MCPs locally
-description: "Run the acceptance against real Answerable ID with a browser and the official MCP OAuth client, and write a new journey with the kit."
+description: "Run an MCP on your machine with bun mcp dev, signed in through your local Answerable ID and ready for Claude Code; then run the acceptance against real ID with a browser, and write a new journey with the kit."
 ---
+
+```sh
+bun mcp setup
+bun mcp dev acme
+```
+
+`bun mcp setup` runs once. `bun mcp dev acme` then runs the MCP `acme` on your machine: it migrates its schema, serves it, registers it in your local Answerable ID, gives your organisation access and prints the `claude mcp add` command that connects Claude Code to it. Both need your local ID and the development Postgres running ([Before you start](#before-you-start)).
+
+## Run an MCP on your machine
+
+### Before you start
+
+Start two things from the main checkout. Never run `bun dev` or `bun run env:up` from a worktree: its Compose project has the main checkout's name, so it recreates the running Postgres.
+
+| What | Start it with | Port |
+| --- | --- | --- |
+| The development Postgres | `bun run env:up` | `47432` |
+| Your local ID | `bun dev`, or `bun --filter @answerable/id dev` | `47300` |
+
+The first run of ID makes the platform organisation, `answerable`. Nothing else is needed: the Toolbox and the standalone server are started by `bun mcp dev`.
+
+### Connect the CLI to your local ID
+
+```sh
+bun mcp setup
+```
+
+It runs once. It makes a machine client in your local ID, `mcp-dev`, owned by the platform organisation:
+
+- `platform:read platform:write` on ID's admin API, to register an MCP and give your organisation access to it;
+- `toolbox:admin` on the Toolbox's admin API, to enable an MCP in the Toolbox.
+
+It also registers the Toolbox's resource, its admin resource and Claude Code's client for the Toolbox, `claude-code-toolbox`, as [the register Job](/docs/admin/setup) registers them in a deployment. Then it writes `MCP_DEV_ID_CLIENT_ID`, `MCP_DEV_ID_CLIENT_SECRET` and `MCP_DEV_ORGANISATION` to the git-ignored `.env` in the root of the repository it runs in. It never prints the secret.
+
+```text
+ok      toolbox    http://localhost:47400/mcp, its admin resource and claude-code-toolbox: 3 made, 0 changed, 0 found
+ok      client     mcp-dev made: platform:read platform:write on ID, toolbox:admin on the Toolbox
+ok      env        MCP_DEV_ID_CLIENT_ID, MCP_DEV_ID_CLIENT_SECRET and MCP_DEV_ORGANISATION=answerable written to .env
+
+Next:
+  bun mcp list
+  bun mcp dev <mcp>
+```
+
+- **Which credential makes the client.** While ID's root secret is unlocked locally, `bun mcp setup` uses `ROOT_ADMIN_SECRET`, which defaults to ID's own local default. Once a person is a platform administrator, ID locks the root secret. Then `bun mcp setup` asks once, in a terminal, for a [staff token](/docs/id/onboard#get-a-staff-token); the token is not shown or stored. Without a terminal, as in a coding agent's shell, it exits with code 2 and names the flag: `bun mcp setup --staff-token <token>`.
+- **Run it again.** It finds `mcp-dev` working and does nothing. If the client exists but `.env` holds no secret, ID gives it a new one, since a secret is shown once. If you reset ID's database, the secret in `.env` stops working, and `bun mcp setup` makes the client again.
+- **Your organisation.** `bun mcp dev` gives access to one organisation, so that you can sign in and call every tool. It is your local ID's platform organisation, `answerable`. Another: `bun mcp setup --organisation <slug>`, which stores it as `MCP_DEV_ORGANISATION`.
+
+### Run an MCP
+
+```sh
+bun mcp dev acme
+```
+
+From inside `mcps/acme` the name can be left out. In order, it:
+
+1. migrates the schema of every MCP that the servers it starts mount, and each server's own database; the generated lists mount every MCP, so one that was never provisioned on your machine stops the server from starting;
+2. starts the Toolbox (`serve` `toolbox`), the standalone server (`standalone`) or both, with hot reload, as `mcp-dev`, and waits for each `/health` to list the MCP;
+3. for a standalone MCP, registers its resource, `http://localhost:47510/acme/mcp`, and its client, `claude-code-acme`, field for field as [the register Job](/docs/admin/setup) does, then gives your organisation access with the rows `standalone_enable` makes with `everyone: true`;
+4. for a Toolbox MCP, enables it for your organisation through the Toolbox's admin API and grants your organisation its grant string, `acme`, widening the one entitlement that ID keeps for your organisation on the Toolbox;
+5. prints what to do, then runs until Ctrl-C, which stops what it started.
+
+Every step is safe to run again. A scope that the MCP gained since the last run widens the rows ID holds; nothing narrows what your organisation holds.
+
+```text
+ok      database   schemas acme; the database of the standalone server
+ok      standalone serving acme at http://localhost:47510/acme/mcp
+ok      register   http://localhost:47510/acme/mcp and claude-code-acme: 3 made, 0 changed, 0 found
+ok      access     organisation answerable: 6 made, 0 widened
+
+acme runs at http://localhost:47510/acme/mcp
+
+  claude mcp add --transport http acme http://localhost:47510/acme/mcp --client-id claude-code-acme --callback-port 47700
+
+In Claude Code, run /mcp, choose acme, then Authenticate.
+
+Ctrl-C stops the standalone server; an edit to acme reloads it.
+```
+
+For an MCP in the Toolbox, it prints the Toolbox's command instead, `claude mcp add --transport http answerable-toolbox http://localhost:47400/mcp --client-id claude-code-toolbox --callback-port 47700`, and says that enabling and granting are local conveniences: in staging and production, staff do both with `toolbox_enable` and `access_grant` in [the admin MCP](/docs/admin). An MCP served both ways prints both.
+
+**Measured.** On a development machine with the stack running and four MCPs mounted by the standalone server, `bun mcp dev` printed its commands 1.9 seconds after it started for an MCP it had not run before, and 1.55, 1.57 and 1.60 seconds for one it had. The migrations are most of it: about 0.2 seconds for each MCP a started server mounts. `bun mcp setup` took 0.5 seconds. Ctrl-C takes about one second: a server run with `bun --hot` closes its port on SIGTERM and then stays alive to watch for changes, so `bun mcp dev` ends its process group one second after asking it to stop.
+
+**Claude Code.** Run the printed command, then `/mcp` in Claude Code, choose the connection and **Authenticate**. [Connect Claude Code](/docs/mcp/claude-code) covers what you see and the errors you can hit there. Signing in by hand through a browser, with your work account, is the one step that no command does for you.
+
+### What `bun mcp setup` and `bun mcp dev` refuse
+
+Each refusal exits with code 2, before anything starts, and every problem is listed at once with the command that fixes it. A step that fails after that exits with code 1 and names the command that finishes the job.
+
+| You see | Meaning | What to do |
+| --- | --- | --- |
+| `bun mcp setup has not run: MCP_DEV_ID_CLIENT_ID and MCP_DEV_ID_CLIENT_SECRET are not in .env` | `bun mcp dev` has no machine client | `bun mcp setup` |
+| `ID refused the credentials of mcp-dev in .env, as after a reset of its database` | The client in `.env` is not in the ID that answers | `bun mcp setup` |
+| `Answerable ID does not answer on http://localhost:47300` | Your local ID is not running | From the main checkout, `bun dev` or `bun --filter @answerable/id dev`; never `bun dev` from a worktree |
+| `The development Postgres does not answer on localhost:47432` | The Postgres of `bun run env:up` is not running | `bun run env:up` from the main checkout |
+| `Port 47400 is taken, and the Toolbox needs it` (or `47510`, the standalone server) | Another process listens there, such as a server from an earlier run | Find it with `lsof -nP -iTCP:47400 -sTCP:LISTEN` and stop it |
+| `Answerable ID has no organisation <slug>` | `MCP_DEV_ORGANISATION`, or `--organisation`, names an organisation that your ID does not hold | `bun mcp setup --organisation <slug>` with the slug of yours |
+| `mcps/<name>/manifest.json does not exist` | A standalone MCP's scopes in ID come from its manifest | `bun mcp check <name>` |
+| `ID's root secret is locked: a person is a platform administrator, so bun mcp setup needs a staff token` | ID refused `ROOT_ADMIN_SECRET`; without a terminal setup cannot ask | `bun mcp setup --staff-token <token>`; [get one](/docs/id/onboard#get-a-staff-token) |
+| `ID refused the staff token` | The token is wrong or expired | Get another and run `bun mcp setup --staff-token <token>` |
+| `ID refused ROOT_ADMIN_SECRET` | `.env` sets a root secret that ID does not hold | Remove it from `.env`, or use a staff token |
+| `Answerable ID has no organisation answerable, which it makes at its first start` | ID has never started on this database | Start ID once, then `bun mcp setup` |
+| `--organisation <value> is not an organisation's slug` | The slug has capitals, spaces or other characters | Lowercase letters and digits, words joined by single hyphens |
+| `Invalid bun mcp configuration: <NAME>: …` | A variable in `.env` is invalid | Fix the line the message names |
+| `database failed: …`, `register failed: …`, `access failed: …`, `enable failed: …` | A step failed; the message ends with what the step answered | Fix the cause, then run the command named under "Finish the job with" |
+| `access failed: Answerable ID already holds the … with status disabled` | A row of your organisation for that target was disabled | Enable it with `access_enable` in the admin MCP, then `bun mcp dev <name>` |
+| `the Toolbox stopped with exit code N before … listed <name>` (or `the standalone server`) | The server crashed at start; its output is above the message | Read its output; `bun mcp dev <name>` runs it again |
+
+## Run the acceptance
 
 ```sh
 bun install
@@ -9,7 +118,7 @@ bun install
 bun run mcp:test:e2e
 ```
 
-Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). Measured: the 53 tests took 87.3, 84.2 and 82.5 seconds, at one-minute load averages of 4.5, 24.8 and 7.1 when they started; the admin journeys are about 50 of those seconds.
+Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143). Measured: the 70 tests took 154.4 seconds; the CLI journeys below are 11.8 of them, run alone with their start.
 
 ## What the e2e journeys prove
 
@@ -148,6 +257,20 @@ The admin API's evidence check and host client rows are held by the Toolbox's ow
 3. Two organisations, through real tokens, see only their own e2e records: `mcps-alpha` creates one at e2e's path and `mcps-beta` one in the Toolbox; each lists only its own, at the path and in the Toolbox alike, so both servers read the same rows of schema `e2e`; and preparing to delete the other's answers `NOT_FOUND` on both.
 4. The records survive a restart: the standalone server, started again on fresh pools, lists what it wrote before.
 
+## What the CLI journeys prove
+
+`packages/acceptance/src/journeys/mcp-cli.journeys.test.ts` starts its own ID with two organisations, `cli-alpha` and `cli-beta`, the Toolbox on port `47604` and the standalone server on port `47602`. It registers ID as `bun mcp setup` and `bun mcp dev` do, with the code they run (`scripts/mcp/local-id.ts` and `local-access.ts`, on the acceptance's addresses): with the root secret, the Toolbox's resources and host client, `claude-code-toolbox`, and `mcp-dev`; then, as `mcp-dev`, e2e's resource and client, `claude-code-e2e`, and for each organisation its access to e2e and `example` in the Toolbox.
+
+1. Each organisation signs in to the Toolbox through `claude-code-toolbox` and to e2e at its path through `claude-code-e2e`, with a real browser. The e2e token is bound to the path and carries the three e2e scopes.
+2. `example`, made by the CLI and mounted in the Toolbox: `cli-alpha` prepares a note with `example_notes_add`, whose summary names its organisation as ID holds it, confirms it with `toolbox_commit_confirmed`, and `example_notes_list` returns it; `cli-beta` lists none.
+3. Who is calling reaches a tool as ID holds it: `example_example_status` answers the member's name and the organisation's name, as ID's admin API gives them. The preview of `example_notes_add` names the organisation; no tool of `example` puts the person in a preview.
+4. e2e at its path, served alone: its tools are named without the Toolbox's prefix, so `records_list` lists, `records_create` and `e2e_commit` add a record, and the other organisation sees none.
+5. A token that is valid for another resource, the Toolbox's, is refused at `/e2e/mcp` with `401` and its metadata, while e2e's own token is accepted there: the audience binding, proved with one standalone MCP.
+6. Registering again, as `bun mcp dev` does on every run, changes nothing in ID, and one secret opens both of `mcp-dev`'s admin APIs.
+7. A scope an MCP gains later, and a second MCP enabled in the Toolbox, widen the rows ID holds, a resource, a client, two capabilities and an entitlement, and the organisation's one entitlement on the Toolbox, instead of making second ones.
+
+A third MCP, made by `bun mcp new` in a temporary checkout and served as a process of its own, is not in the acceptance: e2e is served both ways by the same standalone code, which the e2e and MCP journeys prove.
+
 ## Ports
 
 | Service | Loopback port |
@@ -246,12 +369,10 @@ This runs the `@answerable/auth`, `@answerable/id-admin`, `@answerable/mcp`, `@a
 ## Run the e2e MCP by hand
 
 ```sh
-bun mcp db e2e migrate
-bun --filter @answerable/mcp-standalone db:migrate
-bun run standalone:dev
+bun mcp dev e2e
 ```
 
-The standalone server serves e2e at `http://localhost:47510/e2e/mcp`, reading the root `.env`. It needs its machine client, `STANDALONE_ID_CLIENT_ID` and `STANDALONE_ID_CLIENT_SECRET`, and e2e's resource and a client registered in your local ID; [Connect Claude Code](/docs/mcp/claude-code#the-e2e-server) shows how. `bun run toolbox:dev` mounts it in the Toolbox too.
+e2e is served both ways, so this starts the Toolbox and the standalone server, with e2e at `http://localhost:47510/e2e/mcp` and in the Toolbox, and prints both commands. [Run an MCP on your machine](#run-an-mcp-on-your-machine) says what it does; [Connect Claude Code](/docs/mcp/claude-code#the-e2e-server) shows by hand what it registers.
 
 ## Host lane
 
@@ -259,7 +380,7 @@ The standalone server serves e2e at `http://localhost:47510/e2e/mcp`, reading th
 bun packages/acceptance/scripts/host-lane.ts
 ```
 
-Tries the Toolbox from two real hosts. It starts real ID and the Toolbox on ports `47600` and `47604`, with one organisation entitled to `e2e/records` only, and keeps them up until Ctrl-C. It prints the email to type at ID's sign-in and the commands below, and logs each request the Toolbox answers and each OAuth event ID records. It is not part of `mcp:test:e2e` and cannot run beside it: the ports and the Compose project are the same. It starts the Toolbox from the same code as the Toolbox journeys (`startToolboxStack`), which prove what it serves.
+`bun mcp dev` is the everyday local loop; this lane checks a host. It tries the Toolbox from two real hosts. It starts real ID and the Toolbox on ports `47600` and `47604`, with one organisation entitled to `e2e/records` only, and keeps them up until Ctrl-C. It prints the email to type at ID's sign-in and the commands below, and logs each request the Toolbox answers and each OAuth event ID records. It is not part of `mcp:test:e2e` and cannot run beside it: the ports and the Compose project are the same. It starts the Toolbox from the same code as the Toolbox journeys (`startToolboxStack`), which prove what it serves.
 
 **Claude Code.**
 
@@ -287,7 +408,7 @@ Ports beyond the acceptance's: `3080` (LibreChat) and `47700` (Claude Code's cal
 bun packages/acceptance/scripts/admin-lane.ts
 ```
 
-Tries the whole onboarding story from Claude Code by hand. It starts real ID, the admin MCP and the Toolbox on ports `47600`, `47606` and `47604`, registered as the admin journeys register them, makes the staff member an owner, and keeps everything up until Ctrl-C. It prints the staff email, the `claude mcp add` command for the admin MCP, the organisation to create (slug `newco` and its domain) and the command for the Toolbox, then the email of the new organisation's person. While it runs it sets the SSO provider of any organisation that holds the spare directory's domain, because a directory with its own credentials needs a secret no tool takes. It is not part of `mcp:test:e2e` and cannot run beside it. [Try it locally](/docs/admin/setup#try-it-locally) has the prompts to type and what each step shows; the admin journeys run the same story headlessly. Both lanes remove ID, its database and their servers when a step fails, and on Ctrl-C.
+`bun mcp dev` is the everyday local loop; this lane checks the admin MCP. It tries the whole onboarding story from Claude Code by hand. It starts real ID, the admin MCP and the Toolbox on ports `47600`, `47606` and `47604`, registered as the admin journeys register them, makes the staff member an owner, and keeps everything up until Ctrl-C. It prints the staff email, the `claude mcp add` command for the admin MCP, the organisation to create (slug `newco` and its domain) and the command for the Toolbox, then the email of the new organisation's person. While it runs it sets the SSO provider of any organisation that holds the spare directory's domain, because a directory with its own credentials needs a secret no tool takes. It is not part of `mcp:test:e2e` and cannot run beside it. [Try it locally](/docs/admin/setup#try-it-locally) has the prompts to type and what each step shows; the admin journeys run the same story headlessly. Both lanes remove ID, its database and their servers when a step fails, and on Ctrl-C.
 
 ## Errors
 

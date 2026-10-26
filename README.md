@@ -87,7 +87,7 @@ The development-only [OAuth test](apps/web/README.md#local-oauth-test) lets the 
 
 | Command | Does |
 | --- | --- |
-| `bun mcp new <name>` | Make `mcps/<name>`, with its local schema, first migration, manifest and tests, and check it; `bun mcp add tool <name> <domain.operation>` adds a tool, `bun mcp check <name>` checks it, `bun mcp list` lists every MCP, and `bun mcp help` says the rest |
+| `bun mcp new <name>` | Make `mcps/<name>`, with its local schema, first migration, manifest and tests, and check it; `bun mcp add tool <name> <domain.operation>` adds a tool, `bun mcp check <name>` checks it, `bun mcp list` lists every MCP, `bun mcp setup` connects the CLI to your local ID once, `bun mcp dev <name>` runs an MCP on your machine and prints the `claude mcp add` command for it, and `bun mcp help` says the rest |
 | `bun run mcp:check <workspace>` | Typecheck, lint and test one workspace, such as `@answerable/mcp-e2e` |
 | `bun run mcp:test` | The suites of `packages/auth`, `packages/id-admin`, `packages/mcp`, `packages/mcp-postgres`, every server under `mcps/` and `bun mcp`'s; the Toolbox, the admin MCP, `packages/mcp-postgres`, `bun mcp` and every MCP with a database need the development Postgres |
 | `bun run mcp:test:e2e` | The journeys against real ID, a browser and the official MCP OAuth client (Docker) |

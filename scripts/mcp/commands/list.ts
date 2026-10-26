@@ -2,6 +2,7 @@
 // staging and production URLs.
 import { hostsFor } from "../../../infra/pipeline/src/environments"
 import { Refusal, type Command } from "../io"
+import { local } from "../local"
 import { declarations, findRoot, manifestOf, type Declaration } from "../workspace"
 
 /** Where an MCP is reached: the Toolbox's one URL, and its own path on the standalone server's origin. */
@@ -9,7 +10,7 @@ const urlsOf = ({ name, serve }: Pick<Declaration, "name" | "serve">, { toolbox,
   ...(serve === "standalone" ? [] : [toolbox]),
   ...(serve === "toolbox" ? [] : [`${standalone}/${name}/mcp`]),
 ]
-const local = { toolbox: "http://localhost:47400/mcp", standalone: "http://localhost:47510" }
+const here = { toolbox: local.toolboxResource, standalone: local.standalone }
 /** An environment's Toolbox and standalone server, as the deployment names them (infra/pipeline/src/environments.ts). */
 const deployed = (environment: "staging" | "production") => {
   const hosts = hostsFor(environment)
@@ -30,7 +31,7 @@ export const list: Command = {
     const mcps = await Promise.all((await declarations(root)).map(async ({ name, serve, database }) => {
       const manifest = await manifestOf(root, name)
       const tools = manifest?.tools.filter(tool => tool.kind !== "commit").map(tool => tool.identity.slice(name.length + 1)) ?? []
-      const urls = { local: urlsOf({ name, serve }, local), staging: urlsOf({ name, serve }, deployed("staging")), production: urlsOf({ name, serve }, deployed("production")) }
+      const urls = { local: urlsOf({ name, serve }, here), staging: urlsOf({ name, serve }, deployed("staging")), production: urlsOf({ name, serve }, deployed("production")) }
       return { name, serve, database, description: manifest?.description ?? "", tools, urls }
     }))
     if (flags.json === true) {
