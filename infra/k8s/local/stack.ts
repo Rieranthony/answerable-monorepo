@@ -226,7 +226,12 @@ async function nextRelease(workdir: string, change: (declaration: { name: string
   for await (const file of new Bun.Glob("mcps/*/{mcp,manifest}.json").scan(repo)) {
     mkdirSync(join(root, file, ".."), { recursive: true })
     const text = await Bun.file(join(repo, file)).json()
-    if (file.endsWith("mcp.json")) change(text)
+    // The name is the directory's: mcp.json holds serve and database only.
+    if (file.endsWith("mcp.json")) {
+      const declaration = { name: file.split("/")[1]!, serve: text.serve as string }
+      change(declaration)
+      text.serve = declaration.serve
+    }
     await Bun.write(join(root, file), JSON.stringify(text))
   }
   const files = await generatedFiles(root)

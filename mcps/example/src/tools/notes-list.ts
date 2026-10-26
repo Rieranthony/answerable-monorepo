@@ -1,20 +1,18 @@
 // One tool = one thing the caller can do. Hosts call this tool example_notes_list in the Toolbox, notes_list alone.
 //
-// name: <domain>.<operation>, from the caller's side: notes.list, projects.search, rfis.create.
-//   Never the vendor or the transport (sharepoint_query), never a mode switch (manage_notes).
-//   Unique in this MCP; the CLI and defineProvider refuse a second one.
+// name: <domain>.<operation>, from the caller's side: notes.list, projects.search, rfis.create. Never the vendor or the transport
+//   (sharepoint_query), never a mode switch (manage_notes). Unique in this MCP.
 //
-// description: the model reads only this to choose the tool. Say what it does, when to use it,
-//   its limits (page size, what it cannot see) and what the ids mean. 40 to 1,000 characters.
-//   Good: "List the notes of a project, newest first, 20 per page. Use projects.search first to find the project id."
-//   Bad: "Gets notes."
+// description: the model reads only this to choose the tool. Say what it does, when to use it and its limits, in 40 to 1,000 characters.
+//   Good: "List the notes of a project, newest first, 20 per page. Use projects.search first to find the project id." Bad: "Gets notes."
 //
-// input and output: Zod objects. Describe every field (.describe("…")): hosts show it to the model.
-//   A list takes limit and cursor and returns items, next_cursor and has_more (the conformance kit checks it).
+// input and output: Zod objects; describe every field with .describe("…"), which hosts show the model. A list takes limit and cursor
+//   and returns items, next_cursor and has_more.
 //
-// execute: gets the checked input and the caller: person, organisation and db. Row-level security limits every query on the
-//   MCP's tables to the caller's organisation, so none filters on it by hand; data from anywhere else is constrained by
-//   organisation.id. Throw ToolError for a failure the caller can fix.
+// execute: gets the checked input and the caller: person, organisation and db.
+//
+// The MCP's tables need no filter on the organisation: row-level security adds it (src/db/schema.ts). Data from anywhere else is
+// constrained by organisation.id. Throw ToolError for a failure the caller can fix.
 import { desc, lt } from "drizzle-orm"
 import { z } from "zod"
 import * as schema from "../db/schema"

@@ -673,14 +673,14 @@ describe("after the root lock, a deploy with a new standalone MCP", () => {
     const { stdout } = await step("enable the MCP and sign in through the browser", () => exec([process.execPath, "infra/k8s/local/standalone-sign-in.ts"], { stdin: JSON.stringify(input) }))
     const result = JSON.parse(stdout.trim().split("\n").at(-1)!) as {
       preview: { summary: string; changes: { path: string }[] }; receipt: { status: string; results: { created: string[]; existing: string[] } }; signedIn: number
-      status: Record<string, unknown>; refused: string; claims: { aud: string; organization_id: string; client_id: string; scope: string }
+      prepared: string; refused: string; claims: { aud: string; organization_id: string; client_id: string; scope: string }
     }
     console.log(`standalone_enable's preview: ${result.preview.summary}; rows: ${result.preview.changes.map(change => change.path).join(", ")}`)
     expect(result.preview.summary).toBe(`Enable ${added} for organisation “Tenant” (${tenant.slug}) from claude-code-${added}, with ${scopes.join(" ")} for everyone in it`)
     expect(result.receipt).toMatchObject({ status: "committed", results: { created: result.preview.changes.map(change => change.path), existing: [] } })
     expect(result.claims).toMatchObject({ aud: mcpUrl(), organization_id: tenant.organizationId, client_id: `claude-code-${added}` })
     expect(result.claims.scope.split(" ").sort()).toEqual([...scopes, "offline_access"].sort())
-    expect(result.status).toMatchObject({ status: "ok", organisation: "Tenant" })
+    expect(result.prepared).toBe("Add “From Claude Code” to the notes of Tenant")
     expect(result.refused).toContain("Access is unavailable for this organisation")
     console.log(`The client organisation's person signed in to ${added} in ${result.signedIn} s`)
   }), 240_000)

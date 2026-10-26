@@ -29,6 +29,8 @@
 | The admin MCP | `admin-mcp.answerable-staging.uk` (resource `/mcp`) | `admin-mcp.answerable.org` |
 | The MCPs the Toolbox serves alone | `mcp.answerable-staging.uk` (resource `/<name>/mcp` per MCP), routed to the Toolbox | `mcp.answerable.org` |
 
+**The MCPs every environment mounts today: `e2e` and `example`** ([D-5](goals/pr13-audit/decisions.md)). There is no per-environment switch ([MCP CLI D10](goals/mcp-cli/decisions.md)), so the Toolbox of staging and of production serves both, as their `mcp.json` files say. `e2e`, served both ways, is the target of every deploy's smoke test; `example` is the docs' MCP, whose files the docs include. No organisation sees either until staff enable it for that organisation (`toolbox_enable` or `standalone_enable` in the admin MCP) and grant it. The risk is a mistake by staff: enabling a test MCP for a client.
+
 Every name is first-level in its zone, so Cloudflare's Universal SSL covers it without an add-on ([D12](goals/civo-deploy/decisions.md)). A new MCP adds no name: the Toolbox serves each by path on `mcp` ([MCP CLI D2](goals/mcp-cli/decisions.md), [D-1](goals/pr13-audit/decisions.md)). Production's records sit beside Vercel's DNS-only `www`, which Terraform never touches.
 
 ```mermaid

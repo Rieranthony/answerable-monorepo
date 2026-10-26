@@ -4,15 +4,14 @@ import { dirname, join, relative, sep } from "node:path"
 import { z } from "zod"
 import { Refusal } from "./io"
 
-/** `mcp.json`: an MCP's declaration, which `mcp.schema.json` publishes for editors and a test keeps equal to this. */
+/** `mcp.json`: where an MCP runs and where its tables live. `bun mcp new` writes it; `serve` and `database` may be changed by hand. */
 export const declaration = z.strictObject({
-  $schema: z.string().optional(),
-  name: z.string().describe("The MCP's name: its provider id and the name of its directory and schema"),
   serve: z.enum(["toolbox", "standalone", "both"]).describe("Where it runs: in the Toolbox, on its own URL, or both"),
   database: z.enum(["shared", "own"]).describe("Where its tables live: a schema in the shared database answerable_mcps, or a database of its own"),
-}).meta({ title: "An MCP's declaration, mcps/<name>/mcp.json", description: "Written by bun mcp new; serve and database may be changed by hand" })
+})
 
-export type Declaration = z.output<typeof declaration>
+/** An MCP's declaration with its name, which is its directory's: its provider id and the name of its schema. */
+export type Declaration = { name: string } & z.output<typeof declaration>
 
 /** What `bun mcp` reads of a manifest: the provider's description and its tools, with their kind and scopes. */
 const manifestShape = z.object({
@@ -39,15 +38,10 @@ export function findRoot(cwd: string): string {
   }
 }
 
-/** Every MCP with a declaration, sorted by name: the directories of `mcps/` with an `mcp.json`, each checked against its directory's name. */
+/** Every MCP with a declaration, sorted by name: the directories of `mcps/` with an `mcp.json`, each named after its directory. */
 export async function declarations(root: string): Promise<Declaration[]> {
   const names = readdirSync(join(root, "mcps")).filter(name => existsSync(join(root, "mcps", name, "mcp.json"))).sort()
-  return Promise.all(names.map(async name => {
-    const path = `mcps/${name}/mcp.json`
-    const read = await readJson(root, path, declaration)
-    if (read.name !== name) throw new Refusal("invalid-file", `${path} names "${read.name}"; the name is the directory's, ${name}`, `git diff ${path}`)
-    return read
-  }))
+  return Promise.all(names.map(async name => ({ name, ...await readJson(root, `mcps/${name}/mcp.json`, declaration) })))
 }
 
 /** An MCP's manifest, or `undefined` before its first test run writes it. */

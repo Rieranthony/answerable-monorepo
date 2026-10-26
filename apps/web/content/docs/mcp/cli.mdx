@@ -11,10 +11,10 @@ bun mcp help
 
 | Command | Use it to |
 | --- | --- |
-| [`bun mcp new`](#bun-mcp-new) | Make an MCP: its files, its database schema, its first migration and its tests |
+| [`bun mcp new`](#bun-mcp-new) | Make an MCP: its files, its first migration, its database schema and its tests |
 | [`bun mcp add tool`](#bun-mcp-add-tool) | Add a tool to an MCP |
 | [`bun mcp list`](#bun-mcp-list) | See every MCP, where it runs and its URLs |
-| [`bun mcp check`](#bun-mcp-check) | Typecheck, lint and test an MCP |
+| [`bun mcp check`](#bun-mcp-check) | Typecheck, lint and test an MCP, and refuse code that sets the caller's organisation |
 | [`bun mcp db`](#bun-mcp-db) | Write a migration for a change to its tables, or migrate its local schema |
 | [`bun mcp setup`](#bun-mcp-setup) | Connect `bun mcp` to your local Answerable ID, once |
 | [`bun mcp dev`](#bun-mcp-dev) | Run an MCP on your machine and connect Claude Code to it |
@@ -23,10 +23,10 @@ bun mcp help
 ## How it behaves
 
 - **A terminal asks. A coding agent's shell does not.** In a terminal, a missing answer is asked, one question at a time. Without a terminal, `bun mcp` never waits for input: a missing answer exits with code 2 and prints the exact command to run again, with a placeholder where each missing answer goes.
-- **One name for each flag.** The flags are the same in the questions, on the command line and in these docs: `--description`, `--serve`, `--database`, `--tool`, `--tool-description` and `--mutation`. There are no short forms and no aliases. `--description` always describes what the command makes: the MCP in `new`, the tool in `add tool`.
+- **One name for each flag.** The flags are the same in the questions, on the command line and in these docs: `--description`, `--serve`, `--database`, `--tool`, `--tool-description` and `--mutation`. There are no short forms and no aliases. `--description` always describes what the command makes: the MCP in `new`, the tool in `add tool`. A flag given twice takes its last value, and a value that starts with `-` goes after `=`, as in `--description=-…`.
 - **Every answer at once.** A command checks every answer it was given before it writes anything. Without a terminal it lists every answer that is missing or wrong, a line each, in the order of the questions, then one command to run again.
 - **Nothing is half-written.** Every check runs before the first file is written. A step that fails after that leaves the files, says which step failed, and names the command that finishes the job.
-- **Short, steady output.** One line for each step, then `Next:` with the commands that come next. `--json` prints the same facts as one object: `{ "ok": true, "steps": […], "next": […] }`, or `{ "ok": false, "error": { "code", "message", "fix", "problems": [{ "code", "message" }] } }` with a problem for each wrong answer.
+- **Short, steady output.** One line for each step, then `Next:` with the commands that come next. A refusal or a failure prints its message, then the command to run, on standard error; the exit code says which it was.
 - **Safe to repeat where it can be.** `check`, `dev`, `db migrate` and `setup` can run any number of times. `add tool` refuses a name that exists, and names the file.
 - **The arguments.** In `add tool [mcp] <domain.operation>`, the word with a dot is the tool and the other is the MCP.
 
@@ -66,7 +66,7 @@ Each MCP takes two lines. The first is its name, where it runs, its database mod
 
 <CliReference command="dev" />
 
-[Test MCPs locally](/docs/mcp/local-testing#run-an-mcp-on-your-machine) says what it does, in order.
+[Run an MCP on your machine](/docs/mcp/run-locally#run-an-mcp) says what it does, in order.
 
 ## bun mcp help
 
@@ -78,7 +78,7 @@ Each MCP takes two lines. The first is its name, where it runs, its database mod
 
 ## Errors
 
-Every error has a code. With `--json` it is `error.code`, and each wrong answer has its own in `error.problems`. A step that fails answers `<step>-failed`, such as `database-failed`, for each step in the tables above.
+Each error has a code, which names its row here; `bun mcp` prints the message and the command to run, not the code. A step that fails is `<step>-failed`, such as `database-failed`, for each step in the tables above.
 
 <CliErrors />
 

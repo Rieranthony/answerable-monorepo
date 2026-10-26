@@ -59,7 +59,8 @@ test("each MCP served alone answers at its own path to a token for that path alo
   const { client: e2e } = await alone(hubbed, "e2e", e2eScopes)
   expect((await e2e.listTools()).tools.map(tool => tool.name)).toEqual(["identity_get", "records_list", "records_show", "records_create", "records_delete", "e2e_commit", "e2e_commit_confirmed"])
   const { client: example } = await alone(hubbed, "example", ["example:read", "example:write"])
-  expect((await example.callTool({ name: "example_status", arguments: {} })).structuredContent).toEqual({ status: "ok", person: "Ada Lovelace", organisation: "Acme" })
+  // Who is calling reaches a tool served alone: the preview of notes_add names the organisation as the fake ID holds it.
+  expect((await example.callTool({ name: "notes_add", arguments: { title: "First" } })).structuredContent).toMatchObject({ preview: { summary: "Add “First” to the notes of Acme" } })
   const { token } = await person(hubbed, "e2e", ["e2e:read"])
   expect((await post(hubbed, "/e2e/mcp", token)).status).toBe(200)
   for (const [path, metadata] of [["/example/mcp", "/example/mcp"], ["/mcp", "/mcp"]]) {
@@ -123,7 +124,7 @@ test("a read served alone keeps no result limit, which the hub's 100 KiB is", as
 test("health lists every MCP the Toolbox serves, in its hub or alone; an MCP served alone only is not in the hub", async () => {
   const hubbed = await hub()
   expect(await (await hubbed.mcp.fetch(`${origin}/health`)).json()).toEqual({ status: "ok", databases: { toolbox: "ok" }, providers: ["e2e", "example"] })
-  expect(await names(await (await hubbed.member(["e2e", "example"])).connect())).not.toContain("example_example_status")
+  expect(await names(await (await hubbed.member(["e2e", "example"])).connect())).not.toContain("example_notes_list")
 })
 
 // A record through e2e's path: prepared with records_create, committed with e2e_commit.

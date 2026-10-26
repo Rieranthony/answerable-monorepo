@@ -9,11 +9,11 @@ const manifest = (id: string, description: string, names: string[]) => JSON.stri
 let repository: Awaited<ReturnType<typeof tempRepository>>
 beforeEach(async () => {
   repository = await tempRepository({
-    "mcps/zeta/mcp.json": '{ "$schema": "../../scripts/mcp/mcp.schema.json", "name": "zeta", "serve": "standalone", "database": "own" }\n',
+    "mcps/zeta/mcp.json": '{ "serve": "standalone", "database": "own" }\n',
     "mcps/zeta/manifest.json": manifest("zeta", "Reads the weather. It has one tool.", ["weather.get"]),
-    "mcps/acme/mcp.json": '{ "name": "acme", "serve": "both", "database": "shared" }\n',
+    "mcps/acme/mcp.json": '{ "serve": "both", "database": "shared" }\n',
     "mcps/acme/manifest.json": manifest("acme", "Notes for construction projects: list, read and add notes on a project", ["notes.add", "notes.list"]),
-    "mcps/beta/mcp.json": '{ "name": "beta", "serve": "toolbox", "database": "shared" }\n',
+    "mcps/beta/mcp.json": '{ "serve": "toolbox", "database": "shared" }\n',
     "mcps/toolbox/package.json": "{}\n",
   })
 })
@@ -38,28 +38,6 @@ test("one line per MCP with an mcp.json, sorted by name: where it runs, its data
   ].join("\n"))
 })
 
-test("--json names every MCP and its tools, commit tools aside", async () => {
-  const { stdout } = await run(["--json"])
-  expect(JSON.parse(stdout())).toEqual({
-    ok: true,
-    mcps: [
-      {
-        name: "acme", serve: "both", database: "shared", description: "Notes for construction projects: list, read and add notes on a project", tools: ["notes.add", "notes.list"],
-        urls: {
-          local: ["http://localhost:47400/mcp", "http://localhost:47400/acme/mcp"],
-          staging: ["https://toolbox.answerable-staging.uk/mcp", "https://mcp.answerable-staging.uk/acme/mcp"],
-          production: ["https://toolbox.answerable.org/mcp", "https://mcp.answerable.org/acme/mcp"],
-        },
-      },
-      { name: "beta", serve: "toolbox", database: "shared", description: "", tools: [], urls: { local: ["http://localhost:47400/mcp"], staging: ["https://toolbox.answerable-staging.uk/mcp"], production: ["https://toolbox.answerable.org/mcp"] } },
-      {
-        name: "zeta", serve: "standalone", database: "own", description: "Reads the weather. It has one tool.", tools: ["weather.get"],
-        urls: { local: ["http://localhost:47400/zeta/mcp"], staging: ["https://mcp.answerable-staging.uk/zeta/mcp"], production: ["https://mcp.answerable.org/zeta/mcp"] },
-      },
-    ],
-  })
-})
-
 test("with no MCP it says how to make one, and it takes no argument", async () => {
   const empty = await tempRepository()
   try {
@@ -71,11 +49,9 @@ test("with no MCP it says how to make one, and it takes no argument", async () =
   expect([(await run(["acme"])).code, (await run(["acme"])).stderr().split("\n")[0]]).toEqual([2, "bun mcp list takes no argument; it was given acme"])
 })
 
-test("an mcp.json that is not a declaration, or names another directory, is refused naming the file", async () => {
-  await Bun.write(`${repository.root}/mcps/beta/mcp.json`, '{ "name": "beta", "serve": "everywhere", "database": "shared" }\n')
+test("an mcp.json that is not a declaration is refused naming the file: its serve, or a key it does not hold, such as the name, which is the directory's", async () => {
+  await Bun.write(`${repository.root}/mcps/beta/mcp.json`, '{ "serve": "everywhere", "database": "shared" }\n')
   expect((await run([])).stderr()).toStartWith('mcps/beta/mcp.json is not valid: ✖ Invalid option: expected one of "toolbox"|"standalone"|"both" → at serve')
-  await Bun.write(`${repository.root}/mcps/beta/mcp.json`, '{ "name": "gamma", "serve": "toolbox", "database": "shared" }\n')
-  const { code, stdout } = await run(["--json"])
-  const message = 'mcps/beta/mcp.json names "gamma"; the name is the directory\'s, beta'
-  expect([code, JSON.parse(stdout()).error]).toEqual([2, { code: "invalid-file", message, fix: "git diff mcps/beta/mcp.json", problems: [{ code: "invalid-file", message }] }])
+  await Bun.write(`${repository.root}/mcps/beta/mcp.json`, '{ "name": "beta", "serve": "toolbox", "database": "shared" }\n')
+  expect((await run([])).stderr()).toStartWith('mcps/beta/mcp.json is not valid: ✖ Unrecognized key: "name"')
 })

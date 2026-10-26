@@ -42,7 +42,7 @@ Everything else has a default: `kind` is `read` unless the definition has `prepa
 
 The rule for every API decision in the goal: if a field, option or step can be derived or defaulted, it is. Names are the ones authors already know: `defineTool`, not `defineCapability`. Error messages name the definition and say what to change.
 
-**SDK from day one.** Every export carries documentation comments that the reference page is generated from; the `exports` map is the whole public surface; nothing imports a package's internals; types are exported; packages are versioned `0.x` with a changelog; each package has a README that runs; examples live in `mcps/e2e` and are tested. A public npm release is not in the goal, and nothing in the goal would have to change for it.
+**SDK from day one.** Every export carries documentation comments that the reference page is generated from; the `exports` map is the whole public surface; nothing imports a package's internals; types are exported; packages are versioned `0.x` (with no changelog while they are private: pull request 13, D-7); each package has a README that runs; examples live in `mcps/e2e` and are tested. A public npm release is not in the goal, and nothing in the goal would have to change for it.
 
 **Documentation.** Every behaviour that lands has its page on the docs site before the brief is done, following [`AGENTS.md`](../AGENTS.md): a copy-pasteable command or definition first, tables, a Limits section, an Errors table, "Not yet." for what is not built, `title` and `description` on every page, cross-links both ways.
 

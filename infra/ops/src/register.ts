@@ -52,11 +52,11 @@ const roles = ["team", "admin", "owner"] as const
 /**
  * Register in ID what the deployment needs, as register's own machine client, `ops-register` (`platform:read platform:write`): the run that finds no
  * secret in `ops-id-client` mints that client with `rootSecret` first, stores its secret, and goes on with it; every later run needs no root
- * secret. Then the Toolbox and the admin MCP, as their docs register them (apps/web/content/docs/toolbox/admin.mdx and
- * admin/setup.mdx), and for each standalone or both MCP of `mcps`, which the Toolbox serves alone, its resource, `<mcpOrigin>/<name>/mcp`, its
+ * secret. Then the Toolbox, as `toolboxRows` registers it, and the admin MCP, as its docs register it (apps/web/content/docs/admin/setup.mdx),
+ * and for each standalone or both MCP of `mcps`, which the Toolbox serves alone, its resource, `<mcpOrigin>/<name>/mcp`, its
  * Claude Code client, `claude-code-<name>`, and their link.
  *
- * Every resource and client is read first: one ID lacks is created with its docs' `Idempotency-Key`; one that differs is changed with `If-Match`,
+ * Every resource and client is read first: one ID lacks is created with its `Idempotency-Key`; one that differs is changed with `If-Match`,
  * under `<key>-r<revision>`, in the fields that differ. Scopes and redirect URIs only widen: the Toolbox's resource keeps what enable calls added. An
  * MCP's own resource follows its manifest, and a scope the manifest dropped is logged as it goes. An MCP removed from the list keeps its rows.
  * Links are made under `<key>-r<revision>` of the client when its read lacks them; capabilities, entitlements and groups are created when missing.

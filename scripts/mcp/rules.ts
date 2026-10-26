@@ -7,11 +7,25 @@ import { importedBindings, toolBinding, toolPath, wireName } from "./templates"
 import { declaration } from "./workspace"
 
 /**
- * Names no MCP may take: the platform's own services, hosts and schemas, and the names whose workspace, `@answerable/mcp-<name>`, would be one of
- * the platform's packages (`platform`, `postgres`, and the servers'), which the generator therefore keeps among a server's dependencies.
- * `e2e` and `example` are taken by their directories.
+ * Names no MCP may take, each with its reason. `platform` and `postgres` matter to the generator too: a server keeps every dependency whose name,
+ * `@answerable/mcp-<name>`, is reserved. `e2e` and `example` are taken by their directories.
  */
-export const reservedNames = ["toolbox", "admin", "id", "mcp", "mcps", "standalone", "api", "www", "test", "ops", "public", "drizzle", "platform", "postgres"]
+export const reservedNames = [
+  "toolbox", // the Toolbox's own provider id, whose tools are toolbox_*, and its workspace, @answerable/mcp-toolbox
+  "admin", // the admin MCP's workspace, @answerable/mcp-admin, and the Toolbox's admin resource, /admin
+  "mcp", // the Toolbox serves its hub at /mcp and each standalone MCP at /<name>/mcp, by the path's first segment: mcp would take the hub's path
+  "mcps", // the folder of every MCP, the mcps image and the shared database, answerable_mcps
+  "standalone", // a value of --serve, which a person who types it as a name means: the refusal says so
+  "id", // Answerable ID, the platform's identity service at id.<zone>; no collision since MCPs are served by path, but it reads as ID's
+  "api", // ID's admin API, /api/admin; no collision on the Toolbox's origin, but it reads as the platform's API
+  "www", // the site's host, www.<zone>; no collision since MCPs are served by path, but it reads as the site's
+  "ops", // the deployment's ops Jobs and image (infra/ops); no collision since MCPs have their own workspace prefix, but it reads as theirs
+  "test", // reads as a test fixture; it collided with the per-MCP test roles, which grants replaced (pull request 13, D-3)
+  "public", // Postgres's default schema, which no MCP may touch
+  "drizzle", // drizzle-kit's default schema for its journal
+  "platform", // @answerable/mcp-platform
+  "postgres", // @answerable/mcp-postgres
+]
 
 /** The values of `--serve` and `--database`, the default first where there is one. */
 export const choices = { serve: declaration.shape.serve.options, database: declaration.shape.database.options }

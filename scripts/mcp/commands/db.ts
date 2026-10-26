@@ -1,5 +1,5 @@
 // bun mcp db [mcp] generate|migrate: an MCP's migration for a change to its schema, or its local development schema provisioned and migrated.
-import { assertTablesInSchema, generateMigration, migrateLocal } from "../database"
+import { assertTablesInSchema, generateMigration } from "../database"
 import { definitions } from "../definitions"
 import { Refusal, runSteps, valueOf, type Command } from "../io"
 import { findRoot, resolveMcp } from "../workspace"
@@ -16,11 +16,10 @@ export const db: Command = {
     if (action === "migrate" && flags.name) throw new Refusal("unexpected-flag", "--name names the migration bun mcp db generate writes; migrate takes none", usage)
     const root = findRoot(io.cwd)
     const mcp = await resolveMcp(root, io.cwd, positionals.length === 2 ? positionals[0] : undefined, `bun mcp db <mcp> ${action}`)
-    const json = flags.json === true
-    if (action === "migrate") return runSteps(io, json, [{ name: "database", fix: `bun mcp db ${mcp.name} migrate`, run: () => migrateLocal(root, mcp) }], () => [])
+    if (action === "migrate") return runSteps(io, [{ name: "database", fix: `bun mcp db ${mcp.name} migrate`, run: async () => (await io.migrate(root, [mcp]))[0]! }], () => [])
     await assertTablesInSchema(root, mcp.name)
     let written: string[] = []
-    return runSteps(io, json, [{
+    return runSteps(io, [{
       name: "migration",
       fix: `bun mcp db ${mcp.name} generate`,
       run: async () => {

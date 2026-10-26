@@ -119,7 +119,7 @@ A `standalone` or `both` MCP is its own resource, `https://mcp.<zone>/<name>/mcp
 
 ### Some tools, not all
 
-A [grant string](/docs/toolbox#grant-strings) can name one capability, such as `e2e/records.list`, as well as a provider or a domain. To give a group one tool: `groups_create`, then `access_grant` to the group, `principal` `{ "kind": "group", "id": … }` with that string in `scopes`, then `groups_addmember` for each person, who must have signed in once. `groups_dropmember` takes the tool away again, and `access_grant` with `{ "kind": "member", "id": … }` gives one person a tool of their own. The Toolbox applies each change to the person's current token within 60 seconds; the admin journeys prove it against real ID: [What the admin journeys prove](/docs/mcp/local-testing#what-the-admin-journeys-prove), A8.
+A [grant string](/docs/toolbox#grant-strings) can name one capability, such as `e2e/records.list`, as well as a provider or a domain. To give a group one tool: `groups_create`, then `access_grant` to the group, `principal` `{ "kind": "group", "id": … }` with that string in `scopes`, then `groups_addmember` for each person, who must have signed in once. `groups_dropmember` takes the tool away again, and `access_grant` with `{ "kind": "member", "id": … }` gives one person a tool of their own. The Toolbox applies each change to the person's current token within 60 seconds; the admin journeys prove it against real ID: [What the acceptance proves](/docs/mcp/local-testing#what-the-acceptance-proves), A8.
 
 Two rules shape it. Grants add up and nothing denies: an organisation-wide grant of `e2e` covers every tool whatever else is granted, so revoke it first. And ID keeps one entitlement per principal and resource, so `access_grant` refuses a second: to change which tools a group holds, change the entitlement's scopes with [updateEntitlement](/docs/id/admin-api/entitlements/updateEntitlement), or keep one group per set of tools and move people between them.
 
@@ -205,7 +205,7 @@ A write that ID takes without a precondition says so in its preview's warnings.
 1. In the browser you use for Answerable ID, open `http://localhost:47300/security` (your ID's origin and `/security`) and choose **Verify sign-in**. ID sends you to your company's directory with `prompt=login` and accepts only a sign-in from the last five minutes.
 2. In Claude Code, run `/mcp`, choose the admin MCP, **Clear authentication**, then **Authenticate**. The new authorisation takes the new sign-in time.
 
-Do them in that order: an authorisation made before step 1 keeps the old time, as does one made through the same browser session without step 1. Signing out of ID and in again is not enough, because a sign-in that does not ask the directory to prompt can carry the directory's earlier time. A journey runs exactly this against a real ID: [What the admin journeys prove](/docs/mcp/local-testing#what-the-admin-journeys-prove).
+Do them in that order: an authorisation made before step 1 keeps the old time, as does one made through the same browser session without step 1. Signing out of ID and in again is not enough, because a sign-in that does not ask the directory to prompt can carry the directory's earlier time. A journey runs exactly this against a real ID: [What the acceptance proves](/docs/mcp/local-testing#what-the-acceptance-proves).
 
 ## How authority is read
 
@@ -220,7 +220,7 @@ On every request that lists or calls tools, in this order:
 
 **Fail closed.** When ID does not answer the role read, `tools/list` fails and every call answers `UPSTREAM_UNAVAILABLE`. Nothing is served from memory.
 
-**What it costs.** One round trip to ID per request. Against a real ID, 25 `tools/list` requests, each with one access read, took a median of 31.3 to 34.3 ms and a maximum of 35.2 to 50.7 ms in five runs; the reads alone took a median of 26.7 to 29.8 ms: [What the admin journeys prove](/docs/mcp/local-testing#what-the-admin-journeys-prove).
+**What it costs.** One round trip to ID per request. Against a real ID, 25 `tools/list` requests, each with one access read, took a median of 31.3 to 34.3 ms and a maximum of 35.2 to 50.7 ms in five runs; the reads alone took a median of 26.7 to 29.8 ms: [What the acceptance proves](/docs/mcp/local-testing#what-the-acceptance-proves).
 
 ## Evidence
 

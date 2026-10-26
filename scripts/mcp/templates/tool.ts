@@ -1,70 +1,46 @@
-// One tool's file and its test: a read that lists its domain's table, a mutation that adds a row to it, or the status tool `bun mcp new` writes
-// when the first tool is skipped. Each file opens with the guidance the design gives (docs/goals/mcp-cli/design.md).
+// One tool's file and its test: a read that lists its domain's table, or a mutation that adds a row to it. Each file opens with the guidance the
+// design gives (docs/goals/mcp-cli/design.md), each rule said once.
 import { tableBinding, toolBinding, wireName, type ToolAnswers } from "./names"
 
-/** The status tool's description: the first tool when `bun mcp new` is not given one. */
-export const statusDescription = (name: string) => `Report that ${name} is running and who is calling: your name and your organisation's. Replace it with the MCP's first real tool.`
+// The guidance a tool's file opens with, each rule said once: its name, its description, its fields, what execute gets or a mutation's risk,
+// prepare and commit, and the organisation rule.
+function guidance(name: string, { name: tool, mutation }: ToolAnswers) {
+  const wire = wireName(tool)
+  const lines = [
+    `One tool = one thing the caller can do. Hosts call this tool ${name}_${wire} in the Toolbox, ${wire} alone.`,
+    "",
+    "name: <domain>.<operation>, from the caller's side: notes.list, projects.search, rfis.create. Never the vendor or the transport",
+    "  (sharepoint_query), never a mode switch (manage_notes). Unique in this MCP.",
+    "",
+    ...(mutation ? [
+      "description: the model reads only this to choose the tool. Say what it changes, when to use it and its limits, in 40 to 1,000",
+      `  characters, and that it prepares an intent: use the word "prepare" or "intent".`,
+      `  Good: "Prepare a new note on a project; commit it to save it. Use notes.list first to avoid duplicates." Bad: "Adds notes."`,
+      "",
+      `input and output: Zod objects; describe every field with .describe("…"), which hosts show the model. output is the receipt's results.`,
+      "",
+      "risk: low lets the agent commit on its own; normal, the default, shows the person the preview's summary first; high needs a person's",
+      "  approval.",
+      "prepare: checks the input, reads nothing that changes and changes nothing; its summary, which the person confirms, names their",
+      "  organisation.",
+      "commit: applies exactly what was prepared, from plan; a new row takes organisation_id from organisation.id.",
+    ] : [
+      "description: the model reads only this to choose the tool. Say what it does, when to use it and its limits, in 40 to 1,000 characters.",
+      `  Good: "List the notes of a project, newest first, 20 per page. Use projects.search first to find the project id." Bad: "Gets notes."`,
+      "",
+      `input and output: Zod objects; describe every field with .describe("…"), which hosts show the model. A list takes limit and cursor`,
+      "  and returns items, next_cursor and has_more.",
+      "",
+      "execute: gets the checked input and the caller: person, organisation and db.",
+    ]),
+    "",
+    "The MCP's tables need no filter on the organisation: row-level security adds it (src/db/schema.ts). Data from anywhere else is",
+    "constrained by organisation.id. Throw ToolError for a failure the caller can fix.",
+  ]
+  return `${lines.map(line => (line ? `// ${line}` : "//")).join("\n")}\n`
+}
 
-const naming = (name: string, tool: string) => `// One tool = one thing the caller can do. Hosts call this tool ${name}_${wireName(tool)} in the Toolbox, ${wireName(tool)} alone.
-//
-// name: <domain>.<operation>, from the caller's side: notes.list, projects.search, rfis.create.
-//   Never the vendor or the transport (sharepoint_query), never a mode switch (manage_notes).
-//   Unique in this MCP; the CLI and defineProvider refuse a second one.
-//`
-
-const readGuidance = (name: string, tool: string) => `${naming(name, tool)}
-// description: the model reads only this to choose the tool. Say what it does, when to use it,
-//   its limits (page size, what it cannot see) and what the ids mean. 40 to 1,000 characters.
-//   Good: "List the notes of a project, newest first, 20 per page. Use projects.search first to find the project id."
-//   Bad: "Gets notes."
-//
-// input and output: Zod objects. Describe every field (.describe("…")): hosts show it to the model.
-//   A list takes limit and cursor and returns items, next_cursor and has_more (the conformance kit checks it).
-//
-// execute: gets the checked input and the caller: person, organisation and db. Row-level security limits every query on the
-//   MCP's tables to the caller's organisation, so none filters on it by hand; data from anywhere else is constrained by
-//   organisation.id. Throw ToolError for a failure the caller can fix.
-`
-
-const mutationGuidance = (name: string, tool: string) => `${naming(name, tool)}
-// description: the model reads only this to choose the tool. Say what it changes, that it prepares an intent to commit, when to use it
-//   and its limits. 40 to 1,000 characters, with the word "prepare" or "intent" (the conformance kit checks it).
-//   Good: "Prepare a new note on a project; commit it to save it. Use notes.list first to avoid duplicates."
-//   Bad: "Adds notes."
-//
-// input and output: Zod objects. Describe every field (.describe("…")): hosts show it to the model. output is the receipt's results.
-//
-// risk: low lets the agent commit on its own; normal, the default, shows the person the preview's summary first; high needs a
-//   person's approval.
-//
-// prepare: computes the preview and changes nothing. It checks the input, reads nothing that changes, and returns the summary the
-//   person confirms, naming their organisation.
-//
-// commit: applies exactly what was prepared, from plan. Row-level security limits it on the MCP's tables to the caller's
-//   organisation, so it sets organisation_id from organisation.id and filters on nothing there by hand; data from anywhere else
-//   is constrained by organisation.id. Throw ToolError for a failure the caller can fix.
-`
-
-const status = (name: string) => `${readGuidance(name, `${name}.status`)}import { z } from "zod"
-import { defineTool } from "../mcp"
-
-export const ${toolBinding(`${name}.status`)} = defineTool({
-  name: "${name}.status",
-  description: ${JSON.stringify(statusDescription(name))},
-  input: z.object({}),
-  output: z.object({
-    status: z.string().describe("ok while the MCP runs"),
-    person: z.string().describe("Your name"),
-    organisation: z.string().describe("Your organisation's name"),
-  }),
-  example: {},
-  async execute(_input, { person, organisation }) {
-    return { status: "ok", person: person.name, organisation: organisation.name }
-  },
-})
-`
-
-const read = (name: string, { name: tool, description }: ToolAnswers) => `${readGuidance(name, tool)}import { desc, lt } from "drizzle-orm"
+const read = (name: string, tool: ToolAnswers) => `${guidance(name, tool)}import { desc, lt } from "drizzle-orm"
 import { z } from "zod"
 import * as schema from "../db/schema"
 import { defineTool } from "../mcp"
@@ -75,9 +51,9 @@ const item = z.object({
   created_at: z.iso.datetime().describe("When it was added"),
 })
 
-export const ${toolBinding(tool)} = defineTool({
-  name: "${tool}",
-  description: ${JSON.stringify(description)},
+export const ${toolBinding(tool.name)} = defineTool({
+  name: "${tool.name}",
+  description: ${JSON.stringify(tool.description)},
   input: z.object({
     limit: z.number().int().min(1).max(100).default(20).describe("Items per page, 1 to 100"),
     cursor: z.uuid().optional().describe("next_cursor from the previous page; omit it for the first page"),
@@ -89,7 +65,7 @@ export const ${toolBinding(tool)} = defineTool({
   }),
   example: { limit: 5 },
   async execute({ limit, cursor }, { db }) {
-    const table = schema.${tableBinding(tool.split(".")[0]!)}
+    const table = schema.${tableBinding(tool.name.split(".")[0]!)}
     const rows = await db.select().from(table).where(cursor ? lt(table.id, cursor) : undefined).orderBy(desc(table.id)).limit(limit + 1)
     const items = rows.slice(0, limit).map(row => ({ id: row.id, title: row.title, created_at: row.created_at.toISOString() }))
     const has_more = rows.length > limit
@@ -98,15 +74,15 @@ export const ${toolBinding(tool)} = defineTool({
 })
 `
 
-const mutation = (name: string, { name: tool, description }: ToolAnswers) => {
-  const domain = tool.split(".")[0]!
-  return `${mutationGuidance(name, tool)}import { z } from "zod"
+const mutation = (name: string, tool: ToolAnswers) => {
+  const domain = tool.name.split(".")[0]!
+  return `${guidance(name, tool)}import { z } from "zod"
 import * as schema from "../db/schema"
 import { defineMutation } from "../mcp"
 
-export const ${toolBinding(tool)} = defineMutation({
-  name: "${tool}",
-  description: ${JSON.stringify(description)},
+export const ${toolBinding(tool.name)} = defineMutation({
+  name: "${tool.name}",
+  description: ${JSON.stringify(tool.description)},
   risk: "normal",
   input: z.object({ title: z.string().trim().min(1).max(200).describe("The title, 1 to 200 characters") }),
   output: z.object({ id: z.uuid(), title: z.string(), created_at: z.iso.datetime() }),
@@ -127,24 +103,8 @@ export const ${toolBinding(tool)} = defineMutation({
 `
 }
 
-/** A tool's file, `src/tools/<domain>-<operation>.ts`; without `tool`, the status tool of MCP `name`. */
-export const toolTs = (name: string, tool?: ToolAnswers) => (!tool ? status(name) : tool.mutation ? mutation(name, tool) : read(name, tool))
-
-const statusTest = (name: string) => `import { expect, test } from "bun:test"
-import { createTestMcp } from "@answerable/mcp-postgres/testing"
-import { provider } from "../provider"
-
-test("${name}_status says who is calling and from which organisation", async () => {
-  const mcp = await createTestMcp(provider)
-  try {
-    const client = await mcp.connect({ person: { name: "Ada Lovelace" }, organisation: { name: "Acme" } })
-    const result = await client.callTool({ name: "${name}_status", arguments: {} })
-    expect(result.structuredContent).toEqual({ status: "ok", person: "Ada Lovelace", organisation: "Acme" })
-  } finally {
-    await mcp.close()
-  }
-})
-`
+/** A tool's file, `src/tools/<domain>-<operation>.ts`: a read, or a mutation. */
+export const toolTs = (name: string, tool: ToolAnswers) => (tool.mutation ? mutation(name, tool) : read(name, tool))
 
 const readTest = ({ name: tool }: ToolAnswers) => {
   const table = `schema.${tableBinding(tool.split(".")[0]!)}`
@@ -205,5 +165,5 @@ test("${wireName(tool)} prepares a row, and the commit tool its intent names add
 `
 }
 
-/** A tool's test, beside its file; without `tool`, the status tool's test of MCP `name`. */
-export const toolTest = (name: string, tool?: ToolAnswers) => (!tool ? statusTest(name) : tool.mutation ? mutationTest(tool) : readTest(tool))
+/** A tool's test, beside its file. */
+export const toolTest = (tool: ToolAnswers) => (tool.mutation ? mutationTest(tool) : readTest(tool))

@@ -85,6 +85,8 @@ The tests need the development Postgres on port 47432. A sandbox that cannot rea
 | **Connections it adds** | None | Every server that serves it opens one more pool: up to 10 connections for each replica |
 | **Pick it when** | Almost always | The MCP needs hard isolation, a size or a maintenance window of its own, or a client asks for it |
 
+**What `own` isolates, and what it does not.** Its tables are in a database of their own, which only its two logins, and the instance's administrator, may connect to: the shared database's logins cannot reach them, and no other MCP's migration can alter them. It does not leave the instance: the database is on the same Postgres instance as every other, and shares its CPU, memory, connection limit and backups. And its runtime URL, with that login's password, is in the environment of the process that serves it, the Toolbox, which serves every MCP: code in that process can read it.
+
 The code is the same in both. Tables are `pgSchema("acme")` tables either way, so moving an MCP between modes is a dump and a restore of its schema, with no code change. A command that does it: Not yet. Trigger: the first MCP that changes its database mode. `bun mcp list` shows each MCP's mode, and `bun mcp check` warns when MCPs of their own database would take the servers' pools past the connection limit.
 
 ## Limits
@@ -92,12 +94,12 @@ The code is the same in both. Tables are `pgSchema("acme")` tables either way, s
 | Limit | Value |
 | --- | --- |
 | Where a table may be | In your MCP's schema: `bun mcp db generate` refuses a table defined elsewhere. Postgres refuses your tools a new table anywhere, but not a hand-written migration that makes one outside your schema, nor a query that names another MCP's tables: one login migrates, and one serves, every MCP. Review keeps each MCP to its own schema. Such a query still sees only the caller's organisation's rows |
-| Code that sets the caller's organisation itself | Never needed: the platform sets it on every query. Nothing refuses it, so review must |
+| Code that sets the caller's organisation itself | Never needed: the platform sets it on every query. `bun mcp check` refuses a file of the MCP's `src` that names `answerable.organisation_id`, the setting row-level security reads. That is a guard against a mistake, not a boundary: a name built at run time gets past it, so review must catch that |
 | Connections to Civo's database | **Unknown.** Civo's `max_connections` for the database's size has not been measured. `bun mcp check` assumes PostgreSQL's default, 100, and warns when `own` MCPs push the servers' pools past it. `docs/12-deployment.md` in the repository has the arithmetic |
 | Removing an MCP | Its name goes into `mcps/retired.json`, and `bun mcp new` refuses it for ever. Its schema stays in the database. A command that removes it: Not yet. Trigger: the first MCP that is removed |
 
 ## Errors
 
-<CliErrors ids={["unknown-action", "unexpected-flag", "mcp-required", "mcp-not-found", "table-outside-schema", "database-down", "migration-edited"]} />
+<CliErrors ids={["unknown-action", "unexpected-flag", "mcp-required", "mcp-not-found", "table-outside-schema", "database-down", "migration-edited", "organisation-setting"]} />
 
 A migration that fails in Postgres itself ends `database failed: acme: 0001_notes.sql failed: …`, with Postgres's own message. Fix the SQL in a migration that has not been applied, or write a new migration. The migration Job's log names the MCP: `kubectl -n answerable logs job/toolbox-migrate`.

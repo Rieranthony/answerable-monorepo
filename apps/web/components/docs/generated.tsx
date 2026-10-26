@@ -51,7 +51,7 @@ const languages: Record<string, string> = {
   mjs: "js",
   md: "md",
 }
-// The MCP every page makes, `bun mcp new acme --serve toolbox`, with the description the CLI's example gives and its default first tool.
+// The MCP every page makes, `bun mcp new acme --serve toolbox`, with the description the CLI's example gives and no tool yet.
 const SCAFFOLD_NAME = "acme"
 const scaffold = mcpFiles({
   name: SCAFFOLD_NAME,

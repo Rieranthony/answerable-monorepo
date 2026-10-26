@@ -9,21 +9,21 @@ test("the generated files are what bun mcp writes: run bun mcp check <mcp>, whic
   expect(stale, `stale: ${stale.join(", ")}; run bun mcp check <mcp>, which rewrites them, and commit them`).toEqual([])
 })
 
-test("an MCP is listed with its scopes and grant strings, commit tools aside, and one without a manifest yet with none", async () => {
+test("an MCP is listed with its scopes, and one without a manifest yet with none", async () => {
   const tools = [
     { name: "acme_commit", identity: "acme/commit", kind: "commit", scopes: ["acme:write"] },
     { name: "notes_add", identity: "acme/notes.add", kind: "mutate", scopes: ["acme:write"] },
     { name: "files_list", identity: "acme/files.list", kind: "read", scopes: ["acme:read"] },
   ]
   const repository = await tempRepository({
-    "mcps/acme/mcp.json": '{ "name": "acme", "serve": "both", "database": "shared" }\n',
+    "mcps/acme/mcp.json": '{ "serve": "both", "database": "shared" }\n',
     "mcps/acme/manifest.json": JSON.stringify({ description: "Notes.", tools, prompts: [{ scopes: ["acme:prompts"] }], resources: [] }),
-    "mcps/beta/mcp.json": '{ "name": "beta", "serve": "standalone", "database": "own" }\n',
+    "mcps/beta/mcp.json": '{ "serve": "standalone", "database": "own" }\n',
   })
   try {
     expect(JSON.parse(Object.values(await generatedFiles(repository.root))[0]!).mcps).toEqual([
-      { name: "acme", serve: "both", database: "shared", scopes: ["acme:prompts", "acme:read", "acme:write"], grants: ["acme", "acme/files", "acme/files.list", "acme/notes", "acme/notes.add"] },
-      { name: "beta", serve: "standalone", database: "own", scopes: [], grants: [] },
+      { name: "acme", serve: "both", database: "shared", scopes: ["acme:prompts", "acme:read", "acme:write"] },
+      { name: "beta", serve: "standalone", database: "own", scopes: [] },
     ])
   } finally {
     await repository.remove()
@@ -31,7 +31,7 @@ test("an MCP is listed with its scopes and grant strings, commit tools aside, an
 })
 
 test("the Toolbox's list imports the provider of every MCP, with where it is served, its database mode and an own MCP's variable, and its dependencies follow", async () => {
-  const declare = (name: string, serve: string, database = "shared") => ({ [`mcps/${name}/mcp.json`]: JSON.stringify({ name, serve, database }) })
+  const declare = (name: string, serve: string, database = "shared") => ({ [`mcps/${name}/mcp.json`]: JSON.stringify({ serve, database }) })
   const repository = await tempRepository({
     ...declare("acme", "toolbox"), ...declare("beta", "standalone", "own"), ...declare("gamma", "both"),
     "mcps/retired.json": '["old"]\n',
@@ -72,7 +72,7 @@ test("with no MCP declared, the Toolbox's list is empty", async () => {
 
 test("an MCP folder deleted before it was ever declared or retired leaves no dependency behind, and the platform's packages stay", async () => {
   const repository = await tempRepository({
-    "mcps/acme/mcp.json": '{ "name": "acme", "serve": "toolbox", "database": "shared" }',
+    "mcps/acme/mcp.json": '{ "serve": "toolbox", "database": "shared" }',
     "mcps/retired.json": "[]",
     // mcps/gone was tried out and deleted, as create.mdx's undo says: never declared since, never retired.
     "mcps/toolbox/package.json": JSON.stringify({ dependencies: Object.fromEntries(["mcp", "mcp-acme", "mcp-gone", "mcp-platform", "mcp-postgres", "mcp-admin", "id-admin"].map(name => [`@answerable/${name}`, "workspace:*"])) }),

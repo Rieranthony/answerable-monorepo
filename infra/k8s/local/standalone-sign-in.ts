@@ -5,7 +5,7 @@ import { connect, intentSchema, serveCallback, signIn, signInRefused, tool } fro
 import { chromium } from "@playwright/test"
 import { hosts, origin, startBrowserEdge } from "./stack"
 
-/** What stack.test.ts hands over: the MCP and its scopes, the staff member and the client organisation's person, and the stack's certificates. */
+/** What stack.test.ts hands over: the MCP, made by bun mcp with notes.add as example is, and its scopes; the staff member and the client organisation's person; and the stack's certificates. */
 export type StandaloneSignInInput = {
   mcp: string
   scopes: string[]
@@ -46,20 +46,21 @@ try {
   const receipt = await tool(admin, "admin_commit_confirmed", { intent_id: intent.intent_id, commit_token: intent.commit_token, preview_summary: intent.preview.summary })
   await admin.close()
 
-  // The client organisation's person signs in to the MCP through Claude Code's client, as Claude Code does, and calls a tool.
+  // The client organisation's person signs in to the MCP through Claude Code's client, as Claude Code does, and prepares a note: the preview names
+  // their organisation as ID holds it, which the Toolbox read for the call.
   const started = performance.now()
   const person = await signIn(await browser.newContext({ ignoreHTTPSErrors: true }), { idOrigin, resource: mcpResource, clientId: `claude-code-${input.mcp}`, callback, scopes: input.scopes },
     { slug: input.tenant.slug, email: input.tenant.email, scopes: input.scopes })
   const signedIn = Math.round((performance.now() - started) / 100) / 10
   const client = await connect(mcpResource, person.provider, "2025")
-  const status = await tool(client, `${input.mcp}_status`)
+  const prepared = intentSchema.parse(await tool(client, "notes_add", { title: "From Claude Code" }))
   await client.close()
   const claims = JSON.parse(Buffer.from(person.state.tokens!.access_token.split(".")[1]!, "base64url").toString()) as { aud: string; organization_id: string; client_id: string; scope: string }
 
   // A person of another organisation, the staff member's, which nobody enabled: ID refuses at the organisation chooser.
   const refused = await signInRefused(staffBrowser, { idOrigin, resource: mcpResource, clientId: `claude-code-${input.mcp}`, callback, scopes: input.scopes }, { slug: "answerable", email: input.staff.email, scopes: [] })
   console.log(JSON.stringify({
-    preview: intent.preview, receipt, signedIn, status, refused,
+    preview: intent.preview, receipt, signedIn, prepared: prepared.preview.summary, refused,
     claims: { aud: claims.aud, organization_id: claims.organization_id, client_id: claims.client_id, scope: claims.scope },
   }))
 } finally {

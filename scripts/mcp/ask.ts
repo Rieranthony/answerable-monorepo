@@ -39,7 +39,7 @@ export async function askToolDescription(io: Io, command: string, mcp: string, t
 export async function askTool(io: Io, command: string, { mcp, root, identities, optional, ...given }: {
   mcp: string; root: string; identities: readonly string[]; optional: boolean; description?: string; mutation?: true
 }) {
-  const skip = optional ? ` Enter skips it: ${mcp}.status reports who is calling.` : ""
+  const skip = optional ? " Enter skips it: the MCP starts with no tool." : ""
   const message = `${optional ? "First tool" : "Tool"}, <domain>.<operation>: what the caller can do, such as notes.list or projects.search; never the vendor or the transport.${skip}`
   const name = await ask(io, command, message, value => toolNameProblem(mcp, value, root, identities), { placeholder: "notes.list", optional })
   if (!name) return undefined

@@ -1,7 +1,8 @@
-// What every command of bun mcp receives, how it refuses, and how it prints: one line per step, then Next, or one JSON object with --json.
+// What every command of bun mcp receives, how it refuses, and how it prints: one line per step, then Next.
 import type { Readable, Writable } from "node:stream"
 import type * as clack from "@clack/prompts"
-import type { Definition } from "./definitions"
+import type { Definition, ErrorCode } from "./definitions"
+import type { Declaration } from "./workspace"
 
 /** The prompts a command asks in a terminal: @clack/prompts' own, so a test passes stand-ins. A cancelled prompt answers a symbol. */
 export type Prompts = Pick<typeof clack, "text" | "select" | "password">
@@ -18,9 +19,13 @@ export type Running = { exited: Promise<number>; stop(): Promise<void> }
 /** Start a long-running command, whose output goes to the terminal, with exactly `env` as its environment. */
 export type Start = (command: string[], options: { cwd: string; env: Record<string, string> }) => Running
 
+/** Provision and migrate the local schemas of `mcps` on the development Postgres, in this process: a line of what it did for each. */
+export type Migrate = (root: string, mcps: readonly Declaration[]) => Promise<string[]>
+
 /**
  * What a command runs with: its arguments, where it runs, its streams, whether a person is at a terminal, how it asks and runs commands, and the
- * machine around it: HTTP, whether something listens on a port, how to start a server and when the person stops it (Ctrl-C or SIGTERM).
+ * machine around it: HTTP, whether something listens on a port, the development Postgres, how to start a server and when the person stops it
+ * (Ctrl-C or SIGTERM).
  */
 export type Io = {
   argv: string[]
@@ -34,30 +39,28 @@ export type Io = {
   fetch: Fetch
   /** Whether something accepts connections at `host:port`. */
   listening(host: string, port: number): Promise<boolean>
+  migrate: Migrate
   start: Start
   /** Start listening for Ctrl-C and SIGTERM; the signal aborts when one arrives. A command that runs until it is stopped calls it first. */
   interrupt(): AbortSignal
 }
 
-/** What is wrong with one answer: a stable kebab-case `code`, one per rule, and the message that says what to do. */
-export type Problem = { code: string; message: string }
+/** What is wrong with one answer: its code, one per rule (errors.ts gives each a row), and the message that says what to do. */
+export type Problem = { code: ErrorCode; message: string }
 
 /**
- * A refusal before anything is written: exit code 2. `problems` are every answer refused, in the order the questions come; `code` is the
- * first one's and `message` all of theirs, a line each. `fix` is the one command to run next, with a placeholder in place of every answer
- * missing or refused.
+ * A refusal before anything is written: exit code 2. `code` is the first problem's, and `message` every problem's, a line each, in the order the
+ * questions come. `fix` is the one command to run next, with a placeholder in place of every answer missing or refused.
  */
 export class Refusal extends Error {
-  readonly problems: readonly Problem[]
-  constructor(readonly code: string, message: string, readonly fix: string, problems?: readonly Problem[]) {
+  constructor(readonly code: ErrorCode, message: string, readonly fix: string) {
     super(message)
-    this.problems = problems ?? [{ code, message }]
   }
 }
 
 /** One refusal for every problem in `problems`, with `fix`; `note` is a last line of the message, said once for them all. */
 export const refusal = (problems: readonly Problem[], fix: string, note?: string) =>
-  new Refusal(problems[0]!.code, [...problems.map(problem => problem.message), ...(note ? [note] : [])].join("\n"), fix, problems.map(({ code, message }) => ({ code, message })))
+  new Refusal(problems[0]!.code, [...problems.map(problem => problem.message), ...(note ? [note] : [])].join("\n"), fix)
 
 /** The command spawned to its end, with the environment it runs in plus `env`. */
 export const spawn: Exec = async (command, { cwd, env }) => {
@@ -76,7 +79,7 @@ export async function sh(io: Io, command: string[], cwd: string, env?: Record<st
   return output
 }
 
-/** The CLI itself, which a step runs as a process of its own for the database steps. */
+/** The CLI itself, which a step runs as a process of its own to write a migration. */
 export const cli = Bun.fileURLToPath(new URL("cli.ts", import.meta.url))
 
 /** A value as one shell word: as it is when it is plain, else in single quotes. A placeholder, `<…>` or `"<…>"`, stays as it is, to be replaced. */
@@ -84,12 +87,8 @@ export const shellWord = (value: string) => (/^([\w.,:/@=+-]+|<[^>]*>|"<[^>]*>")
 
 const write = (stream: Writable, text: string) => void stream.write(text)
 
-/**
- * Print a refusal, or a failure's message and its fix, as text on stderr (the fix under `label`, when given) or as the JSON error on stdout:
- * `{ ok: false, error: { code, message, fix, problems: [{ code, message }] } }`, with one problem for a failure.
- */
-export function printError(io: Io, json: boolean, { code, message, fix, problems }: Problem & { fix: string; problems?: readonly Problem[] }, label = "") {
-  if (json) return write(io.stdout, `${JSON.stringify({ ok: false, error: { code, message, fix, problems: problems ?? [{ code, message }] } }, null, 2)}\n`)
+/** Print a refusal, or a failure's message, then its fix, on stderr: the fix under `label`, when given. */
+export function printError(io: Io, { message, fix }: { message: string; fix: string }, label = "") {
   write(io.stderr, `${message}\n\n${label && `${label}\n`}  ${fix}\n`)
 }
 
@@ -100,29 +99,24 @@ const duration = (ms: number) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixe
 
 /**
  * Run `steps` in order, printing a line for each: `ok   <name>  <detail> (<time>)`. The first that throws stops the run: it prints `failed`, the
- * reason and the command that finishes the job, and returns 1 (code `<name>-failed`). Otherwise it prints `next()`, the commands that come
- * next once the steps have run, and returns 0. With `json`, it prints one object instead: `{ ok, steps: [{ name, ok, ms }], next }`, or
- * `{ ok: false, error }`.
+ * reason, `<name> failed: …` (errors.ts's code `<name>-failed`), and the command that finishes the job, and returns 1. Otherwise it prints
+ * `next()`, the commands that come next once the steps have run, and returns 0.
  */
-export async function runSteps(io: Io, json: boolean, steps: Step[], next: () => string[]): Promise<number> {
-  const done: { name: string; ok: boolean; ms: number }[] = []
+export async function runSteps(io: Io, steps: Step[], next: () => string[]): Promise<number> {
   for (const step of steps) {
     const started = performance.now()
+    const took = () => duration(Math.round(performance.now() - started))
     try {
       const detail = await step.run()
-      const ms = Math.round(performance.now() - started)
-      done.push({ name: step.name, ok: true, ms })
-      if (!json) write(io.stdout, `ok      ${step.name.padEnd(10)} ${detail} (${duration(ms)})\n`)
+      write(io.stdout, `ok      ${step.name.padEnd(10)} ${detail} (${took()})\n`)
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (!json) write(io.stdout, `failed  ${step.name.padEnd(10)} (${duration(Math.round(performance.now() - started))})\n`)
-      printError(io, json, { code: `${step.name}-failed`, message: `${step.name} failed: ${message}`, fix: step.fix }, "Finish the job with:")
+      write(io.stdout, `failed  ${step.name.padEnd(10)} (${took()})\n`)
+      printError(io, { message: `${step.name} failed: ${error instanceof Error ? error.message : String(error)}`, fix: step.fix }, "Finish the job with:")
       return 1
     }
   }
   const then = next()
-  if (json) write(io.stdout, `${JSON.stringify({ ok: true, steps: done, next: then }, null, 2)}\n`)
-  else if (then.length) write(io.stdout, `\nNext:\n${then.map(line => `  ${line}\n`).join("")}`)
+  if (then.length) write(io.stdout, `\nNext:\n${then.map(line => `  ${line}\n`).join("")}`)
   return 0
 }
 
@@ -131,8 +125,8 @@ export function finishing(steps: (Omit<Step, "fix"> & { redo: string })[]): Step
   return steps.map(({ name, run }, index) => ({ name, run, fix: [...new Set(steps.slice(index).map(later => later.redo).reverse())].reverse().join(" && ") }))
 }
 
-/** Print `text` on stdout, unless the command answers in JSON. */
-export const say = (io: Io, json: boolean, text: string) => json || write(io.stdout, `${text}\n`)
+/** Print `text` on stdout, a line. */
+export const say = (io: Io, text: string) => write(io.stdout, `${text}\n`)
 
 /** What a command was given: its positional arguments, and its flags, each a value or `true`. */
 export type Args = { positionals: string[]; flags: Record<string, string | true> }

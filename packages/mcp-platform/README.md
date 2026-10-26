@@ -41,4 +41,4 @@ bun run --filter @answerable/mcp-platform test
 bun run mcp:check @answerable/mcp-platform
 ```
 
-The suite needs the development PostgreSQL 17 on port 47432: it makes `answerable_mcp_platform_test`, `answerable_mcp_platform_test_empty`, `answerable_mcp_platform_test_own` and `answerable_mcps_test_platform`, each with logins of its own, and drops them. `bunfig.toml` gates 100% line and function coverage over `src`. Changes: [CHANGELOG](CHANGELOG.md).
+The suite needs the development PostgreSQL 17 on port 47432: it makes `answerable_mcp_platform_test`, `answerable_mcp_platform_test_empty`, `answerable_mcp_platform_test_own` and `answerable_mcps_test_platform`, each with logins of its own, and drops them. `bunfig.toml` gates 100% line and function coverage over `src`.

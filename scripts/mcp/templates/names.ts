@@ -8,7 +8,7 @@ export type Serve = Declaration["serve"]
 export type DatabaseMode = Declaration["database"]
 /** A tool to write: its name, `<domain>.<operation>`, its description, and whether it is a mutation. */
 export type ToolAnswers = { name: string; description: string; mutation: boolean }
-/** Every answer `bun mcp new` needs. Without `tool`, the first tool is `<name>.status`, which reports who is calling. */
+/** Every answer `bun mcp new` needs. Without `tool`, the MCP has no tool yet. */
 export type Answers = { name: string; description: string; serve: Serve; database: DatabaseMode; date: string; tool?: ToolAnswers }
 
 /** Words a lowercase domain may be that cannot name a binding in a module, and `pg`, the schema file's import of drizzle's column builders. */

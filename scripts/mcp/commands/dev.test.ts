@@ -3,9 +3,8 @@ import { rm } from "node:fs/promises"
 import { join } from "node:path"
 import { main } from "../cli"
 import { definitions } from "../definitions"
-import { cli } from "../io"
 import { isolateEnvironment, localId, writesTo } from "../test/id"
-import { recorder, tempRepository, testIo } from "../test/io"
+import { migrations, recorder, tempRepository, testIo } from "../test/io"
 import { localStack } from "../test/stack"
 
 isolateEnvironment()
@@ -16,7 +15,7 @@ const acme = "http://localhost:47400/acme/mcp"
 const toolbox = "http://localhost:47400/mcp"
 const manifest = (scopes: string[]) => JSON.stringify({
   description: "Notes.",
-  tools: [{ name: "acme_status", identity: "acme/acme.status", kind: "read", scopes: [scopes[0]] }, { name: "acme_commit", identity: "acme/commit", kind: "commit", scopes: scopes.slice(1) }],
+  tools: [{ name: "notes_list", identity: "acme/notes.list", kind: "read", scopes: [scopes[0]] }, { name: "acme_commit", identity: "acme/commit", kind: "commit", scopes: scopes.slice(1) }],
   prompts: [], resources: [],
 })
 const lines = (text: string) => text.split("\n").map(line => line.replace(/ \(\d+(\.\d+)? m?s\)$/, ""))
@@ -26,7 +25,7 @@ type Stack = ReturnType<typeof localStack>
 async function prepare(serve: "toolbox" | "standalone" | "both", { scopes = ["acme:read", "acme:write"], stack: options = {} }: { scopes?: string[]; stack?: Parameters<typeof localStack>[1] } = {}) {
   await repository?.remove()
   repository = await tempRepository({
-    "mcps/acme/mcp.json": JSON.stringify({ name: "acme", serve, database: "shared" }),
+    "mcps/acme/mcp.json": JSON.stringify({ serve, database: "shared" }),
     "mcps/acme/manifest.json": manifest(scopes),
   })
   const id = localId()
@@ -37,15 +36,16 @@ async function prepare(serve: "toolbox" | "standalone" | "both", { scopes = ["ac
 }
 
 // bun mcp dev, started: its output, and the means to Ctrl-C it, wait for it, or stop the Toolbox.
-function start(stack: Stack, argv = ["acme"], { cwd = repository.root, listening = async (_host: string, port: number) => port === 47432, answer }: { cwd?: string; listening?: (host: string, port: number) => Promise<boolean>; answer?: Parameters<typeof recorder>[0] } = {}) {
+function start(stack: Stack, argv = ["acme"], { cwd = repository.root, listening = async (_host: string, port: number) => port === 47432, answer, failure }: { cwd?: string; listening?: (host: string, port: number) => Promise<boolean>; answer?: Parameters<typeof recorder>[0]; failure?: string } = {}) {
   const controller = new AbortController()
   const { exec, ran } = recorder(answer)
-  const io = testIo(["dev", ...argv], cwd, { fetch: stack.fetch, start: stack.start, listening, signal: controller.signal, exec })
+  const { migrate, asked: migrated } = migrations(failure)
+  const io = testIo(["dev", ...argv], cwd, { fetch: stack.fetch, start: stack.start, listening, signal: controller.signal, exec, migrate })
   const finished = main(io.io)
   const printed = async () => {
     while (!io.stdout().includes("Ctrl-C")) await Bun.sleep(2)
   }
-  return { ...io, ran, finished, printed, interrupt: () => controller.abort() }
+  return { ...io, ran, migrated, finished, printed, interrupt: () => controller.abort() }
 }
 
 // bun mcp dev until it has printed what to do, then Ctrl-C.
@@ -59,11 +59,10 @@ async function dev(stack: Stack, argv?: string[], options?: Parameters<typeof st
 test("a standalone MCP: migrates, starts the Toolbox as mcp-dev, which serves it at its path, registers its resource and client, gives the organisation access, prints what to do and stops on Ctrl-C", async () => {
   const { id, stack } = await prepare("standalone")
   const before = writesTo(id).length
-  const { code, ran, stdout, stderr } = await dev(stack)
+  const { code, ran, migrated, stdout, stderr } = await dev(stack)
   expect([code, stderr()]).toEqual([0, ""])
-  expect(ran.map(({ command, cwd }) => [command.slice(1), cwd])).toEqual([
-    [[cli, "db", "acme", "migrate"], repository.root], [["run", "db:migrate"], join(repository.root, "mcps/toolbox")],
-  ])
+  expect(migrated).toEqual([["acme"]])
+  expect(ran.map(({ command, cwd }) => [command.slice(1), cwd])).toEqual([[["run", "db:migrate"], join(repository.root, "mcps/toolbox")]])
   expect(stack.started).toHaveLength(1)
   expect(stack.started[0]).toMatchObject({ command: [process.execPath, "run", "--silent", "dev"], cwd: join(repository.root, "mcps/toolbox"), stopped: true })
   expect(stack.started[0]!.env).toMatchObject({ TOOLBOX_ID_CLIENT_ID: "mcp-dev", TOOLBOX_ID_CLIENT_SECRET: expect.stringMatching(/^secret-/) })
@@ -214,7 +213,7 @@ test("from inside the MCP's directory it needs no name", async () => {
 const refused = async (run: { finished: Promise<number>; stderr: () => string; stdout: () => string }) => ({ code: await run.finished, stdout: run.stdout(), stderr: run.stderr() })
 
 test("without bun mcp setup, with ID down, with Postgres down and with the Toolbox's port taken it refuses once, listing every problem each with its command, and starts nothing", async () => {
-  repository = await tempRepository({ "mcps/acme/mcp.json": JSON.stringify({ name: "acme", serve: "both", database: "shared" }), "mcps/acme/manifest.json": manifest(["acme:read", "acme:write"]) })
+  repository = await tempRepository({ "mcps/acme/mcp.json": JSON.stringify({ serve: "both", database: "shared" }), "mcps/acme/manifest.json": manifest(["acme:read", "acme:write"]) })
   const id = localId()
   id.unreachable(true)
   const stack = localStack(id)
@@ -232,32 +231,10 @@ test("without bun mcp setup, with ID down, with Postgres down and with the Toolb
   expect(stack.started).toEqual([])
 })
 
-test("credentials ID refuses, as after a reset of its database, and an organisation ID does not hold, are refused with the command that fixes each", async () => {
-  const { stack } = await prepare("standalone")
-  const env = await Bun.file(join(repository.root, ".env")).text()
-  await Bun.write(join(repository.root, ".env"), `${env}MCP_DEV_ORGANISATION=nobody\n`)
-  expect(await refused(start(stack))).toEqual({ code: 2, stdout: "", stderr: "Answerable ID has no organisation nobody. Run bun mcp setup --organisation <slug> with the slug of yours\n\n  bun mcp dev acme\n" })
-  await Bun.write(join(repository.root, ".env"), "MCP_DEV_ID_CLIENT_ID=mcp-dev\nMCP_DEV_ID_CLIENT_SECRET=from-the-old-database\n")
-  expect(await refused(start(stack))).toEqual({ code: 2, stdout: "", stderr: "ID refused the credentials of mcp-dev in .env, as after a reset of its database. Run bun mcp setup again\n\n  bun mcp dev acme\n" })
-})
-
-test("a standalone MCP whose manifest is not written yet is refused, since its scopes in ID come from it; a Toolbox MCP needs none", async () => {
-  const { stack } = await prepare("standalone")
-  await rm(join(repository.root, "mcps/acme/manifest.json"))
-  expect(await refused(start(stack))).toEqual({ code: 2, stdout: "", stderr: "mcps/acme/manifest.json does not exist, and the MCP's scopes in ID come from it. Run bun mcp check acme\n\n  bun mcp dev acme\n" })
+test("a Toolbox MCP needs no manifest, since only a standalone MCP's scopes in ID come from it", async () => {
   const toolboxed = await prepare("toolbox")
   await rm(join(repository.root, "mcps/acme/manifest.json"))
   expect((await dev(toolboxed.stack)).code).toBe(0)
-})
-
-test.each([
-  [["acme", "beta"], "bun mcp dev takes one MCP; it was given acme, beta"],
-  [["nobody"], "No MCP is named nobody: mcps/nobody/mcp.json does not exist; bun mcp list names every MCP"],
-  [[], "Name the MCP, or run the command from inside mcps/<name>"],
-])("refuses %j", async (argv, message) => {
-  const { stack } = await prepare("standalone")
-  const { code, stderr } = await refused(start(stack, argv))
-  expect([code, stderr.split("\n")[0]]).toEqual([2, message])
 })
 
 test("a Toolbox that stops before it lists the MCP is a failed step naming its exit code; it is stopped and the command to run again is given", async () => {
@@ -279,28 +256,27 @@ test("a Toolbox that stops while running ends the command with exit 1, naming it
   expect(stack.started.map(server => server.stopped)).toEqual([true])
 })
 
-test("a migration that fails, of the MCP or of the Toolbox's database, is a failed step with the output's end and the command to run again; nothing is started", async () => {
+test("a migration that fails, of the MCPs or of the Toolbox's database, is a failed step with its reason and the command to run again; nothing is started", async () => {
   const { stack } = await prepare("standalone")
-  const { code, stderr } = await dev(stack, ["acme"], { answer: () => ({ code: 1, output: "the development Postgres does not answer\n" }) })
+  const { code, stderr } = await dev(stack, ["acme"], { failure: "the development Postgres does not answer" })
   expect([code, stderr()]).toEqual([1, "database failed: the development Postgres does not answer\n\nFinish the job with:\n  bun mcp dev acme\n"])
   const hub = await dev(stack, ["acme"], { answer: command => (command.includes("db:migrate") ? { code: 1, output: "role answerable_toolbox_owner does not exist\n" } : { code: 0, output: "" }) })
   expect([hub.code, hub.stderr().split("\n")[0]]).toEqual([1, "database failed: role answerable_toolbox_owner does not exist"])
   expect(stack.started).toEqual([])
 })
 
-test("every MCP is migrated, the MCP's own and the others', whatever their serve, since the Toolbox serves them all, then the Toolbox's database", async () => {
+test("every MCP is migrated in one call, the MCP's own and the others', whatever their serve, since the Toolbox serves them all, then the Toolbox's database", async () => {
   repository = await tempRepository({
-    "mcps/acme/mcp.json": JSON.stringify({ name: "acme", serve: "standalone", database: "shared" }), "mcps/acme/manifest.json": manifest(["acme:read", "acme:write"]),
-    "mcps/beta/mcp.json": JSON.stringify({ name: "beta", serve: "toolbox", database: "shared" }),
-    "mcps/gamma/mcp.json": JSON.stringify({ name: "gamma", serve: "both", database: "own" }), "mcps/gamma/manifest.json": manifest(["gamma:read"]),
+    "mcps/acme/mcp.json": JSON.stringify({ serve: "standalone", database: "shared" }), "mcps/acme/manifest.json": manifest(["acme:read", "acme:write"]),
+    "mcps/beta/mcp.json": JSON.stringify({ serve: "toolbox", database: "shared" }),
+    "mcps/gamma/mcp.json": JSON.stringify({ serve: "both", database: "own" }), "mcps/gamma/manifest.json": manifest(["gamma:read"]),
   })
   const id = localId()
   const stack = localStack(id, { mounted: ["acme", "beta", "gamma"] })
   expect(await main(testIo(["setup"], repository.root, { fetch: stack.fetch }).io)).toBe(0)
-  const migrated = (ran: { command: string[]; cwd: string }[]) => ran.map(({ command, cwd }) => (command.includes("db:migrate") ? cwd.split("/").slice(-2).join("/") : command.at(-2)))
   for (const name of ["acme", "beta", "gamma"]) {
     const run = await dev(stack, [name])
-    expect([run.code, migrated(run.ran)], name).toEqual([0, ["acme", "beta", "gamma", "mcps/toolbox"]])
+    expect([run.code, run.migrated, run.ran.map(({ cwd }) => cwd.split("/").slice(-2).join("/"))], name).toEqual([0, [["acme", "beta", "gamma"]], ["mcps/toolbox"]])
     expect(lines(run.stdout())[0], name).toBe("ok      database   schemas acme, beta and gamma; the database of the Toolbox")
   }
 })

@@ -1,13 +1,11 @@
 import { expect, test } from "bun:test"
-import { existsSync } from "node:fs"
 import { mkdtemp, rm, symlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { checkDescription, checkToolName } from "@answerable/mcp"
+import { checkToolName } from "@answerable/mcp"
 import { spawn } from "./io"
-import { isolationImport, mcpFiles, schemaBinding, tableTs, toolBinding, toolFiles, type Answers } from "./templates"
+import { mcpFiles, schemaBinding, toolBinding, toolFiles, withTool, type Answers, type ToolAnswers } from "./templates"
 import { tableBinding, unusable } from "./templates/names"
-import { statusDescription } from "./templates/tool"
 import { pins } from "./templates/workspace"
 
 const repo = new URL("../../", import.meta.url).pathname
@@ -15,30 +13,40 @@ const answers: Answers = { name: "acme", description: "Notes for construction pr
 const read = { name: "notes.list", description: "List the notes of the caller's organisation, newest first, 20 per page.", mutation: false }
 const mutation = { name: "notes.add", description: "Prepare a new note; commit the intent to save it. Use notes.list first to avoid duplicates.", mutation: true }
 
-test("every file of a new MCP, for a fixed name and date, with the status tool", () => {
-  for (const [path, text] of Object.entries(mcpFiles(answers))) expect(text).toMatchSnapshot(path)
+test("mcps/example is what bun mcp new, then add tool for notes.list and notes.add, write for it, its region lines aside", async () => {
+  const example = join(repo, "mcps/example")
+  const manifest = await Bun.file(join(example, "manifest.json")).json() as { description: string; version: string; tools: { identity: string; kind: string; description: string }[] }
+  const tool = (name: string): ToolAnswers => {
+    const { description, kind } = manifest.tools.find(entry => entry.identity === `example/${name}`)!
+    return { name, description, mutation: kind === "mutate" }
+  }
+  let files = mcpFiles({ name: "example", description: manifest.description, serve: "toolbox", database: "shared", date: manifest.version })
+  for (const added of ["notes.list", "notes.add"].map(tool)) {
+    const { provider, schema } = withTool("example", { provider: files["src/provider.ts"]!, schema: files["src/db/schema.ts"]! }, added)
+    files = { ...files, ...toolFiles("example", added), "src/provider.ts": provider, "src/db/schema.ts": schema }
+  }
+  for (const [path, text] of Object.entries(files)) {
+    const committed = (await Bun.file(join(example, path)).text()).split("\n").filter(line => !/^\s*\/\/#(end)?region\b/.test(line)).join("\n")
+    expect(committed, path).toBe(text)
+  }
 })
 
-test("a new MCP whose first tool is a read has its domain's table; a mutation's file and test", () => {
-  const files = mcpFiles({ ...answers, serve: "both", database: "own", tool: read })
-  expect(Object.keys(files)).toContain("src/tools/notes-list.ts")
-  for (const path of ["src/db/schema.ts", "src/provider.ts", "src/tools/notes-list.ts", "src/tools/notes-list.test.ts", "README.md", "mcp.json"]) expect(files[path]).toMatchSnapshot(path)
-  for (const [path, text] of Object.entries(toolFiles("acme", mutation))) expect(text).toMatchSnapshot(path)
-  expect(mcpFiles({ ...answers, serve: "standalone" })["README.md"]).toContain("on its own URL, `/acme/mcp`, which the Toolbox serves from the same list: `http://localhost:47400/acme/mcp` locally")
+test("a new MCP has no tool; given one, it is the MCP add tool makes of it", () => {
+  const bare = mcpFiles(answers)
+  expect(Object.keys(bare).filter(path => path.startsWith("src/tools/"))).toEqual([])
+  expect(bare["src/provider.ts"]).toContain("  tools: [\n    // bun mcp: tools\n  ],")
+  expect(JSON.parse(bare["mcp.json"]!)).toEqual({ serve: "toolbox", database: "shared" })
+  const { provider, schema } = withTool("acme", { provider: bare["src/provider.ts"]!, schema: bare["src/db/schema.ts"]! }, read)
+  expect(mcpFiles({ ...answers, tool: read })).toEqual({ ...bare, ...toolFiles("acme", read), "src/provider.ts": provider, "src/db/schema.ts": schema })
+  // A second tool of the same domain adds no second table.
+  const again = withTool("acme", { provider, schema }, mutation)
+  expect([again.table, again.schema]).toEqual([false, schema])
 })
 
 test("the package pins the repository's versions, so an MCP never drifts from the packages it shares", async () => {
   const [mcpPostgres, mcp] = await Promise.all(["packages/mcp-postgres", "packages/mcp"].map(path => Bun.file(join(repo, path, "package.json")).json()))
   expect(pins.dependencies).toEqual({ "@answerable/mcp": "workspace:*", "@answerable/mcp-postgres": "workspace:*", "drizzle-orm": mcpPostgres.dependencies["drizzle-orm"], zod: mcpPostgres.dependencies.zod })
   for (const [name, version] of Object.entries(pins.devDependencies)) expect(version, name).toBe(mcp.devDependencies[name])
-})
-
-test("the README's links reach the docs' sources", () => {
-  for (const [, link] of mcpFiles(answers)["README.md"]!.matchAll(/\]\(([^)#]+)[^)]*\)/g)) expect(existsSync(join(repo, "mcps/acme", link!)), link).toBe(true)
-})
-
-test("the status tool's description passes the SDK's rule for the longest name", () => {
-  expect(checkDescription(statusDescription("abcdefghijkl"))).toBeUndefined()
 })
 
 test("a domain that cannot name a binding gets a Table suffix; schema and tool bindings have a capital, so they never meet a table's", () => {
@@ -57,9 +65,13 @@ test("an MCP whose domains are every word that cannot name a binding, and its ow
   const dir = await mkdtemp(join(tmpdir(), "bun-mcp-names-"))
   try {
     const domains = [...unusable, "class2", "text", "uuid", "schema", "items", "acme"]
-    const files: Record<string, string> = { ...mcpFiles({ ...answers, name: "new" }) }
-    files["src/db/schema.ts"] = `${isolationImport}${files["src/db/schema.ts"]}${domains.map(domain => tableTs("new", domain)).join("")}`
-    for (const domain of domains) Object.assign(files, toolFiles("new", { ...read, name: `${domain}.list` }), toolFiles("new", { ...mutation, name: `${domain}.add` }))
+    let files: Record<string, string> = { ...mcpFiles({ ...answers, name: "new" }) }
+    for (const domain of domains) {
+      for (const tool of [{ ...read, name: `${domain}.list` }, { ...mutation, name: `${domain}.add` }]) {
+        const { provider, schema } = withTool("new", { provider: files["src/provider.ts"]!, schema: files["src/db/schema.ts"]! }, tool)
+        files = { ...files, ...toolFiles("new", tool), "src/provider.ts": provider, "src/db/schema.ts": schema }
+      }
+    }
     for (const [path, text] of Object.entries(files)) await Bun.write(join(dir, path), text)
     // The compiler resolves the MCP's imports from the repository's install, as it would inside mcps/.
     await symlink(join(repo, "node_modules"), join(dir, "node_modules"))

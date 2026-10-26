@@ -4,12 +4,12 @@ description: "Mount an MCP in the Toolbox with serve in its mcp.json, enable it 
 ---
 
 ```json title="mcps/acme/mcp.json"
-{ "name": "acme", "serve": "toolbox", "database": "shared" }
+{ "serve": "toolbox", "database": "shared" }
 ```
 
-The Toolbox serves tools from **MCPs** mounted inside it: every MCP whose `mcp.json` says `"serve": "toolbox"` or `"both"`. To add tools, make an MCP with `bun mcp new acme --serve toolbox`, let the Toolbox mount it, then let organisations use it: staff **enable** it in an organisation's catalogue, and **grant** its capabilities to people. On your machine `bun mcp dev acme` does all of this for you ([Make an MCP](/docs/mcp/create#run-it-and-try-it-in-claude-code)), and in staging and production a tag mounts it ([Ship an MCP](/docs/mcp/deploy)). The steps below do it by hand, against your local Toolbox, and were run end to end against real Answerable ID with `mcps/example` in place of `acme`.
+The Toolbox serves tools from **MCPs** mounted inside it: every MCP whose `mcp.json` says `"serve": "toolbox"` or `"both"`. To add tools, make an MCP with `bun mcp new acme --serve toolbox`, let the Toolbox mount it, then let organisations use it: staff **enable** it in an organisation's catalogue, and **grant** its capabilities to people. On your machine `bun mcp dev acme` does all of this for your organisation ([Run an MCP on your machine](/docs/mcp/run-locally)), and in staging and production a tag mounts it ([Ship an MCP](/docs/mcp/deploy)) and staff enable and grant it through [the admin MCP](/docs/admin). The steps below say what happens at each stage.
 
-**Before you start.** An MCP that passes `bun mcp check`, such as the one [Make an MCP](/docs/mcp/create) ends with, and the Toolbox [running locally](/docs/toolbox#run-it-locally) with its registrations in ID. Handing this to a coding agent? Use the [prompts](/docs/agents#make-an-mcp).
+**Before you start.** An MCP that passes `bun mcp check`, such as the one [Make an MCP](/docs/mcp/create) ends with, and `bun mcp setup` run once on your machine. Handing this to a coding agent? Use the [prompts](/docs/agents#make-an-mcp).
 
 <Steps>
 <Step>
@@ -39,80 +39,48 @@ The Toolbox mounts each MCP of the list with its database: its schema in the sha
 </Step>
 <Step>
 
-### Make its schema locally
+### Run it
 
 ```sh
-bun mcp db acme migrate
+bun mcp dev acme
 ```
 
-It makes the MCP's schema in your local `answerable_mcps` and migrates it, and grants the Toolbox's serving login the schema and its tables. `bun mcp new` ran it once; run it again after `bun mcp db acme generate` writes a migration. In staging and production the deployment does it.
+It migrates the MCP's schema in your local `answerable_mcps`, with every other MCP of the list, grants the Toolbox's serving login the schema and its tables, and starts the Toolbox with the MCP mounted. In staging and production the deployment's Job `toolbox-migrate` migrates it before the new Toolbox starts.
 
-</Step>
-<Step>
-
-### Restart the Toolbox
-
-```sh
-bun run toolbox:dev
-```
-
-At boot the Toolbox checks that its serving login has `USAGE` on the schema of every mounted MCP, and nothing more than provisioning gave it, then reads every provider's manifest into its catalogue. `GET /health` lists the mounted MCPs in `providers`. Staff see the new provider and its capabilities in the admin API:
-
-```sh
-curl "$TOOLBOX/admin/v1/providers" -H "Authorization: Bearer $TOOLBOX_TOKEN"
-```
-
-`TOOLBOX_TOKEN` is a staff token for the Toolbox's admin API: [Enable an organisation](/docs/toolbox/admin#enable-an-organisation) shows how to get one.
+At boot the Toolbox checks that its serving login has `USAGE` on the schema of every mounted MCP, and nothing more than provisioning gave it, then reads every provider's manifest into its catalogue. `GET /health` lists the mounted MCPs in `providers`, and the admin API's `GET /providers` lists each with its capabilities ([The catalogue](/docs/toolbox/admin#the-catalogue)).
 
 </Step>
 <Step>
 
 ### Enable it for an organisation
 
-In staging and production, staff run `toolbox_enable` in [the admin MCP](/docs/admin); this call is what it makes, and what you run against your local Toolbox.
+Staff run `toolbox_enable` in [the admin MCP](/docs/admin) for the organisation, naming the provider; locally, `bun mcp dev acme` makes the same call for your organisation. It is the Toolbox's enable call: [What the call does](/docs/toolbox/admin#what-the-call-does) lists every step.
 
-```sh
-curl "$TOOLBOX/admin/v1/organisations/$ORG/enable" \
-  -H "Authorization: Bearer $TOOLBOX_TOKEN" -H "Content-Type: application/json" \
-  -d '{"hostClientIds":["claude-code-toolbox"],"providers":["acme"]}'
-```
-
-The catalogue is the ceiling: an organisation uses only the providers enabled for it. This call enables `acme` for the organisation, and widens the Toolbox's resource in Answerable ID to accept `acme`'s grant strings. Run it again for every organisation that should have the provider, including those enabled before it existed. [What the call does](/docs/toolbox/admin#what-the-call-does) lists every step.
+The catalogue is the ceiling: an organisation uses only the providers enabled for it. The call enables `acme` for the organisation, and widens the Toolbox's resource in Answerable ID to accept `acme`'s grant strings. Run it for every organisation that should have the provider, including those enabled before it existed.
 
 </Step>
 <Step>
 
 ### Grant it to people
 
-In staging and production, staff run `access_grant` in the admin MCP ([Your MCP's sign-in](/docs/mcp/sign-in#what-staff-do-for-each-organisation)). By hand:
-
-What each person may use is an entitlement in Answerable ID whose scopes are **grant strings**: the provider, a domain or one capability. For `mcps/example`, read from its manifest:
+Staff run `access_grant` in the admin MCP ([Your MCP's sign-in](/docs/mcp/sign-in#what-staff-do-for-each-organisation)); locally, `bun mcp dev acme` grants the provider to everyone in your organisation. What each person may use is an entitlement in Answerable ID whose scopes are **grant strings**: the provider, a domain or one capability. For `mcps/example`, read from its manifest:
 
 <GrantStrings workspace="example" />
 
-Everyone in the organisation, every capability of the provider:
-
-```sh
-curl "$ID/api/admin/v1/organizations/$ORG/entitlements" \
-  -H "Idempotency-Key: acme-organisation-v1" -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"resource":"'"$TOOLBOX"'/mcp","scopes":["acme"]}'
-```
-
-`TOKEN` is a [staff token for ID](/docs/id/onboard#get-a-staff-token). A group or one member takes `groupId` or `memberId`: [Grant strings for people](/docs/toolbox/admin#grant-strings-for-people). A change reaches the person within 60 seconds, without signing in again.
+The organisation, one group or one member can hold one: [Grant strings for people](/docs/toolbox/admin#grant-strings-for-people). A change reaches the person within 60 seconds, without signing in again.
 
 </Step>
 <Step>
 
 ### Try it
 
-In Claude Code, connected to the Toolbox as [Connect Claude Code](/docs/mcp/claude-code#the-toolbox) shows, ask Claude to call `toolbox_whoami`: its `capabilities` now include `acme/notes.add` and `acme/notes.list`. With `mcps/example` mounted and the grant string `example`, before `bun mcp` remade it with a database and `example.status`, the Toolbox listed exactly:
+In Claude Code, connected to the Toolbox as [Connect Claude Code](/docs/mcp/claude-code#the-toolbox) shows, ask Claude to call `toolbox_whoami`: its `capabilities` now include the MCP's tools, such as `acme/notes.add` and `acme/notes.list` once [`bun mcp add tool`](/docs/mcp/add-a-tool) has added them. With `mcps/example` mounted and the grant string `example`, the Toolbox listed exactly this, run by hand before `bun mcp` remade `example` with a database, when it served the same two tools:
 
 ```text
 toolbox_whoami, example_notes_add, example_notes_list, toolbox_commit, toolbox_commit_confirmed
 ```
 
-Ask Claude to add a note: it calls `acme_notes_add`, which returns an intent whose `commit_tool` is `toolbox_commit`, then commits it.
+Ask Claude to add a note: it calls `acme_notes_add`, which returns an intent whose `commit_tool` is `toolbox_commit_confirmed`. Claude shows you the preview's summary, which names your organisation as Answerable ID holds it, and commits once you confirm.
 
 </Step>
 </Steps>
@@ -150,12 +118,12 @@ Remote providers: the Toolbox mounts MCPs in its own process, so adding one is a
 | You see | Meaning | What to do |
 | --- | --- | --- |
 | `Cannot find module '@answerable/mcp-acme/provider'` | The Toolbox's dependencies were rewritten and not installed, or the workspace has no `exports` entry | `bun install`; `bun mcp new` writes the `exports` entry |
-| `The Toolbox cannot start: Database role answerable_mcps_toolbox may not serve MCPs: lacks USAGE on schema acme…` | The MCP's schema is not made in the shared database, or the serving login was not granted it | Locally, `bun mcp db acme migrate` |
+| `The Toolbox cannot start: Database role answerable_mcps_toolbox may not serve MCPs: lacks USAGE on schema acme…` | The MCP's schema is not made in the shared database, or the serving login was not granted it | Locally, `bun mcp dev acme`, which migrates every MCP, or `bun mcp db acme migrate` |
 | `mounted.generated.ts` or the Toolbox's `package.json` is stale in `bun mcp check` | `mcp.json` changed without the generated files | `bun mcp check acme` rewrites them: commit them |
 | `Provider … is mounted twice…` at start | Two providers share an id, or a provider is the Toolbox's own | Rename the provider's id |
 | `Capability <identity> version <date> changed its input without a new version…` at start | A contract changed under an old version | Give the tool or the provider a new version |
-| `422 unknown_provider` from the enable call | The Toolbox does not mount that provider | Mount it and restart; `GET /providers` lists what is mounted |
-| `Tool acme_notes_list not found` | The organisation has not enabled `acme`, no grant string covers the tool, or the tool is disabled in the catalogue | Run the enable call; add an entitlement; check `GET /organisations/{id}/catalogue` |
-| The entitlement is refused with `Scopes are not allowed for this resource` | The Toolbox's resource does not accept `acme`'s grant strings yet | Run the enable call for `acme` first; it widens the resource |
+| `422 unknown_provider` from the enable call, or `toolbox_enable` refused | The Toolbox does not mount that provider | Mount it and restart; `GET /providers` lists what is mounted |
+| `Tool acme_notes_list not found` | The organisation has not enabled `acme`, no grant string covers the tool, or the tool is disabled in the catalogue | `toolbox_enable`; `access_grant`; check the organisation's catalogue ([The catalogue](/docs/toolbox/admin#the-catalogue)) |
+| The entitlement is refused with `Scopes are not allowed for this resource` | The Toolbox's resource does not accept `acme`'s grant strings yet | Run `toolbox_enable` for `acme` first; it widens the resource |
 
 The Toolbox's other errors are in [The Toolbox](/docs/toolbox#errors) and [Administer the Toolbox](/docs/toolbox/admin#errors).

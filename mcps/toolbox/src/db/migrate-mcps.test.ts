@@ -34,7 +34,7 @@ async function on(database: string, ...statements: string[]) {
 /** Write an MCP's drizzle folder of one migration, `statements` joined as drizzle-kit joins them. */
 async function mcp(name: string, statements: string[]) {
   const dir = join(root, "mcps", name)
-  await Bun.write(join(dir, "mcp.json"), JSON.stringify({ name }))
+  await Bun.write(join(dir, "mcp.json"), JSON.stringify({ serve: "toolbox", database: "shared" }))
   await Bun.write(join(dir, "drizzle/0000_initial.sql"), statements.join("\n--> statement-breakpoint\n"))
   await Bun.write(join(dir, "drizzle/meta/_journal.json"), JSON.stringify({ version: "7", dialect: "postgresql", entries: [{ idx: 0, version: "7", when: 1792949252412, tag: "0000_initial", breakpoints: true }] }))
 }
@@ -45,7 +45,7 @@ beforeAll(async () => {
   await mcp("tbxmigb", notes("tbxmigb"))
   await mcp("tbxmigc", notes("tbxmigc"))
   await mcp("tbxmigd", ['CREATE TABLE "tbxmigd"."broken" ("id" serial PRIMARY KEY NOT NULL, "body" text NOT NULL REFERENCES "tbxmigd"."missing"("id"));'])
-  await Bun.write(join(root, "mcps/tbxmige/mcp.json"), JSON.stringify({ name: "tbxmige" }))
+  await Bun.write(join(root, "mcps/tbxmige/mcp.json"), JSON.stringify({ serve: "toolbox", database: "shared" }))
   await on("postgres",
     `drop database if exists ${shared} with (force)`, `drop database if exists ${own.database} with (force)`,
     `create database ${shared} owner ${sharedMcps.logins.migrator}`, `create role ${serving} login noinherit`,

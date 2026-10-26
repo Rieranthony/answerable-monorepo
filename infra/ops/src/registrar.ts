@@ -116,8 +116,8 @@ export const hostClient = (clientId: string, name: string, scopes: readonly stri
 })
 
 /**
- * The Toolbox at origin `toolbox` in ID, as apps/web/content/docs/toolbox/admin.mdx registers it: its resource and the resource of its admin API, each
- * with its key, and Claude Code as its host client. Its machine client is each caller's own.
+ * The Toolbox at origin `toolbox` in ID, as register and bun mcp setup register it: its resource and the resource of its admin API, each with its
+ * key, and Claude Code as its host client. Its machine client is each caller's own.
  */
 export const toolboxRows = (toolbox: string, callback: string) => ({
   resources: [

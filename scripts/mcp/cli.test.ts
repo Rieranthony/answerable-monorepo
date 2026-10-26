@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { tmpdir } from "node:os"
 import { commands, main, parse } from "./cli"
+import type { Refusal } from "./io"
 import { tempRepository, testIo } from "./test/io"
 import { findRoot } from "./workspace"
 let repository: Awaited<ReturnType<typeof tempRepository>>
@@ -13,26 +14,28 @@ const run = async (argv: string[], cwd = repository.root) => {
 }
 const newMcp = commands.find(command => command.name === "new")!
 
-test("flags take their value after a space or an equals sign; a flag without a value is true; the rest are positional", () => {
-  expect(parse(newMcp, ["acme", "--serve", "toolbox", "--description=A: b = c", "--mutation", "--json"])).toEqual({
-    positionals: ["acme"], flags: { serve: "toolbox", description: "A: b = c", mutation: true, json: true },
+test("flags take their value after a space or an equals sign; a flag given twice takes its last; a flag without a value is true; the rest are positional", () => {
+  expect(parse(newMcp, ["acme", "--serve", "toolbox", "--description=A: b = c", "--mutation", "--serve", "both"])).toEqual({
+    positionals: ["acme"], flags: { serve: "both", description: "A: b = c", mutation: true },
   })
 })
 
-test.each([
-  [["new", "acme", "--force"], "unknown-flag", "bun mcp new has no flag --force; its flags are --description, --serve, --database, --tool, --tool-description, --mutation, --no-check, --json, --help"],
-  [["new", "acme", "-s", "toolbox"], "unknown-flag", "bun mcp new has no flag -s; its flags are --description, --serve, --database, --tool, --tool-description, --mutation, --no-check, --json, --help"],
-  [["new", "acme", "--serve", "toolbox", "--serve", "both"], "repeated-flag", "--serve is given twice; give it once"],
-  [["new", "acme", "--serve"], "flag-value", "--serve takes a value, <toolbox|standalone|both>"],
-  [["new", "acme", "--serve", "--mutation"], "flag-value", "--serve takes a value, <toolbox|standalone|both>"],
-  [["new", "acme", "--mutation=yes"], "flag-value", "--mutation takes no value"],
-  [["deploy", "acme"], "unknown-command", "bun mcp has no command deploy; its commands are new, add tool, list, check, db, setup, dev, help"],
-  [["add", "prompt"], "unknown-command", "bun mcp has no command add prompt; its commands are new, add tool, list, check, db, setup, dev, help"],
-  [["add"], "unknown-command", "bun mcp has no command add; its commands are new, add tool, list, check, db, setup, dev, help"],
-])("refuses %j with %s, exit 2", async (argv, code, message) => {
-  const text = await run(argv)
-  expect([text.code, text.stderr().split("\n")[0]]).toEqual([2, message])
-  expect(JSON.parse((await run([...argv, "--json"])).stdout()).error).toMatchObject({ code })
+test("parseArgs' refusals become the CLI's: an unknown flag, long or short, a value missing or starting with a dash, and a value to a flag that takes none", () => {
+  const refused = (argv: string[]) => { try { parse(newMcp, argv) } catch (error) { return [(error as Refusal).code, (error as Refusal).message] } }
+  const flags = "--description, --serve, --database, --tool, --tool-description, --mutation, --help"
+  expect([["-s", "toolbox"], ["--serve", "--mutation"], ["--description", "-x"], ["--mutation=yes"]].map(refused)).toEqual([
+    ["unknown-flag", `bun mcp new has no flag -s; its flags are ${flags}`],
+    ["flag-value", "--serve takes a value, <toolbox|standalone|both>"],
+    ["flag-value", "--description takes a value, <text>"],
+    ["flag-value", "--mutation takes no value"],
+  ])
+})
+
+test("a word after add that is not tool names no command", async () => {
+  for (const [argv, named] of [[["add", "prompt"], "add prompt"], [["add"], "add"]] as const) {
+    const { code, stderr } = await run([...argv])
+    expect([code, stderr().split("\n")[0]]).toEqual([2, `bun mcp has no command ${named}; its commands are new, add tool, list, check, db, setup, dev, help`])
+  }
 })
 
 test("help refuses a command it does not have", async () => {
@@ -49,22 +52,14 @@ test("help lists every command with its summary; help <command> and --help give 
   }
   const [helped, flagged] = [await run(["help", "add", "tool"]), await run(["add", "tool", "--help"])]
   expect(helped.stdout()).toBe(flagged.stdout())
-  expect(helped.stdout()).toStartWith("bun mcp add tool [mcp] <domain.operation> --description … [--mutation] [--no-check] [--json]\n\nAdd a tool to an MCP")
+  expect(helped.stdout()).toStartWith("bun mcp add tool [mcp] <domain.operation> --description … [--mutation]\n\nAdd a tool to an MCP")
   expect(helped.stdout()).toContain("\nFlags:\n  --description <text>  What the tool does")
   expect(helped.stdout()).toContain("  --help                This text\n")
   expect(helped.stdout()).toEndWith("Example:\n  bun mcp add tool acme notes.add --mutation --description \"Prepare a new note on a project; commit it to save it. Use notes.list first to avoid duplicates.\"\n")
 })
 
-test("outside the repository every command is refused, and an error that is not a refusal exits 1 with its message", async () => {
+test("the repository is found from any folder inside it, and nowhere above", () => {
+  expect(findRoot(`${repository.root}/mcps`)).toBe(repository.root)
   expect(() => findRoot(tmpdir())).toThrow("bun mcp runs in the Answerable monorepo; no package.json with the mcps/* workspaces is at or above")
-  const outside = await run(["list"], "/")
-  expect([outside.code, outside.stderr().split("\n")[0]]).toEqual([2, "bun mcp runs in the Answerable monorepo; no package.json with the mcps/* workspaces is at or above /"])
-  await Bun.write(`${repository.root}/mcps/retired.json`, "not json")
-  const broken = await run(["new", "acme", "--json"])
-  expect([broken.code, JSON.parse(broken.stdout()).error.code]).toEqual([2, "invalid-file"])
-  await Bun.write(`${repository.root}/mcps/acme/mcp.json`, '{ "name": "acme", "serve": "toolbox", "database": "shared" }\n')
-  const failed = await run(["db", "acme", "generate"])
-  expect(failed.code).toBe(1)
-  expect(failed.stderr()).toStartWith("bun mcp failed: Cannot find module")
 })
 

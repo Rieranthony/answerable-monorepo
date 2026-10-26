@@ -1,5 +1,5 @@
 // bun mcp dev [mcp]: runs an MCP on this machine, against the development Postgres and the local Answerable ID, and prints the command that connects
-// Claude Code to it. It migrates the local schemas of every MCP the Toolbox serves and the Toolbox's own database, starts the Toolbox with hot reload,
+// Claude Code to it. It migrates the local schemas of every MCP the Toolbox serves, in one process, and the Toolbox's own database, starts the Toolbox with hot reload,
 // which serves the MCP in its hub, at its own path or both, and waits for it to list the MCP, registers a standalone MCP in the local ID, and gives the
 // developer's organisation access, then runs until Ctrl-C and stops the Toolbox.
 import { join } from "node:path"
@@ -7,7 +7,7 @@ import { findBySlug } from "../../../infra/ops/src/admin-api"
 import { definitions } from "../definitions"
 import { readSettings } from "../environment"
 import { scopesOf } from "../generate"
-import { cli, refusal, Refusal, runSteps, sh, type Command, type Io, type Problem, type Running, type Step } from "../io"
+import { refusal, Refusal, runSteps, sh, type Command, type Io, type Problem, type Running, type Step } from "../io"
 import { local } from "../local"
 import { enableInToolbox, giveStandaloneAccess } from "../local-access"
 import { adminCall, counts, createRegistrar, machineToken, registerStandalone } from "../local-id"
@@ -23,7 +23,7 @@ type Settings = Awaited<ReturnType<typeof readSettings>>["settings"]
 async function preflight(io: Io, mcp: Declaration, settings: Settings, hasManifest: boolean) {
   const problems: Problem[] = []
   const { MCP_DEV_ID_CLIENT_ID: clientId, MCP_DEV_ID_CLIENT_SECRET: clientSecret } = settings
-  const refuse = (code: string, message: string) => problems.push({ code, message })
+  const refuse = (code: Problem["code"], message: string) => problems.push({ code, message })
   if (!clientId || !clientSecret) refuse("setup-required", "bun mcp setup has not run: MCP_DEV_ID_CLIENT_ID and MCP_DEV_ID_CLIENT_SECRET are not in .env. Run bun mcp setup")
   const up = await io.fetch(`${local.id}/healthz`, { signal: AbortSignal.timeout(5000) }).then(answer => answer.ok, () => false)
   if (!up) refuse("id-down", `Answerable ID does not answer on ${local.id}. Start it from the main checkout with bun dev, or with bun --filter @answerable/id dev; never bun dev from a worktree, where it runs env:up and recreates the shared Postgres`)
@@ -64,7 +64,7 @@ export const dev: Command = {
         // Every MCP the Toolbox serves must have its schema, granted to the serving login, or it refuses to start; and its own database its tables.
         name: "database", fix: again,
         run: async () => {
-          for (const { name: mounted } of mounts) await sh(io, [process.execPath, cli, "db", mounted, "migrate"], root, env)
+          await io.migrate(root, mounts)
           await sh(io, [process.execPath, "run", "db:migrate"], join(root, toolbox.workspace), env)
           return `schemas ${listed(mounts.map(mounted => mounted.name), "and")}; the database of ${toolbox.name}`
         },
@@ -92,7 +92,7 @@ export const dev: Command = {
     ]
     let code: number
     try {
-      code = await runSteps(io, false, steps, () => [])
+      code = await runSteps(io, steps, () => [])
       if (code === 0) code = await running(io, signal, started, mcp, settings.MCP_DEV_ORGANISATION)
     } finally {
       for (const server of started.toReversed()) await server.stop()

@@ -1,13 +1,13 @@
 // Every error a person can meet from bun mcp, as plain data: what they see, what it means and what to do. Like definitions.ts it imports nothing,
-// so the docs render it (`<CliErrors />`, `<CliReference />`). errors.test.ts runs the real command for every row and holds `see` to what it
-// printed, so a message reworded in the code fails there until the row follows it. In `see`, `…` stands for what varies: a path, a port or
-// what a tool printed; every other character is exact.
+// so the docs render it (`<CliErrors />`, `<CliReference />`). errors.test.ts runs the real command for every row and holds `see`, the exit code,
+// the code and the fix line to what it did, so a message reworded in the code fails there until the row follows it. In `see`, `…` stands for
+// what varies: a path, a port or what a tool printed; every other character is exact.
 import type { ErrorCode } from "./definitions"
 
-/** One error: the `id` a page names it by, the `code` it carries in `--json`, the commands that can answer it, and its three columns. */
+/** One error: the `id` a page names it by, its `code`, the commands that can answer it, and its three columns. */
 export type ErrorRow = {
   id: string
-  /** A code of `errorCodes`, or `<step>-failed` for a step that fails after files were written. */
+  /** The code of the refusal, a code of `errorCodes`, or `<step>-failed` for a step that fails after files were written. */
   code: ErrorCode | `${string}-failed`
   commands: readonly string[]
   see: string
@@ -27,25 +27,19 @@ export const errors: readonly ErrorRow[] = [
   },
   {
     id: "unknown-flag", code: "unknown-flag", commands: every,
-    see: "bun mcp new has no flag --force; its flags are --description, --serve, --database, --tool, --tool-description, --mutation, --no-check, --json, --help",
+    see: "bun mcp new has no flag --force; its flags are --description, --serve, --database, --tool, --tool-description, --mutation, --help",
     meaning: "The command has no such flag. Flags are written in full, such as `--serve`. There are no short forms.",
     action: "Use one of the flags the message lists.",
   },
   {
-    id: "repeated-flag", code: "repeated-flag", commands: every,
-    see: "--serve is given twice; give it once",
-    meaning: "A flag appears two times.",
-    action: "Give it once.",
-  },
-  {
     id: "flag-value", code: "flag-value", commands: every,
     see: "--serve takes a value, <toolbox|standalone|both>",
-    meaning: "A flag that takes a value has none, or is followed by another flag. A flag that takes no value, such as `--mutation=yes`, answers the same code with `--mutation takes no value`.",
-    action: "Write the value after the flag, as in `--serve toolbox`. Give a flag that takes none no value.",
+    meaning: "A flag that takes a value has none, or its value starts with `-`, which reads as another flag. A flag that takes no value, such as `--mutation=yes`, answers the same code with `--mutation takes no value`. A flag given twice is not refused: the last value counts.",
+    action: "Write the value after the flag, as in `--serve toolbox`; a value that starts with `-` after an equals sign, as in `--description=-…`. Give a flag that takes none no value.",
   },
   {
     id: "unexpected-argument", code: "unexpected-argument", commands: ["new", "add tool", "list", "check", "setup", "dev"],
-    see: "bun mcp new takes one name; it was given acme, extra",
+    see: "bun mcp add tool takes an MCP and one tool, <domain.operation>; it was given acme, notes.list, notes.add",
     meaning: "The command was given more words than it takes.",
     action: "Give it what its usage says. `bun mcp help <command>` shows the usage.",
   },
@@ -94,7 +88,7 @@ export const errors: readonly ErrorRow[] = [
   {
     id: "invalid-file", code: "invalid-file", commands: ["new", "add tool", "list", "check", "db", "dev"],
     see: "mcps/retired.json is not valid: …",
-    meaning: "A file bun mcp reads does not have the shape it needs: `mcps/retired.json`, an `mcps/<name>/mcp.json` (also when it names another MCP than its folder) or a `manifest.json`.",
+    meaning: "A file bun mcp reads does not have the shape it needs: `mcps/retired.json`, an `mcps/<name>/mcp.json`, which holds `serve` and `database` and nothing else, or a `manifest.json`.",
     action: "Fix the file the message names. `git diff <file>` shows what changed.",
   },
   {
@@ -124,7 +118,7 @@ export const errors: readonly ErrorRow[] = [
   {
     id: "name-reserved", code: "name-reserved", commands: ["new"],
     see: "toolbox is reserved; choose another name",
-    meaning: "The name belongs to the platform: `toolbox`, `admin`, `id`, `mcp`, `mcps`, `standalone`, `api`, `www`, `test`, `ops`, `public`, `drizzle`, `platform` or `postgres`. For `standalone` the message adds `; to serve your MCP on its own URL, pass --serve standalone`.",
+    meaning: "The name belongs to the platform: `toolbox`, `admin`, `mcp`, `mcps`, `standalone`, `id`, `api`, `www`, `ops`, `test`, `public`, `drizzle`, `platform` or `postgres`. `scripts/mcp/rules.ts` gives each one's reason. For `standalone` the message adds `; to serve your MCP on its own URL, pass --serve standalone`.",
     action: "Choose another name.",
   },
   {
@@ -304,8 +298,14 @@ export const errors: readonly ErrorRow[] = [
   {
     id: "check-failed", code: "check-failed", commands: ["new", "add tool"],
     see: "check failed: typecheck: …",
-    meaning: "The last step, `bun mcp check`, failed in the check it names: `typecheck`, `lint`, `test` or `budget`. The message ends with what the check printed.",
+    meaning: "The last step, `bun mcp check`, failed in the check it names, such as `guard`, `typecheck`, `lint` or `test`. The message ends with what the check printed.",
     action: "Fix what it printed, then run `bun mcp check <name>`.",
+  },
+  {
+    id: "organisation-setting", code: "guard-failed", commands: ["check"],
+    see: "guard failed: mcps/acme names answerable.organisation_id, which the platform sets to the caller's organisation on every query and a tool never sets: src/tools/notes-list.ts:…",
+    meaning: "A file of the MCP's `src` names the setting that row-level security reads. The platform sets it to the caller's organisation on every query; code that set it could read another organisation's rows. The check is a guard against a mistake, not a boundary: a name built at run time gets past it, and review must catch that.",
+    action: "Take it out of the MCP's code: queries on the MCP's tables need no organisation, and data from anywhere else is constrained by `organisation.id`. Then run `bun mcp check <name>`.",
   },
   {
     id: "access-disabled", code: "enable-failed", commands: ["dev"],

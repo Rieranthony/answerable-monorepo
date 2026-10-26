@@ -92,7 +92,7 @@ Every MCP gets a database linked to it and its sign-in through Answerable ID, se
 - [`packages/mcp-platform`](packages/mcp-platform/README.md) is what every server Answerable runs shares: evidence, spans, health and each MCP's database.
 - [`scripts`](scripts) holds `bun mcp`: `new`, `add tool`, `list`, `check`, `db`, `setup`, `dev` and the generator of the lists the Toolbox and the chart read.
 - [`mcps/toolbox`](mcps/toolbox/README.md) is the Toolbox, which also serves every MCP that runs on its own URL, and [`mcps/admin`](mcps/admin/README.md) is the admin MCP for Answerable staff, each with databases of its own.
-- [`mcps/e2e`](mcps/e2e/README.md) is the reference server and [`mcps/example`](mcps/example/README.md) the finished example.
+- [`mcps/e2e`](mcps/e2e/README.md) is the reference server and [`mcps/example`](mcps/example) the finished example, exactly as `bun mcp` writes it.
 - [`packages/acceptance`](packages/acceptance/README.md) holds the real-ID acceptance kit and journeys.
 
 | Command | Does |

@@ -52,9 +52,7 @@ export async function generatedFiles(root: string): Promise<Record<string, strin
   const declared = await declarations(root)
   const mcps = await Promise.all(declared.map(async ({ name, serve, database }) => {
     const manifest = await manifestOf(root, name)
-    const capabilities = manifest?.tools.filter(tool => tool.kind !== "commit").map(tool => tool.identity) ?? []
-    const grants = manifest ? [name, ...capabilities.map(identity => identity.split(".")[0]!), ...capabilities] : []
-    return { name, serve, database, scopes: manifest ? scopesOf(manifest) : [], grants: [...new Set(grants)].sort() }
+    return { name, serve, database, scopes: manifest ? scopesOf(manifest) : [] }
   }))
   const list = { $comment: "Written by bun mcp from mcps/*/mcp.json and each manifest.json (scripts/mcp/generate.ts); never edit it by hand", mcps }
   const files: Record<string, string> = { [chartList]: json(list) }

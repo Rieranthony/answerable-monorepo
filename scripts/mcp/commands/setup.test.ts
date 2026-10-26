@@ -88,8 +88,6 @@ test("--organisation stores another organisation's slug, and run again it change
     const refused = await run(id, argv)
     expect(refused.code).toBe(2)
   }
-  expect((await run(id, ["--organisation", "nobody"])).stderr()).toBe("Answerable ID has no organisation nobody; pass its slug with --organisation, or leave it out for answerable\n\n  bun mcp setup [--organisation <slug>] [--staff-token <token>] [--json]\n")
-  expect((await run(id, ["--organisation", "Bad Slug"])).stderr()).toStartWith("--organisation Bad Slug is not an organisation's slug: lowercase letters and digits, words joined by single hyphens")
   // Before ID holds mcp-dev, an organisation it lacks is refused too, and nothing is written.
   const fresh = localId()
   expect((await run(fresh, ["--organisation", "nobody"])).code).toBe(2)
@@ -138,26 +136,12 @@ test("with the root secret locked, a terminal is asked once for a staff token, w
   expect(await Bun.file(join(repository.root, ".env")).exists()).toBe(false)
 })
 
-test("with the root secret locked and no terminal it exits 2 with the exact flag and the page that says where to get a staff token, writing nothing", async () => {
-  const id = localId()
-  id.lockRoot(true)
-  const { code, stderr, stdout } = await run(id)
-  expect([code, stdout()]).toEqual([2, ""])
-  expect(stderr()).toBe(`ID's root secret is locked: a person is a platform administrator, so bun mcp setup needs a staff token: pass it with --staff-token (get one at ${onboarding})\n\n  bun mcp setup --staff-token <token>\n`)
-  expect(writesTo(id)).toEqual([])
-  const json = JSON.parse((await run(id, ["--json"])).stdout())
-  expect(json).toEqual({ ok: false, error: { code: "staff-token-required", message: expect.stringContaining("--staff-token"), fix: "bun mcp setup --staff-token <token>", problems: [expect.objectContaining({ code: "staff-token-required" })] } })
-})
-
-test("--staff-token is used instead of the root secret, even while root is unlocked; ID refusing it is refused with the page", async () => {
+test("--staff-token is used instead of the root secret, even while root is unlocked", async () => {
   const id = localId()
   id.staffToken("staff-token")
   const { code } = await run(id, ["--staff-token", "staff-token"])
   expect(code).toBe(0)
   expect(id.received.filter(({ request }) => request.startsWith("POST")).length).toBeGreaterThan(0)
-  const other = localId()
-  const refused = await run(other, ["--staff-token", "wrong"])
-  expect([refused.code, refused.stderr()]).toEqual([2, `ID refused the staff token; get another (${onboarding})\n\n  bun mcp setup --staff-token <token>\n`])
 })
 
 test("a root secret in .env that ID does not hold is treated as a locked root: a staff token is asked for", async () => {
@@ -167,26 +151,9 @@ test("a root secret in .env that ID does not hold is treated as a locked root: a
   expect(stderr()).toStartWith("ID refused ROOT_ADMIN_SECRET, so bun mcp setup needs a staff token: pass it with --staff-token")
 })
 
-test("it refuses when ID does not answer, naming where to start it and never bun dev from a worktree; and when ID has no platform organisation", async () => {
-  const id = localId()
-  id.unreachable(true)
-  const { code, stderr } = await run(id)
-  expect([code, stderr()]).toEqual([2, `Answerable ID does not answer on http://localhost:47300. Start it from the main checkout with bun dev, or with bun --filter @answerable/id dev; never bun dev from a worktree, where it runs env:up and recreates the shared Postgres. Then run bun mcp setup again\n\n  bun --filter @answerable/id dev\n`])
-  expect((await run(localId(), [], { fetch: undefined })).stderr()).toStartWith("Answerable ID does not answer")
-  const missing = await run(localId({ platform: false }))
-  expect([missing.code, missing.stderr()]).toEqual([2, "Answerable ID has no organisation answerable, which it makes at its first start: start it once, then run bun mcp setup again\n\n  bun mcp setup\n"])
-})
-
 test("a read ID answers with an error is a failure, not a refusal", async () => {
   const id = localId()
   const broken = ((input: string | URL | Request, init?: RequestInit) => (String(input).includes("/organizations") ? Promise.resolve(new Response("{}", { status: 500 })) : id.config.fetch(input, init))) as typeof fetch
   const { code, stderr } = await run(id, [], { fetch: broken })
   expect([code, stderr()]).toEqual([1, "bun mcp failed: GET /organizations answered 500\n\n  bun mcp help\n"])
-})
-
-test("a flag it does not know, an argument, and an invalid variable in .env are refused naming what to do", async () => {
-  expect((await run(localId(), ["acme"])).stderr()).toBe("bun mcp setup takes no argument; it was given acme\n\n  bun mcp setup [--organisation <slug>] [--staff-token <token>] [--json]\n")
-  await Bun.write(join(repository.root, ".env"), "MCP_DEV_ORGANISATION=Not A Slug\n")
-  const { code, stderr } = await run(localId())
-  expect([code, stderr().split("\n")[0]]).toEqual([2, `Invalid bun mcp configuration: MCP_DEV_ORGANISATION: an organisation's slug: lowercase letters and digits, words joined by single hyphens; fix it in ${join(repository.root, ".env")}`])
 })

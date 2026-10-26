@@ -22,7 +22,7 @@ const firstSentence = (text: string) => text.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? 
 
 export const list: Command = {
   ...definitions.list,
-  async run(io, { positionals, flags }) {
+  async run(io, { positionals }) {
     if (positionals.length) throw new Refusal("unexpected-argument", `bun mcp list takes no argument; it was given ${positionals.join(", ")}`, "bun mcp list")
     const root = findRoot(io.cwd)
     const mcps = await Promise.all((await declarations(root)).map(async ({ name, serve, database }) => {
@@ -31,10 +31,6 @@ export const list: Command = {
       const urls = { local: urlsOf({ name, serve }, here), staging: urlsOf({ name, serve }, deployed("staging")), production: urlsOf({ name, serve }, deployed("production")) }
       return { name, serve, database, description: manifest?.description ?? "", tools, urls }
     }))
-    if (flags.json === true) {
-      io.stdout.write(`${JSON.stringify({ ok: true, mcps }, null, 2)}\n`)
-      return 0
-    }
     const rows = mcps.map(mcp => [mcp.name, mcp.serve, mcp.database, `${mcp.tools.length} tool${mcp.tools.length === 1 ? "" : "s"}`, firstSentence(mcp.description), mcp.urls.local.join(" ")])
     const widths = rows.reduce((max, row) => row.map((cell, index) => Math.max(max[index] ?? 0, cell.length)), [] as number[])
     const deployedLine = (mcp: (typeof mcps)[number]) => `  staging ${mcp.urls.staging.join(" ")}  production ${mcp.urls.production.join(" ")}\n`

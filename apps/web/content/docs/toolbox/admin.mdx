@@ -12,8 +12,8 @@ export ID=http://localhost:47300
 export TOOLBOX=http://localhost:47400
 export ORG=0199a0d1-0000-7000-8000-000000000000   # the organisation's id in ID
 
-# A token for the Toolbox's admin resource, from the staff client registered below
-TOOLBOX_TOKEN=$(curl -s "$ID/auth/oauth2/token" --user "toolbox-staff:$STAFF_SECRET" \
+# A token for the Toolbox's admin resource, as a machine client with toolbox:admin: locally mcp-dev, from the root .env
+TOOLBOX_TOKEN=$(curl -s "$ID/auth/oauth2/token" --user "$MCP_DEV_ID_CLIENT_ID:$MCP_DEV_ID_CLIENT_SECRET" \
   --data-urlencode grant_type=client_credentials \
   --data-urlencode resource="$TOOLBOX/admin" \
   --data-urlencode scope=toolbox:admin | jq -r .access_token)
@@ -41,7 +41,7 @@ curl "$TOOLBOX/admin/v1/organisations/$ORG/enable" \
 }
 ```
 
-The call needs the registrations in [Register the Toolbox in ID](#register-the-toolbox-in-id). Run it again and `created` is empty: it found everything and changed nothing.
+The call needs the registrations in [Register the Toolbox in ID](#register-the-toolbox-in-id). Locally, `bun mcp dev <name>` makes this call for your organisation, as `mcp-dev`. In a deployment the machine client with `toolbox:admin` is the admin MCP's, `admin-mcp`, and staff make the call through its `toolbox_enable`. Run it again and `created` is empty: it found everything and changed nothing.
 
 ## What the call does
 
@@ -63,58 +63,17 @@ The call needs the registrations in [Register the Toolbox in ID](#register-the-t
 
 ## Register the Toolbox in ID
 
-Set `TOKEN` to a [staff token for ID](/docs/id/onboard#get-a-staff-token) and `PLATFORM_ORG` to the platform organisation. The commands that call ID use `TOKEN`; the ones that call the Toolbox use `TOOLBOX_TOKEN`. Each write sends its own `Idempotency-Key`, so a lost answer can be retried. The Toolbox's resource URL is its audience: it must match `TOOLBOX_RESOURCE_URL` exactly.
+Locally, `bun mcp setup`, then `bun mcp dev <name>`: [Run an MCP on your machine](/docs/mcp/run-locally). In a deployment, the register Job: [Set up the admin MCP](/docs/admin/setup). Both register, field for field:
 
-```bash
-export TOKEN=...            # ID staff token
-export PLATFORM_ORG=...
-export TOOLBOX_PATH=http%3A%2F%2Flocalhost%3A47400%2Fmcp
-export ADMIN_PATH=http%3A%2F%2Flocalhost%3A47400%2Fadmin
-export ID_ADMIN_PATH=http%3A%2F%2Flocalhost%3A47300%2Fapi%2Fadmin
+| Row | What it is |
+| --- | --- |
+| The Toolbox resource, `<origin>/mcp` | Its audience, which must match `TOOLBOX_RESOURCE_URL` exactly. It starts with `toolbox` and `offline_access`, and 900-second tokens; the enable call adds the grant strings of the providers you name |
+| The admin resource, `<origin>/admin` | What guards this API: `toolbox:admin`, 300-second tokens. Its identifier is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`; there is no variable for it |
+| The host client `claude-code-toolbox` | A public client for a person's app, with `toolbox` among its scopes |
+| A machine client with `platform:read platform:write` on ID's admin API | What the Toolbox reads grants with, and the enable call writes with: `toolbox-hub` in a deployment, `mcp-dev` locally |
+| A machine client with `toolbox:admin` on the admin resource | What calls this API: `admin-mcp` in a deployment, `mcp-dev` locally. A person's token is refused |
 
-# The Toolbox resource, and the resource that guards this admin API
-curl "$ID/api/admin/v1/resources" -H "Idempotency-Key: toolbox-resource-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"classification":"platform_shared","organizationId":null,"identifier":"'"$TOOLBOX"'/mcp","name":"Toolbox","allowedScopes":["offline_access","toolbox"],"accessTokenTtl":900}'
-curl "$ID/api/admin/v1/resources" -H "Idempotency-Key: toolbox-admin-resource-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"classification":"platform_shared","organizationId":null,"identifier":"'"$TOOLBOX"'/admin","name":"Toolbox admin","allowedScopes":["toolbox:admin"],"accessTokenTtl":300}'
-```
-
-The Toolbox resource starts with two scopes; the enable call adds the grant strings of the providers you name. The admin resource's identifier is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`; there is no variable for it.
-
-**The Toolbox's machine client**, owned by the platform organisation. It reads grants with `platform:read` and performs the enable call with `platform:write`:
-
-```bash
-curl "$ID/api/admin/v1/clients" -H "Idempotency-Key: toolbox-hub-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"clientId":"toolbox-hub","name":"Toolbox","organizationId":"'"$PLATFORM_ORG"'","tokenEndpointAuthMethod":"client_secret_basic","grantTypes":["client_credentials"],"clientCredentialsScopes":["platform:read","platform:write"]}'
-curl -X PUT "$ID/api/admin/v1/clients/toolbox-hub/resources/$ID_ADMIN_PATH" -H "Idempotency-Key: toolbox-hub-link-v1" -H "Authorization: Bearer $TOKEN"
-curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/capabilities" -H "Idempotency-Key: toolbox-hub-capability-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"clientId":"toolbox-hub","resource":"'"$ID"'/api/admin","grantKind":"client_credentials","scopes":["platform:read","platform:write"]}'
-```
-
-The first call answers `clientSecret` once: put it in `TOOLBOX_ID_CLIENT_SECRET` in the root `.env`, with `TOOLBOX_ID_CLIENT_ID=toolbox-hub`.
-
-**Registered it before the enable call existed?** With `platform:read` alone the enable call answers `502 id_failed`. `PATCH` the client's `clientCredentialsScopes` and the capability's `scopes` to add `platform:write`, each with its own `Idempotency-Key`, as [Connect Claude Code](/docs/mcp/claude-code#register-the-server) does for a new scope.
-
-**The staff client** that calls the admin API, also owned by the platform organisation:
-
-```bash
-curl "$ID/api/admin/v1/clients" -H "Idempotency-Key: toolbox-staff-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"clientId":"toolbox-staff","name":"Toolbox staff","organizationId":"'"$PLATFORM_ORG"'","tokenEndpointAuthMethod":"client_secret_basic","grantTypes":["client_credentials"],"clientCredentialsScopes":["toolbox:admin"]}'
-curl -X PUT "$ID/api/admin/v1/clients/toolbox-staff/resources/$ADMIN_PATH" -H "Idempotency-Key: toolbox-staff-link-v1" -H "Authorization: Bearer $TOKEN"
-curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/capabilities" -H "Idempotency-Key: toolbox-staff-capability-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"clientId":"toolbox-staff","resource":"'"$TOOLBOX"'/admin","grantKind":"client_credentials","scopes":["toolbox:admin"]}'
-```
-
-The secret is `STAFF_SECRET` above. Only a token of a machine client that ID issued for the admin resource with `toolbox:admin` opens the API; a person's token is refused.
-
-**Each host client**, registered with `toolbox` among its scopes. It is a public client for a person's app:
-
-```bash
-curl "$ID/api/admin/v1/clients" -H "Idempotency-Key: claude-code-toolbox-v1" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"clientId":"claude-code-toolbox","name":"Claude Code (Toolbox)","tokenEndpointAuthMethod":"none","grantTypes":["authorization_code","refresh_token"],"redirectUris":["http://localhost:47700/callback"],"scopes":["openid","offline_access","toolbox"]}'
-```
-
-Do not link it or add its capabilities and entitlements by hand: the enable call does. Until the first enable that names it, the client is not linked to the Toolbox, so a person signing in through it gets `invalid_target` from ID instead of the organisation chooser's "Access is unavailable for this organisation". Then [start the Toolbox](/docs/toolbox#run-it-locally) and enable an organisation.
+Do not link the host client or add its capabilities and entitlements by hand: the enable call does. Until the first enable that names it, the client is not linked to the Toolbox, so a person signing in through it gets `invalid_target` from ID instead of the organisation chooser's "Access is unavailable for this organisation".
 
 ## The catalogue
 
@@ -159,7 +118,7 @@ The Toolbox reads the row on every request that lists or calls tools: `auto` ser
 
 ## Grant strings for people
 
-The enable call lets a host client get a token for the organisation. What each person may use is an entitlement to the Toolbox resource whose `scopes` are [grant strings](/docs/toolbox#grant-strings): a provider (`e2e`), a domain (`e2e/records`) or a capability (`e2e/records.list`). Use [ID's entitlement API](/docs/id/admin-api/entitlements/createEntitlement); the organisation, one group or one member can hold one:
+The enable call lets a host client get a token for the organisation. What each person may use is an entitlement to the Toolbox resource whose `scopes` are [grant strings](/docs/toolbox#grant-strings): a provider (`e2e`), a domain (`e2e/records`) or a capability (`e2e/records.list`). Use [ID's entitlement API](/docs/id/admin-api/entitlements/createEntitlement), with `TOKEN` a [staff token for ID](/docs/id/onboard#get-a-staff-token); the organisation, one group or one member can hold one:
 
 ```bash
 export MCP=$TOOLBOX/mcp
@@ -228,8 +187,8 @@ Every failure answers `{ "error": { "code": "...", "message": "..." } }`; the me
 
 | Status and code | Meaning | What to do |
 | --- | --- | --- |
-| `401 unauthorized` | No bearer token, or one that is invalid, expired, for another audience or a person's | Request a token from ID with `resource` set to the admin resource and `scope=toolbox:admin`, as the staff client |
-| `403 forbidden` | The token lacks `toolbox:admin` | Add the scope to the staff client's capability and `clientCredentialsScopes` in ID |
+| `401 unauthorized` | No bearer token, or one that is invalid, expired, for another audience or a person's | Request a token from ID with `resource` set to the admin resource and `scope=toolbox:admin`, as a machine client that holds it |
+| `403 forbidden` | The token lacks `toolbox:admin` | Locally, run `bun mcp setup` again, which gives `mcp-dev` the scope; in a deployment, the register Job gives it to `admin-mcp` |
 | `400 invalid_request` | The body is not JSON, has a field of the wrong type, a field the route does not take, an organisation id that is not a UUID, or a path that is not valid percent-encoding | Fix what the message names |
 | `404 not_found` | No such route | Check the method and path against [Routes](#routes) |
 | `404 provider_not_found` | The provider is not mounted in this Toolbox | `GET /providers` lists them |
@@ -240,8 +199,8 @@ Every failure answers `{ "error": { "code": "...", "message": "..." } }`; the me
 | `422 unknown_provider` | The enable call names a provider that is not mounted | Use the ids `GET /providers` lists |
 | `422 unknown_capability` | `overrides` names an identity the provider does not have | Use identities from `GET /providers` |
 | `422 not_a_mutation` | `policy_class` names a read | Set a policy class only for mutations |
-| `422 unknown_host_client` | ID has no such client (enable call) | Register the host client in ID first |
+| `422 unknown_host_client` | ID has no such client (enable call) | Register the host client in ID first: `bun mcp setup` locally, the register Job in a deployment |
 | `502 id_failed` | ID refused the Toolbox's client credentials or a call, or did not answer | Read the message, fix ID, the client's `platform:read platform:write` capability or `TOOLBOX_ID_CLIENT_SECRET`, then repeat the call |
 | `500 internal_error` | Something unexpected, such as the database | The Toolbox's log has `[toolbox] admin API failed` |
 
-The journey that proves the enable call against real ID is in [Test MCPs locally](/docs/mcp/local-testing#what-the-toolbox-journeys-prove); [the admin journeys](/docs/mcp/local-testing#what-the-admin-journeys-prove) call it through `toolbox_enable`.
+The Toolbox journeys in `packages/acceptance` prove the enable call against real ID, and the admin journeys call it through `toolbox_enable`: [What the acceptance proves](/docs/mcp/local-testing#what-the-acceptance-proves).

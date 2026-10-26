@@ -7,7 +7,7 @@ description: "Add a read tool or a change to an MCP with bun mcp add tool: how t
 bun mcp add tool acme notes.add --mutation --description "Prepare a new note on a project; commit it to save it. Use notes.list first to avoid duplicates."
 ```
 
-A tool is one thing an AI app can ask your MCP to do. This command writes the tool's file and its test, adds it to the MCP, adds the table it needs, writes the migration and the manifest, and checks the MCP. Leave out `--mutation` for a tool that only reads. From inside `mcps/acme`, leave out the MCP's name.
+A tool is one thing an AI app can ask your MCP to do. This command writes the tool's file and its test, adds it to the MCP, adds the table it needs and writes its migration, then checks the MCP, whose tests write the manifest. Leave out `--mutation` for a tool that only reads. From inside `mcps/acme`, leave out the MCP's name.
 
 Your tool gets a database and the caller's identity without any code from you: the database is linked to your MCP, and sign-in through Answerable ID is already done. [Its database](/docs/mcp/database), [its sign-in](/docs/mcp/sign-in).
 
@@ -54,7 +54,15 @@ A change, with `--mutation`, writes this:
 
 <include lang="ts" meta='title="mcps/example/src/tools/notes-add.ts"'>../../../../../mcps/example/src/tools/notes-add.ts#add</include>
 
-Each file opens with the same guidance as the first tool's, which [Make an MCP](/docs/mcp/create#what-it-writes) shows. Edit the generated tool into the real one: its input, its output and its table. [Read tools](/docs/mcp/tools) and [Mutations](/docs/mcp/mutations) cover every field and rule.
+Each file opens with guidance, each rule said once: its name, its description, its fields, what it receives and the organisation rule, and for a change its risk, prepare and commit. Edit the generated tool into the real one: its input, its output and its table. [Read tools](/docs/mcp/tools) and [Mutations](/docs/mcp/mutations) cover every field and rule.
+
+**A tool that needs no table.** For a domain with no table yet, the command adds one to `src/db/schema.ts`, the `notes` table above for `notes`, and writes its migration, such as `drizzle/0001_notes.sql`. A tool that reads from elsewhere, such as an upstream API, needs none. Drop it before the migration is applied anywhere, and nothing of it stays in the history:
+
+1. Delete the table from `src/db/schema.ts`, and the `organisationIsolation` import if no table uses it.
+2. Delete the migration's three files: `drizzle/0001_notes.sql`, `drizzle/meta/0001_snapshot.json` and its entry in `drizzle/meta/_journal.json`.
+3. Run `bun mcp db acme generate`, which prints `no change to src/db/schema.ts`, then `bun mcp check acme`.
+
+Once `bun mcp dev` or `bun mcp db acme migrate` has applied the migration on your machine, the database refuses the deleted file as an edited migration: drop the local schema first, as [Undo a local MCP](/docs/mcp/create#undo-a-local-mcp) shows, and migrate again. A migration that has shipped is never removed: remove the table with a new one, which `bun mcp db acme generate` writes.
 
 ## What every tool receives
 

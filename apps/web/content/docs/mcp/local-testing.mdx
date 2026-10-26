@@ -1,99 +1,13 @@
 ---
-title: Test MCPs locally
-description: "Run an MCP on your machine with bun mcp dev, signed in through your local Answerable ID and ready for Claude Code; then run the acceptance against real ID with a browser, and write a new journey with the kit."
+title: Test MCPs against real ID
+description: "Run the acceptance, which tests the MCPs against a real Answerable ID with a browser and bun mcp end to end; its ports, the kit, how to write a journey, the lanes for trying a host by hand, and the errors you can hit."
 ---
 
 ```sh
-bun mcp setup
-bun mcp dev acme
+bun run mcp:test:e2e
 ```
 
-`bun mcp setup` runs once. `bun mcp dev acme` then runs the MCP `acme` on your machine: it migrates its schema, serves it, registers it in your local Answerable ID, gives your organisation access and prints the `claude mcp add` command that connects Claude Code to it. Both need your local ID and the development Postgres running ([Before you start](#before-you-start)).
-
-## Run an MCP on your machine
-
-### Before you start
-
-Have these in place, in order, from the main checkout. Never run `bun dev` or `bun run env:up` from a worktree: its Compose project has the main checkout's name, so it recreates the running Postgres.
-
-| What | Do it with | Port |
-| --- | --- | --- |
-| The development Postgres | `bun run env:up` | `47432` |
-| ID's database, migrated | `bun --filter @answerable/id db:migrate`, before ID's first start and after a pull that adds a migration | |
-| Your local ID | `bun dev`, or `bun --filter @answerable/id dev` | `47300` |
-| A sign-in for your email domain on the platform organisation | [First run](/docs/id/onboard#first-run), steps 3 and 4, once | |
-
-The first run of ID makes the platform organisation, `answerable`. Step 3 puts your email domain and your company's directory on it, and step 4 signs you in once, so that a sign-in from Claude Code can complete. Run them against `http://localhost:47300`, with `ROOT_ADMIN_SECRET` at ID's development default, and with the directory's `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET`, or the Google pair, in the root `.env` when ID starts. The Toolbox, which serves every MCP, is started by `bun mcp dev`.
-
-### Connect the CLI to your local ID
-
-```sh
-bun mcp setup
-```
-
-It runs once. It makes a machine client in your local ID, `mcp-dev`, owned by the platform organisation:
-
-- `platform:read platform:write` on ID's admin API, to register an MCP and give your organisation access to it;
-- `toolbox:admin` on the Toolbox's admin API, to enable an MCP in the Toolbox.
-
-It also registers the Toolbox's resource, its admin resource and Claude Code's client for the Toolbox, `claude-code-toolbox`, as [the register Job](/docs/admin/setup) registers them in a deployment. Then it writes `MCP_DEV_ID_CLIENT_ID`, `MCP_DEV_ID_CLIENT_SECRET` and `MCP_DEV_ORGANISATION` to the git-ignored `.env` in the root of the repository it runs in. It never prints the secret.
-
-```text
-ok      toolbox    http://localhost:47400/mcp, its admin resource and claude-code-toolbox: 3 made, 0 changed, 0 found
-ok      client     mcp-dev made: platform:read platform:write on ID, toolbox:admin on the Toolbox
-ok      env        MCP_DEV_ID_CLIENT_ID, MCP_DEV_ID_CLIENT_SECRET and MCP_DEV_ORGANISATION=answerable written to .env
-
-Next:
-  bun mcp list
-  bun mcp dev <mcp>
-```
-
-- **Which credential makes the client.** While ID's root secret is unlocked locally, `bun mcp setup` uses `ROOT_ADMIN_SECRET`, which defaults to ID's own local default. Once a person is a platform administrator, ID locks the root secret. Then `bun mcp setup` asks once, in a terminal, for a [staff token](/docs/id/onboard#get-a-staff-token); the token is not shown or stored. Without a terminal, as in a coding agent's shell, it exits with code 2 and names the flag: `bun mcp setup --staff-token <token>`.
-- **Run it again.** It finds `mcp-dev` working and does nothing. If the client exists but `.env` holds no secret, ID gives it a new one, since a secret is shown once. If you reset ID's database, the secret in `.env` stops working, and `bun mcp setup` makes the client again.
-- **Your organisation.** `bun mcp dev` gives access to one organisation, so that you can sign in and call every tool. It is your local ID's platform organisation, `answerable`. Another: `bun mcp setup --organisation <slug>`, which stores it as `MCP_DEV_ORGANISATION`.
-
-### Run an MCP
-
-```sh
-bun mcp dev acme
-```
-
-From inside `mcps/acme` the name can be left out. In order, it:
-
-1. migrates the schema of every MCP, and the Toolbox's own database; the Toolbox serves every MCP of its generated list, so one that was never provisioned on your machine stops it from starting;
-2. starts the Toolbox, with hot reload, as `mcp-dev`, which serves the MCP in its hub (`serve` `toolbox`), at its own path (`standalone`) or both, and waits for its `/health` to list the MCP;
-3. for a standalone MCP, registers its resource, `http://localhost:47400/acme/mcp`, and its client, `claude-code-acme`, field for field as [the register Job](/docs/admin/setup) does, then gives your organisation access with the rows `standalone_enable` makes with `everyone: true`;
-4. for a Toolbox MCP, enables it for your organisation through the Toolbox's admin API and grants your organisation its grant string, `acme`, widening the one entitlement that ID keeps for your organisation on the Toolbox;
-5. prints what to do, then runs until Ctrl-C, which stops what it started.
-
-Every step is safe to run again. A scope that the MCP gained since the last run widens the rows ID holds; nothing narrows what your organisation holds.
-
-```text
-ok      database   schemas acme; the database of the Toolbox
-ok      toolbox    serving acme at http://localhost:47400/acme/mcp
-ok      register   http://localhost:47400/acme/mcp and claude-code-acme: 3 made, 0 changed, 0 found
-ok      access     organisation answerable: 6 made, 0 widened
-
-acme runs at http://localhost:47400/acme/mcp
-
-  claude mcp add --transport http acme http://localhost:47400/acme/mcp --client-id claude-code-acme --callback-port 47700
-
-In Claude Code, run /mcp, choose acme, then Authenticate.
-
-Ctrl-C stops the Toolbox; an edit to acme reloads it.
-```
-
-For an MCP in the Toolbox, it prints the Toolbox's command instead, `claude mcp add --transport http answerable-toolbox http://localhost:47400/mcp --client-id claude-code-toolbox --callback-port 47700`, and says that enabling and granting are local conveniences: in staging and production, staff do both with `toolbox_enable` and `access_grant` in [the admin MCP](/docs/admin). An MCP served both ways prints both.
-
-**Measured** on 25 October 2026, when a server of its own served standalone MCPs: with the stack running and four MCPs, `bun mcp dev` printed its commands 1.9 seconds after it started for an MCP it had not run before, and 1.55, 1.57 and 1.60 seconds for one it had. The migrations were most of it: about 0.2 seconds for each MCP. `bun mcp setup` took 0.5 seconds. Not measured since the Toolbox serves every MCP. On Ctrl-C the Toolbox closes its port and its connections, then exits; if it has not ended a second later it is killed with its process group.
-
-**Claude Code.** Run the printed command, then `/mcp` in Claude Code, choose the connection and **Authenticate**. [Connect Claude Code](/docs/mcp/claude-code) covers what you see and the errors you can hit there. Signing in by hand through a browser, with your work account, is the one step that no command does for you.
-
-### What `bun mcp setup` and `bun mcp dev` refuse
-
-Each refusal exits with code 2, before anything starts, and every problem is listed at once with the command that fixes it. A step that fails after that exits with code 1 and names the command that finishes the job. [The bun mcp command](/docs/mcp/cli#errors) lists every error of every command.
-
-<CliErrors ids={["setup-required", "setup-stale", "id-down", "postgres-down", "port-taken", "organisation-not-found", "invalid-organisation", "invalid-configuration", "manifest-missing", "platform-organisation-missing", "staff-token-required", "staff-token-refused", "step-failed", "access-disabled", "enable-refused", "toolbox-token-refused", "server-stopped"]} />
+The acceptance tests the MCPs against a real Answerable ID, through ID's pages in a real browser and the official MCP client, and runs `bun mcp` end to end. CI runs it on every push. To run one MCP on your machine and try it in Claude Code, use [Run an MCP on your machine](/docs/mcp/run-locally) instead.
 
 ## Run the acceptance
 
@@ -103,157 +17,11 @@ bun install
 bun run mcp:test:e2e
 ```
 
-Requires Bun 1.3.1 and Docker Compose. Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys below and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143).
+Requires Bun 1.3.1, Docker Compose and the development Postgres on `47432` (`bun run env:up`, from the main checkout). Run it from the repository root. It runs `bun test` in `packages/acceptance`: the journeys and the kit's own tests. It exits non-zero when a test fails, and it removes its database and processes either way, including after Ctrl-C (exit 130) or SIGTERM (exit 143).
 
-## What the e2e journeys prove
+## What the acceptance proves
 
-`packages/acceptance/src/journeys/e2e.journeys.test.ts` starts ID once and runs the tests below in order.
-
-**Setup.** ID starts from production migrations, served through the restricted runtime role, and is provisioned only through its admin API: the MCP resource with a 60-second token lifetime, a public client, and three organisations with company sign-in, capabilities and entitlements. The third organisation, `mcp-gamma`, is entitled to `e2e:identity` and `e2e:read` only. The Toolbox's process runs in the test process on port `47604` (`src/toolbox.ts`, `prepareToolbox`) and [serves e2e alone](/docs/mcp/servers#served-alone) at its path, `http://127.0.0.1:47604/e2e/mcp`, with its machine client, `toolbox-hub`, its database `answerable_toolbox_acceptance`, and e2e's records in the shared MCP database `answerable_mcps_acceptance`, as its serving login (`src/mcps.ts`, `mcpsDatabase`).
-
-1. Each organisation signs in through ID with the SDK's OAuth client and a real browser. The client follows the MCP's `401` to its metadata, discovers ID and builds the request: PKCE S256, the MCP URL as `resource`, the advertised scopes (`e2e:identity`, `e2e:read`, `e2e:write`) plus `offline_access`. The browser completes ID's pages: email, company sign-in, organisation, and consent listing every entitled scope. The consent of `mcp-gamma` names `e2e:write` as not approved. The callback carries ID's `iss` (RFC 9207), which the client checks.
-2. Each access token is bound to the MCP, lives 60 seconds and carries exactly the entitled scopes.
-3. A 2025 client and a `2026-07-28` client see the entitled tools, the prompt and the resource, and `identity_get` names the selected organisation. The first two organisations see seven tools: `identity_get`, `records_list`, `records_show`, `records_create`, `records_delete`, `e2e_commit` and `e2e_commit_confirmed`. `mcp-gamma` sees the three read tools.
-
-**J4, agent-class mutation.** [Prepared mutations](/docs/mcp/mutations) of low risk commit with `e2e_commit`. The codes below are in [MCP errors](/docs/mcp/errors).
-
-4. `records_create` returns a preview with a summary and one change, a commit token, `commit_tool: "e2e_commit"` and `policy_class: "agent"`. `e2e_commit` returns a receipt whose `results` is the record, at version 1, in the caller's organisation.
-
-The commit rules in which ID plays no part, a repeated commit, a stale target, an expired intent and the controlled class with its summary, are held by `@answerable/mcp`'s own tests (`packages/mcp/src/commit.test.ts`), for every MCP built with it.
-
-**Isolation, tokens and refresh.**
-
-5. Each of the first two organisations lists only its own record, and preparing to delete another organisation's record answers `NOT_FOUND`.
-6. `mcp-gamma` lists no records, and `records_create`, `records_delete`, `e2e_commit` and `e2e_commit_confirmed` are unknown tools to it.
-7. A second Toolbox, at another origin on port `47605`, serves e2e as another resource and refuses the token with `401`, after the MCP it was issued for accepted the same token.
-8. The client refreshes an expired access token by itself, ID rotates the refresh token, and the new tokens keep the same scopes.
-9. Disabling the organisation through the admin API makes refresh fail with `invalid_grant`; the access token already issued keeps working until it expires.
-
-The company directories are local test issuers. ID, its database role, its pages, token issuance, the MCP and the MCP client are real.
-
-## What the Toolbox journeys prove
-
-`packages/acceptance/src/journeys/toolbox.journeys.test.ts` starts its own ID and runs [the Toolbox](/docs/toolbox) and its [admin API](/docs/toolbox/admin) in the test process on port `47604`, mounting the MCPs of its generated list, `e2e` and `example`, over the shared MCP database `answerable_mcps_acceptance`. These journeys enable `e2e` alone.
-
-**Setup.** `src/toolbox.ts` (`startToolboxStack`, which the host lane starts from too) registers through ID's admin API the Toolbox resource, allowing only `toolbox` and `offline_access` with a 60-second token lifetime; the Toolbox's admin resource; two public clients asking for `toolbox`, `toolbox-browser` and `toolbox-meta`; and two machine clients in the platform organisation, the Toolbox's (`platform:read` and `platform:write` for ID's admin resource) and a staff client (`toolbox:admin` for the Toolbox's admin resource). It creates `answerable_toolbox_acceptance` and its login `answerable_toolbox_acceptance_runtime` on the disposable PostgreSQL, migrates the database as the owner, provisions the login with the Toolbox's grants, and starts the Toolbox as that login, as in [production](/docs/toolbox#database-roles), with the audit-log poller and in-memory spans. The journey calls its [enable operation](/docs/toolbox/admin#enable-an-organisation) for each of three organisations (for `toolbox-alpha` with both public clients): it links the clients to the Toolbox resource, widens the resource to the grant strings of `e2e`, and makes the login and `toolbox` rows and the catalogue row. Entitlements to the Toolbox resource then carry grant strings: `toolbox-alpha` gets `e2e`, `toolbox-beta` gets `e2e/records`, `toolbox-gamma` nothing. The catalogue is the ceiling: gamma may use `e2e` but has no entitlement to any of it until J3. `toolbox-meta` is set to the meta projection through the admin API.
-
-1. Each organisation signs in through ID with the SDK's OAuth client and a real browser; its token carries `toolbox` and `offline_access` only. `toolbox-alpha` signs in a second time, through `toolbox-meta`.
-
-**J1, direct list.**
-
-2. `toolbox-alpha` lists `toolbox_whoami`, `e2e_identity_get`, `e2e_records_create`, `e2e_records_delete`, `e2e_records_list`, `e2e_records_show`, `toolbox_commit` and `toolbox_commit_confirmed`, in that order, with read-only annotations on the reads and prepare tools, `_meta` identities, versions, risks and policy classes, and the confirmed commit tool marked destructive with `anthropic/requiresUserInteraction`.
-3. `toolbox_whoami` returns the token's user and membership, the organisation, the host client, the grant `e2e` and the five capabilities with their policy classes.
-4. `e2e_records_list` succeeds, and a `capability.completed` row and a span exist for that call, joined by execution, trace and span ids.
-
-**J2, partial and denied.**
-
-5. `toolbox-beta` lists `toolbox_whoami`, the four records tools and the two commit tools.
-6. `toolbox-gamma` lists only `toolbox_whoami`; calling `e2e_records_list` is the unknown-tool error, and its chain holds one `capability.denied` event.
-
-**J6, human class.**
-
-7. With `policy_class` set to `human` for `e2e/records.delete` in `toolbox-beta`'s catalogue, through the admin API, beta creates a record through `e2e_records_create` and `toolbox_commit`, then `e2e_records_delete` returns `policy_class: "human"`, `commit_tool: "toolbox_commit_confirmed"` and `approval: { required: true, status: "pending" }`. `toolbox_commit` and `toolbox_commit_confirmed`, with the right summary, both answer `APPROVAL_REQUIRED` with `details.approval` `{ class: "human", commit_tool: "toolbox_commit_confirmed", status: "pending" }` and no URL. The intent is stored `awaiting_approval`, and its evidence is `intent.prepared`, `intent.approval_requested`, the prepare call's `capability.completed` and each refused commit call's, which names the intent with `APPROVAL_REQUIRED`. The approval page is Not yet.
-
-**J7, meta projection.**
-
-8. `toolbox-alpha`, through `toolbox-meta`, lists exactly `toolbox_whoami`, `toolbox_search`, `toolbox_describe`, `toolbox_execute`, `toolbox_prepare`, `toolbox_commit` and `toolbox_commit_confirmed`.
-9. `toolbox_search` for `oldest`, a word of its description only, returns `e2e/records.list` alone, with its first sentence, twenty times: in three runs, a median of 7.5 to 10.6 ms and a maximum of 11.5 to 20.7 ms per call. `toolbox_describe` returns its input and output schemas, and `toolbox_execute` runs it.
-10. `toolbox_prepare` prepares `e2e/records.create` as an agent-class intent and `toolbox_commit` commits it; `toolbox_prepare` of `e2e/records.delete` for that record returns a controlled-class intent, and `toolbox_commit_confirmed` with its summary deletes the record.
-
-**J3, a grant change without re-authorisation.**
-
-11. An entitlement to `e2e/identity` is added to `toolbox-gamma` in ID. Polling `tools/list` every 5 seconds with the same access token lists `e2e_identity_get` within 60 seconds, and a `2026-07-28` client that listens (the MCP client's `listen`) hears `tools/list_changed` and lists the new tool. In two runs: listed after 10.0 and 15.0 seconds, heard after 10.0 and 10.4 seconds.
-12. Disabling `toolbox-gamma` through the admin API makes refresh fail with `invalid_grant`.
-
-**J10, evidence.**
-
-13. `toolbox-alpha`'s chain verifies: its calls, its intents' transitions and its commits. The append-only trigger and payload erasure are held by `@answerable/mcp-postgres`'s own tests (`packages/mcp-postgres/src/evidence.test.ts`).
-
-The last test logs what the Toolbox asked ID, and requires exactly 2 token requests: the Toolbox and its poller share one machine client, with a `platform:read` token for grants and the audit log and a `platform:read platform:write` token for the enable calls. In two runs: 44 and 45 grant reads answered by 4 access-view calls (90.9% and 91.1% cache hits) and 2 audit-log reads; the median access-view latency was 35.3 and 32.2 ms and the maximum 40.7 and 45.7 ms.
-
-**Administration.**
-
-14. The admin API refuses a person's token with `401`, and lists the mounted providers, `e2e` among them, and their capabilities to staff.
-15. The enable calls left the Toolbox resource allowing the grant strings of `e2e` and linked to both host clients. Calling it again for `toolbox-alpha` reports all nine steps as existing and changes nothing in ID.
-16. `PUT` catalogue with `e2e/records.list` disabled hides that tool from `toolbox-alpha` and from no one else, 4 to 14 ms later in eight runs; a second `PUT` restores it.
-
-The admin API's evidence check and host client rows are held by the Toolbox's own tests (`mcps/toolbox/src/admin.test.ts`).
-
-## What the admin journeys prove
-
-`packages/acceptance/src/journeys/admin.journeys.test.ts` starts its own ID with `startId({ tenants: [{ slug: "client", signIns: 2 }], platform: { signIns: ["staff", "colleague", "staff"] }, spares: [{ slug: "newco", signIns: 2 }] })` and serves [the admin MCP](/docs/admin) on port `47606` and [the Toolbox](/docs/toolbox) on port `47604` in the test process, each with a database of its own on the disposable PostgreSQL (`answerable_admin_acceptance` and `answerable_toolbox_acceptance`), migrated as the owner and served through its [runtime login](/docs/admin#database-roles). It proves what [Set up the admin MCP](/docs/admin/setup) shows.
-
-**Setup.** `src/admin-mcp.ts` registers what the setup page registers, in its order: the Toolbox's resource (900-second tokens), its admin resource, its host client and its machine client; the admin MCP's resource (900-second tokens, allowing `admin` and the three role strings), its host client, the platform organisation's capabilities and entitlements for it, a group per role holding that role's string, and the admin MCP's machine client with two audiences, ID's admin resource (`platform:read platform:write`) and the Toolbox's admin resource (`toolbox:admin`). The admin lane starts from the same code. Nobody is staff yet: the journeys put the staff member in the owner group through ID's admin API as root, as an operator adds the first owner; every later role change is the owner's, through `staff_grant` and `staff_revoke`, so ID computes each role from real groups and entitlements.
-
-**Sign-ins.** Each is one queued identity of a company directory, used in order. The platform directory: the staff member for A1, their colleague (`colleague@answerable.example.test`) for A1, then the staff member's Verify sign-in for A6 (the authorisation after it reuses the session ID made). The member of the client organisation: one that ID refuses at its chooser and one it lets through (A4). The new organisation's person: the same two (A3).
-
-**A1, roles without re-authorisation.**
-
-1. Staff sign in to the admin MCP with the platform organisation's company directory. The token names the platform organisation and carries `admin` and `offline_access`. `admin_whoami` says `role: null` and the only tool listed is `admin_whoami`; calling `organisations_list` is the unknown-tool error.
-2. Root puts the member in the owner group: the same access token lists all 28 tools on its next call, and `admin_whoami` says `owner`. Only `admin_commit_confirmed` carries `anthropic/requiresUserInteraction`, which makes Claude Code ask before it whatever the allow rules say. 25 `tools/list` requests, each with one access-view read to ID, took a median of 31.3 to 34.3 ms and a maximum of 35.2 to 50.7 ms in five runs as `team`, and a median of 38.8 to 40.7 ms and a maximum of 48.8 to 83.3 ms in three runs as `owner`; the reads alone took a median of 26.7 to 29.8 ms and a maximum of 30.4 to 44.3 ms as `team`, and a median of 29.3 to 31.4 ms and a maximum of 40.5 to 71.2 ms as `owner`.
-3. The colleague signs in with no role and lists `admin_whoami` alone. The owner's `staff_grant` gives them `team`: their same access token lists the ten `team` tools on its next call, and `staff_list` names the owner and the colleague with their roles. The owner's `staff_revoke` takes it away: the colleague's next call lists `admin_whoami` alone again, and `organisations_list` is the unknown-tool error. Each role lists 10 tools for `team`, 24 for `admin` and 28 for `owner`.
-
-**A2, onboarding through the MCP.**
-
-4. As an owner: `toolbox_enable` for an existing client organisation links the Toolbox's host client to the Toolbox in ID (9 rows made). `organisations_create` prepares an intent whose `admin_commit` answers `APPROVAL_REQUIRED` and whose `admin_commit_confirmed` with the summary commits. `domains_add` routes the spare directory's domain; `sso_set` with the spare's local issuer answers `INVALID_INPUT` (no tool takes a secret), so the kit sets the provider with `setSsoProvider`; `groups_create` makes a group.
-5. **A3, before the enable.** The new organisation's person is refused at ID's organisation chooser with "Access is unavailable for this organisation. Sign in again or ask its administrator to check your access.", in 371 to 422 ms in five runs. Before any organisation is enabled the Toolbox's host client is not linked to the Toolbox, and ID redirects with `error=invalid_target` ("client … is not linked to resource(s) …") instead of reaching the chooser: the journey enables an existing client organisation first for that reason.
-6. `toolbox_enable` for the new organisation (7 rows made, 2 found) and `access_grant` of `e2e` to everyone in it. Every write's receipt carries ID's `Operation-Id`; `audit_list` and ID's admin API as root return the same one audit row for it, written by the machine client `admin-mcp` with the commit's execution id as `requestId`, which the evidence row of that commit call carries.
-
-**A3, the Toolbox outcome.**
-
-7. After the enable and the grant the new organisation's person signs in to the Toolbox, lists `toolbox_whoami`, `e2e_identity_get`, the four `e2e_records` tools and the two commit tools, and calls `e2e_identity_get` and `e2e_records_list`.
-8. The admin MCP answers `401` to that person's Toolbox token, which the Toolbox accepts: a token is good for its own audience only.
-9. `access_revoke` takes the tools away from the same token 6.1 to 8.2 seconds later in three runs, polling `tools/list` every second; the Toolbox's poller reads ID's audit log every 15 seconds and its grant cache lasts 60.
-
-**A8, tool-level access.** A grant string that names one capability, held through a group and by one member, while the organisation-wide grant is disabled: [Some tools, not all](/docs/admin#some-tools-not-all).
-
-10. `members_list` by the person's email finds their member: the one their Toolbox token names as `membership_id`.
-11. `access_grant` of `e2e/records.list` to the group A2 made, then `groups_addmember` of the person: 13.2 to 14.2 seconds later the same token lists `toolbox_whoami` and `e2e_records_list` and nothing else, `toolbox_whoami` shows the one grant and the one capability, and `e2e_records_list` runs. `e2e_records_show` is the unknown-tool error, and the Toolbox's evidence for the organisation holds one `capability.denied` row, for `e2e/records.show` with reason `not granted`.
-12. `access_grant` of `e2e/records.create` to the member alone: 14.4 to 15.2 seconds later the list adds `e2e_records_create` and the two commit tools, and `toolbox_whoami` shows both grants.
-13. `groups_dropmember`: 14.2 to 14.3 seconds later `e2e_records_list` is gone and `e2e_records_create` stays.
-14. `access_enable` of the organisation-wide grant brings every `e2e` tool back 14.2 to 15.3 seconds later. Then `organisations_disable` by an owner with a recent sign-in: the organisation's refresh answers `invalid_grant`.
-
-**A4, refusals.**
-
-15. A member of a client organisation is refused at ID's chooser. Granted the admin resource deliberately, they get a token whose organisation is the client's: the admin MCP lists no tool and `admin_whoami` is the unknown-tool error, with a `capability.denied` row, reason `not_platform`.
-16. The owner makes the colleague an `admin` with `staff_grant`. The colleague calling `organisations_disable` gets the unknown-tool error and a `capability.denied` row (`held` `admin`, `needed` `owner`). Their `groups_addmember` of themselves to the platform organisation's owner group gets `PERMISSION_DENIED`; the owner group still holds only the owner, and no intent was stored.
-17. Renaming an organisation through ID's admin API between the prepare and the commit of `organisations_update` answers `INTENT_STALE`, with `details.targets` holding the ETag the prepare bound and the one ID holds now: `"<id>:1"` and `"<id>:2"`.
-
-**A5, idempotency.**
-
-18. Committing one intent twice at once: one call answers the receipt with `idempotent_replay: false` and the other `COMMIT_IN_PROGRESS`, in five runs. A third commit answers the same receipt with `idempotent_replay: true`. ID holds one organisation with that slug and one `organization.created` audit row; the chain holds one `intent.committed` and one `receipt.issued` for the intent, and a `capability.completed` row naming it for the prepare and for each commit call, the two that answered the receipt naming it too.
-
-**A6, freshness.** The admin MCP runs with `ADMIN_FRESH_SECONDS=10` for this journey.
-
-19. A critical tool's prepare answers `ADMIN_REAUTHENTICATION_REQUIRED` with the remedy of [Sign in again](/docs/admin#sign-in-again) in its message, `retry.policy` `after_state_change` and the token's `upstream_auth_time` in `details`; a read tool still works, and a `capability.denied` row with reason `stale_authentication` is recorded. Authorising again in the host alone, through the browser that holds ID's session, gives a token with the same `sid` and the same `upstream_auth_time`: still refused.
-20. The remedy, run exactly as the message says: **Verify sign-in** on ID's Security page in that browser, then a new authorisation. The token has a new `sid` and a later `upstream_auth_time`, and the critical tool prepares and commits: 0.9 to 1.0 seconds for the three steps. Against the fixture as it was, which stamped `auth_time` once at boot, ID refused the Verify sign-in with "Your provider must confirm when you authenticated"; the fixture now stamps each sign-in with the time it happens.
-21. After the window passes, a token refreshed from that authorisation carries the same `upstream_auth_time` and is refused again: a refresh never counts as a sign-in.
-
-**A7, evidence.**
-
-22. The platform organisation's chain verifies (133 events in three runs), and holds `capability.completed`, `capability.denied`, `intent.prepared`, `intent.committed`, `receipt.issued` and `intent.stale` rows. Every ID audit row of a write by the machine client names the execution id of a commit that succeeded, and there are as many (16) as intents committed other than `toolbox_enable`, whose writes the Toolbox makes with its own client; `staff_revoke`'s receipt names one operation per group left. The admin MCP asked ID 114 times for a member's access and 3 times for a token.
-
-## What the MCP journeys prove
-
-`packages/acceptance/src/journeys/mcps.journeys.test.ts` starts its own ID with two organisations, `mcps-alpha` and `mcps-beta`, and runs the MCPs as the deployment serves them: the Toolbox on port `47604`, mounting `e2e` and `example` in its hub and serving e2e at its path, in one process over the one shared MCP database. Each organisation is entitled to e2e at its path, and the Toolbox is enabled for it with `e2e` and `example` and the grant strings `e2e` and `example`.
-
-1. Each organisation signs in to the Toolbox and to e2e at its path, through ID with a real browser.
-2. A person's name and their organisation's, which only ID holds and no token carries, reach a tool: `example_example_status` through the Toolbox answers the name of the member the token names and the organisation's name, as ID's admin API gives them.
-3. Two organisations, through real tokens, see only their own e2e records: `mcps-alpha` creates one at e2e's path and `mcps-beta` one in the Toolbox; each lists only its own, at the path and in the Toolbox alike, so the hub and the path read the same rows of schema `e2e`; and preparing to delete the other's answers `NOT_FOUND` on both.
-4. The records survive a restart: the Toolbox, started again on fresh pools, lists at e2e's path what it wrote before.
-
-## What the CLI journeys prove
-
-`packages/acceptance/src/journeys/mcp-cli.journeys.test.ts` starts its own ID with two organisations, `cli-alpha` and `cli-beta`, and the Toolbox on port `47604`, which serves e2e at its path. It registers ID as `bun mcp setup` and `bun mcp dev` do, with the code they run (`scripts/mcp/local-id.ts` and `local-access.ts`, on the acceptance's addresses): with the root secret, the Toolbox's resources and host client, `claude-code-toolbox`, and `mcp-dev`; then, as `mcp-dev`, e2e's resource and client, `claude-code-e2e`, and for each organisation its access to e2e and `example` in the Toolbox.
-
-1. Each organisation signs in to the Toolbox through `claude-code-toolbox` and to e2e at its path through `claude-code-e2e`, with a real browser. The e2e token is bound to the path and carries the three e2e scopes.
-2. `example`, made by the CLI and mounted in the Toolbox: `cli-alpha` prepares a note with `example_notes_add`, whose summary names its organisation as ID holds it, confirms it with `toolbox_commit_confirmed`, and `example_notes_list` returns it; `cli-beta` lists none.
-3. e2e at its path, served alone: its tools are named without the Toolbox's prefix, so `records_list` lists, `records_create` and `e2e_commit` add a record, and the other organisation sees none.
-4. A token that is valid for another resource, the Toolbox's, is refused at `/e2e/mcp` with `401` and its metadata, while e2e's own token is accepted there: the audience binding, proved with one standalone MCP.
-5. Registering again, as `bun mcp dev` does on every run, changes nothing in ID, and one secret opens both of `mcp-dev`'s admin APIs.
-6. A scope an MCP gains later, and a second MCP enabled in the Toolbox, widen the rows ID holds, a resource, a client, two capabilities and an entitlement, and the organisation's one entitlement on the Toolbox, instead of making second ones.
-
-A third MCP, made by `bun mcp new` in a temporary checkout, is not in the acceptance: e2e is served both ways by the same code, which the e2e and MCP journeys prove.
+Each journey file in `packages/acceptance/src/journeys` starts what it needs, signs people in through a real browser where it uses ID, and says in its test names what it proves; `packages/acceptance/README.md` lists the files. `e2e`, `toolbox` and `admin` cover the e2e MCP at its path, the Toolbox and the admin MCP against a real ID; `mcp-cli` registers ID as `bun mcp setup` and `bun mcp dev` do, then signs in through those registrations and reads who is calling from ID in `example`'s `notes.add`; `register` runs the register Job's code; and `scaffold` runs `bun mcp new`, `check`, `add tool` and `list` in a copy of the working tree, against the development Postgres on `47432`, with no ID. The tests are the record: what each asserts, and the timings it prints, are in the files and in the run's output.
 
 ## Ports
 
@@ -266,7 +34,7 @@ A third MCP, made by `bun mcp new` in a temporary checkout, is not in the accept
 | A second Toolbox, for the e2e journeys | `47605` |
 | Admin MCP | `47606` |
 
-Keep these free. PostgreSQL belongs to the Compose project `answerable-mcp-e2e` and holds ID's database, the Toolbox's `answerable_toolbox_acceptance` and the shared MCP database `answerable_mcps_acceptance`, with its two logins; the run never reads your `DATABASE_URL`. Journey files run one after another, each starting and stopping its own ID, so they share these ports and cannot run in parallel. Two runs at once cannot either: the Compose project name is fixed, so one run's cleanup removes the other's PostgreSQL. Run one at a time.
+Keep these free. The scaffold journey also needs the development Postgres on `47432`, as `bun run mcp:test` does. PostgreSQL on `47532` belongs to the Compose project `answerable-mcp-e2e` and holds ID's database, the Toolbox's `answerable_toolbox_acceptance` and the shared MCP database `answerable_mcps_acceptance`, with its two logins; the run never reads your `DATABASE_URL`. Journey files run one after another, each that uses ID starting and stopping its own, so they share these ports and cannot run in parallel. Two runs at once cannot either: the Compose project name is fixed, so one run's cleanup removes the other's PostgreSQL. Run one at a time.
 
 ## The kit
 
@@ -347,7 +115,7 @@ Copy `e2e.journeys.test.ts` for a fuller one: several organisations, a partial e
 bun run mcp:test
 ```
 
-This runs the `@answerable/auth`, `@answerable/id-admin`, `@answerable/mcp`, `@answerable/mcp-postgres`, `@answerable/mcp-platform`, e2e, Toolbox and admin MCP suites and `bun mcp`'s with a local test issuer, including Chromium rendering the real MCP Apps view through the official host bridge. It also runs every MCP that `bun mcp new` has added under `mcps/`. These suites need the development PostgreSQL on port `47432` (`bun run env:up`): the servers' reset their own test databases first, each MCP's resets its own schema in `answerable_mcps_test`, and the Toolbox's and `@answerable/mcp-platform`'s make shared MCP databases of their own, with logins of their own, and drop them at the end. It does not include the acceptance.
+This runs the `@answerable/auth`, `@answerable/id-admin`, `@answerable/mcp`, `@answerable/mcp-postgres`, `@answerable/mcp-platform`, e2e, Toolbox and admin MCP suites and `bun mcp`'s with a local test issuer, including Chromium rendering the real MCP Apps view through the official host bridge. It also runs every MCP that `bun mcp new` has added under `mcps/`. These suites need the development PostgreSQL on port `47432` (`bun run env:up`): the servers' reset their own test databases first, each MCP's resets its own schema in `answerable_mcps_test`, and the Toolbox's and `@answerable/mcp-platform`'s make shared MCP databases of their own, with logins of their own, and drop them at the end. It does not include the acceptance, which holds `bun mcp`'s end-to-end run.
 
 ## Run the e2e MCP by hand
 
@@ -355,7 +123,7 @@ This runs the `@answerable/auth`, `@answerable/id-admin`, `@answerable/mcp`, `@a
 bun mcp dev e2e
 ```
 
-e2e is served both ways, so this starts the Toolbox with e2e in its hub and at `http://localhost:47400/e2e/mcp`, and prints both commands. [Run an MCP on your machine](#run-an-mcp-on-your-machine) says what it does; [Connect Claude Code](/docs/mcp/claude-code#the-e2e-server) shows by hand what it registers.
+e2e is served both ways, so this starts the Toolbox with e2e in its hub and at `http://localhost:47400/e2e/mcp`, registers its client, `claude-code-e2e`, and prints both commands. [Run an MCP on your machine](/docs/mcp/run-locally#run-an-mcp) says what it does; [Connect Claude Code](/docs/mcp/claude-code#the-e2e-server) what you see.
 
 ## Host lane
 

@@ -198,3 +198,62 @@
   - web: 120;
   - knip clean;
   - `infra:check` passed.
+- **R4 committed** as d1c46569 and pushed. **R5 started.**
+- **C9 moves to its own PR.** It is proposed as a follow-up session, "Take platform:write off the Toolbox (audit C9)", to start from `main` once PR #13 has merged. The reasons are in R4's entry: it rewrites code from before the PR, and register needs a way to narrow staging's existing `toolbox-hub` capability.
+- **CI on R4 (d1c46569):** passed, the kind stack included.
+- **R5, the CLI, tests and docs,** by Opus.
+  - **The CLI:**
+    - D3: `--json` deleted;
+    - D6: no default status tool; `withTool` shared by `new` and `add tool`; `mcps/example` loses `example.status`, and the context is shown through `src/docs/caller.ts`;
+    - D14: guidance written once;
+    - D2: a documented way to drop an unwanted table;
+    - D7: `--no-check` deleted;
+    - D8: provision after the migration;
+    - D9 and E7: `grants` deleted;
+    - D10: every MCP migrated in one process;
+    - D13: the generated README deleted;
+    - D16: `mcp.json` is `{ serve, database }`;
+    - D17: the docs name only `bun mcp check`;
+    - D18: `parseArgs`. A repeated flag now takes its last value, `--` ends the flags, and a value starting with `-` is refused;
+    - D19: a reason beside each reserved name;
+    - the organisation guard: a `guard` step in `bun mcp check`, error row `organisation-setting`.
+  - **Tests:**
+    - F4 and F15: refusals asserted once, with typed codes;
+    - F5: the snapshot (473 lines) replaced by "`mcps/example` is what `bun mcp` writes";
+    - F8: `mcps.journeys` deleted, and the real-ID organisation-name test moved into `mcp-cli.journeys`;
+    - F9: the CLI's end-to-end test is now the acceptance's `scaffold.journeys`;
+    - F14: the three web tests deleted.
+  - **Docs:**
+    - F6: `mcp/run-locally.mdx` is new, and `local-testing.mdx` falls from 7,275 to 2,906 words;
+    - F7: the by-hand recipes deleted;
+    - D-2: what `own` isolates;
+    - D-5: e2e and example in docs/12;
+    - D-7: nine CHANGELOGs deleted;
+    - the register row `Q-TOOLBOX-CALL-REGISTRATION`;
+    - F12: `AGENTS.md` falls from 3,074 to 2,891 words.
+  - **`mcp:test` concurrency re-measured.** It stays at 4: cap 8 was not consistently faster at 200 MCPs (33–41 s against 38–41 s), and CI has 4 CPUs.
+  - **Size:** about +1,233 / −3,327.
+  - **The agent's gates:**
+    - `mcp:test`: 944 pass in 10.4 s (30 s at R4);
+    - web: 117;
+    - the acceptance: 65;
+    - the scaffold journey: 19.5 s;
+    - kind: 123;
+    - the release at 200 MCPs: 50,672 bytes, 4.8%.
+  - **The new by-hand sign-in steps,** replacing the CLI goal's status-tool steps:
+    - `bun mcp setup`;
+    - `bun mcp dev example` and the printed `claude mcp add` for the Toolbox;
+    - Authenticate;
+    - `example_notes_list`, then `example_notes_add`, whose preview names your organisation;
+    - for a standalone MCP, `bun mcp dev e2e` and `claude mcp add … http://localhost:47400/e2e/mcp --client-id claude-code-e2e`, then `records_list`.
+- **The coordinator, on R5:**
+  - Corrected `deploy.mdx:91`: a locked root now ships with break glass, not a staff token in the cluster.
+  - Left for R6: the CLI no longer prints its error codes, though the docs' error table lists them.
+- **The coordinator's gates on R5:**
+  - frozen install unchanged;
+  - typecheck and lint forced: 20 of 20;
+  - build: 2 of 2;
+  - `mcp:test`: 13 of 13 tasks in 11 s;
+  - web: 117;
+  - knip clean;
+  - `infra:check` passed.

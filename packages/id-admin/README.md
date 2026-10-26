@@ -49,4 +49,4 @@ bun run --filter @answerable/id-admin test
 bun run mcp:check @answerable/id-admin
 ```
 
-The suite enforces 100% line and function coverage over `src/index.ts`. `src/testing.test.ts` checks every answer the fake gives against `apps/id/openapi.admin.json`; its consumers' suites exercise the rest. Changes: [CHANGELOG](CHANGELOG.md).
+The suite enforces 100% line and function coverage over `src/index.ts`. `src/testing.test.ts` checks every answer the fake gives against `apps/id/openapi.admin.json`; its consumers' suites exercise the rest.

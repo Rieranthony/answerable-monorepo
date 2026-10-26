@@ -7,7 +7,7 @@ The reference MCP, and the proof that Answerable ID signs people into MCP server
 bun run mcp:test:e2e
 ```
 
-The acceptance lives in [`packages/acceptance`](../../packages/acceptance/README.md): it provisions a real ID through its admin API, serves this MCP at its path and in the Toolbox's hub, and signs organisations in with the official MCP SDK's OAuth client and a real browser. [What it proves](../../apps/web/content/docs/mcp/local-testing.mdx#what-the-e2e-journeys-prove).
+The acceptance lives in [`packages/acceptance`](../../packages/acceptance/README.md): it provisions a real ID through its admin API, serves this MCP at its path and in the Toolbox's hub, and signs organisations in with the official MCP SDK's OAuth client and a real browser. [What it proves](../../apps/web/content/docs/mcp/local-testing.mdx#what-the-acceptance-proves).
 
 ## Tools
 
@@ -49,4 +49,4 @@ bun run mcp:test
 bun run mcp:check @answerable/mcp-e2e
 ```
 
-The tests serve the provider with `createTestMcp` from `@answerable/mcp-postgres/testing`, over schema `e2e` of `answerable_mcps_test` on the development Postgres. `bunfig.toml` gates 100% line and function coverage of `src`. `src/provider.test.ts` runs the conformance kit, with a fresh record made in the caller's organisation for `records.delete` and a version bump as `moveTarget`, and checks the tools an entitled caller sees. The tests in `src/tools` check pagination and cursors, a create in the caller's organisation alone, and a delete's stale target and another organisation's record. `src/apps.test.ts` renders the real view in Chromium through the official MCP Apps host bridge (`src/testing/host.ts`): it creates a record, shows the summary before deleting it, and hides writes from a reader; the view never receives a token. That its records agree between the Toolbox's hub and its path, and survive a restart, is `mcps/toolbox/src/alone.test.ts` and the MCP journeys. Changes: [CHANGELOG](CHANGELOG.md).
+The tests serve the provider with `createTestMcp` from `@answerable/mcp-postgres/testing`, over schema `e2e` of `answerable_mcps_test` on the development Postgres. `bunfig.toml` gates 100% line and function coverage of `src`. `src/provider.test.ts` runs the conformance kit, with a fresh record made in the caller's organisation for `records.delete` and a version bump as `moveTarget`, and checks the tools an entitled caller sees. The tests in `src/tools` check pagination and cursors, a create in the caller's organisation alone, and a delete's stale target and another organisation's record. `src/apps.test.ts` renders the real view in Chromium through the official MCP Apps host bridge (`src/testing/host.ts`): it creates a record, shows the summary before deleting it, and hides writes from a reader; the view never receives a token. That its records agree between the Toolbox's hub and its path, and survive a restart, is `mcps/toolbox/src/alone.test.ts`.

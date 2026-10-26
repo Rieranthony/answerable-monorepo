@@ -428,9 +428,9 @@ describe("charts/answerable", () => {
 })
 
 describe("charts/answerable at 0, 1, 3 and 200 MCPs", () => {
-  /** An MCP as the generator writes it into mcps.json: its declaration, two scopes and the grant strings of five tools. */
+  /** An MCP as the generator writes it into mcps.json: its declaration and two scopes. */
   const entry = (name: string, serve: DeclaredMcp["serve"], database: DeclaredMcp["database"]) => ({
-    name, serve, database, scopes: [`${name}:read`, `${name}:write`], grants: [name, `${name}/notes`, `${name}/notes.add`, `${name}/notes.list`, `${name}/projects`, `${name}/projects.search`],
+    name, serve, database, scopes: [`${name}:read`, `${name}:write`],
   })
   const serves = ["toolbox", "standalone", "both"] as const
   const lists: Record<string, DeclaredMcp[]> = {

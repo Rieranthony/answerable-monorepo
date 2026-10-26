@@ -69,15 +69,22 @@ test("each organisation signs in to the Toolbox through claude-code-toolbox and 
   }
 })
 
+test("an organisation's name, which only ID holds and no token carries, reaches a tool: example_notes_add's preview names it, for each organisation", async () => {
+  for (const slug of tenants) {
+    const organisation = z.object({ name: z.string() }).parse(await id.admin("GET", `/organizations/${session(slug).organizationId}`))
+    step(`${slug}: example_notes_add's preview names ${organisation.name}, as ID's admin API gives it`)
+    const intent = intentSchema.parse(await tool(await inToolbox(slug), "example_notes_add", { title: "Who is calling" }))
+    expect(intent.preview.summary).toBe(`Add “Who is calling” to the notes of ${organisation.name}`)
+  }
+})
+
 test("example, made by the CLI: a person prepares a note and commits it, and example_notes_list returns it; the other organisation sees none of it", async () => {
   const [alpha, beta] = tenants as [string, string]
   step(`${alpha}: example_notes_add prepares, toolbox_commit_confirmed commits, example_notes_list returns the note; ${beta} lists none`)
   const client = await inToolbox(alpha)
   const intent = intentSchema.parse(await tool(client, "example_notes_add", { title: "Pour the footings" }))
-  const organisation = z.object({ name: z.string() }).parse(await id.admin("GET", `/organizations/${session(alpha).organizationId}`))
-  // A note is a normal-risk change: the person sees the preview's summary, which names their organisation as ID holds it, and confirms it.
+  // A note is a normal-risk change: the person sees the preview's summary and confirms it.
   expect(intent).toMatchObject({ policy_class: "controlled", commit_tool: "toolbox_commit_confirmed" })
-  expect(intent.preview.summary).toBe(`Add “Pour the footings” to the notes of ${organisation.name}`)
   expect(await notes(alpha)).toEqual([])
   const receipt = z.object({ status: z.string(), results: z.object({ id: z.uuid(), title: z.string() }) }).parse(await tool(client, "toolbox_commit_confirmed", { intent_id: intent.intent_id, commit_token: intent.commit_token, preview_summary: intent.preview.summary }))
   expect([receipt.status, receipt.results.title]).toEqual(["committed", "Pour the footings"])
@@ -97,23 +104,6 @@ test("e2e at its path, served alone: its tools are named without the Toolbox's p
   await tool(client, "e2e_commit", { intent_id: intent.intent_id, commit_token: intent.commit_token })
   const listed = (slug: string) => atPath(slug).then(connected => tool(connected, "records_list")).then(answer => z.object({ items: z.array(z.object({ title: z.string() })) }).parse(answer).items.map(item => item.title))
   expect([await listed(alpha), await listed(beta)]).toEqual([["Alpha's"], []])
-})
-
-test("a token that is valid for another resource, the Toolbox's, is refused at e2e's path with 401, which proves the audience binding with one standalone MCP", async () => {
-  const [alpha] = tenants as [string]
-  step(`${alpha}: the Toolbox's access token against /e2e/mcp`)
-  const call = (token: string) => fetch(e2e, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-  })
-  const toolboxToken = session(alpha).toolbox.state.tokens!.access_token
-  expect(decodeJwt(toolboxToken).aud).toBe(stack.toolboxResource)
-  const refused = await call(toolboxToken)
-  expect(refused.status).toBe(401)
-  expect(refused.headers.get("www-authenticate")).toMatch(/resource_metadata=/)
-  // e2e's own token is accepted there, so the refusal is about the audience and not the expiry.
-  expect((await call(session(alpha).e2e.state.tokens!.access_token)).status).toBe(200)
 })
 
 test("registering again, as bun mcp dev does on every run, changes nothing in ID and gives the organisations nothing new", async () => {

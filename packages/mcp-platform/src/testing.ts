@@ -1,4 +1,7 @@
-// Databases for the tests of a server that serves MCPs, on the development Postgres, each a suite's own, as the deployment makes them.
+// Databases for the tests of a server that serves MCPs, on the development Postgres, each a suite's own, as the deployment makes them. bun run
+// mcp:test runs suites concurrently, so a suite names databases no other suite uses (the Toolbox's answerable_toolbox_test_mcps and
+// answerable_toolbox_test_<name>, this package's answerable_mcp_platform_test and the two beside it), and every login's name is generated:
+// logins are cluster-wide.
 import { fileURLToPath } from "node:url"
 import type { Provider } from "@answerable/mcp"
 import { migrateMcp, provisionMcps, provisionOwnMcp, sharedMcps, sqlOf } from "@answerable/mcp-postgres"

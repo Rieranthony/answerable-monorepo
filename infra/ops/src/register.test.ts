@@ -13,9 +13,9 @@ const declared: DeclaredMcp[] = [
 ]
 const sorted = (values: unknown) => [...(values as string[])].sort()
 
-// The first run: register's own client with the root secret, then, as that client, the docs' keys of apps/web/content/docs/toolbox/admin.mdx
-// (Register the Toolbox in ID) and apps/web/content/docs/admin/setup.mdx (Register the admin MCP), in their order, and each standalone MCP. The
-// Toolbox's staff client is the operator's, not the services', and is left out. A link's key carries the revision its client had when register read it.
+// The first run: register's own client with the root secret, then, as that client, the Toolbox's keys of src/registrar.ts and the admin MCP's of
+// apps/web/content/docs/admin/setup.mdx (Register the admin MCP), in their order, and each standalone MCP. A link's key carries the revision its
+// client had when register read it.
 const minting = ["ops-register-v1", "ops-register-link-v1-r1", "ops-register-capability-v1"]
 const keys = [
   "toolbox-resource-v1", "toolbox-admin-resource-v1", "toolbox-hub-v1", "toolbox-hub-link-v1-r1", "toolbox-hub-capability-v1", "claude-code-toolbox-v1",

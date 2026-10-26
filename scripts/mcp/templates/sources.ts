@@ -1,5 +1,6 @@
-// The code every MCP starts with: its definitions bound to its database, its provider, its schema and its conformance test.
-import { schemaBinding, tableBinding, toolBinding, toolModule, type Answers } from "./names"
+// The code every MCP starts with: its definitions bound to its database, its provider, its schema and its conformance test; and the edits
+// `bun mcp add tool` makes to the provider and the schema.
+import { schemaBinding, tableBinding, toolBinding, toolModule, type Answers, type ToolAnswers } from "./names"
 
 /** The line `bun mcp add tool` inserts above, once among the imports of `src/provider.ts` and once in its `tools` array. */
 export const toolsMarker = "// bun mcp: tools"
@@ -16,13 +17,11 @@ export const { defineTool, defineMutation } = withDatabase({ schema })
 export const database = { schema, migrations: new URL("../drizzle", import.meta.url) }
 `
 
-/** `src/provider.ts`: the provider, with its first tool and the two places `bun mcp add tool` adds one. */
-export function providerTs({ name, description, date, tool }: Answers) {
-  const first = tool?.name ?? `${name}.status`
+/** `src/provider.ts`: the provider, with no tool yet and the two places `bun mcp add tool` adds one. */
+export function providerTs({ name, description, date }: Answers) {
   return `// The ${name} MCP: what it is for, its version and its tools. bun mcp add tool adds a tool above each "bun mcp: tools" line.
 import { defineProvider } from "@answerable/mcp"
 import { database } from "./mcp"
-import { ${toolBinding(first)} } from "./tools/${toolModule(first)}"
 ${toolsMarker}
 
 export const provider = defineProvider({
@@ -31,7 +30,6 @@ export const provider = defineProvider({
   version: "${date}",
   database,
   tools: [
-    ${toolBinding(first)},
     ${toolsMarker}
   ],
 })
@@ -52,10 +50,9 @@ export const ${tableBinding(domain)} = ${schemaBinding(name)}.table("${domain}",
 }, table => [organisationIsolation(table.organisation_id)]).enableRLS()
 `
 
-/** `src/db/schema.ts`: the MCP's Postgres schema, with the first tool's table when it needs one. */
-export function schemaTs({ name, tool }: Answers) {
-  const domain = tool?.name.split(".")[0]
-  return `${domain ? isolationImport : ""}import * as pg from "drizzle-orm/pg-core"
+/** `src/db/schema.ts`: the MCP's Postgres schema, with no table yet. */
+export function schemaTs({ name }: Answers) {
+  return `import * as pg from "drizzle-orm/pg-core"
 
 // The tables of the ${name} MCP, in its own Postgres schema, ${name}. After a change here, bun mcp db ${name} generate writes the
 // migration; bun mcp add tool adds the table a new domain needs.
@@ -70,7 +67,28 @@ export function schemaTs({ name, tool }: Answers) {
 //     name: pg.text().notNull(),
 //   }, table => [organisationIsolation(table.organisation_id)]).enableRLS()
 export const ${schemaBinding(name)} = pg.pgSchema("${name}")
-${domain ? tableTs(name, domain) : ""}`
+`
+}
+
+const isolationImported = /^import \{[^}]*\borganisationIsolation\b[^}]*\} from "@answerable\/mcp-postgres"$/m
+
+/**
+ * What `bun mcp add tool` makes of MCP `name`'s `src/provider.ts` and `src/db/schema.ts` for `tool`: the provider with the tool's import above the
+ * first marker and its entry above the second, and the schema with the tool's domain's table, and the policy's import, when it has no such table.
+ * `table` says whether the table was added.
+ */
+export function withTool(name: string, { provider, schema }: { provider: string; schema: string }, tool: ToolAnswers) {
+  const lines = provider.split("\n")
+  const [imports, entries] = lines.flatMap((line, index) => (line.trim() === toolsMarker ? [index] : []))
+  lines.splice(entries!, 0, `    ${toolBinding(tool.name)},`)
+  lines.splice(imports!, 0, `import { ${toolBinding(tool.name)} } from "./tools/${toolModule(tool.name)}"`)
+  const domain = tool.name.split(".")[0]!
+  const table = !schema.includes(`.table("${domain}"`)
+  return {
+    provider: lines.join("\n"),
+    schema: table ? `${isolationImported.test(schema) ? "" : isolationImport}${schema}${tableTs(name, domain)}` : schema,
+    table,
+  }
 }
 
 /** `src/provider.test.ts`: the conformance kit over every tool, each called with its example, and the manifest. */

@@ -1,0 +1,96 @@
+---
+title: Run an MCP on your machine
+description: "Run an MCP on your machine with bun mcp dev: migrated, served by the Toolbox, registered in your local Answerable ID with your organisation's access, and ready for Claude Code. What it needs first, what each step does and what it refuses."
+---
+
+```sh
+bun mcp setup
+bun mcp dev acme
+```
+
+`bun mcp setup` runs once. `bun mcp dev acme` then runs the MCP `acme` on your machine: it migrates its schema, serves it, registers it in your local Answerable ID, gives your organisation access and prints the `claude mcp add` command that connects Claude Code to it. Both need your local ID and the development Postgres running ([Before you start](#before-you-start)). [Make an MCP](/docs/mcp/create) makes `acme`; [Test MCPs against real ID](/docs/mcp/local-testing) runs the acceptance, which proves these registrations against a real ID.
+
+## Before you start
+
+Have these in place, in order, from the main checkout. Never run `bun dev` or `bun run env:up` from a worktree: its Compose project has the main checkout's name, so it recreates the running Postgres.
+
+| What | Do it with | Port |
+| --- | --- | --- |
+| The development Postgres | `bun run env:up` | `47432` |
+| ID's database, migrated | `bun --filter @answerable/id db:migrate`, before ID's first start and after a pull that adds a migration | |
+| Your local ID | `bun dev`, or `bun --filter @answerable/id dev` | `47300` |
+| A sign-in for your email domain on the platform organisation | [First run](/docs/id/onboard#first-run), steps 3 and 4, once | |
+
+The first run of ID makes the platform organisation, `answerable`. Step 3 puts your email domain and your company's directory on it, and step 4 signs you in once, so that a sign-in from Claude Code can complete. Run them against `http://localhost:47300`, with `ROOT_ADMIN_SECRET` at ID's development default, and with the directory's `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET`, or the Google pair, in the root `.env` when ID starts. The Toolbox, which serves every MCP, is started by `bun mcp dev`.
+
+## Connect the CLI to your local ID
+
+```sh
+bun mcp setup
+```
+
+It runs once. It makes a machine client in your local ID, `mcp-dev`, owned by the platform organisation:
+
+- `platform:read platform:write` on ID's admin API, to register an MCP and give your organisation access to it;
+- `toolbox:admin` on the Toolbox's admin API, to enable an MCP in the Toolbox.
+
+It also registers the Toolbox's resource, its admin resource and Claude Code's client for the Toolbox, `claude-code-toolbox`, as [the register Job](/docs/admin/setup) registers them in a deployment. Then it writes `MCP_DEV_ID_CLIENT_ID`, `MCP_DEV_ID_CLIENT_SECRET` and `MCP_DEV_ORGANISATION` to the git-ignored `.env` in the root of the repository it runs in. It never prints the secret.
+
+```text
+ok      toolbox    http://localhost:47400/mcp, its admin resource and claude-code-toolbox: 3 made, 0 changed, 0 found
+ok      client     mcp-dev made: platform:read platform:write on ID, toolbox:admin on the Toolbox
+ok      env        MCP_DEV_ID_CLIENT_ID, MCP_DEV_ID_CLIENT_SECRET and MCP_DEV_ORGANISATION=answerable written to .env
+
+Next:
+  bun mcp list
+  bun mcp dev <mcp>
+```
+
+- **Which credential makes the client.** While ID's root secret is unlocked locally, `bun mcp setup` uses `ROOT_ADMIN_SECRET`, which defaults to ID's own local default. Once a person is a platform administrator, ID locks the root secret. Then `bun mcp setup` asks once, in a terminal, for a [staff token](/docs/id/onboard#get-a-staff-token); the token is not shown or stored. Without a terminal, as in a coding agent's shell, it exits with code 2 and names the flag: `bun mcp setup --staff-token <token>`.
+- **Run it again.** It finds `mcp-dev` working and does nothing. If the client exists but `.env` holds no secret, ID gives it a new one, since a secret is shown once. If you reset ID's database, the secret in `.env` stops working, and `bun mcp setup` makes the client again.
+- **Your organisation.** `bun mcp dev` gives access to one organisation, so that you can sign in and call every tool. It is your local ID's platform organisation, `answerable`. Another: `bun mcp setup --organisation <slug>`, which stores it as `MCP_DEV_ORGANISATION`.
+
+## Run an MCP
+
+```sh
+bun mcp dev acme
+```
+
+From inside `mcps/acme` the name can be left out. It runs these steps, a line each:
+
+<CliSteps command="dev" />
+
+- **Every MCP is migrated, in one process.** The Toolbox serves every MCP of its generated list, whatever the MCP you named, so one that was never provisioned on your machine stops it from starting. The `database` step provisions and migrates them all in the `bun mcp` process, then runs the Toolbox's own `db:migrate`.
+- **The Toolbox starts with hot reload,** as `mcp-dev`, and serves the MCP in its hub (`serve` `toolbox`), at its own path (`standalone`) or both. The step waits for its `/health` to list the MCP.
+- **A standalone MCP** gets its resource, `http://localhost:47400/acme/mcp`, and its client, `claude-code-acme`, registered field for field as [the register Job](/docs/admin/setup) registers them, then your organisation gets the rows `standalone_enable` makes with `everyone: true`.
+- **A Toolbox MCP** is enabled for your organisation through the Toolbox's admin API, and your organisation is granted its grant string, `acme`, by widening the one entitlement that ID keeps for your organisation on the Toolbox.
+- **Then it prints what to do,** and runs until Ctrl-C, which stops what it started.
+
+Every step is safe to run again. A scope that the MCP gained since the last run widens the rows ID holds; nothing narrows what your organisation holds.
+
+```text
+ok      database   schemas acme; the database of the Toolbox
+ok      toolbox    serving acme at http://localhost:47400/acme/mcp
+ok      register   http://localhost:47400/acme/mcp and claude-code-acme: 3 made, 0 changed, 0 found
+ok      access     organisation answerable: 6 made, 0 widened
+
+acme runs at http://localhost:47400/acme/mcp
+
+  claude mcp add --transport http acme http://localhost:47400/acme/mcp --client-id claude-code-acme --callback-port 47700
+
+In Claude Code, run /mcp, choose acme, then Authenticate.
+
+Ctrl-C stops the Toolbox; an edit to acme reloads it.
+```
+
+For an MCP in the Toolbox, it prints the Toolbox's command instead, `claude mcp add --transport http answerable-toolbox http://localhost:47400/mcp --client-id claude-code-toolbox --callback-port 47700`, and says that enabling and granting are local conveniences: in staging and production, staff do both with `toolbox_enable` and `access_grant` in [the admin MCP](/docs/admin). An MCP served both ways prints both.
+
+**How long it takes.** Not measured since the Toolbox serves every MCP and migrates them in one process. `bun mcp setup` took 0.5 seconds on 25 October 2026. On Ctrl-C the Toolbox closes its port and its connections, then exits; if it has not ended a second later it is killed with its process group.
+
+**Claude Code.** Run the printed command, then `/mcp` in Claude Code, choose the connection and **Authenticate**. Signing in by hand through a browser, with your work account, is the one step that no command does for you. Then ask Claude to call one of the MCP's tools: `acme_notes_list` in the Toolbox, `notes_list` at its own path. An MCP made by `bun mcp new` without `--tool` has none until [`bun mcp add tool`](/docs/mcp/add-a-tool) adds one. [Connect Claude Code](/docs/mcp/claude-code) covers what you see and the errors you can hit there.
+
+## What `bun mcp setup` and `bun mcp dev` refuse
+
+Each refusal exits with code 2, before anything starts, and every problem is listed at once with the command that fixes it. A step that fails after that exits with code 1 and names the command that finishes the job. [The bun mcp command](/docs/mcp/cli#errors) lists every error of every command.
+
+<CliErrors ids={["setup-required", "setup-stale", "id-down", "postgres-down", "port-taken", "organisation-not-found", "invalid-organisation", "invalid-configuration", "manifest-missing", "platform-organisation-missing", "staff-token-required", "staff-token-refused", "step-failed", "database-down", "access-disabled", "enable-refused", "toolbox-token-refused", "server-stopped"]} />

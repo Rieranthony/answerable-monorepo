@@ -95,7 +95,7 @@ The server never sees a password, never runs Better Auth and never reads ID's da
 | `@answerable/mcp/testing` | `createTestMcp`, `assertProviderConformance`, `errorOf` and `testPrincipal`; for an MCP with a database, `@answerable/mcp-postgres/testing` has its own `createTestMcp` and `assertProviderConformance` |
 | `@answerable/acceptance` | The kit that starts real ID, provisions it and signs a person in, and the journeys (`packages/acceptance`) |
 | `@answerable/mcp-e2e` | The reference MCP: five tools over its records in Postgres, a prompt, a resource and a view (`mcps/e2e`) |
-| `@answerable/mcp-example` | The finished example, made with `bun mcp`: `example.status`, `notes.list` and `notes.add` over its database (`mcps/example`) |
+| `@answerable/mcp-example` | The finished example, made with `bun mcp`: `notes.list` and `notes.add` over its database, exactly as the CLI writes them (`mcps/example`) |
 | `@answerable/id-admin` | A server's machine client on Answerable ID's admin API: `createIdAdmin`, `IdError`, `found`, and the fake ID in `@answerable/id-admin/testing` (`packages/id-admin`) |
 | `@answerable/mcp-postgres` | Postgres storage for MCP servers: the intent store, the evidence chain, the drizzle base schema, and a database for every MCP with `mcpDatabase` (`packages/mcp-postgres`) |
 | `@answerable/mcp-platform` | What every server Answerable runs shares: its environment (`parseEnvironment`), who is calling (`createIdProfiles`, for `createMcpServer`), the evidence and spans of every call and refusal (`createCalls`), the audit-log poller, `/health`, each MCP's database from the Toolbox's generated list (`mcpDatabases`), and test databases in `@answerable/mcp-platform/testing` (`packages/mcp-platform`) |

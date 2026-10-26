@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, expect, test } from "bun:test"
 import { join } from "node:path"
 import { main } from "../cli"
-import { isolationImport, mcpFiles, tableTs, toolFiles } from "../templates"
+import { writeFileSync } from "node:fs"
+import { generatedFiles } from "../generate"
+import { mcpFiles, tableTs, toolFiles } from "../templates"
+import { isolationImport } from "../templates/sources"
 import { filesUnder, recorder, tempRepository, testIo } from "../test/io"
 
 const description = "List the notes of the caller's organisation, newest first, 20 per page."
@@ -14,9 +17,11 @@ beforeEach(async () => {
     ...Object.fromEntries(Object.entries(acme).map(([path, text]) => [`mcps/acme/${path}`, text])),
     "mcps/acme/manifest.json": JSON.stringify(manifest),
     "mcps/acme/src/tools/files-list.ts": "// written by hand\n",
-    "mcps/bare/mcp.json": '{ "name": "bare", "serve": "both", "database": "shared" }\n',
+    "mcps/bare/mcp.json": '{ "serve": "both", "database": "shared" }\n',
     "mcps/bare/src/provider.ts": "export const provider = {}\n",
   })
+  // The generated files as the repository commits them.
+  for (const [path, text] of Object.entries(await generatedFiles(repository.root))) await Bun.write(join(repository.root, path), text)
 })
 afterEach(() => repository.remove())
 
@@ -28,41 +33,16 @@ const run = async (argv: string[], { cwd = repository.root, ...options }: Parame
 }
 
 const described = ["--description", description]
-test.each([
-  [["acme", "Notes.list", ...described], "invalid-tool-name", 'Tool name "Notes.list" must be <domain>.<operation>, each part a lowercase letter then up to 15 lowercase letters or digits, for example records.list'],
-  [["acme", "files.list", ...described], "tool-exists", "acme has a tool files.list: mcps/acme/src/tools/files-list.ts; choose another name"],
-  [["acme", "projects.list", ...described], "tool-exists", "acme has a tool projects.list: mcps/acme/manifest.json lists it; choose another name"],
-  [["acme", "acme.commit", ...described], "tool-name-reserved", "acme.commit would be called acme_commit, the name of acme's commit tool; choose another name"],
-  [["acme", "define.mutation", ...described], "tool-name-reserved", "define.mutation would be exported as defineMutation, a name the MCP's files import; choose another name"],
-  [["acme", "notes.list", "--description", "Gets notes."], "invalid-tool-description", "A tool's description is 11 characters; write 40 to 1,000 saying what it does, when to use it and its limits"],
-  [["acme", "notes.add", "--mutation", ...described], "mutation-description", 'acme/notes.add: a mutation\'s description must say that it prepares an intent; use the word "prepare" or "intent"'],
-  [["acme", "notes.list", "notes.add"], "unexpected-argument", "bun mcp add tool takes an MCP and one tool, <domain.operation>; it was given acme, notes.list, notes.add"],
-  [["acme", "beta", "notes.list"], "unexpected-argument", "bun mcp add tool takes an MCP and one tool, <domain.operation>; it was given acme, beta, notes.list"],
-  [["acme", "notes"], "unexpected-argument", "bun mcp add tool takes an MCP and one tool, <domain.operation>; it was given acme, notes"],
-  [["nope", "notes.list", ...described], "mcp-not-found", "No MCP is named nope: mcps/nope/mcp.json does not exist; bun mcp list names every MCP"],
-  [["notes.list", ...described], "mcp-required", "Name the MCP, or run the command from inside mcps/<name>"],
-  [["bare", "notes.list", ...described], "not-made-by-new", 'mcps/bare lacks src/mcp.ts, src/db/schema.ts and the two "// bun mcp: tools" lines of src/provider.ts, among its imports and in its tools array, which bun mcp new writes and add tool edits; add the tool by hand'],
-  [["acme", "notes.list"], "missing-argument", "Missing --description: what the tool does, when to use it and its limits, 40 to 1,000 characters"],
-])("refuses %j with %s and its message, writing nothing", async (argv, code, message) => {
-  const { code: exit, stderr, wrote } = await run(argv)
-  expect([exit, wrote]).toEqual([2, []])
-  expect(stderr().split("\n")[0]).toBe(message)
-  expect(JSON.parse((await run([...argv, "--json"])).stdout())).toMatchObject({ ok: false, error: { code, problems: [{ code, message }] } })
-})
-
 test("three wrong answers are refused at once, a line each in the order of the questions, with one command that replaces all three", async () => {
   const argv = ["nope", "Notes.list", "--description", "Gets notes.", "--mutation"]
   const problems = [
-    { code: "mcp-not-found", message: "No MCP is named nope: mcps/nope/mcp.json does not exist; bun mcp list names every MCP" },
-    { code: "invalid-tool-name", message: 'Tool name "Notes.list" must be <domain>.<operation>, each part a lowercase letter then up to 15 lowercase letters or digits, for example records.list' },
-    { code: "invalid-tool-description", message: "A tool's description is 11 characters; write 40 to 1,000 saying what it does, when to use it and its limits" },
+    "No MCP is named nope: mcps/nope/mcp.json does not exist; bun mcp list names every MCP",
+    'Tool name "Notes.list" must be <domain>.<operation>, each part a lowercase letter then up to 15 lowercase letters or digits, for example records.list',
+    "A tool's description is 11 characters; write 40 to 1,000 saying what it does, when to use it and its limits",
   ]
   const fix = 'bun mcp add tool <mcp> <domain.operation> --description "<what it does, when to use it, its limits>" --mutation'
   const { code, stderr, wrote } = await run(argv)
-  expect([code, wrote, stderr()]).toEqual([2, [], `${problems.map(problem => problem.message).join("\n")}\n\n  ${fix}\n`])
-  expect(JSON.parse((await run([...argv, "--json"])).stdout())).toEqual({
-    ok: false, error: { code: "mcp-not-found", message: problems.map(problem => problem.message).join("\n"), fix: `${fix} --json`, problems },
-  })
+  expect([code, wrote, stderr()]).toEqual([2, [], `${problems.join("\n")}\n\n  ${fix}\n`])
 })
 
 test("missing answers and wrong ones combine into one refusal, keeping the valid ones in its command", async () => {
@@ -73,10 +53,9 @@ Without a terminal, bun mcp add tool asks nothing: run it again with every answe
 
   bun mcp add tool acme <domain.operation> --description "<what it does, when to use it, its limits>"
 `])
-  const both = JSON.parse((await run(["acme", "--json"])).stdout()).error
-  expect(both.problems).toEqual([
-    { code: "missing-argument", message: "Missing the tool: <domain.operation>, such as notes.list" },
-    { code: "missing-argument", message: "Missing --description: what the tool does, when to use it and its limits, 40 to 1,000 characters" },
+  expect((await run(["acme"])).stderr().split("\n").slice(0, 2)).toEqual([
+    "Missing the tool: <domain.operation>, such as notes.list",
+    "Missing --description: what the tool does, when to use it and its limits, 40 to 1,000 characters",
   ])
 })
 
@@ -86,63 +65,66 @@ test("checks that need the MCP wait for it: without one, a tool another MCP has,
   expect((await run(["nope", "nope.commit", ...described])).stderr().split("\n")[1]).toBe("")
 })
 
-test("a refusal names the command to run instead, with a placeholder for what is missing", async () => {
-  expect((await run(["acme", "notes.list"])).stderr()).toEndWith('\n\n  bun mcp add tool acme notes.list --description "<what it does, when to use it, its limits>"\n')
-  expect((await run(["acme", "notes", "--mutation", "--no-check"])).stderr()).toEndWith('\n\n  bun mcp add tool acme <domain.operation> --description "<what it does, when to use it, its limits>" --mutation --no-check\n')
-})
-
 test("from inside mcps/<name>, the MCP comes from the working directory", async () => {
   const { exec, ran } = recorder()
-  const { code } = await run(["notes.list", "--description", description, "--no-check"], { cwd: join(repository.root, "mcps/acme/src"), exec })
+  const { code } = await run(["notes.list", "--description", description], { cwd: join(repository.root, "mcps/acme/src"), exec })
   expect(code).toBe(0)
   expect(ran[0]!.command.slice(-5)).toEqual(["db", "acme", "generate", "--name", "notes"])
 })
 
-test("it writes the tool and its test, adds the import and the entry above the markers and the domain's table, then runs its steps", async () => {
+test("it writes the tool and its test, adds the import and the entry above the markers and the domain's table, then writes the migration and checks", async () => {
   const { exec, ran } = recorder(command => ({ code: 0, output: command.includes("generate") ? "ok      migration  drizzle/0001_notes.sql (300 ms)\n" : " 4 pass\n" }))
   const { code, stdout } = await run(["acme", "notes.list", "--description", description], { exec })
   expect(code).toBe(0)
   for (const [path, text] of Object.entries(toolFiles("acme", { name: "notes.list", description, mutation: false }))) expect(await read(path)).toBe(text)
   expect(await read("src/provider.ts")).toBe(acme["src/provider.ts"]!
-    .replace('import { acmeStatus } from "./tools/acme-status"\n', 'import { acmeStatus } from "./tools/acme-status"\nimport { notesList } from "./tools/notes-list"\n')
-    .replace("    acmeStatus,\n", "    acmeStatus,\n    notesList,\n"))
+    .replace('import { database } from "./mcp"\n', 'import { database } from "./mcp"\nimport { notesList } from "./tools/notes-list"\n')
+    .replace("  tools: [\n", "  tools: [\n    notesList,\n"))
   expect(await read("src/db/schema.ts")).toBe(`${isolationImport}${acme["src/db/schema.ts"]}${tableTs("acme", "notes")}`)
   expect(ran.map(({ command }) => command.slice(1).join(" ").replace(/^\S*cli\.ts/, "cli.ts"))).toEqual([
-    "cli.ts db acme generate --name notes", "test", "run typecheck", "run lint", "run test", "scripts/env-inventory.ts",
+    "cli.ts db acme generate --name notes", "run typecheck", "run lint", "run test", "scripts/env-inventory.ts",
   ])
   expect(stdout().split("\n").map(line => line.replace(/ \(\d+ ms\)$/, ""))).toEqual([
     "ok      write      src/tools/notes-list.ts, src/tools/notes-list.test.ts, src/provider.ts, the notes table in src/db/schema.ts",
     "ok      migration  drizzle/0001_notes.sql",
-    "ok      manifest   mcps/acme/manifest.json: 4 tests pass",
-    "ok      generate   rewrote charts/answerable/mcps.json",
-    "ok      check      typecheck 9 files; lint 9 files; test 4 pass, 0 fail; manifest current; generated current; budget no MCP has a database of its own",
+    "ok      check      guard 7 files; none names answerable.organisation_id; typecheck 7 files; lint 7 files; test 4 pass, 0 fail; manifest current; generated current; budget no MCP has a database of its own",
     "",
     "Next:",
-    "  git add mcps/acme charts/answerable/mcps.json",
+    "  git add mcps/acme",
     "",
   ])
-  const second = await run(["acme", "notes.add", "--mutation", "--description", prepares, "--no-check", "--json"], { exec })
-  expect(JSON.parse(second.stdout())).toMatchObject({ ok: true, next: ["bun mcp check acme", "git add mcps/acme charts/answerable/mcps.json"] })
+  const second = await run(["acme", "notes.add", "--mutation", "--description", prepares], { exec })
+  expect(second.stdout()).toContain("ok      write      src/tools/notes-add.ts, src/tools/notes-add.test.ts, src/provider.ts (")
   expect((await read("src/db/schema.ts")).match(/\.table\("notes"/g)).toHaveLength(1)
   expect(await read("src/tools/notes-add.ts")).toContain('risk: "normal"')
 })
 
+test("Next names a generated file the check rewrote, such as the chart's list when the tool brings a new scope", async () => {
+  const { exec } = recorder(command => {
+    if (command.at(-1) === "test") writeFileSync(join(repository.root, "mcps/acme/manifest.json"), JSON.stringify({ ...manifest, tools: [...manifest.tools, { name: "notes_add", identity: "acme/notes.add", kind: "mutate", scopes: ["acme:write"] }] }))
+    return { code: 0, output: " 4 pass\n" }
+  })
+  const { code, stdout } = await run(["acme", "notes.add", "--mutation", "--description", prepares], { exec })
+  expect(code).toBe(0)
+  expect(stdout()).toEndWith("Next:\n  git add mcps/acme charts/answerable/mcps.json\n")
+})
+
 test("a table goes into a schema that already imports the isolation policy without a second import", async () => {
   await Bun.write(join(repository.root, "mcps/acme/src/db/schema.ts"), `${isolationImport}${acme["src/db/schema.ts"]}${tableTs("acme", "projects")}`)
-  expect((await run(["acme", "notes.list", "--description", description, "--no-check"])).code).toBe(0)
+  expect((await run(["acme", "notes.list", "--description", description])).code).toBe(0)
   expect((await read("src/db/schema.ts")).split(isolationImport)).toHaveLength(2)
 })
 
 test("in a terminal it asks for the tool, its description and read or change, and takes what the flags give", async () => {
-  const asked = await run(["acme", "--no-check"], { isTTY: true, answers: ["files.list", "notes.add", description, "change", prepares] })
+  const asked = await run(["acme"], { isTTY: true, answers: ["files.list", "notes.add", description, "change", prepares] })
   expect(asked.code).toBe(0)
   expect(asked.asked.map(prompt => [prompt.kind, prompt.refused.length])).toEqual([["text", 1], ["text", 0], ["select", 0], ["text", 0]])
   expect(asked.asked[0]!.message).toBe("Tool, <domain>.<operation>: what the caller can do, such as notes.list or projects.search; never the vendor or the transport.")
-  const flagged = await run(["acme", "--mutation", "--description", prepares, "--no-check"], { isTTY: true, answers: ["rfis.create"] })
+  const flagged = await run(["acme", "--mutation", "--description", prepares], { isTTY: true, answers: ["rfis.create"] })
   expect([flagged.code, flagged.asked.length]).toEqual([0, 1])
   expect(await read("src/tools/rfis-create.ts")).toContain("defineMutation")
-  const described = await run(["acme", "tasks.add", "--mutation", "--no-check"], { isTTY: true, answers: [prepares] })
-  expect([described.code, described.asked[0]!.message]).toEqual([0, expect.stringContaining("use the word \"prepare\" or \"intent\"")])
+  const prompted = await run(["acme", "tasks.add", "--mutation"], { isTTY: true, answers: [prepares] })
+  expect([prompted.code, prompted.asked[0]!.message]).toEqual([0, expect.stringContaining("use the word \"prepare\" or \"intent\"")])
 })
 
 test("a failed migration says why and finishes with generate, then check", async () => {

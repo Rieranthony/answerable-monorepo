@@ -67,18 +67,17 @@ export const setup: Command = {
     if (!(await findBySlug(call, "/organizations", organisation))) {
       throw new Refusal("organisation-not-found", `Answerable ID has no organisation ${organisation}; pass its slug with --organisation, or leave it out for ${platformSlug}`, usage)
     }
-    const json = flags.json === true
     if (!platform) {
       // Nothing to make: at most the organisation changes.
       const steps = [
         { name: "client", fix: "bun mcp setup", run: async () => `${machine} works: ID accepts its credentials in .env; nothing to do` },
         ...(organisation === settings.MCP_DEV_ORGANISATION ? [] : [{ name: "env", fix: "bun mcp setup", run: async () => (await writeEnvironment(root, { MCP_DEV_ORGANISATION: organisation }), `MCP_DEV_ORGANISATION=${organisation} written to .env`) }]),
       ]
-      return runSteps(io, json, steps, () => ["bun mcp dev <mcp>"])
+      return runSteps(io, steps, () => ["bun mcp dev <mcp>"])
     }
     const registrar = createRegistrar(call)
     let secret = ""
-    return runSteps(io, json, [
+    return runSteps(io, [
       {
         name: "toolbox", fix: "bun mcp setup",
         run: async () => (await registerToolbox(registrar), `${local.toolboxResource}, its admin resource and claude-code-toolbox: ${counts(registrar)}`),

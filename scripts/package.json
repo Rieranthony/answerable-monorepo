@@ -6,7 +6,8 @@
   "exports": {
     "./local": "./mcp/local.ts",
     "./local-access": "./mcp/local-access.ts",
-    "./local-id": "./mcp/local-id.ts"
+    "./local-id": "./mcp/local-id.ts",
+    "./postgres": "./mcp/test/postgres.ts"
   },
   "scripts": {
     "test": "bun test",

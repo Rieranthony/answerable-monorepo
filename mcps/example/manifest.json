@@ -273,52 +273,6 @@
       }
     },
     {
-      "identity": "example/example.status",
-      "name": "example_status",
-      "version": "2026-10-25",
-      "kind": "read",
-      "description": "Report that example is running and who is calling: your name and your organisation's. Replace it with the MCP's first real tool.",
-      "scopes": [
-        "example:read"
-      ],
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "input": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {},
-        "additionalProperties": false
-      },
-      "output": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "string",
-            "description": "ok while the MCP runs"
-          },
-          "person": {
-            "type": "string",
-            "description": "Your name"
-          },
-          "organisation": {
-            "type": "string",
-            "description": "Your organisation's name"
-          }
-        },
-        "required": [
-          "status",
-          "person",
-          "organisation"
-        ],
-        "additionalProperties": false
-      }
-    },
-    {
       "identity": "example/notes.add",
       "name": "notes_add",
       "version": "2026-10-25",

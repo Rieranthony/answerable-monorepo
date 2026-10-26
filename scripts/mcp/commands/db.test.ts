@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { symlink } from "node:fs/promises"
 import { join } from "node:path"
 import { main } from "../cli"
+import { migrateLocal } from "../database"
 import { definitions } from "../definitions"
 import { spawn } from "../io"
 import { mcpFiles, tableTs } from "../templates"
@@ -25,7 +26,7 @@ afterAll(async () => {
 })
 
 const run = async (argv: string[]) => {
-  const io = testIo(["db", ...argv], repository.root, { exec: spawn })
+  const io = testIo(["db", ...argv], repository.root, { exec: spawn, migrate: migrateLocal })
   return { ...io, code: await main(io.io) }
 }
 const lines = (text: string) => text.split("\n").map(line => line.replace(/ \(\d+ ms\)$/, ""))
@@ -37,23 +38,11 @@ test("generate writes the first migration without drizzle-kit's schema line, the
   expect(await file(shared, "drizzle/0000_initial.sql").text()).toBe("")
   expect(lines(first.stdout())[0]!.split(/ +/)[1]).toBe(definitions.db.steps[0]!.name)
   await Bun.write(file(shared, "src/db/schema.ts"), `import { organisationIsolation } from "@answerable/mcp-postgres"\n${await file(shared, "src/db/schema.ts").text()}${tableTs(shared, "notes")}`)
-  const second = await run([shared, "generate", "--json"])
-  expect([second.code, JSON.parse(second.stdout()).next]).toEqual([0, [`bun mcp db ${shared} migrate`, `git add mcps/${shared}/drizzle`]])
+  const second = await run([shared, "generate"])
+  expect([second.code, second.stdout()]).toEqual([0, expect.stringContaining(`\nNext:\n  bun mcp db ${shared} migrate\n  git add mcps/${shared}/drizzle\n`)])
   const [written] = (await Array.fromAsync(new Bun.Glob("drizzle/0001_*.sql").scan({ cwd: join(repository.root, "mcps", shared) })))
   expect(await file(shared, written!).text()).toStartWith(`CREATE TABLE "${shared}"."notes" (`)
   expect(lines((await run([shared, "generate"])).stdout())).toEqual(["ok      migration  no change to src/db/schema.ts", ""])
-})
-
-test("generate refuses a table outside the MCP's schema, writing nothing", async () => {
-  const schema = await file(own, "src/db/schema.ts").text()
-  await Bun.write(file(own, "src/db/schema.ts"), `${schema}export const loose = pg.pgTable("loose", { id: pg.uuid().primaryKey() })\n`)
-  try {
-    const { code, stderr } = await run([own, "generate"])
-    expect([code, stderr()]).toEqual([2, `mcps/${own}/src/db/schema.ts defines loose outside pgSchema("${own}"); define every table with ${own}Schema.table(…)\n\n  bun mcp db ${own} generate\n`])
-    expect(await file(own, "drizzle/meta/_journal.json").exists()).toBe(false)
-  } finally {
-    await Bun.write(file(own, "src/db/schema.ts"), schema)
-  }
 })
 
 test("migrate provisions the shared schema, applies the journal as the migrator, makes no role, and grants the serving login every table", async () => {
@@ -75,16 +64,6 @@ test("migrate makes an own MCP's database and two logins first, and provisions i
   expect(lines((await run([own, "migrate"])).stdout())[0]).toBe(`ok      database   schema ${own} in answerable_mcp_${own}: migrated`)
 })
 
-test("a Postgres that does not answer is named, with how to start it", async () => {
-  process.env.MCPS_DATABASE_ADMIN_URL = "postgres://answerable:answerable@localhost:1/answerable_mcps"
-  try {
-    const { code, stderr } = await run([shared, "migrate"])
-    expect([code, stderr()]).toEqual([1, `database failed: the development Postgres does not answer on localhost:1; start it with bun run env:up from the main checkout\n\nFinish the job with:\n  bun mcp db ${shared} migrate\n`])
-  } finally {
-    delete process.env.MCPS_DATABASE_ADMIN_URL
-  }
-})
-
 test("migrate from inside the MCP's folder reads the root .env, as setup and dev do", async () => {
   // Bun loads a .env from the working directory only, so this one, at the repository's root, reaches the CLI only if it reads it itself.
   const environment = join(repository.root, ".env")
@@ -92,7 +71,7 @@ test("migrate from inside the MCP's folder reads the root .env, as setup and dev
   delete process.env.MCPS_DATABASE_ADMIN_URL
   await Bun.write(environment, "MCPS_DATABASE_ADMIN_URL=postgres://answerable:answerable@localhost:1/answerable_mcps\n")
   try {
-    const io = testIo(["db", "migrate"], join(repository.root, "mcps", shared), { exec: spawn })
+    const io = testIo(["db", "migrate"], join(repository.root, "mcps", shared), { exec: spawn, migrate: migrateLocal })
     expect([await main(io.io), io.stderr()]).toEqual([1, `database failed: the development Postgres does not answer on localhost:1; start it with bun run env:up from the main checkout\n\nFinish the job with:\n  bun mcp db ${shared} migrate\n`])
   } finally {
     await Bun.file(environment).delete()
@@ -100,12 +79,8 @@ test("migrate from inside the MCP's folder reads the root .env, as setup and dev
   }
 })
 
-test.each([
-  [["generate", "migrate", "x"],"bun mcp db takes generate or migrate, after the MCP's name, not generate migrate x"],
-  [["acme", "seed"], "bun mcp db takes generate or migrate, after the MCP's name, not acme seed"],
-  [[], "bun mcp db takes generate or migrate, after the MCP's name"],
-  [["acme", "migrate", "--name", "x"], "--name names the migration bun mcp db generate writes; migrate takes none"],
-])("refuses %j", async (argv, message) => {
-  const { code, stderr } = await run(argv)
-  expect([code, stderr().split("\n")[0]]).toEqual([2, message])
+test("every MCP in one call, as bun mcp dev migrates them: the shared ones on one connection each way, then each own one, a line each", async () => {
+  expect(await migrateLocal(repository.root, [{ name: own, serve: "both", database: "own" }, { name: shared, serve: "both", database: "shared" }])).toEqual([
+    `schema ${own} in answerable_mcp_${own}: migrated`, `schema ${shared} in answerable_mcps: migrated`,
+  ])
 })

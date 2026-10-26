@@ -1,6 +1,6 @@
 ---
 title: Test an MCP
-description: "Test a provider in-process with createTestMcp, as a test person or one you choose and with its database, and check it against the Answerable MCP standard with the conformance kit, each tool's example, the manifest snapshot and bun run mcp:check."
+description: "Test a provider in-process with createTestMcp, as a test person or one you choose and with its database, and check it against the Answerable MCP standard with the conformance kit, each tool's example, the manifest snapshot and bun mcp check."
 ---
 
 <include lang="ts" meta='title="mcps/e2e/src/provider.test.ts"'>../../../../../mcps/e2e/src/provider.test.ts#conformance</include>
@@ -13,7 +13,7 @@ This is the e2e MCP's; `mcps/example/src/provider.test.ts` has a smaller one. Pu
 
 Use `createTestMcp` directly to test your own logic. It serves a provider inside the test process with a local ID issuer and the official MCP client: no port, no network.
 
-<include lang="ts" meta='title="mcps/example/src/provider.test.ts"'>../../../../../mcps/example/src/provider.test.ts#add-then-list</include>
+<include lang="ts" meta='title="mcps/example/src/notes.test.ts"'>../../../../../mcps/example/src/notes.test.ts#add-then-list</include>
 
 The MCP's URL is `https://mcp.test/mcp`.
 
@@ -123,13 +123,11 @@ The file holds the tools sorted by identity, with their wire names, schemas, sco
 
 ## Check a workspace
 
-For an MCP made with `bun mcp`, run `bun mcp check <name>`: it runs the same typecheck, lint and tests as below, then rewrites a stale manifest and the generated files instead of failing, and says to commit them ([Make an MCP](/docs/mcp/create#check-it)). The rest of this section is the form CI runs, which fails on either.
-
 ```sh
-bun run mcp:check @answerable/mcp-e2e
+bun mcp check e2e
 ```
 
-Run this from the repository root with a workspace name. It runs the workspace's typecheck, lint and tests with Turborepo (`turbo run typecheck lint test --filter <workspace>`); the conformance checks and the manifest drift test are tests, so they run too. Every suite `bun run mcp:test` runs enforces 100% line and function coverage, and so does every MCP that `bun mcp new` makes; `@answerable/acceptance` is test support and has no coverage gate. `bun run mcp:test` runs the platform's suites, `bun mcp`'s and every MCP's through Turborepo, four at a time and never from its cache.
+It refuses code that names the caller's organisation's setting, then runs the MCP's typecheck, lint and tests; the conformance checks and the manifest drift test are tests, so they run too. It rewrites a stale manifest and the generated files instead of failing, and says to commit them ([Make an MCP](/docs/mcp/create#check-it)). CI runs `bun run mcp:test`, whose suites fail on either. Every suite `bun run mcp:test` runs enforces 100% line and function coverage, and so does every MCP that `bun mcp new` makes; `@answerable/acceptance` is test support and has no coverage gate. `bun run mcp:test` runs the platform's suites, `bun mcp`'s and every MCP's through Turborepo, four at a time and never from its cache.
 
 ## Not yet
 

@@ -57,38 +57,40 @@ async function connected(url: URL, work: (client: Client) => Promise<unknown>) {
 }
 
 /**
- * Provision and migrate the MCP's local development schema, as the deployment does: shared, its schema in `answerable_mcps`, provisioned as the
- * administrator and migrated as the migrator login, granting the Toolbox's serving login every table read and written; or, own, its database
- * `answerable_mcp_<name>` and its two logins, migrated as its owner login, granting its runtime login the same. The logins have the development
- * password. The admin URL is the root `.env`'s, wherever it runs (`readSettings`). What it did, in words.
+ * Provision and migrate the local development schemas of `mcps`, in this process, as the deployment does. The shared ones on one administrator
+ * connection, their schemas in `answerable_mcps` provisioned at once, then on one migrator connection, granting the Toolbox's serving login every
+ * table read and written. Each own one in turn: its database `answerable_mcp_<name>` and its two logins, migrated as its owner login, granting
+ * its runtime login the same. The logins have the development password. The admin URL is the root `.env`'s, wherever it runs (`readSettings`).
+ * A line for each MCP, in order, of what it did.
  */
-export async function migrateLocal(root: string, { name, database }: Declaration): Promise<string> {
+export async function migrateLocal(root: string, mcps: readonly Declaration[]): Promise<string[]> {
   const admin = new URL((await readSettings(root)).settings.MCPS_DATABASE_ADMIN_URL)
-  const cluster = new URL(admin)
-  cluster.pathname = "/postgres"
-  const dir = join(root, "mcps", name)
-  const folder = join(dir, "drizzle")
-  const migrations = existsSync(join(folder, "meta/_journal.json"))
-  const done = migrations ? "migrated" : "provisioned; no migration yet"
   // `admin`'s server and database as `login`, with the development password.
   const as = (login: string, pathname = admin.pathname) => Object.assign(new URL(admin), { username: login, password: "answerable", pathname })
-  if (database === "shared") {
+  const folder = (name: string) => join(root, "mcps", name, "drizzle")
+  const migrations = (name: string) => existsSync(join(folder(name), "meta/_journal.json"))
+  const done = (name: string, database: string) => `schema ${name} in ${database}: ${migrations(name) ? "migrated" : "provisioned; no migration yet"}`
+  const shared = mcps.filter(mcp => mcp.database === "shared")
+  if (shared.length) {
     const { migrator, toolbox } = sharedMcps.logins
-    await connected(admin, client => provisionMcps(sqlOf(client), { mcps: [{ name }], logins: sharedMcps.logins }))
-    if (migrations) await connected(as(migrator), client => migrateMcp({ client, name, folder, serving: toolbox }))
-    return `schema ${name} in ${admin.pathname.slice(1)}: ${done}`
+    await connected(admin, client => provisionMcps(sqlOf(client), { mcps: shared, logins: sharedMcps.logins }))
+    // Each migration error names its MCP: `Refusing to migrate acme: …`, `acme: 0001_notes.sql failed: …`.
+    const pending = shared.filter(mcp => migrations(mcp.name))
+    if (pending.length) await connected(as(migrator), async client => { for (const { name } of pending) await migrateMcp({ client, name, folder: folder(name), serving: toolbox }) })
   }
-  const { database: own, owner, runtime } = ownMcpDatabase(name)
-  await connected(cluster, async client => {
-    for (const login of [owner, runtime]) {
-      if (!(await client.query("select 1 from pg_roles where rolname = $1", [login])).rowCount) await client.query(`create role ${login} login password 'answerable' noinherit`)
-    }
-    if (!(await client.query("select 1 from pg_database where datname = $1", [own])).rowCount) await client.query(`create database ${own} owner ${owner}`)
-    await client.query(`revoke all on database ${own} from public; grant connect on database ${own} to ${owner}, ${runtime}`)
-  })
-  await connected(as(owner, `/${own}`), async client => {
-    await provisionOwnMcp(sqlOf(client), { name, owner, runtime })
-    if (migrations) await migrateMcp({ client, name, folder, serving: runtime })
-  })
-  return `schema ${name} in ${own}: ${done}`
+  for (const { name } of mcps.filter(mcp => mcp.database === "own")) {
+    const { database: own, owner, runtime } = ownMcpDatabase(name)
+    await connected(Object.assign(new URL(admin), { pathname: "/postgres" }), async client => {
+      for (const login of [owner, runtime]) {
+        if (!(await client.query("select 1 from pg_roles where rolname = $1", [login])).rowCount) await client.query(`create role ${login} login password 'answerable' noinherit`)
+      }
+      if (!(await client.query("select 1 from pg_database where datname = $1", [own])).rowCount) await client.query(`create database ${own} owner ${owner}`)
+      await client.query(`revoke all on database ${own} from public; grant connect on database ${own} to ${owner}, ${runtime}`)
+    })
+    await connected(as(owner, `/${own}`), async client => {
+      await provisionOwnMcp(sqlOf(client), { name, owner, runtime })
+      if (migrations(name)) await migrateMcp({ client, name, folder: folder(name), serving: runtime })
+    })
+  }
+  return mcps.map(({ name, database }) => done(name, database === "shared" ? admin.pathname.slice(1) : ownMcpDatabase(name).database))
 }
