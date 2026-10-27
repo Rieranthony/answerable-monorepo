@@ -6,6 +6,8 @@ import { testPrincipal as principal } from "@answerable/mcp/testing"
 import { z } from "zod"
 import { allowedScopes, createGrantsReader, isGrant } from "./grants"
 
+const purpose = "A fixture provider for the Toolbox's tests: it serves the tools each test gives it."
+
 const toolbox = "https://toolbox.test/mcp"
 afterEach(() => setSystemTime())
 
@@ -24,7 +26,7 @@ test("grant strings are providers, domains and capabilities, and toolbox/approve
 
 test("the Toolbox resource allows toolbox, offline_access, toolbox/approve and every grant string of its providers", () => {
   const tool = (name: string) => defineTool({ name, description: "A fixture tool that returns nothing and changes nothing.", input: z.object({}), output: z.object({}), async execute() { return {} } })
-  const providers = [defineProvider({ id: "crm", version: "2026-09-29", tools: [tool("contacts.list"), tool("contacts.get"), tool("deals.list")] })]
+  const providers = [defineProvider({ id: "crm", description: purpose, version: "2026-09-29", tools: [tool("contacts.list"), tool("contacts.get"), tool("deals.list")] })]
   expect(allowedScopes(providers)).toEqual([
     "crm", "crm/contacts", "crm/contacts.get", "crm/contacts.list", "crm/deals", "crm/deals.list", "offline_access", "toolbox", "toolbox/approve",
   ])

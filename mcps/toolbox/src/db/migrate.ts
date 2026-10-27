@@ -13,6 +13,9 @@ export const legacyBaseline: LegacyBaseline = {
   entries: shared.entries,
 }
 
+/** The restricted role the Toolbox serves as: the bootstrap makes it a login, and every migration provisions it with `runtimeGrants`. */
+export const runtimeRole = "answerable_toolbox_runtime"
+
 /** Apply the Toolbox's pending migrations, after adopting a database the file migrator built. */
 export const migrate = (db: Database): Promise<void> => apply(db, { folder: migrationsFolder, legacy: legacyBaseline })
 

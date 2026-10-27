@@ -1,0 +1,24 @@
+{
+  "$comment": "Written by bun mcp from mcps/*/mcp.json and each manifest.json (scripts/mcp/generate.ts); never edit it by hand",
+  "mcps": [
+    {
+      "name": "e2e",
+      "serve": "both",
+      "database": "shared",
+      "scopes": [
+        "e2e:identity",
+        "e2e:read",
+        "e2e:write"
+      ]
+    },
+    {
+      "name": "example",
+      "serve": "toolbox",
+      "database": "shared",
+      "scopes": [
+        "example:read",
+        "example:write"
+      ]
+    }
+  ]
+}

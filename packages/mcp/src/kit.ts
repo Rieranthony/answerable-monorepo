@@ -11,10 +11,15 @@ import { createTestMcp, testPrincipal } from "./test-mcp"
 export type ConformanceFixture = {
   /** The committed manifest, as a path or a URL such as `new URL("../manifest.json", import.meta.url)`. */
   manifest: string | URL
-  /** One valid input for every tool and mutation, by name. A function may set up state first and returns the input. */
-  examples: Record<string, Record<string, unknown> | ((principal: UserPrincipal) => Record<string, unknown> | Promise<Record<string, unknown>>)>
+  /**
+   * Inputs that replace a tool's or mutation's own `example`, by name: for an input no definition can hold, such as the id of a record a function
+   * first creates. A function may set up state first and returns the input. Default: none, so every definition's `example` is used.
+   */
+  examples?: Record<string, Record<string, unknown> | ((principal: UserPrincipal) => Record<string, unknown> | Promise<Record<string, unknown>>)>
   /** Change a target outside the MCP, as another writer would, so that its version moves; it may return a promise. Needed only by a mutation that prepares targets. */
   moveTarget?(target: Target, principal: UserPrincipal): unknown
+  /** The provider's database, which its handlers receive as `context.db`; `@answerable/mcp-postgres/testing`'s `assertProviderConformance` makes it. */
+  db?: unknown
 }
 
 /** What the checks that read only the definitions need. */
@@ -35,7 +40,9 @@ export async function createKit(provider: Provider, fixture: ConformanceFixture)
   const stored: Intent[] = []
   const memory = createMemoryIntentStore()
   const intents: IntentStore = { ...memory, async insert(intent) { stored.push(intent); await memory.insert(intent) } }
-  const mcp = await createTestMcp(auth => createMcpServer({ provider, auth, intents, policyClass: ({ risk }) => riskClass[risk] === "human" ? "controlled" : riskClass[risk] }))
+  const mcp = await createTestMcp(serving => createMcpServer({
+    ...serving, provider, db: fixture.db, intents, policyClass: ({ risk }) => riskClass[risk] === "human" ? "controlled" : riskClass[risk],
+  }))
   const contract = manifestOf(provider)
   const scopes = [...new Set([...contract.tools, ...contract.prompts, ...contract.resources].flatMap(entry => entry.scopes))].sort()
   const principal = testPrincipal({ clientId: "conformance-kit", scopes })

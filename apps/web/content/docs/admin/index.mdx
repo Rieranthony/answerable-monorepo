@@ -94,10 +94,11 @@ Each write is a prepare tool: it changes nothing and returns an intent, which `a
 | `groups_create` | A group: `slug`, `name` | `admin` | [createGroup](/docs/id/admin-api/groups/createGroup) |
 | `groups_addmember` | `memberId` in `groupId`, until `validUntil` if given, or a new end for a membership | `admin` | [putGroupMember](/docs/id/admin-api/groups/putGroupMember) |
 | `groups_dropmember` | `memberId` out of `groupId` | `admin` | [removeGroupMember](/docs/id/admin-api/groups/removeGroupMember) |
-| `access_grant` | An entitlement: `principal` (`{ "kind": "organization" }`, or `group` or `member` with its `id`), `resource`, `clientId` if only one client, `scopes` | `admin` | [createEntitlement](/docs/id/admin-api/entitlements/createEntitlement) |
+| `access_grant` | An entitlement: `principal` (`{ "kind": "organization" }`, or `group` or `member` with its `id`), `resource`, `clientId` if only one client (required on a standalone MCP's resource), `scopes` | `admin` | [createEntitlement](/docs/id/admin-api/entitlements/createEntitlement) |
 | `access_revoke` | `entitlementId` disabled, so that it grants nothing; reversible | `admin` | [disableEntitlement](/docs/id/admin-api/entitlements/disableEntitlement) |
 | `access_enable` | A disabled `entitlementId` enabled, so that it grants its scopes again: the inverse of `access_revoke` | `admin` | [enableEntitlement](/docs/id/admin-api/entitlements/enableEntitlement) |
 | `toolbox_enable` | The Toolbox for the organisation: `providers` and the `hostClientIds` people use it from | `admin` | The Toolbox's [enable call](/docs/toolbox/admin#enable-an-organisation), which writes to ID itself |
+| `standalone_enable` | Sign-in to a standalone MCP for the organisation through its host client, `claude-code-<name>`: `mcp`, its name; `everyone: true` to grant the MCP's scopes to the whole organisation as well | `admin` | What is missing of, for the host client: its link to the MCP's resource ([linkClientResource](/docs/id/admin-api/clients/linkClientResource)), the sign-in and MCP capabilities for both grant kinds ([createCapability](/docs/id/admin-api/capabilities/createCapability)), the sign-in entitlement; with `everyone`, the MCP's scopes for everyone through the host client ([createEntitlement](/docs/id/admin-api/entitlements/createEntitlement)) |
 | `organisations_disable` | The organisation disabled: its grants are revoked and refresh stops | `owner` | [disableOrganization](/docs/id/admin-api/organizations/disableOrganization) |
 | `organisations_enable` | The organisation enabled again | `owner` | [enableOrganization](/docs/id/admin-api/organizations/enableOrganization) |
 | `staff_grant` | `role` for `memberId` of the platform organisation, through the group whose entitlement carries it | `owner` | [putGroupMember](/docs/id/admin-api/groups/putGroupMember) |
@@ -105,9 +106,20 @@ Each write is a prepare tool: it changes nothing and returns an intent, which `a
 
 **Refused at prepare.** A write that would change nothing, or that ID would refuse, answers before anything is recorded: `PRECONDITION_FAILED` for a taken slug, a domain already routed, a member already in the group or not in it, an identical entitlement, an organisation already in that status, a role already held or not held; `INVALID_INPUT` for a scope the resource does not allow, an issuer `sso_set` does not take, or a provider or host client the Toolbox or ID does not know.
 
+### A standalone MCP
+
+[Your MCP's sign-in](/docs/mcp/sign-in#what-staff-do-for-each-organisation) says why each step is needed and what the person then sees.
+
+A `standalone` or `both` MCP is its own resource, `https://mcp.<zone>/<name>/mcp`, where the Toolbox serves it, which the deploy's register Job puts in ID, on every deploy, with its Claude Code client, `claude-code-<name>`, and their link. Nobody can sign in to it until staff give their organisation access:
+
+1. `standalone_enable` with the organisation and the MCP's name. Its preview lists each row it would make; commit it.
+2. `access_grant` of the MCP's scopes, such as `acme:read`, on its resource, with `clientId` set to the host client, `claude-code-<name>`, to the organisation, a group or a person. ID puts a scope in a person's token only through the client the entitlement names, so `access_grant` refuses a standalone MCP's resource without `clientId`. Or pass `everyone: true` to step 1, which grants every scope to the whole organisation through the host client in the same intent.
+
+`access_revoke` undoes it: the sign-in entitlement, which `access_list` shows with the host client and no resource, and, after `everyone: true`, the entitlement with the host client on the MCP's resource.
+
 ### Some tools, not all
 
-A [grant string](/docs/toolbox#grant-strings) can name one capability, such as `e2e/records.list`, as well as a provider or a domain. To give a group one tool: `groups_create`, then `access_grant` to the group, `principal` `{ "kind": "group", "id": … }` with that string in `scopes`, then `groups_addmember` for each person, who must have signed in once. `groups_dropmember` takes the tool away again, and `access_grant` with `{ "kind": "member", "id": … }` gives one person a tool of their own. The Toolbox applies each change to the person's current token within 60 seconds; the admin journeys prove it against real ID: [What the admin journeys prove](/docs/mcp/local-testing#what-the-admin-journeys-prove), A8.
+A [grant string](/docs/toolbox#grant-strings) can name one capability, such as `e2e/records.list`, as well as a provider or a domain. To give a group one tool: `groups_create`, then `access_grant` to the group, `principal` `{ "kind": "group", "id": … }` with that string in `scopes`, then `groups_addmember` for each person, who must have signed in once. `groups_dropmember` takes the tool away again, and `access_grant` with `{ "kind": "member", "id": … }` gives one person a tool of their own. The Toolbox applies each change to the person's current token within 60 seconds; the admin journeys prove it against real ID: [What the acceptance proves](/docs/mcp/local-testing#what-the-acceptance-proves), A8.
 
 Two rules shape it. Grants add up and nothing denies: an organisation-wide grant of `e2e` covers every tool whatever else is granted, so revoke it first. And ID keeps one entitlement per principal and resource, so `access_grant` refuses a second: to change which tools a group holds, change the entitlement's scopes with [updateEntitlement](/docs/id/admin-api/entitlements/updateEntitlement), or keep one group per set of tools and move people between them.
 
@@ -176,6 +188,7 @@ A write that ID takes without a precondition says so in its preview's warnings.
 - **The execution id.** Every call to ID carries the call's execution id as `x-request-id`, which ID stores on the audit event as `requestId`.
 - **ID's operation.** The receipt's `results.operationId` (`operationIds` for `staff_revoke`) is the `Operation-Id` ID answered: filter `audit_list` by it.
 - **The Toolbox.** `toolbox_enable` sends no key: the Toolbox's enable call takes none, and repeating it makes only what is missing.
+- **A standalone MCP.** `standalone_enable` sends `<intent id>.<step>` for each row; at commit a row someone made since the prepare is found, not made twice, and the receipt lists it under `existing`.
 
 ## Critical operations
 
@@ -192,7 +205,7 @@ A write that ID takes without a precondition says so in its preview's warnings.
 1. In the browser you use for Answerable ID, open `http://localhost:47300/security` (your ID's origin and `/security`) and choose **Verify sign-in**. ID sends you to your company's directory with `prompt=login` and accepts only a sign-in from the last five minutes.
 2. In Claude Code, run `/mcp`, choose the admin MCP, **Clear authentication**, then **Authenticate**. The new authorisation takes the new sign-in time.
 
-Do them in that order: an authorisation made before step 1 keeps the old time, as does one made through the same browser session without step 1. Signing out of ID and in again is not enough, because a sign-in that does not ask the directory to prompt can carry the directory's earlier time. A journey runs exactly this against a real ID: [What the admin journeys prove](/docs/mcp/local-testing#what-the-admin-journeys-prove).
+Do them in that order: an authorisation made before step 1 keeps the old time, as does one made through the same browser session without step 1. Signing out of ID and in again is not enough, because a sign-in that does not ask the directory to prompt can carry the directory's earlier time. A journey runs exactly this against a real ID: [What the acceptance proves](/docs/mcp/local-testing#what-the-acceptance-proves).
 
 ## How authority is read
 
@@ -207,7 +220,7 @@ On every request that lists or calls tools, in this order:
 
 **Fail closed.** When ID does not answer the role read, `tools/list` fails and every call answers `UPSTREAM_UNAVAILABLE`. Nothing is served from memory.
 
-**What it costs.** One round trip to ID per request. Against a real ID, 25 `tools/list` requests, each with one access read, took a median of 31.3 to 34.3 ms and a maximum of 35.2 to 50.7 ms in five runs; the reads alone took a median of 26.7 to 29.8 ms: [What the admin journeys prove](/docs/mcp/local-testing#what-the-admin-journeys-prove).
+**What it costs.** One round trip to ID per request. Against a real ID, 25 `tools/list` requests, each with one access read, took a median of 31.3 to 34.3 ms and a maximum of 35.2 to 50.7 ms in five runs; the reads alone took a median of 26.7 to 29.8 ms: [What the acceptance proves](/docs/mcp/local-testing#what-the-acceptance-proves).
 
 ## Evidence
 
@@ -239,7 +252,7 @@ It prints `Admin MCP serving http://localhost:47520/mcp for platform organisatio
 
 The admin MCP migrates as the schema owner and serves as a restricted login, as [Answerable ID](/docs/id/onboard#first-run) and [the Toolbox](/docs/toolbox#database-roles) do.
 
-- **`db:migrate`** connects with `ADMIN_DATABASE_MIGRATION_URL`, applies the migrations with the same migrator as Answerable ID's, then grants `ADMIN_DATABASE_RUNTIME_ROLE` exactly what the admin MCP needs and takes back anything else. It runs again safely, and adopts a database the previous file migrator built.
+- **`db:migrate`** connects with `ADMIN_DATABASE_MIGRATION_URL`, applies the migrations with the same migrator as Answerable ID's, then grants its runtime role, `answerable_admin_runtime`, exactly what the admin MCP needs and takes back anything else. It runs again safely, and adopts a database the previous file migrator built.
 - **The admin MCP** connects with `ADMIN_DATABASE_URL`, the runtime login, and refuses to listen when that login is a superuser, owns anything, or could change the evidence.
 - **The runtime role** reads and adds evidence, erases payload bodies, and moves and sweeps intents, and nothing else.
 
@@ -247,24 +260,11 @@ The local login comes from `infra/postgres/init/005-create-mcp-runtime-roles.sql
 
 ## Environment
 
-Read from the root `.env` by `bun run admin:dev`; every variable is listed in `default.env`.
+Read from the root `.env` by `bun run admin:dev`. An empty variable counts as unset.
 
-| Variable | Meaning | Local value |
-| --- | --- | --- |
-| `ADMIN_ID_ISSUER` | Answerable ID's origin; [Sign in again](#sign-in-again) names its `/security` page | `http://localhost:47300` |
-| `ADMIN_RESOURCE_URL` | The admin MCP's URL as registered in ID: the token audience; its path is the endpoint | `http://localhost:47520/mcp` |
-| `ADMIN_HOST` | The address to listen on. The container image sets `0.0.0.0` | `127.0.0.1` (the default) |
-| `ADMIN_PORT` | The port | `47520` (the default) |
-| `ADMIN_DATABASE_URL` | Intents and evidence, as the runtime login; the owner is refused at start | `postgres://answerable_admin_runtime:answerable@localhost:47432/answerable_admin` |
-| `ADMIN_DATABASE_MIGRATION_URL` | The same database as its schema owner, for `db:migrate` only | `postgres://answerable:answerable@localhost:47432/answerable_admin` |
-| `ADMIN_DATABASE_RUNTIME_ROLE` | The role `db:migrate` provisions: the user of `ADMIN_DATABASE_URL` | `answerable_admin_runtime` (the default) |
-| `ADMIN_TEST_DATABASE_URL` | The test database, reset by `db:test:migrate` | `postgres://answerable:answerable@localhost:47432/answerable_admin_test` (the default) |
-| `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` | The machine client, owned by the platform organisation | `admin-mcp` and its secret |
-| `ADMIN_ID_ADMIN_RESOURCE` | ID's admin resource: ID's `BETTER_AUTH_URL` with `/api/admin` | `http://localhost:47300/api/admin` |
-| `ADMIN_TOOLBOX_ADMIN_RESOURCE` | The Toolbox's admin resource: the audience of the `toolbox:admin` token, and the API's base with `/v1`. Unset, `toolbox_enable` stays listed and answers `PRECONDITION_FAILED` | `http://localhost:47400/admin` |
-| `ADMIN_FRESH_SECONDS` | How recent a directory sign-in the [critical operations](#critical-operations) need, in seconds | `1800` (the default) |
+<Configuration group={["admin MCP", "admin MCP migration", "admin MCP test database"]} />
 
-`GET /health` answers `{ "status": "ok" }` while the database answers `select 1`, and `503` with `{ "status": "unavailable" }` otherwise, whatever the `Host` header.
+`GET /health` answers `200` with `{ "status": "ok", "databases": { "admin": "ok" }, "providers": ["admin"] }` while the database answers `select 1`, and `503` with `"status": "unavailable"` otherwise, whatever the `Host` header.
 
 ## Limits
 
@@ -279,6 +279,7 @@ Read from the root `.env` by `bun run admin:dev`; every variable is listed in `d
 | Writes without a precondition at ID | Creating an organisation, a domain, a group or an entitlement; disabling or enabling an organisation or an entitlement; removing a group member. The admin MCP reads the target again just before the write |
 | Entitlements | ID keeps one per principal and target, whatever its scopes or status: `access_grant` refuses a second, naming the one there. A disabled one comes back with `access_enable`; its scopes change only with [updateEntitlement](/docs/id/admin-api/entitlements/updateEntitlement) |
 | `toolbox_enable` | Not atomic: if the Toolbox fails part-way, what it made stays. Safe to repeat: prepare and commit the same request again, and it makes only what is missing |
+| `standalone_enable` | Not atomic: if ID fails part-way, what was made stays; preparing again previews only what is missing. A row that exists and does not fit, disabled or short of scopes, stops the prepare, naming it |
 | The platform organisation | `organisations_disable` refuses it: every member of staff would lose access |
 | Intents | Controlled class, 30 minutes from prepare to commit |
 | Evidence of a commit call | Its `capability.completed` row names `upstream: "id"` whichever tool the intent is for; the `intent.committed` row names that tool |
@@ -305,6 +306,10 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | `PRECONDITION_FAILED`: `No group of the platform organisation holds answerable-<role>…` | `staff_grant` found no group whose entitlement carries the role | As the message says: `groups_create` in the platform organisation, then `access_grant` to that group on the admin MCP's resource with the role's grant string |
 | `PRECONDITION_FAILED`: `<who> has entitlement <id> on <resource>, disabled…` | `access_grant` found the principal's entitlement for that target, disabled | Call `access_enable` with that `entitlementId`; change its scopes with [updateEntitlement](/docs/id/admin-api/entitlements/updateEntitlement) if they differ |
 | `PRECONDITION_FAILED`: `The admin MCP does not know the Toolbox…` | `ADMIN_TOOLBOX_ADMIN_RESOURCE` is unset | Set it and restart the admin MCP |
+| `PRECONDITION_FAILED`: `Organisation <name> can already sign in to <mcp>…` | `standalone_enable` found every row in place | Nothing is needed; grant scopes with `access_grant`, `clientId` the host client |
+| `PRECONDITION_FAILED`: `Answerable ID already holds the <row> (<id>) with status…` | `standalone_enable` found a row for that target that is disabled or lacks scopes | Enable it (`access_enable` for an entitlement) or widen it in ID, then prepare again |
+| Tool result `NOT_FOUND`: `Answerable ID has no resource https://mcp.<zone>/<name>/mcp…` or `…has no client claude-code-<name>…` | The MCP is not served standalone, or no deploy has registered it | Ship it with `serve` `standalone` or `both`; the deploy's register Job registers it |
+| `INVALID_INPUT`: `<resource> is a standalone MCP's resource, and Answerable ID counts an entitlement…` | `access_grant` named a standalone MCP's resource, `<origin>/<name>/mcp`, without `clientId`; ID would count the entitlement towards no token | Prepare again with `clientId` `claude-code-<name>`, or use `standalone_enable` with `everyone: true` |
 | `INVALID_INPUT` | An argument failed the schema, or a rule: an issuer `sso_set` does not take, a scope the resource does not allow, a `principal.id` missing or extra, a provider or host client unknown | Fix the field `details.field_violations` names |
 | `INTENT_STALE` | A target moved since prepare, or ID refused the write's precondition; `details.targets` holds both versions | Prepare again and show the new preview |
 | `INTENT_EXPIRED` | 30 minutes passed since prepare | Prepare again |
@@ -325,7 +330,7 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | `The admin MCP cannot start: Database role <role> is not a restricted runtime role: …` | `ADMIN_DATABASE_URL` is the owner, a superuser, or a login with more than the admin MCP needs; the message names each problem | Point `ADMIN_DATABASE_URL` at the runtime login, then run `db:migrate`, which takes back extra privileges |
 | `password authentication failed for user "answerable_admin_runtime"` | The runtime login does not exist, or has another password: `db:migrate` creates a missing role without a login or password | Run `005-create-mcp-runtime-roles.sql` once, as [Run it](/docs/admin/setup#run-it) shows |
 | Log `permission denied for table <table>` | The runtime role lacks a grant: the database was migrated by an older version | Run `db:migrate` |
-| `Refusing to provision <role> as a runtime role: …` from `db:migrate` | `ADMIN_DATABASE_RUNTIME_ROLE` names a role with an attribute beyond login, a membership or an ownership | Name an unprivileged role |
+| `Refusing to provision answerable_admin_runtime as a runtime role: …` from `db:migrate` | The runtime login has an attribute beyond login, a membership or an ownership | Take it away from the login, then migrate again |
 | `Set ADMIN_DATABASE_MIGRATION_URL…` from `db:migrate` | The owner's URL is not set | Set it as in [Environment](#environment) |
 | `503 {"status":"unavailable"}` from `/health` | The database does not answer | Check `ADMIN_DATABASE_URL` and Postgres |
 | Log `relation "evidence_events" does not exist`, and every call fails | The database is not migrated | Run `bun --env-file=.env run --filter @answerable/mcp-admin db:migrate` |

@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import GithubSlugger from "github-slugger"
 import { sectionId } from "../components/design/lib"
+import config from "../next.config.mjs"
 import { loadDesign } from "./design"
 
 const web = join(import.meta.dir, "..")
@@ -93,6 +94,7 @@ const sources = [
   join(web, "lib/docs/error-codes.ts"),
   join(web, "components/docs/generated.tsx"),
   join(web, "app/llms.txt/route.ts"),
+  join(repo, "scripts/mcp/errors.ts"),
 ]
 
 test("every docs link reaches a page and every anchor a heading on it", () => {
@@ -136,6 +138,31 @@ test("every link from the repository's Markdown into the docs' sources reaches a
   }
 
   expect(broken).toEqual([])
+})
+
+test("every redirect leaves a page that is gone and arrives at one that exists, as the page and as its Markdown", async () => {
+  const redirects = (await config.redirects?.()) ?? []
+  const wrong: string[] = []
+
+  for (const { source, destination } of redirects) {
+    const [from, to] = [source, destination].map((path) =>
+      path.replace(/\.md$/, ""),
+    )
+    if (pages.has(from)) wrong.push(`${source}: a page still lives there`)
+    if (!pages.has(to)) wrong.push(`${source}: ${destination} is no page`)
+    if (source.endsWith(".md") !== destination.endsWith(".md")) {
+      wrong.push(`${source}: ${destination} is the other form`)
+    }
+  }
+  for (const moved of ["/docs/mcp/quickstart", "/docs/mcp/authoring"]) {
+    for (const form of [moved, `${moved}.md`]) {
+      if (!redirects.some(({ source }) => source === form)) {
+        wrong.push(`${form}: no redirect`)
+      }
+    }
+  }
+
+  expect(wrong).toEqual([])
 })
 
 test("the checker sees the pages it must: MDX pages, OpenAPI operations and the design page", () => {

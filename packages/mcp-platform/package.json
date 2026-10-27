@@ -1,0 +1,37 @@
+{
+  "name": "@answerable/mcp-platform",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --max-warnings 0"
+  },
+  "dependencies": {
+    "@answerable/auth": "workspace:*",
+    "@answerable/config": "workspace:*",
+    "@answerable/id-admin": "workspace:*",
+    "@answerable/mcp": "workspace:*",
+    "@answerable/mcp-postgres": "workspace:*",
+    "@opentelemetry/api": "1.10.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.300.0",
+    "@opentelemetry/resources": "3.0.0",
+    "@opentelemetry/sdk-trace": "3.0.0",
+    "drizzle-orm": "0.45.4",
+    "pg": "8.23.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/bun": "1.3.1",
+    "@types/pg": "8.23.1",
+    "eslint": "9.39.5",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.48.1"
+  }
+}

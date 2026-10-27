@@ -1,17 +1,19 @@
 ---
 title: Read tools
-description: "Define a read tool with @answerable/mcp: its fields, names, descriptions, the caller, pagination, errors, deprecation, and what hosts receive."
+description: "Define a read tool with @answerable/mcp: its fields, its example, names, descriptions, the caller and the database it receives, pagination, errors, deprecation, and what hosts receive."
 ---
 
-<include lang="ts" meta='title="mcps/example/src/provider.ts"'>../../../../../mcps/example/src/provider.ts#list</include>
+<include lang="ts" meta='title="mcps/example/src/tools/notes-list.ts"'>../../../../../mcps/example/src/tools/notes-list.ts#list</include>
 
-A read tool answers a question and changes nothing. Define it with `defineTool`: five fields are required and everything else has a default. `defineTool` checks the definition when the module loads, and returns it as frozen data. A tool that changes data is a [mutation](/docs/mcp/mutations). New here? [Build your first MCP](/docs/mcp/quickstart) first.
+A read tool answers a question and changes nothing. Define it with `defineTool`: five fields are required and everything else has a default. `defineTool` checks the definition when the module loads, and returns it as frozen data. A tool that changes data is a [mutation](/docs/mcp/mutations). New here? [Make an MCP](/docs/mcp/create) and [add a tool](/docs/mcp/add-a-tool) first.
 
 ## Fields
 
 <AutoTypeTable path="../../packages/mcp/src/tool.ts" name="ToolFields" type="Parameters<typeof defineTool>[0]" />
 
 **Field descriptions.** Describe each input field with `.describe()`: the text reaches the model in the tool's `inputSchema`. Recommended, not enforced.
+
+**Example.** `example` is one valid input, such as `{ limit: 5 }` for `notes.list` above. `defineTool` checks it against `input` when the module loads and refuses one that does not fit, naming the field. [The conformance kit](/docs/mcp/testing#the-fixture) calls the tool with it, so every tool should have one; a tool without one fails conformance.
 
 ## Names and identity
 
@@ -39,19 +41,46 @@ The description is what a model reads to choose a tool. Write operational docume
 
 ## The caller
 
-`execute(input, context)` receives the parsed input and a frozen context:
+<include lang="ts" meta='title="mcps/example/src/docs/caller.ts"'>../../../../../mcps/example/src/docs/caller.ts</include>
+
+`execute(input, context)` receives the parsed input and a frozen context: who is calling, the verified token, this call's id and its cancel signal. Prompts and resources receive the same context.
 
 <AutoTypeTable path="../../packages/mcp/src/definitions.ts" name="ToolContext" />
 
-`principal` is the verified caller:
+**Where it comes from.**
+
+| Field | Source |
+| --- | --- |
+| `person.id`, `person.membershipId`, `organisation.id` | The access token, verified offline against ID's published keys |
+| `person.name`, `person.email`, `person.groups`, `organisation.name`, `organisation.slug` | The server's [`profiles`](/docs/mcp/servers#who-is-calling), which reads them from Answerable ID's admin API before the handler runs, cached 60 seconds per member and per organisation |
+| `executionId`, `signal` | The server, for this call |
+
+`person.groups` holds the groups the person is in now, each `{ id, slug, name }`. When ID cannot be read, the call answers `UPSTREAM_UNAVAILABLE` and the handler does not run; see [What the server answers](#tool-errors). In tests, the caller is a test person you can change: [Test an MCP](/docs/mcp/testing#who-is-calling).
+
+`principal` is the verified token, for anything the fields above do not cover:
 
 <AutoTypeTable path="../../packages/auth/src/index.ts" name="UserPrincipal" />
 
-**Constrain every query by `principal.organizationId`.** Another organisation's data must be not found, never forbidden. Join on `userId`, never on an email address. Prompts and resources receive the same context. [How Answerable ID works](/docs/id) explains where these values come from.
+**Keep to the caller's organisation.** A table with the organisation policy needs no filter; data from anywhere else is constrained by `organisation.id`: [the rule](/docs/mcp/database#add-a-table). Join on `person.id`, never on an email address. [How Answerable ID works](/docs/id) explains the token.
+
+### The database
+
+<include lang="ts" meta='title="mcps/example/src/mcp.ts"'>../../../../../mcps/example/src/mcp.ts</include>
+
+An MCP with a database defines its tools with the `defineTool` and `defineMutation` that `withDatabase({ schema })` returns, given its drizzle schema module. `bun mcp new` writes this file, and every tool imports the two from it, as `notes.list` above does. Their handlers also receive:
+
+<AutoTypeTable path="../../packages/mcp/src/database.ts" name="DatabaseFields" type="Pick<DatabaseContext<Record<string, unknown>>, 'db'>" />
+
+- **The provider declares it.** `defineProvider` takes `database: { schema, migrations }`, and refuses a tool made with `withDatabase` unless that is the same schema. See [Providers and servers](/docs/mcp/servers#the-provider).
+- **The server supplies it.** The process that serves the provider passes its `db` to `createMcpServer` or a hub's `mount`, made with `mcpDatabase` from `@answerable/mcp-postgres`; a test gets one from [`@answerable/mcp-postgres/testing`](/docs/mcp/testing#an-mcp-with-a-database).
+- **Each call is its caller's.** The server runs every handler inside its call, and `callerOrganisation()` gives that call's organisation. `mcpDatabase` sets it on each connection a query borrows, so a table with the `organisationIsolation` policy, as every table `bun mcp` writes has, returns and accepts only that organisation's rows.
+- **A plain `defineTool` has no `db`.** Its context type has none, so `context.db` fails the typecheck.
+
+`bun mcp new` writes an MCP's `src/mcp.ts`, `src/db/schema.ts` and first migration, and `bun mcp add tool` adds the table a new domain needs: [Make an MCP](/docs/mcp/create), [Your MCP's database](/docs/mcp/database).
 
 ## Pagination
 
-<include lang="ts" meta='title="mcps/example/src/notes.ts"'>../../../../../mcps/example/src/notes.ts#store</include>
+<include lang="ts" meta='title="mcps/example/src/tools/notes-list.ts"'>../../../../../mcps/example/src/tools/notes-list.ts#page</include>
 
 Every tool that can return an unbounded list takes `limit` and `cursor`, and returns `items`, `next_cursor` and `has_more`, as `notes.list` above does. Never truncate silently.
 
@@ -63,7 +92,7 @@ Every tool that can return an unbounded list takes `limit` and `cursor`, and ret
 | `next_cursor` | The cursor for the next page, or `null` on the last |
 | `has_more` | `true` when another page exists |
 
-`@answerable/mcp` exports nothing for pagination: declare the fields in your schemas. The conformance kit's `list_paginates` fails a tool whose output has an `items` array without them. A cursor the server did not issue answers `INVALID_INPUT`.
+`@answerable/mcp` exports nothing for pagination: declare the fields in your schemas. The conformance kit's `list_paginates` fails a tool whose output has an `items` array without them. A cursor that is not one the tool issues answers `INVALID_INPUT`: here, anything but a row's id, a UUID v7, which sorts by creation.
 
 **Size.** Through [the Toolbox](/docs/toolbox#limits), a read whose result is above 100 KiB of JSON answers `RESULT_TOO_LARGE`, so keep the default page well below that.
 
@@ -96,6 +125,8 @@ A custom code must start with the provider's id in capitals: `defineProvider` re
 
 | Case | Answer |
 | --- | --- |
+| Who is calling cannot be read: the server's `profiles` fails | `UPSTREAM_UNAVAILABLE`, `Who you are could not be read; try again shortly`, and `[mcp] reading who is calling failed` in the server log; `execute` does not run |
+| `profiles` throws a `ToolError`, such as `PERMISSION_DENIED` for a member whose membership is not in force | That error; `execute` does not run |
 | The input fails `input` | `INVALID_INPUT`, one field violation per issue (`{ field: "a.b", message }`); `execute` does not run |
 | `execute` runs past `timeoutMs` | `TIMEOUT`; `context.signal` aborts and the answer does not wait for `execute` |
 | Any other exception, an undeclared custom code, or an output that fails `output` | `INTERNAL` with the message `The tool could not complete`, and `[mcp] tool <name> failed` with the execution id in the server log |
@@ -104,7 +135,7 @@ A custom code must start with the provider's id in capitals: `defineProvider` re
 
 <include lang="ts" meta='title="mcps/example/src/docs/dependencies.ts"'>../../../../../mcps/example/src/docs/dependencies.ts</include>
 
-Pass a database or an API client by closure: define the tools inside a function that receives them, and return the provider. The server passes the real one; a test passes a stand-in. `mcps/e2e/src/mcp.ts` builds its provider this way.
+Pass an API client or any other dependency by closure: define the tools inside a function that receives them, and return the provider. The server passes the real one; a test passes a stand-in. `mcps/e2e/src/mcp.ts` builds its provider this way. The MCP's own database is the one exception: the platform supplies it in the context, as [the database](#the-database) shows.
 
 **Composition.** A tool is plain data, so ordinary code composes it: collect tools from several modules into one array, wrap `execute` to audit every call, or call `execute` directly in a unit test.
 
@@ -114,7 +145,7 @@ Pass a database or an API client by closure: define the tools inside a function 
 
 <include lang="ts" meta='title="mcps/example/src/docs/deprecation.ts"'>../../../../../mcps/example/src/docs/deprecation.ts</include>
 
-**Version.** A date, `YYYY-MM-DD`; it defaults to the provider's version. The behaviour of one identity at one version never changes.
+**Version.** A date, `YYYY-MM-DD`; it defaults to the provider's version. The behaviour of one identity at one version never changes. A change to a tool's kind, risk, input or output needs a new version, or the Toolbox refuses to start: [Change a tool after it ships](/docs/mcp/add-a-tool#change-a-tool-after-it-ships).
 
 **Deprecation.** `since` and `sunset` are dates; `replacement` is optional and names another tool of the same provider that is not deprecated. The description sent to hosts ends with a sentence naming all three, for example `Deprecated since 2026-09-30; removed on 2027-09-30; use notes.list instead.`, and `_meta` carries the `deprecated` object.
 

@@ -3,6 +3,8 @@ import { z } from "zod"
 import { defineMutation, defineProvider, defineTool, ToolError } from "./index"
 import { createTestMcp, errorOf, type TestMcp } from "./testing"
 
+const purpose = "A fixture provider for the declared errors tests: it serves the definitions each test gives it."
+
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of cleanups.splice(0)) await close() })
 const declared = new ToolError("ACME_LOCKED", "The record is locked", { retry: { policy: "after_state_change" } })
@@ -26,7 +28,7 @@ const remove = defineMutation({
 })
 
 async function connect() {
-  const mcp: TestMcp = await createTestMcp(defineProvider({ id: "acme", version: "2026-09-29", tools: [list, remove] }))
+  const mcp: TestMcp = await createTestMcp(defineProvider({ id: "acme", description: purpose, version: "2026-09-29", tools: [list, remove] }))
   cleanups.push(() => mcp.close())
   return mcp.connect()
 }

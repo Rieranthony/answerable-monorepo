@@ -1,0 +1,403 @@
+<title>PR 13 Merge Audit</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one reading column; tables scroll inside their own frame; decisions are the only cards. */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --ink: #1a1e26;
+  --muted: #5a6371;
+  --rule: #dce0e6;
+  --accent: #2d5a99;
+  --defect: #b42318;
+  --decide: #9a5606;
+  --keep: #2c7a4b;
+  --code-bg: #edf0f4;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10131a; --surface: #171b23; --ink: #e5e8ee; --muted: #98a1b0; --rule: #29303b;
+    --accent: #7ea8e4; --defect: #f0897e; --decide: #e2a85b; --keep: #6dc495; --code-bg: #1e232d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10131a; --surface: #171b23; --ink: #e5e8ee; --muted: #98a1b0; --rule: #29303b;
+  --accent: #7ea8e4; --defect: #f0897e; --decide: #e2a85b; --keep: #6dc495; --code-bg: #1e232d;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); }
+.page { max-width: 920px; margin: 0 auto; padding-block: 40px 72px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 40px; }
+header { display: grid; gap: 10px; }
+.eyebrow { font: 500 12px/1.4 var(--mono); color: var(--muted); letter-spacing: 0.02em; }
+h1 { font-size: 26px; line-height: 1.2; font-weight: 600; margin: 0; text-wrap: balance; }
+h2 { font-size: 19px; line-height: 1.3; font-weight: 600; margin: 0; text-wrap: balance; }
+h3 { font-size: 16px; line-height: 1.35; font-weight: 600; margin: 0; text-wrap: balance; }
+p { margin: 0; max-width: 68ch; }
+section { display: grid; gap: 14px; }
+.lede { font-size: 16px; color: var(--ink); }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 13px/1.5 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.facts b { color: var(--ink); font-weight: 500; }
+code { font: 0.88em var(--mono); background: var(--code-bg); padding: 1px 4px; border-radius: 3px; overflow-wrap: anywhere; }
+.intro { color: var(--muted); }
+.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px 28px; }
+.split > div { min-width: 0; display: grid; gap: 8px; align-content: start; }
+.split h3 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; }
+.split .holds h3 { color: var(--keep); }
+.split .fails h3 { color: var(--defect); }
+ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+li { max-width: 68ch; }
+.frame { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 680px; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--rule); }
+th { font: 500 12px/1.4 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td.id { font: 500 13px/1.5 var(--mono); white-space: nowrap; color: var(--accent); }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.group td { background: var(--bg); font: 600 12px/1.4 var(--sans); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding-top: 12px; }
+.decisions { display: grid; gap: 16px; }
+.decision { background: var(--surface); border: 1px solid var(--rule); border-left: 3px solid var(--decide); border-radius: 6px; padding: 18px 20px; display: grid; gap: 10px; min-width: 0; }
+.decision .tag { font: 500 12px/1.4 var(--mono); color: var(--decide); }
+.decision .ids { font: 12px/1.4 var(--mono); color: var(--muted); }
+.option { display: grid; gap: 4px; padding: 10px 12px; border-radius: 4px; background: var(--bg); }
+.option.rec { outline: 1px solid var(--keep); }
+.option .label { font: 600 12px/1.4 var(--sans); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.option.rec .label { color: var(--keep); }
+.pill { display: inline-block; font: 500 11px/1.6 var(--mono); padding: 0 6px; border-radius: 3px; border: 1px solid currentColor; }
+.pill.defect { color: var(--defect); }
+.pill.measured { color: var(--accent); }
+ol.steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+footer { color: var(--muted); font-size: 13px; display: grid; gap: 6px; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<div class="page">
+
+<header>
+  <div class="eyebrow">Pull request 13 · claude/typed-config-b1 at 7ffd16b4 · 26 October 2026</div>
+  <h1>PR 13 merge audit</h1>
+  <p class="lede">Before the pull request merges, this audit asks what is unnecessary, overly complicated or built on a weak assumption, what can be deleted, and what can then be simplified. Six auditors read the pull request independently. I checked every finding against the code, reproduced the ones that change a decision, and measured what was still an estimate. No code has changed yet.</p>
+  <p><b>Decided on 26 October 2026:</b></p>
+  <ul>
+    <li><b>D-1:</b> one process.</li>
+    <li><b>D-2:</b> keep the <code>own</code> mode, against the recommendation.</li>
+    <li><b>D-3:</b> replace the roles with grants.</li>
+    <li><b>Everything else:</b> as recommended.</li>
+  </ul>
+  <p>The work runs in six briefs, R1 to R6, in <code>docs/goals/pr13-audit/briefs/</code>.</p>
+  <p><b>Carried out on 26 October 2026:</b></p>
+  <ul>
+    <li>R1 to R6b are committed to pull request 13, and every gate passes, the kind stack included.</li>
+    <li>The audit's diff, outside the planning files, is net 4,993 lines fewer.</li>
+    <li>C9 moved to a follow-up.</li>
+    <li>The evidence is in <code>reports/mcp-foundation-evidence.md</code>.</li>
+  </ul>
+  <div class="facts">
+    <span><b>15</b> commits</span>
+    <span><b>+22,726 −3,494</b> lines before M9</span>
+    <span><b>83</b> distinct findings</span>
+    <span><b>11</b> defects</span>
+    <span><b>7</b> decisions for you</span>
+    <span>about <b>5,000</b> lines to delete if every recommendation is taken (estimate)</span>
+  </div>
+</header>
+
+<section>
+  <h2>In short</h2>
+  <div class="split">
+    <div class="holds">
+      <h3>Holds up</h3>
+      <ul>
+        <li>One shared Postgres database with a schema per MCP. Measured at 200 MCPs: a burst of 1,000 queries runs on 10 connections; provisioning takes 0.7 s and the first migration 2 s.</li>
+        <li>Row-level security by organisation, and a typed <code>db</code> built once per process.</li>
+        <li>One <code>mcps</code> image, register on every deploy, every standalone MCP by path on one hostname, and lists generated from <code>mcp.json</code>.</li>
+        <li><code>bun mcp</code>'s exit codes, fix lines and refusing every wrong answer at once; MCP tests on real Postgres; docs rendered from the code.</li>
+      </ul>
+    </div>
+    <div class="fails">
+      <h3>Does not</h3>
+      <ul>
+        <li>A developer's local ID now accepts a public root password from any machine on the same network (A4).</li>
+        <li>Three pieces serve a future with no date: a standalone server whose only MCP is a test fixture, a database mode no MCP uses, and per-MCP roles that do not separate MCPs sharing a process.</li>
+        <li>Under load, the readiness check can take every Toolbox pod out of service (C3).</li>
+        <li>The test gate fails between 50 and 100 MCPs, measured, while the PR is built for 200 (F18).</li>
+        <li>A newcomer cannot reach a first tool call from the docs alone, and the documented undo breaks <code>bun install</code> (F1, F2).</li>
+        <li>The same facts live in several places: two fakes of ID, every CLI refusal asserted twice, the templates in three copies, register described in ten places.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>1. Defects: I will fix these</h2>
+  <p class="intro">These are wrong today and need no decision. Each fix lands with a test that fails first.</p>
+  <div class="frame"><table>
+    <thead><tr><th>Finding</th><th>What is wrong</th><th>Fix</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td class="id">A4</td><td>ID listens on every network interface, as it did before the PR. The PR gives <code>ROOT_ADMIN_SECRET</code> a committed development default. Until someone holds <code>platform:write</code>, any machine that can reach the laptop can call ID's admin API as root.</td><td>Listen on <code>127.0.0.1</code> outside production.</td><td>Read: <code>apps/id/src/runtime.ts:88</code>, <code>config.ts:116</code>. At the base, <code>.env.example</code> had the secret commented out.</td></tr>
+      <tr><td class="id">C3</td><td>The readiness check, <code>/health</code>, now also waits on the shared MCP pool. Queued tool queries hold it past Kubernetes' 1 s default, so load takes pods out of service.</td><td>Readiness depends on the server and its own database only. MCP databases are reported without failing it.</td><td>Read: <code>toolbox.ts:87</code>, <code>_server.tpl:95</code>. The auditor's probe took 1,525 ms behind 1,000 queued queries.</td></tr>
+      <tr><td class="id">F18</td><td><code>mcp:test</code> starts every MCP's test suite at once against one Postgres.</td><td>Run the MCP suites through Turborepo with a concurrency cap.</td><td><span class="pill measured">measured</span> 50 MCPs pass in 5.0 s at 55 connections. At 100 MCPs, one suite is refused (<code>sorry, too many clients already</code>), at 105.</td></tr>
+      <tr><td class="id">F1</td><td><code>local-testing.mdx</code> says "Nothing else is needed", but a sign-in to a local ID needs ID's migration and a sign-in for your domain. Nobody has done the Claude Code sign-in through <code>bun mcp dev</code> by hand.</td><td>Add both prerequisites to the page. Prove the sign-in by hand with you.</td><td>Read. M7's log says "Not done".</td></tr>
+      <tr><td class="id">F2</td><td>Deleting an MCP's folder, as the docs say, leaves its dependency in the Toolbox's <code>package.json</code>, and <code>bun install</code> then fails.</td><td>The generator drops every dependency on an MCP that is not declared.</td><td>Read: <code>generate.ts:40-61</code>. The auditor ran it.</td></tr>
+      <tr><td class="id">F3</td><td><code>tools.mdx</code> and the auth package say to constrain every query by organisation. <code>add-a-tool.mdx</code> and the generated tool say not to.</td><td>One rule, stated once in <code>database.mdx</code> and linked from the others.</td><td>Verified by search.</td></tr>
+      <tr><td class="id">C5</td><td>On a cold call, the profile read waits for the grants read to finish.</td><td>Start both reads at once.</td><td>The auditor's probe: 208 ms cold, 2 ms cached.</td></tr>
+      <tr><td class="id">D11</td><td><code>bun mcp db migrate</code>, run from <code>mcps/&lt;name&gt;</code>, ignores the root <code>.env</code>.</td><td>Read settings the way <code>setup</code> and <code>dev</code> do.</td><td>The auditor's probe. M9 found it too.</td></tr>
+      <tr><td class="id">A8</td><td>The configuration inventory says three required variables are optional, and that the image sets three ports when no Dockerfile does.</td><td>Correct the six entries.</td><td>Verified in <code>inventory.json</code> and the Dockerfiles.</td></tr>
+      <tr><td class="id">F11</td><td><code>bun.lock</code> records <code>mcp-admin</code> and <code>id-admin</code> at 0.6.0, where their <code>package.json</code> says 0.7.0. The next <code>bun mcp new</code> writes the correction into someone's unrelated diff.</td><td>Regenerate the lockfile.</td><td>Verified.</td></tr>
+      <tr><td class="id">E12 E13 F13</td><td>Docs that drifted:<ul><li>the chart's size (54,040 bytes, now 61,680);</li><li>the hook weights (−10 to −8, now −10 to −6);</li><li>the runbook's GHCR step;</li><li>M1's timings;</li><li>the acceptance count;</li><li>two README lines;</li><li>the three status lines M9 listed.</li></ul></td><td>Correct them, and give each fact one home.</td><td>Two verified, the rest read.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>2. Decisions for you</h2>
+  <p class="intro">Each of these reverses something you asked for or approved, or trades a guarantee for less code. My recommendation comes first. The line counts are the auditors', and most are estimates.</p>
+  <div class="decisions">
+
+    <article class="decision">
+      <div class="tag">D-1</div>
+      <h3>Standalone serving: one process, or none until a real MCP needs it</h3>
+      <div class="ids">C1 · C2 · E1 · E2 · B7 · C11 · E11 · C6</div>
+      <ul>
+        <li>No MCP is <code>standalone</code>. The only <code>both</code> MCP is <code>e2e</code>, the test fixture.</li>
+        <li>For it, every environment runs the standalone server (2 to 4 replicas in production) with:
+          <ul>
+            <li>its own database and two logins;</li>
+            <li>a third login on the MCP database;</li>
+            <li>the <code>standalone-hub</code> machine client;</li>
+            <li>the <code>mcp.&lt;zone&gt;</code> hostname;</li>
+            <li>a migration Job on every deploy;</li>
+            <li><code>e2e</code>'s rows in ID.</li>
+          </ul>
+        </li>
+        <li>The two servers' entry points are the same file with the names changed. The separation isolates nothing: a <code>both</code> MCP's code also runs in the Toolbox.</li>
+        <li>You asked for the choice of Toolbox, standalone or both in the CLI.</li>
+      </ul>
+      <div class="option rec"><span class="label">Recommended</span><p>Keep the choice, and serve standalone MCPs from the Toolbox's process at <code>mcp.&lt;zone&gt;/&lt;name&gt;/mcp</code>. This removes the standalone Deployment, its database, logins and Secrets, <code>standalone-hub</code>, <code>standalone-migrate</code> and a network policy: about 1,500 lines (estimate). The second sign-in model and <code>standalone_enable</code> stay. Risk: the Toolbox and standalone MCPs share one failure domain, as a <code>both</code> MCP already does.</p></div>
+      <div class="option"><span class="label">Or</span><p>Delete standalone serving, and the <code>serve</code> choice, until the first MCP whose users must sign in to it alone. This removes about 2,250 lines in whole files, 15 variables, a client, a Deployment and a staff flow, and adds a register row with that trigger.</p></div>
+      <div class="option"><span class="label">Or</span><p>Keep both servers, and serve <code>e2e</code> from the Toolbox only, so no environment runs the standalone server. One line. The code stays, untested in deploys.</p></div>
+    </article>
+
+    <article class="decision">
+      <div class="tag">D-2</div>
+      <h3>The <code>own</code> database mode: delete it, and keep the door open</h3>
+      <div class="ids">B1 · A9 · C10 · D12</div>
+      <ul>
+        <li>No MCP uses it: both <code>mcp.json</code> files say <code>shared</code>.</li>
+        <li>An own database sits on the same Civo instance as everything else, with the same CPU, disk, backups and maintenance window.</li>
+        <li>Its runtime login's URL is a variable of the shared Toolbox and standalone processes, so any MCP mounted beside it can read it.</li>
+        <li>It costs 30 to 40 connections per own MCP per server, the cost D1 was chosen to avoid.</li>
+        <li>You asked to leave the door open. It stays open without the mode: the tables are schema-qualified, so moving an MCP to a separate instance is the dump and restore D1 describes.</li>
+      </ul>
+      <div class="option rec"><span class="label">Recommended</span><p>Delete the mode, along with the <code>database</code> field, the <code>--database</code> flag, the connection-budget step and the per-MCP variables. Record <code>Q-MCP-OWN-DATABASE</code>, triggered by the first MCP that must live on a separate Postgres instance. This removes 359 lines measured, about 500 with the scattered branches (estimate), and four test databases. Risk: none today.</p></div>
+      <div class="option"><span class="label">Or</span><p>Keep it as it is.</p></div>
+    </article>
+
+    <article class="decision">
+      <div class="tag">D-3</div>
+      <h3>Per-MCP database roles: replace them with grants</h3>
+      <div class="ids">B2 · B3 · B9 · F16</div>
+      <ul>
+        <li><span class="pill measured">reproduced</span> A serving login is a member of the role of every MCP it serves. Inside one MCP's role, <code>select set_config('role', 'other', true)</code> switches to another MCP's role and reads its rows. Postgres checks a role change against the login, not the current role.</li>
+        <li>So the roles stop a schema named by mistake, but not code that switches role on purpose. The migration scanner and <code>bun mcp check</code>'s scan both miss that form.</li>
+        <li>What the roles cost:
+          <ul>
+            <li>400 cluster-wide roles at 200 MCPs, on the Postgres that also holds ID;</li>
+            <li>a role lock;</li>
+            <li>a role prefix in eight signatures, in two production variables and as eleven test prefixes;</li>
+            <li>a hand-written migration loop, because the owner role cannot use drizzle's own migrator.</li>
+          </ul>
+        </li>
+      </ul>
+      <div class="option rec"><span class="label">Recommended</span><p>Keep the schema per MCP, the one database, one pool per serving process and row-level security. The migrator owns every MCP schema, and each serving login is granted the tables of the MCPs it serves. Delete the per-MCP roles, both role scans and the migration scanner. This removes about 340 lines (estimate), 400 roles at 200 MCPs, 11 prefixes and 2 variables. Risk: raw SQL in one MCP that names another MCP's schema would succeed instead of being refused. Organisation isolation is unchanged: the auditor's probe showed row-level security holds without the roles.</p></div>
+      <div class="option"><span class="label">Or</span><p>Keep the roles. Make both scans catch <code>set_config('role', …)</code>, and describe the roles as a guard against mistakes.</p></div>
+    </article>
+
+    <article class="decision">
+      <div class="tag">D-4</div>
+      <h3>Who is calling: keep reading it before every call</h3>
+      <div class="ids">C4 · C6 · C7</div>
+      <ul>
+        <li>Every handler waits for the member and the organisation from ID's admin API, cached for 60 s. Only <code>mcps/example</code> reads a name.</li>
+        <li>A cold call took 28.9 ms against 4.4 ms cached (the acceptance).</li>
+        <li>With ID down and a cold cache, a tool that reads nothing of the profile is refused.</li>
+      </ul>
+      <div class="option rec"><span class="label">Recommended</span><p>Keep it, as you asked: "who is connected… so we can address who they are". Start the read beside the grants read (C5). Move <code>createIdProfiles</code> into <code>@answerable/mcp-platform</code>, so the ID admin client stops depending on the SDK (C7). The one-hour stale window follows D-1, since it helps only standalone MCPs.</p></div>
+      <div class="option"><span class="label">Or</span><p>Read the profile only when a tool asks, with <code>await context.profile()</code>. This removes the admin MCP's poller, and the cold round trip for tools that don't ask. It changes the shape you approved in D17.</p></div>
+    </article>
+
+    <article class="decision">
+      <div class="tag">D-5</div>
+      <h3>Test MCPs in production: accept them, and say so</h3>
+      <div class="ids">E3 · C13</div>
+      <ul>
+        <li>Every environment's Toolbox mounts <code>e2e</code>, which now writes to Postgres, and <code>example</code>, the docs' MCP. Before the PR it mounted only <code>e2e</code>, in memory.</li>
+        <li>No organisation sees either until staff enable it.</li>
+        <li>There is no per-environment switch (D10).</li>
+      </ul>
+      <div class="option rec"><span class="label">Recommended</span><p>Accept it, and write it in docs/12: <code>e2e</code> is every deploy's smoke target, and <code>example</code> is the docs' living MCP. No code. Risk: staff enable a test MCP for a customer by mistake.</p></div>
+      <div class="option"><span class="label">Or</span><p>Keep <code>example</code> out of the shipped lists. That needs a field in <code>mcp.json</code>, which is the per-environment switch D10 deferred.</p></div>
+    </article>
+
+    <article class="decision">
+      <div class="tag">D-6</div>
+      <h3>The CLI's surface: keep what you asked for, delete what nothing reads</h3>
+      <div class="ids">D3 · D4 · D5 · D6 · D2 · D14</div>
+      <div class="option rec"><span class="label">Recommended</span>
+        <ul>
+          <li><b>Keep</b> the terminal prompts (D4) and <code>new --tool</code> (D6): you asked for both.</li>
+          <li><b>Keep</b> the guidance comments in each generated file (D14), which you asked for. Shorten them where they repeat each other.</li>
+          <li><b>Keep</b> the error table (D5), since the docs rule asks for a row per code. Take F4 and F15 instead, which remove the duplicate assertions.</li>
+          <li><b>Delete</b> <code>--json</code> (D3). Nothing reads it, and the text output already carries every step, the next commands and the exit code.</li>
+          <li><b>Delete</b> the default <code>&lt;name&gt;.status</code> tool (D6). An MCP starts with the tool you name, or with none. Today every status tool stays forever in every caller's catalogue, and the Toolbox's per-call cost grows with the tools a caller holds.</li>
+          <li><b>Keep</b> the table <code>add tool</code> writes for a new domain (D2), and document how to drop it before its first migration.</li>
+        </ul>
+        <p>This removes about 170 lines (estimate).</p>
+      </div>
+    </article>
+
+    <article class="decision">
+      <div class="tag">D-7</div>
+      <h3>CHANGELOGs and versions of private workspaces: drop them</h3>
+      <div class="ids">F11</div>
+      <ul>
+        <li>There are ten CHANGELOGs, 740 lines, 191 of them added by this PR.</li>
+        <li>Nothing reads a workspace's version: dependencies are <code>workspace:*</code>, and nothing is published.</li>
+        <li>Bumps have already left the lockfile stale.</li>
+      </ul>
+      <div class="option rec"><span class="label">Recommended</span><p>Delete the CHANGELOGs and stop bumping private versions. Git history and the evidence reports keep the record. This removes 740 lines.</p></div>
+      <div class="option"><span class="label">Or</span><p>Keep them, and regenerate <code>bun.lock</code> on every bump.</p></div>
+    </article>
+
+  </div>
+</section>
+
+<section>
+  <h2>3. Recommended cleanups</h2>
+  <p class="intro">These need only a yes. None changes what a user sees, except where the last column says so.</p>
+  <div class="frame"><table>
+    <thead><tr><th>Finding</th><th>Change</th><th>Removes</th><th>Risk</th></tr></thead>
+    <tbody>
+      <tr class="group"><td colspan="4">Configuration</td></tr>
+      <tr><td class="id">A1</td><td>Development and test defaults never differ (0 of 27 fields), so one <code>local</code> value replaces <code>locally()</code>.</td><td class="num">~25 lines, 81 generated</td><td>None</td></tr>
+      <tr><td class="id">A2</td><td>An empty variable counts as unset everywhere, which removes five hand-written workarounds.</td><td class="num">~15 lines</td><td>In production, <code>VAR=""</code> becomes unset instead of refused</td></tr>
+      <tr><td class="id">A3</td><td>Delete <code>default.env</code>, which no program reads, and the three hand-written inventory groups. This reverses part of typed configuration's D4.</td><td class="num">~420 lines</td><td>No flat list of names; <code>inventory.json</code> and <code>.env.example</code> stay</td></tr>
+      <tr><td class="id">A5 C17</td><td>Move <code>parseEnvironment</code> from the SDK to <code>mcp-platform</code>, its only callers' package.</td><td class="num">1 export, 1 dependency</td><td>None</td></tr>
+      <tr><td class="id">A6</td><td><code>OPS_NAMESPACE</code>, <code>OPS_PLATFORM_SLUG</code> and <code>OPS_DATABASE_SSLROOTCERT</code> become constants.</td><td class="num">~20 lines</td><td>None</td></tr>
+      <tr><td class="id">A7</td><td>Drop the chart's four <code>runtimeRole</code> values, which must equal what the bootstrap hard-codes.</td><td class="num">~10 lines</td><td>None</td></tr>
+      <tr><td class="id">A10 E8</td><td>One schema for the chart's MCP list, used by the bootstrap, register, the smoke test and kind.</td><td class="num">~12 lines</td><td>Register refuses a bad list too</td></tr>
+      <tr><td class="id">A11 A12</td><td>Put <code>ADMIN_FRESH_SECONDS</code>'s default in its definition. ID's README points to the definitions instead of restating them.</td><td class="num">~250 words</td><td>None</td></tr>
+      <tr class="group"><td colspan="4">Database</td></tr>
+      <tr><td class="id">B4</td><td>Delete <code>ensureLocalMcpDatabases</code>. An older volume runs <code>006</code> and <code>007</code> once, as it already does for <code>005</code>.</td><td class="num">82 lines, 11 calls</td><td>An old volume fails once, with a clear error</td></tr>
+      <tr><td class="id">B5</td><td>Delete the <code>src/db/grants.ts</code> hook, which no MCP uses.</td><td class="num">~50 lines</td><td>None</td></tr>
+      <tr><td class="id">B6</td><td>Drop the reset on release, since every borrow sets everything again. A burst of 1,000 queries goes from 132–145 ms to 91–98 ms (the auditor's measurement).</td><td class="num">~20 lines</td><td>None today</td></tr>
+      <tr><td class="id">B8</td><td>Production migration Jobs stop loading the test kit.</td><td class="num">~45 ms, 100 modules per Job</td><td>None</td></tr>
+      <tr><td class="id">B11</td><td>The bootstrap test stops re-parsing provisioning's SQL with regular expressions.</td><td class="num">~30 lines</td><td>None</td></tr>
+      <tr><td class="id">F17</td><td><code>assertMcpName</code> calls the SDK's own rule instead of copying it.</td><td class="num">~12 lines</td><td>None</td></tr>
+      <tr class="group"><td colspan="4">SDK and servers</td></tr>
+      <tr><td class="id">C8</td><td>Delete <code>context.client</code>, which nothing reads.</td><td class="num">~9 lines</td><td>None</td></tr>
+      <tr><td class="id">C9</td><td>One enablement plan, written by the admin MCP. The Toolbox's <code>toolbox-hub</code> drops to <code>platform:read</code>, as D15 intended for every shared process.</td><td class="num">~70 lines</td><td>Larger; it touches code from before the PR</td></tr>
+      <tr><td class="id">C11</td><td>The Job that migrates every MCP moves out of the standalone server's workspace.</td><td class="num">~230 lines move</td><td>None</td></tr>
+      <tr><td class="id">C12 F10</td><td>One fake of ID's admin API, <code>createFakeId</code>, for the ops tests and the CLI tests alike.</td><td class="num">~200 lines</td><td>The ops tests change</td></tr>
+      <tr class="group"><td colspan="4">The CLI</td></tr>
+      <tr><td class="id">D7</td><td>Delete <code>--no-check</code>, used only by tests, and the steps it duplicates.</td><td class="num">~46 lines, 0.3–0.4 s a command</td><td>None</td></tr>
+      <tr><td class="id">D8</td><td><code>new</code> provisions the database after writing its migration, not before.</td><td class="num">6 lines</td><td>None</td></tr>
+      <tr><td class="id">D9 E7</td><td>Delete the chart list's <code>grants</code>, which nothing reads.</td><td class="num">3 lines, 422 of 911 bytes</td><td>None</td></tr>
+      <tr><td class="id">D10</td><td><code>dev</code> migrates every MCP in one process instead of one process each.</td><td class="num">N process starts</td><td>None</td></tr>
+      <tr><td class="id">D13</td><td>No generated README per MCP. Today's points at the wrong way to run it.</td><td class="num">33 lines, a file per MCP</td><td>None</td></tr>
+      <tr><td class="id">D16</td><td><code>mcp.json</code> drops <code>name</code>, which repeats the folder's, and its JSON schema.</td><td class="num">~43 lines</td><td>No editor completion</td></tr>
+      <tr><td class="id">D17</td><td>The MCP docs name only <code>bun mcp check</code>. CI never runs <code>mcp:check</code>.</td><td class="num">One way to check</td><td>None</td></tr>
+      <tr><td class="id">D18</td><td><code>node:util</code>'s <code>parseArgs</code> replaces the hand-written parser.</td><td class="num">~20 lines</td><td>A repeated flag takes its last value</td></tr>
+      <tr><td class="id">F4 F15</td><td>Every refusal is asserted once, in <code>errors.test.ts</code>, and its code is typed.</td><td class="num">~145 lines</td><td>None</td></tr>
+      <tr><td class="id">F5</td><td>The templates' snapshot becomes one test that <code>mcps/example</code> equals them.</td><td class="num">482 snapshot lines</td><td>None</td></tr>
+      <tr><td class="id">F9</td><td>The CLI's end-to-end test, about 21 s, moves to the acceptance lane, which CI runs.</td><td class="num">~21 s a local run (estimate)</td><td>None in CI</td></tr>
+      <tr class="group"><td colspan="4">Shipping</td></tr>
+      <tr><td class="id">E4</td><td>Delete the staff-token path. A locked root is handled by break glass, which ships through a tag. This removes the one <code>kubectl</code> step run from a laptop.</td><td class="num">~60 lines</td><td>Break glass opens root for one deploy</td></tr>
+      <tr><td class="id">E5</td><td>Delete <code>run-job bootstrap</code>, which no workflow offers.</td><td class="num">A command</td><td>None</td></tr>
+      <tr><td class="id">E6</td><td>One migration Job for the Toolbox and the MCPs.</td><td class="num">1 pod a deploy</td><td>None</td></tr>
+      <tr><td class="id">E9</td><td>The <code>mcps</code> image copies <code>packages/</code> whole, so no MCP's dependency can be missing from it.</td><td class="num">5 lines</td><td>About 0.7 MB more source</td></tr>
+      <tr><td class="id">E10</td><td>Delete <code>toolbox.enabled</code> and <code>adminMcp.enabled</code>, which are never false.</td><td class="num">~8 lines</td><td>None</td></tr>
+      <tr class="group"><td colspan="4">Tests and docs</td></tr>
+      <tr><td class="id">F6</td><td><code>local-testing.mdx</code> stops retelling eight test files.</td><td class="num">~150 lines, 3,455 words</td><td>None</td></tr>
+      <tr><td class="id">F7</td><td>Delete the by-hand local registration recipes that <code>bun mcp setup</code> and <code>dev</code> replaced, under other client names.</td><td class="num">~290 lines</td><td>None</td></tr>
+      <tr><td class="id">F8</td><td>Delete the acceptance journeys that repeat in-process proofs, keeping the one real-ID profile test.</td><td class="num">~140 lines, one ID start</td><td>None</td></tr>
+      <tr><td class="id">F12</td><td>Trim <code>AGENTS.md</code>, which every session loads: the workspaces and commands are said twice.</td><td class="num">~500 words (estimate)</td><td>None</td></tr>
+      <tr><td class="id">F14</td><td>Delete three web tests that hold prose or repeat the deploy test.</td><td class="num">~83 lines</td><td>None</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>4. Recommended against</h2>
+  <div class="frame"><table>
+    <thead><tr><th>Finding</th><th>Proposal</th><th>Why not</th></tr></thead>
+    <tbody>
+      <tr><td class="id">C14</td><td>Return the Toolbox's ingest to a drizzle loop</td><td>It is tested and measured faster. The gain would be readability only.</td></tr>
+      <tr><td class="id">C15</td><td>Delete <code>bench/scale.ts</code></td><td>It is the only way to reproduce the 200-MCP evidence, and it costs seconds of typecheck.</td></tr>
+      <tr><td class="id">C16</td><td>Drop the MCP list from the public <code>/health</code></td><td>The smoke test reads it, and MCP names are not secret. Revisit when an MCP is named for a customer.</td></tr>
+      <tr><td class="id">D15</td><td>A Bun catalog for dependency versions</td><td>Automation comes last, and knip and Turborepo were not checked against <code>catalog:</code>.</td></tr>
+      <tr><td class="id">D19</td><td>Drop six reserved names</td><td>They cost nothing. I will write each name's reason beside it instead.</td></tr>
+      <tr><td class="id">E5</td><td>Rewrite how <code>run-job</code> finds the deployed chart</td><td>It works and is tested. Deleting <code>run-job bootstrap</code> is the part worth doing.</td></tr>
+      <tr><td class="id">D1</td><td>Run <code>bun mcp dev</code> on the acceptance kit's disposable ID</td><td>It collides with the acceptance, and you would sign in again after every restart.</td></tr>
+      <tr><td class="id">M9</td><td>Build only the called tool's registration on each call</td><td>11–12 ms at 1,000 tools is acceptable today. I will add a register row, triggered when a caller's median call exceeds 10 ms in production.</td></tr>
+      <tr><td class="id">M9</td><td>Raise the kind stack's sign-in budget</td><td>Raise it when a proof needs it.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>5. What I measured, and what is still unmeasured</h2>
+  <div class="frame"><table>
+    <thead><tr><th>Question</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td>Can one MCP's code read another MCP's rows when both share a serving login?</td><td><span class="pill measured">reproduced</span> Yes, with one <code>set_config('role', …, true)</code>, inside the first MCP's role. A plain read is refused.</td></tr>
+      <tr><td>Does the test gate hold as MCPs are added?</td><td><span class="pill measured">measured</span> 50 MCPs: 50 suites pass in 5.0 s, at a peak of 55 connections. 100 MCPs: 99 pass and 1 is refused (<code>too many clients</code>), at a peak of 105. The development Postgres and CI's both allow 100.</td></tr>
+      <tr><td>Does an empty variable follow one rule?</td><td><span class="pill measured">reproduced</span> No: a default fills it, but a fallback does not.</td></tr>
+      <tr><td>Civo's <code>max_connections</code></td><td><span class="pill defect">not measured</span> The PR raises the services' ceilings from 140 / 200 to 230 / 320 connections, against PostgreSQL's default of 100. D-1's recommendation takes 30 to 40 off. Read it before the first staging tag.</td></tr>
+      <tr><td>The Claude Code sign-in to an MCP made with <code>bun mcp</code>, on your local ID</td><td><span class="pill defect">not done</span> It needs you at a browser. The steps are in the PR summary.</td></tr>
+      <tr><td>A hook Job's pod start on Civo</td><td><span class="pill defect">not measured</span> About 5 s each in kind (estimate).</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>6. After your decisions</h2>
+  <ol class="steps">
+    <li>Defects, each with a test that fails first.</li>
+    <li>Deletions: D-1 to D-3, D-6 and D-7 as you decide, then the deletions in section 3.</li>
+    <li>Simplifications from section 3.</li>
+    <li>Optimisations: C5, B6, D10 and F9.</li>
+    <li>Automation: none.</li>
+  </ol>
+  <p><b>After each step:</b> typecheck, lint, build, <code>mcp:test</code>, the web tests and knip.</p>
+  <p><b>At the end:</b></p>
+  <ul>
+    <li>ID's suite, the acceptance and the kind stack, each run alone;</li>
+    <li>the end-to-end proof from a clean copy;</li>
+    <li>the 200-MCP benchmark and the 100-MCP test-gate probe, again;</li>
+    <li>the docs, read again as a newcomer.</li>
+  </ul>
+  <p>Then the PR's title and description. The merge is yours.</p>
+</section>
+
+<footer>
+  <p><b>How it ran.</b> Six auditors, each a separate Opus agent working read-only from one brief (<code>docs/goals/pr13-audit/auditor-brief.md</code>), covered:</p>
+  <ul>
+    <li>typed configuration;</li>
+    <li>the database model;</li>
+    <li>the SDK and the servers;</li>
+    <li>the CLI;</li>
+    <li>shipping and registration;</li>
+    <li>tests, docs and a newcomer's path.</li>
+  </ul>
+  <p>Each had the code and the decisions behind its area, but not my views.</p>
+  <p>Probes ran in throwaway databases and in copies of the tree, and everything they made was dropped. No Docker image was pruned.</p>
+  <p><code>docs/goals/pr13-audit/findings.md</code> records how each finding was checked. Findings marked "the auditor's" are counts or probes I read but did not re-run.</p>
+</footer>
+
+</div>

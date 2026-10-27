@@ -45,6 +45,7 @@ A root script, `"mcp": "bun scripts/mcp/cli.ts"`, so `bun mcp <command>` runs fr
   > A tool's description is 22 characters; write 40 to 1,000 saying what it does, when to use it and its limits
 
   The rules are the SDK's own, exported from `@answerable/mcp` (today they are module constants in `tool.ts` and `provider.ts`), so the CLI and the SDK can never disagree.
+- **Every answer at once.** A command checks every answer it was given, and without a terminal lists every answer missing, before it refuses: one refusal with a line per problem, in the order of the questions, and one command to run again that keeps the valid answers, with a placeholder in place of each missing or refused one. A check that needs an earlier answer waits for it: whether a name is reserved, retired or taken needs a valid name; whether a tool's name is a commit tool's, or already the MCP's, needs a valid MCP.
 - **Nothing half-written.** Every check runs before the first file is written. A failure after that (for example, Postgres is down when the schema is created) leaves the files, says which step failed, and gives the command that finishes it (`bun mcp db acme migrate` creates a missing schema).
 - **Stable, short output.** One line per step, then `Next:` with the two or three commands that come next. `--json` prints the same facts as one object.
 - **Idempotent where it can be.** Running `add tool` again with the same name refuses, naming the file. `dev` and `check` can run any number of times.
@@ -52,7 +53,7 @@ A root script, `"mcp": "bun scripts/mcp/cli.ts"`, so `bun mcp <command>` runs fr
   - 0: done;
   - 1: a step failed after files were written, and the output names the command that finishes the job;
   - 2: refused before anything was written.
-- **`--json`:** success is `{ "ok": true, "steps": […], "next": […] }`; a refusal or failure is `{ "ok": false, "error": { "code", "message", "fix" } }`.
+- **`--json`:** success is `{ "ok": true, "steps": […], "next": […] }`; a refusal or failure is `{ "ok": false, "error": { "code", "message", "fix", "problems": [{ "code", "message" }] } }`, with every refused or missing answer in `problems`, `code` the first one's and `message` all of theirs, a line each. A failure has one problem.
 - **`list`:** sorted by name.
 - **Arguments:** in `add tool [mcp] <domain.operation>`, the positional with a dot is the tool and the other is the MCP.
 - **`--description`** always describes what the command creates: the MCP in `new`, the tool in `add tool`. The first tool's description in `new` is `--tool-description`.
@@ -65,7 +66,7 @@ In this order, each with its rule and the default an Enter takes:
    - The rule: a lowercase letter, then up to 11 lowercase letters or digits.
    - Refused when it is:
      - taken by any `mcps/*/mcp.json`;
-     - reserved: `toolbox`, `admin`, `id`, `mcp`, `mcps`, `standalone`, `api`, `www`, `test`, `ops`, `public`, `drizzle`. `e2e` and `example` aren't reserved; they are taken by their directories;
+     - reserved: `toolbox`, `admin`, `id`, `mcp`, `mcps`, `standalone`, `api`, `www`, `test`, `ops`, `public`, `drizzle`, `platform`, `postgres`. `e2e` and `example` aren't reserved; they are taken by their directories;
      - retired, listed in `mcps/retired.json`.
    - It is the provider id, so it prefixes every tool (`acme_notes_list` in the Toolbox) and names its database schema.
 2. **Description.**
@@ -125,11 +126,11 @@ A tool is a plain export. It reaches its database and the caller through the con
 
 ```ts
 // src/mcp.ts: written by bun mcp new; regenerated, never edited
-import { mcp } from "@answerable/mcp"
+import { withDatabase } from "@answerable/mcp"
 import * as schema from "./db/schema"
 
 /** This MCP's definitions: every handler's context.db is typed by src/db/schema.ts. */
-export const { defineTool, defineMutation } = mcp({ schema })
+export const { defineTool, defineMutation } = withDatabase({ schema })
 ```
 
 ```ts
@@ -183,11 +184,11 @@ How the pieces fit:
 // input and output: Zod objects. Describe every field (.describe("…")): hosts show it to the model.
 //   A list takes limit and cursor and returns items, next_cursor and has_more (the conformance kit checks it).
 //
-// execute: gets the checked input and the caller. Read only principal.organizationId's data:
-//   every query filters on it. Throw ToolError for a failure the caller can fix.
+// execute: gets the checked input and the caller: person, organisation and db. Row-level security (D19) limits every query to
+//   the caller's organisation, so no query filters on it by hand. Throw ToolError for a failure the caller can fix.
 ```
 
-A mutation file carries the same comments for `prepare` (it computes the preview and changes nothing) and `commit` (it applies exactly what was prepared), plus `risk`.
+A mutation file carries the same comments for `prepare` (it computes the preview and changes nothing) and `commit` (it applies exactly what was prepared; row-level security limits it to the caller's organisation, so it sets `organisation_id` from `organisation.id` and filters on nothing by hand), plus `risk`.
 
 ## Where an MCP runs
 
@@ -271,10 +272,11 @@ The Toolbox, the admin MCP and ID keep the databases they have. The rest of this
 - **What a migration file may contain.** `migrateMcp` refuses, naming the file and line:
   - any statement that creates a schema, grants or revokes;
   - `ALTER DEFAULT PRIVILEGES`;
+  - `SET ROLE`, `RESET ROLE` or `SET SESSION AUTHORIZATION`, which would let a migration leave the owner role for the migrator, which may take every MCP's owner role;
   - a name qualified with another schema, `public` included.
 
   It refuses a changed applied file, as `migrate()` does today. The grants are the migration Job's job, not the MCP's.
-- **One migration Job, `mcps-migrate`,** migrates every MCP in turn, each `shared` MCP as its owner role through the migrator login, then applies its grants.
+- **One migration Job, `mcps-migrate`,** migrates every MCP in turn, each `shared` MCP as its owner role through the migrator login. That runs `set local role` inside the migration's one transaction, and the grants run as the owner before the commit. After `reset role` the migrator, whose membership is `INHERIT FALSE`, may not grant on the schema (M1, probed).
   - Probe: the first migration of 200 schemas took 7.1 s, and a pass with nothing pending is cheaper still.
   - One MCP's failure fails the release, as today's per-database Jobs do.
   - The Toolbox, the admin MCP and the standalone server keep a migration Job each for their own databases, each mounting only its own owner login.
@@ -305,7 +307,7 @@ The Toolbox, the admin MCP and ID keep the databases they have. The rest of this
 **What the chart renders from the list:**
 - the bootstrap's MCP list, as `OPS_MCPS`;
 - the ops Role's Secret names;
-- one `mcps-migrate` hook at weight -9;
+- one `mcps-migrate` hook at weight -6, after the hubs' own migration Jobs (`toolbox-migrate` -9, `admin-migrate` -8, `standalone-migrate` -7);
 - the Toolbox's `TOOLBOX_MCPS_DATABASE_URL`;
 - the standalone server's Deployment, rendered only when at least one MCP is `standalone` or `both`;
 - the standalone server's Ingress on `mcp.<zone>`, with two Prefix paths per MCP;
@@ -327,7 +329,7 @@ The Toolbox, the admin MCP and ID keep the databases they have. The rest of this
 - **Changes.** It reads each row, compares, and patches with `If-Match`. It never narrows the Toolbox resource, which enable calls widen.
 - **The client's power.** The client holds `platform:read platform:write`, as the Toolbox's client already does; ID has no narrower scope. Not yet: a `platform:register` scope in ID.
 
-**Access per organisation.** For a standalone MCP, staff give an organisation access with the admin MCP's `standalone_enable`. It creates the pair capabilities and the login entitlement that sign-in needs, as `toolbox_enable` does for the Toolbox. People then get the MCP's scopes with `access_grant`, for the organisation, a group or a person; `everyone: true` on `standalone_enable` grants the whole organisation in the same step.
+**Access per organisation.** For a standalone MCP, staff give an organisation access with the admin MCP's `standalone_enable`. It creates the pair capabilities and the login entitlement that sign-in needs, as `toolbox_enable` does for the Toolbox. People then get the MCP's scopes with `access_grant`, for the organisation, a group or a person, always naming the host client (`clientId: claude-code-<name>`). ID counts an entitlement towards a person's token only when its `clientId` is the client signing in (`apps/id/src/auth/member-permission.ts:147`, found by M6), so a grant without one gives nothing. `everyone: true` on `standalone_enable` writes the scopes per host client in the same step. The Toolbox isn't affected, because it reads grants from ID's member access view rather than from the token.
 
 **The order of a deploy** (`staging/<name>`, then `production/<name>` on the same commit):
 1. Ops RBAC.

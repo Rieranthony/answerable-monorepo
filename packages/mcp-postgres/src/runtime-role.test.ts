@@ -145,7 +145,11 @@ test("a role name, a table name or a privilege that is not plainly one is refuse
 
 test("assertRuntimeRole accepts the provisioned login and refuses the owner, naming what makes it unsafe", async () => {
   await assertRuntimeRole(login.db)
-  const error = await assertRuntimeRole(owner).then(() => undefined, (error: Error) => error.message)
+  const refused = await assertRuntimeRole(owner).then(() => "", (error: Error) => error.message)
+  // Provisioning leaves the cluster's superuser a member of each MCP's owner role, and other suites provision MCPs beside this one.
+  const memberships = refused.match(/; is a member of ([^;]*)/)?.[1]?.split(", ") ?? []
+  expect(memberships.filter(role => !/^mcp_[a-z0-9_]+_owner$/.test(role))).toEqual([])
+  const error = refused.replace(/; is a member of [^;]*/, "")
   const tables = "drizzle.__drizzle_migrations, evidence_events, evidence_payloads, intents"
   expect(error).toBe(`Database role answerable is not a restricted runtime role: ${[
     "has SUPERUSER", "has CREATEDB", "has CREATEROLE", "has REPLICATION", "has BYPASSRLS",

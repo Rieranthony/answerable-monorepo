@@ -1,10 +1,46 @@
 {{/*
+An Ingress for one hostname: host's Prefix paths, / unless given, to the Service of component on its http port. Takes root, name,
+component, host and paths (optional). It serves the shared certificate ingress.tlsSecret and names no TLS option: Traefik's default
+one, which charts/platform renders, demands Cloudflare's origin-pull certificate. Traefik streams responses as they come, which the
+MCP endpoints' server-sent events need.
+*/}}
+{{- define "answerable.ingress" -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .name }}
+  labels:
+    {{- include "answerable.labels" (dict "root" .root "component" .component) | nindent 4 }}
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: {{ .root.Values.ingress.className }}
+  tls:
+    - hosts:
+        - {{ .host }}
+      secretName: {{ .root.Values.ingress.tlsSecret }}
+  rules:
+    - host: {{ .host }}
+      http:
+        paths:
+          {{- range .paths | default (list "/") }}
+          - path: {{ . }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $.component }}
+                port:
+                  name: http
+          {{- end }}
+{{- end -}}
+
+{{/*
 One server: its ServiceAccount, Deployment, Service, Ingress, HorizontalPodAutoscaler and PodDisruptionBudget.
-Takes root, component (the resource name), image, port, values (its block of values), host, env (rendered variables),
-readiness (the readiness path), liveness (an HTTP path, or empty for a TCP check), clientSecret (the Secret holding its
-ID client secret, or empty) and podAnnotations (optional). Traefik streams responses as they come, which the MCP
-endpoints' server-sent events need. The Ingress serves the shared certificate ingress.tlsSecret and names no TLS option:
-Traefik's default one, which charts/platform renders, demands Cloudflare's origin-pull certificate.
+Takes root, component (the resource name), image, command (optional: the servers of the mcps image each name theirs), port,
+values (its block of values), host (its Ingress's, on /), env (rendered variables), readiness (the readiness path), liveness (an
+HTTP path, or empty for a TCP check), clientSecret (the Secret holding its ID client secret, or empty) and podAnnotations
+(optional).
 A server whose client Secret does not exist yet waits at zero replicas rather than failing to start: the ops register Job
 writes the Secret and scales it up (infra/ops/README.md), and the next upgrade, finding the Secret, renders it as usual.
 `helm template` has no cluster to look in, so it renders such a server at zero.
@@ -68,6 +104,9 @@ spec:
         - name: {{ .component }}
           image: {{ include "answerable.image" (dict "root" $root "name" .image) }}
           imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          {{- with .command }}
+          command: {{ toJson . }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .port }}
@@ -134,32 +173,7 @@ spec:
       port: {{ .port }}
       targetPort: http
 ---
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: {{ .component }}
-  labels:
-    {{- include "answerable.labels" $scope | nindent 4 }}
-  annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    traefik.ingress.kubernetes.io/router.tls: "true"
-spec:
-  ingressClassName: {{ $root.Values.ingress.className }}
-  tls:
-    - hosts:
-        - {{ .host }}
-      secretName: {{ $root.Values.ingress.tlsSecret }}
-  rules:
-    - host: {{ .host }}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ .component }}
-                port:
-                  name: http
+{{ include "answerable.ingress" (dict "root" $root "name" .component "component" .component "host" .host) }}
 {{- if $values.autoscaling.enabled }}
 ---
 apiVersion: autoscaling/v2

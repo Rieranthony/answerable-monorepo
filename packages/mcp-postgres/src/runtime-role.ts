@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm"
 import type { Executor } from "./connect"
+import { identifier, quote, roleLock } from "./names"
 
 /** A privilege a runtime role may hold on a table. TRUNCATE, TRIGGER and REFERENCES are never granted. */
 export type Privilege = "select" | "insert" | "update" | "delete"
@@ -16,9 +17,8 @@ export const runtimeGrants: readonly Grant[] = [
   { table: "intents", privileges: ["select", "insert", "update", "delete"] },
 ]
 
-const identifier = /^[a-z_][a-z0-9_]{0,62}$/
-const privileges = new Set<string>(["select", "insert", "update", "delete"])
-const quote = (name: string) => `"${name.replaceAll('"', '""')}"`
+/** Every `Privilege`, to check a grant. */
+const privileges: ReadonlySet<string> = new Set<Privilege>(["select", "insert", "update", "delete"])
 const rows = async <T extends Record<string, unknown>>(db: Executor, query: ReturnType<typeof sql>) => (await db.execute<T>(query)).rows
 
 // What makes `role` unfit to run a server whatever it is granted: an attribute beyond login, a role it belongs to, or an object it owns.
@@ -87,7 +87,7 @@ export async function configureRuntimeRole(db: Executor, role: string, grants: r
   // Quoted, so that a valid name that is also a keyword, such as "user", stays a name.
   const quoted = quote(role)
   await db.transaction(async tx => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('answerable:mcp-runtime-role'))`)
+    await tx.execute(sql.raw(`select pg_advisory_xact_lock(${roleLock})`))
     if (!(await rows(tx, sql`select 1 from pg_roles where rolname = ${role}`)).length) {
       await tx.execute(sql.raw(`create role ${quoted} nologin nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls`))
     }

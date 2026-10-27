@@ -9,8 +9,18 @@ const groupId = z.uuid().describe("The group's id, from groups_list")
 const sameTime = (a: string | null | undefined, b: string | null | undefined) => (a ? Date.parse(a) : null) === (b ? Date.parse(b) : null)
 const sameScopes = (a: string[], b: string[]) => a.length === b.length && a.every(scope => b.includes(scope))
 
-/** The writes on who may use what in an organisation: its groups, their members, and its entitlements. */
-export function accessWrites(writes: Writes) {
+/**
+ * The refusal for a grant that would give nothing: `resource` is a standalone MCP's, `<origin>/<name>/mcp`, and ID counts an entitlement towards a
+ * person's token only when its `clientId` is the client signing in. The message names the client to pass and the other way to grant.
+ */
+function standaloneNeedsClient(resource: string, origin: string) {
+  const name = origin && resource.startsWith(`${origin}/`) ? /^([a-z][a-z0-9]{0,11})\/mcp$/.exec(resource.slice(origin.length + 1))?.[1] : undefined
+  if (!name) return
+  return invalid("clientId", `${resource} is a standalone MCP's resource, and Answerable ID counts an entitlement towards a person's token only when it names the client they sign in with: pass clientId claude-code-${name} (the client the deploy registers for ${name}), or prepare standalone_enable with everyone: true to grant every scope of ${name} to the whole organisation through each host client`)
+}
+
+/** The writes on who may use what in an organisation: its groups, their members, and its entitlements; `standaloneOrigin` is that of the MCPs served alone, whose resources a grant must name a client for. */
+export function accessWrites(writes: Writes, standaloneOrigin: string) {
   const { calls, role, organisation } = writes
   const missingGroup = (organizationId: string, id: string) => `Answerable ID has no group ${id} in organisation ${organizationId}; groups_list lists them`
   const group = (organizationId: string, id: string, context: ToolContext) =>
@@ -120,7 +130,7 @@ export function accessWrites(writes: Writes) {
   const kinds = ["organization", "group", "member"] as const
   const accessGrant = role("admin", defineMutation({
     name: "access.grant", risk: "normal", scopes, errors, effects: ["permission_change"],
-    description: `Prepare granting scopes on a resource, such as the Toolbox's grant strings, to a whole organisation, one of its groups or one member in Answerable ID, optionally through one OAuth client only. ${commitWith} Every scope must be one the resource allows. ID keeps one entitlement per principal and target.`,
+    description: `Prepare granting scopes on a resource, such as the Toolbox's grant strings, to a whole organisation, one of its groups or one member in Answerable ID, optionally through one OAuth client only; a standalone MCP's resource needs the client, claude-code-<name>. ${commitWith} Every scope must be one the resource allows. ID keeps one entitlement per principal and target.`,
     input: z.object({
       organizationId,
       principal: z.strictObject({
@@ -128,13 +138,15 @@ export function accessWrites(writes: Writes) {
         id: z.uuid().optional().describe("The group's or the member's id; omit it for organization"),
       }).describe("Who receives it"),
       resource: z.url().describe("The resource it reaches, as registered in Answerable ID, such as the Toolbox's MCP URL"),
-      clientId: z.string().min(1).max(200).optional().describe("Only through this OAuth client; omit it for every client"),
+      clientId: z.string().min(1).max(200).optional().describe("Only through this OAuth client; omit it for every client, except on a standalone MCP's resource, where it is required: claude-code-<name>"),
       scopes: z.array(z.string().min(1).max(300)).min(1).max(50).describe("The scopes or grant strings to grant, each allowed by the resource"),
     }),
     output: z.object({ entitlementId: z.uuid(), operationId: z.uuid() }),
     async prepare({ organizationId: id, principal, resource, clientId, scopes: asked }, context) {
       if (principal.kind === "organization" && principal.id !== undefined) throw invalid("principal.id", "Omit principal.id when the principal is the whole organization")
       if (principal.kind !== "organization" && principal.id === undefined) throw invalid("principal.id", `Name the ${principal.kind}'s id in principal.id`)
+      const unnamed = clientId ? undefined : standaloneNeedsClient(resource, standaloneOrigin)
+      if (unnamed) throw unnamed
       const granted = [...new Set(asked)].sort()
       const { organisation: row, target: version } = await organisation(id, context)
       const registered = await calls.versioned<{ name: string; allowedScopes: string[] | null }>(`/resources/${encodeURIComponent(resource)}`, context,

@@ -30,6 +30,15 @@ Each write below sends a new `Idempotency-Key`. A key retries one attempt after 
 openssl rand -base64 48
 ```
 
+**On your machine,** skip it: with `ROOT_ADMIN_SECRET` unset, a local ID uses its development value, `development-only-root-admin-secret-never-for-production`, committed in `apps/id/src/config.ts`. ID in production refuses to start with that value. Start the local ID as [Run an MCP on your machine](/docs/mcp/run-locally#before-you-start) shows, then go to step 2.
+
+**Name the service once.** Every command below calls `$ID`, the service's origin:
+
+```bash
+ID=http://localhost:47300        # on your machine
+# ID=https://id.answerable.org   # production; staging is https://id.answerable-staging.uk
+```
+
 1. **Start the service with the secret.** Set `ROOT_ADMIN_SECRET` to that value.
 
    Apply the migrations before starting the service; migration also provisions the restricted runtime database role (`DATABASE_RUNTIME_ROLE`, default `answerable_id_runtime`). On an empty database, startup creates and binds the platform organisation, the admin API resource and the `platform-admins` group. Repeated migration and startup preserve those IDs. The first start names the organisation `Answerable`, with the slug `answerable`. Rename it later through the admin API: a restart does not change it back. Production key delivery, capacity and recovery objectives remain release work.
@@ -45,48 +54,48 @@ openssl rand -base64 48
 2. **Write down two IDs.** The secret works as a bearer token. Ask the service for the platform organisation (slug `answerable`) and its `platform-admins` group; the next steps use both.
 
    ```bash
-   export ROOT_ADMIN_SECRET="paste the secret here"
+   export ROOT_ADMIN_SECRET="paste the secret here"   # on your machine: development-only-root-admin-secret-never-for-production
 
-   PLATFORM_ORG=$(curl -s "https://id.answerable.org/api/admin/v1/organizations?q=answerable" \
+   PLATFORM_ORG=$(curl -s "$ID/api/admin/v1/organizations?q=answerable" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET" | jq -r '.items[] | select(.slug=="answerable") | .id')
-   PLATFORM_GROUP=$(curl -s "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/groups?q=platform-admins" \
+   PLATFORM_GROUP=$(curl -s "$ID/api/admin/v1/organizations/$PLATFORM_ORG/groups?q=platform-admins" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET" | jq -r '.items[] | select(.slug=="platform-admins") | .id')
    ```
 
 3. **Say which work accounts are staff.** The first says that emails on our domain belong to the platform organisation. The second says which directory checks those accounts: Google Workspace or Microsoft Entra, using Answerable’s platform application from the service environment. A third call checks that the directory answers.
 
-   Set `STAFF_DOMAIN` (for example `answerable.org`) and `STAFF_ISSUER` (the directory's issuer URL from the [table below](#connect-the-directory)). Configure the matching `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` or `MICROSOFT_CLIENT_ID`/`MICROSOFT_CLIENT_SECRET` pair in the service environment first.
+   Set `STAFF_DOMAIN` (for example `answerable.org`) and `STAFF_ISSUER` (the directory's issuer URL from the [table below](#connect-the-directory)). Configure the matching `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` or `MICROSOFT_CLIENT_ID`/`MICROSOFT_CLIENT_SECRET` pair in the service environment first. They are the client ID and secret of an application registered in that directory, an app registration in Entra or an OAuth client in Google Cloud, whose redirect URI is `$ID/auth/sso/callback`. On your machine they go in the root `.env`, and ID reads them when it starts. Without a directory's credentials a local ID cannot sign anyone in: [the host lane](/docs/mcp/run-locally#signing-in-needs-a-company-directory) is the way to try a sign-in without them.
 
    ```bash
-   curl "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/domains" \
+   curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/domains" \
      -H "Idempotency-Key: $(uuidgen)" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
      -H "Content-Type: application/json" \
      -d '{"domain":"'"$STAFF_DOMAIN"'"}'
 
-   curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/sso-provider" \
+   curl -X PUT "$ID/api/admin/v1/organizations/$PLATFORM_ORG/sso-provider" \
      -H "Idempotency-Key: $(uuidgen)" \
      -H "If-None-Match: *" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
      -H "Content-Type: application/json" \
      -d '{"issuer":"'"$STAFF_ISSUER"'","domain":"'"$STAFF_DOMAIN"'"}'
 
-   curl "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/sso-provider/test" \
+   curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/sso-provider/test" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET"
    ```
 
    An empty `problems` list means the directory is reachable. The test cannot check the credentials themselves; the next step does that.
 
-4. **Sign in.** Open [the login page](https://id.answerable.org/login) and sign in with your work account. This creates your user and your membership of the platform organisation. You have no admin rights yet.
+4. **Sign in.** Open `$ID/login` in your browser, such as `http://localhost:47300/login`, and sign in with your work account. This creates your user and your membership of the platform organisation. You have no admin rights yet.
 
 5. **Give yourself admin rights.** Find your member record by email, copy its `id` into `STAFF_MEMBER`, then add it to the `platform-admins` group. The group already carries every platform scope, so joining it is all it takes.
 
    ```bash
-   curl --get "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/members" \
+   curl --get "$ID/api/admin/v1/organizations/$PLATFORM_ORG/members" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
      --data-urlencode "email=you@answerable.org"
 
-   curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$PLATFORM_ORG/groups/$PLATFORM_GROUP/members/$STAFF_MEMBER" \
+   curl -X PUT "$ID/api/admin/v1/organizations/$PLATFORM_ORG/groups/$PLATFORM_GROUP/members/$STAFF_MEMBER" \
      -H "Idempotency-Key: $(uuidgen)" \
      -H "If-None-Match: *" \
      -H "Authorization: Bearer $ROOT_ADMIN_SECRET" \
@@ -94,10 +103,10 @@ openssl rand -base64 48
      -d '{}'
    ```
 
-6. **Check it worked.** In your browser's developer tools, copy the `Cookie` header from any request to `id.answerable.org` into `SESSION_COOKIE`. Then ask the service who you are:
+6. **Check it worked.** In your browser's developer tools, copy the `Cookie` header from any request to `$ID` into `SESSION_COOKIE`. Then ask the service who you are:
 
    ```bash
-   curl https://id.answerable.org/api/admin/v1/me \
+   curl "$ID/api/admin/v1/me" \
      -H "Cookie: $SESSION_COOKIE"
    ```
 
@@ -105,7 +114,7 @@ openssl rand -base64 48
 
 7. **Put the secret away.** Remove `ROOT_ADMIN_SECRET` from the deployment, or keep it in your secret store with `ROOT_ADMIN_BREAK_GLASS=false`. If one day no staff member can administer the service, deploy with the secret and `ROOT_ADMIN_BREAK_GLASS=true`, repair access, then turn it off again. Every use of the secret, allowed or refused, is written to the audit log as `admin.root_request`.
 
-**The next staff member.** They sign in once (step 4). You repeat step 5 for them with your own browser session instead of the root secret, adding `-H "Origin: https://id.answerable.org"` because writes from a browser session must name the site they come from. Nothing else is needed.
+**The next staff member.** They sign in once (step 4). You repeat step 5 for them with your own browser session instead of the root secret, adding `-H "Origin: $ID"` because writes from a browser session must name the site they come from. Nothing else is needed.
 
 ## Get a staff token
 

@@ -19,7 +19,7 @@ output "origin_pull_ca_pem" {
 }
 
 output "origin_certificate_pem" {
-  description = "The origin's server certificate (PEM) from Cloudflare's Origin CA, for the three hostnames: tls.crt in the origin-tls Secret."
+  description = "The origin's server certificate (PEM) from Cloudflare's Origin CA, for the four hostnames: tls.crt in the origin-tls Secret."
   value       = cloudflare_origin_ca_certificate.this.certificate
 }
 

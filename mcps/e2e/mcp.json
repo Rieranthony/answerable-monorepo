@@ -1,0 +1,4 @@
+{
+  "serve": "both",
+  "database": "shared"
+}

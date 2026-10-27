@@ -4,10 +4,10 @@ description: "The 42 rules every Answerable MCP follows, and what enforces each:
 ---
 
 ```sh
-bun run mcp:check @answerable/mcp-e2e
+bun mcp check e2e
 ```
 
-This runs the typecheck, the lint and the tests of a server, and the tests include the conformance kit. A failing check prints as `(fail) e2e conformance > read > manifest_matches_snapshot`: the provider, the checklist, then the check. The rules below are the standard's; each row says what refuses a breach.
+This runs the typecheck, the lint and the tests of an MCP, and the tests include the conformance kit; it rewrites what is stale. A failing check prints as `(fail) e2e conformance > read > manifest_matches_snapshot`: the provider, the checklist, then the check. The rules below are the standard's; each row says what refuses a breach.
 
 ## How to read the rules
 
@@ -84,7 +84,7 @@ Every failure is an `isError` result whose one text block is the [error envelope
 
 | Rule | Says | Enforced by |
 | --- | --- | --- |
-| R34 | Every call has a span and, for a read, an evidence row; every mutation transition is evidence; inputs, results and secrets are not recorded | **Hub**, [evidence](/docs/toolbox#evidence) and [spans](/docs/toolbox#spans). Refusals by a limit: Not yet |
+| R34 | Every call has a span and, for a read, an evidence row; every mutation transition is evidence; inputs, results and secrets are not recorded | **Hub** and [every MCP served alone](/docs/mcp/servers#served-alone), [evidence](/docs/toolbox#evidence) and [spans](/docs/toolbox#spans): every call and every refusal, a refusal because ID did not answer included. Refusals by a limit: Not yet |
 | R35 | Every execution has an id, and an intent id survives into the receipt | **SDK**, `executionId`, `request_id` and the receipt. **Kit** `receipt_is_structured`. The id as a header to an upstream: Not yet |
 | R36 | Evidence is append-only, chained per organisation and verifiable; a server migrates as the owner and serves as a restricted login | **Hub**, [evidence](/docs/toolbox#evidence) and [database roles](/docs/toolbox#database-roles): the Toolbox and the admin MCP refuse to start as the owner. Nightly verification and publishing chain heads: Not yet |
 

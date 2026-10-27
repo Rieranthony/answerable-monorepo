@@ -81,8 +81,9 @@ Identities are `admin/<domain>.<operation>`, and wire names replace `.` with `_`
 | `audit` | `list` | | |
 | `staff` | `list` | | `grant`, `revoke` |
 | `toolbox` | | `enable` | |
+| `standalone` | | `enable` | |
 
-With the two commit tools, a role lists 1 tool with no role, 10 as `team`, 23 as `admin` and 27 as `owner` (A1).
+With the two commit tools, a role lists 1 tool with no role, 10 as `team`, 24 as `admin` and 28 as `owner` (A1 counted 23 and 27 before `standalone_enable`).
 
 ## Writes
 
@@ -94,6 +95,7 @@ Every mutation is `risk: "normal"` and the server fixes its policy class to `con
 - **The re-grant rule.** ID keeps one entitlement per principal and target, whatever its status. `access_revoke` disables one, reversibly; `access_enable` enables it again; `access_grant` refuses a principal and target that already have one and names `access_enable` with its id, or ID's `updateEntitlement` for other scopes. Deletion is Not yet.
 - **Some tools, not all.** A grant string may name one capability (`e2e/records.list`) and be held through a group or by one member: `access_grant` writes it as any other scope the resource allows, `groups_addmember` and `groups_dropmember` move people, and the Toolbox applies the change to the person's current token within its cache window (A8). Grants add up and nothing denies, so an organisation-wide grant covers every tool whatever else is granted. Because of the re-grant rule, changing which tools a group holds is ID's `updateEntitlement` by cURL (Not yet below); with today's tools the pattern is one group per set of tools.
 - **SSO.** `sso_set` sets Answerable's own Microsoft or Google application only: an Entra tenant issuer `https://login.microsoftonline.com/<tenant>/v2.0` or `https://accounts.google.com` (F13). Any other issuer answers `INVALID_INPUT` naming the cURL workaround, because a directory with its own credentials needs a client secret and no tool takes one (R29). The preview warns that ID revokes every grant of the organisation when its provider changes.
+- **Standalone MCPs.** `standalone_enable` reads the MCP's resource, `ADMIN_STANDALONE_ORIGIN` with `/<name>/mcp`, where the Toolbox serves it, and its host client, `claude-code-<name>`, which the deploy's register Job made, and previews what is missing for that client: its link, the organisation's sign-in and MCP capabilities for both grant kinds, and the sign-in entitlement; with `everyone: true`, the MCP's scopes for the whole organisation through that client. It does not grant the scopes otherwise: entitlements only add up, so an organisation-wide one would make every narrower `access_grant` pointless. ID counts an entitlement towards a token only through the client it names (`apps/id/src/auth/member-permission.ts`), so a grant of a standalone MCP's scopes, `everyone`'s or `access_grant`'s, names the host client as `clientId`; the Toolbox needs none, because it reads its grant strings from the member access view rather than from the token. A row of a target that is disabled or short of scopes stops the prepare, naming it. Commit writes each row under `<intent id>.<step>` and counts a conflict as found. `ADMIN_STANDALONE_ORIGIN` is required, with `http://localhost:47400` as its local default.
 - **Staff.** `staff_grant` and `staff_revoke` find the role groups by their entitlement on the admin MCP's resource (active, no client, held by a group), never by slug. Grant adds the member to the group that confers the least beyond the role, with `If-None-Match: *`, and binds that entitlement's ETag. Revoke removes the member from every group that carries the role; it refuses a role held only through an entitlement that is not a group's, and warns when no other owner remains, when the person removes their own role, and when it is not atomic.
 
 ## How it calls Answerable ID
@@ -150,7 +152,7 @@ Each row names the person (`actor_id`, their user id) and the host (`client_id`)
 
 ## Configuration
 
-`ADMIN_ID_ISSUER`, `ADMIN_RESOURCE_URL`, `ADMIN_PORT` (47520), `ADMIN_DATABASE_URL`, `ADMIN_TEST_DATABASE_URL`, `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET`, `ADMIN_ID_ADMIN_RESOURCE`, `ADMIN_TOOLBOX_ADMIN_RESOURCE` (optional) and `ADMIN_FRESH_SECONDS` (optional, 1,800): listed in `default.env`, with local values in `.env.example` and meanings on [`/docs/admin`](../apps/web/content/docs/admin/index.mdx#environment). `bun run admin:dev` serves it; the databases `answerable_admin` and `answerable_admin_test` come from `infra/postgres/init/004-create-mcp-databases.sql`. The acceptance serves it on 47606 with `answerable_admin_acceptance`; `bun packages/acceptance/scripts/admin-lane.ts` keeps ID, the admin MCP and the Toolbox up for Claude Code by hand.
+`ADMIN_ID_ISSUER`, `ADMIN_RESOURCE_URL`, `ADMIN_PORT` (47520), `ADMIN_DATABASE_URL`, `ADMIN_TEST_DATABASE_URL`, `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET`, `ADMIN_ID_ADMIN_RESOURCE`, `ADMIN_TOOLBOX_ADMIN_RESOURCE` (optional) and `ADMIN_FRESH_SECONDS` (1,800 unless set): defined, with their local values, in `mcps/admin/src/environment.ts`, and listed with their meanings on [`/docs/admin`](../apps/web/content/docs/admin/index.mdx#environment). `bun run admin:dev` serves it; the databases `answerable_admin` and `answerable_admin_test` come from `infra/postgres/init/004-create-mcp-databases.sql`. The acceptance serves it on 47606 with `answerable_admin_acceptance`; `bun packages/acceptance/scripts/admin-lane.ts` keeps ID, the admin MCP and the Toolbox up for Claude Code by hand.
 
 ## Not yet
 

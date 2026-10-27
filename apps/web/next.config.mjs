@@ -34,9 +34,11 @@ const config = {
       headers: [{ key: "X-Robots-Tag", value: "noindex, follow" }],
     }))
   },
-  // Pages that moved when the docs were split into Answerable ID, the MCP kit and the Toolbox.
+  // Pages that moved: when the docs were split into Answerable ID, the MCP kit and the Toolbox, and when the MCP
+  // quickstart became "Make an MCP".
   async redirects() {
     return [
+      ["/docs/mcp/quickstart", "/docs/mcp/create"],
       ["/docs/mcp/authoring", "/docs/mcp/tools"],
       ["/docs/mcp/toolbox", "/docs/toolbox"],
       ["/docs/mcp/toolbox-admin", "/docs/toolbox/admin"],

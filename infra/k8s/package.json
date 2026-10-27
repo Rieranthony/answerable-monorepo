@@ -11,6 +11,7 @@
   },
   "devDependencies": {
     "@answerable/acceptance": "workspace:*",
+    "@answerable/mcp-postgres": "workspace:*",
     "@eslint/js": "9.39.5",
     "@playwright/test": "1.63.0",
     "@types/bun": "1.3.1",

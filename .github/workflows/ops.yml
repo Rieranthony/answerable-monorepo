@@ -1,9 +1,10 @@
 name: Ops
 
-# Run one ops Job in an environment, through a Helm upgrade that keeps the images the release runs:
-# - register: the MCP servers registered in Answerable ID again (a rotated client secret, a changed registration).
-#   After a person holds platform:write, ID refuses the root secret, so the Job needs a staff token in the Secret
-#   ops-staff-token first (infra/README.md, Register again).
+# Run one ops Job in an environment, through a Helm upgrade that keeps the images the release runs, with the chart of the
+# commit it runs, read from this checkout's history; the smoke test then runs at that commit, with its list of MCPs:
+# - register: the MCP servers registered in Answerable ID again (a rotated client secret, a changed registration), as
+#   its own machine client, ops-register. Only when the Secret ops-id-client is empty does it need a staff token in the
+#   Secret ops-staff-token first (infra/README.md, Register again).
 # - make-admin: the last step of the first run, after the owner has signed in once: the member with that email
 #   becomes the admin MCP's owner and a platform administrator, which locks the root secret.
 # What this does and which secrets it needs: infra/pipeline/README.md.
@@ -51,10 +52,13 @@ jobs:
     environment: ${{ inputs.environment }}
     permissions:
       contents: read
+    outputs:
+      revision: ${{ steps.job.outputs.revision }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -64,7 +68,9 @@ jobs:
         with:
           tools: helm kubectl
 
+      # run-job prints revision=<commit> on standard output, and its progress on standard error.
       - name: Run the Job
+        id: job
         env:
           KUBE_SERVER: ${{ secrets.KUBE_SERVER }}
           KUBE_CA: ${{ secrets.KUBE_CA }}
@@ -78,9 +84,9 @@ jobs:
               echo "::error::make-admin needs the email of the member who signed in"
               exit 1
             fi
-            bun infra/pipeline/src/cli.ts run-job make-admin --environment "$TARGET" --email "$EMAIL"
+            bun infra/pipeline/src/cli.ts run-job make-admin --environment "$TARGET" --email "$EMAIL" >> "$GITHUB_OUTPUT"
           else
-            bun infra/pipeline/src/cli.ts run-job "$COMMAND" --environment "$TARGET"
+            bun infra/pipeline/src/cli.ts run-job "$COMMAND" --environment "$TARGET" >> "$GITHUB_OUTPUT"
           fi
 
   smoke:
@@ -94,6 +100,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ needs.run.outputs.revision }}
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:

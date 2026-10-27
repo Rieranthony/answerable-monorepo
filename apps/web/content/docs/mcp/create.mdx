@@ -1,0 +1,144 @@
+---
+title: Make an MCP
+description: "Make an MCP with bun mcp new, in a terminal or with flags: what each question decides, what it writes, how to check it, run it on your machine and try it in Claude Code. Its database and its sign-in are set up for you."
+---
+
+```sh
+bun mcp new acme --description "Notes for construction projects: list, read and add notes on a project." --serve toolbox
+```
+
+This makes `mcps/acme`: a working MCP with its tests and its place in the deployment, and no tool until you [add one](/docs/mcp/add-a-tool), or name the first with `--tool`. An MCP gives an AI app, such as Claude Code, tools it can call.
+
+<Callout title="Two things are done for you">
+
+**A database is linked to your MCP.** It has a Postgres schema of its own, made and migrated on your machine by this command, and made and migrated on every deploy. [Its database](/docs/mcp/database).
+
+**Its sign-in through Answerable ID is set up.** Every call arrives with who is calling and their organisation, checked, with no code from you. [Its sign-in](/docs/mcp/sign-in).
+
+</Callout>
+
+## Before you start
+
+- **Bun 1.3.1** and a checkout of the monorepo. Run every command from the repository root.
+- **The development Postgres** on port 47432. From the main checkout, run `bun run env:up`. Never run it from a worktree: it recreates the running Postgres.
+- **A coding agent?** Give it [the prompt](/docs/agents#make-an-mcp). Its commands are the ones on this page.
+
+## Answer the questions
+
+In a terminal, `bun mcp new` asks for each answer you leave out, one question at a time. Without a terminal, as in a coding agent's shell, it asks nothing: give the name, `--description` and `--serve`, and, with `--tool`, its `--tool-description` too. A missing answer exits with code 2 and prints the command to run again, with a placeholder where each one goes. Every wrong answer is listed at once, before anything is written.
+
+| Question | Flag | What it decides | Rule |
+| --- | --- | --- | --- |
+| **Name** | The first word | The MCP's id. It starts every tool's name (`acme_notes_list` in the Toolbox) and names its folder `mcps/acme`, its Postgres schema `acme` and its workspace `@answerable/mcp-acme` | A lowercase letter, then up to 11 lowercase letters or digits. Not reserved, not retired, not taken |
+| **What is it for?** | `--description` | What the Toolbox's catalogue, `bun mcp list` and the manifest say about the MCP | 40 to 1,000 characters: one or two sentences |
+| **Where does it run?** | `--serve` | In the Toolbox (`toolbox`), on its own URL (`standalone`) or both: [where an MCP runs](/docs/mcp#where-an-mcp-runs). It is written to `mcp.json`, where you can change it | Required without a terminal. In a terminal, Enter takes `toolbox` |
+| **First tool name** | `--tool` | What the caller can do: `notes.list`. Enter skips it, and the MCP starts with no tool: `bun mcp add tool` adds one | `<domain>.<operation>`. [Choosing a name](/docs/mcp/add-a-tool#choose-a-name) |
+| **First tool description** | `--tool-description` | What the model reads to choose the tool | 40 to 1,000 characters. [Writing one](/docs/mcp/add-a-tool#write-a-description-the-model-can-use) |
+| **Read or change?** | `--mutation` | A read answers a question. A change is prepared, then committed: [read or change](/docs/mcp/add-a-tool#read-or-change) | A read unless you say `--mutation` |
+
+**Not asked:** `--database`. Its default, `shared`, is right almost every time. [Choosing `own`](/docs/mcp/database#the-two-modes) costs more. The summary line says which you got: `Database: schema acme in answerable_mcps (shared)`.
+
+## What it does
+
+It checks every answer, then runs these steps and prints a line for each. A step that fails leaves the files and prints the command that finishes the job.
+
+<CliSteps command="new" />
+
+It makes real objects in your development Postgres: [Undo a local MCP](#undo-a-local-mcp) removes them. It also rewrites the lists the deployment and the Toolbox read: `charts/answerable/mcps.json`, and the Toolbox's list and dependencies, which carry every MCP whatever its `serve`. Never edit them by hand. [What to commit](#what-to-commit) lists every file to commit.
+
+## What it writes
+
+| File | What it is |
+| --- | --- |
+| `mcp.json` | Where the MCP runs and its database mode. `bun mcp` writes it. You may change `serve` and `database` |
+| `package.json` | The workspace `@answerable/mcp-acme`, with its provider exported as `./provider` and every version pinned to the repository's |
+| `src/mcp.ts` | `defineTool` and `defineMutation`, bound to the MCP's database. Never edited |
+| `src/provider.ts` | The MCP's id, description, version, database and tools |
+| `src/tools/` | One file for each tool, with its test, when `--tool` names the first |
+| `src/db/schema.ts` | The MCP's tables, in its own Postgres schema |
+| `src/provider.test.ts` | The conformance kit: one test for each rule of [the standard](/docs/mcp/standard), for every tool |
+| `drizzle/` | The migrations, written by `bun mcp db acme generate` |
+| `manifest.json` | The contract, written by the first test run and checked on every one |
+| `tsconfig.json`, `eslint.config.mjs`, `bunfig.toml` | Compiler and lint settings, and the gate of 100% line and function coverage |
+
+There is no server and no port to choose. The Toolbox mounts the MCP in its hub, serves it alone at its own path, or both, from the list `bun mcp` writes, so your MCP runs the same way on your machine and in production.
+
+**`mcp.json`** declares where it runs. The MCP's name is its folder's:
+
+<ScaffoldFile file="mcp.json" />
+
+**`src/mcp.ts`** is what every tool imports its definitions from. It is written once and never edited:
+
+<ScaffoldFile file="src/mcp.ts" />
+
+**`src/provider.ts`** lists the MCP's tools, none yet. `bun mcp add tool` adds each one above the two `bun mcp: tools` lines:
+
+<ScaffoldFile file="src/provider.ts" />
+
+A tool's file opens with the guidance every tool file has: [Add a tool](/docs/mcp/add-a-tool#read-or-change) shows a read and a change as they are written.
+
+## Check it
+
+```sh
+bun mcp check acme
+```
+
+`bun mcp new` and `bun mcp add tool` run it as their last step. Run it again after every change. It prints a line for each of these:
+
+<CliSteps command="check" />
+
+A stale `manifest.json`, generated list or inventory is rewritten, not failed. The last line says which to commit. CI fails on a stale one instead. The `guard` step fails on code that names `answerable.organisation_id`, the setting the platform sets to the caller's organisation on every query: [Limits](/docs/mcp/database#limits). [Test an MCP](/docs/mcp/testing) covers the conformance kit and `createTestMcp`.
+
+Once the MCP has a change that prepares no targets, such as `notes.add`, `bun test` shows two conformance checks skipped as not applicable, `targets_have_versions` and `commit_rejects_stale`, as [the checks](/docs/mcp/testing#the-checks) explain.
+
+## What to commit
+
+Commit every file `bun mcp` wrote or rewrote, with your change. `git status` shows them:
+
+- everything under `mcps/acme`;
+- `charts/answerable/mcps.json`, the deployment's list;
+- `mcps/toolbox/package.json` and `mcps/toolbox/src/mounted.generated.ts`, the Toolbox's dependencies and list;
+- `bun.lock`, which `bun install` updates: CI and the image build install from it and refuse a stale one;
+- `packages/config/inventory.json` or `.env.example`, when the check rewrites them: an MCP with a database of its own adds its variables to the inventory.
+
+The `git add` line under `Next:` lists only what that command changed, not the files an earlier command left. CI fails on a stale list or manifest. [Ship an MCP](/docs/mcp/deploy#before-you-tag) needs all of it on `main`.
+
+## Run it and try it in Claude Code
+
+```sh
+bun mcp setup
+bun mcp dev acme
+```
+
+Both need your local ID, migrated, with a sign-in for your email domain: [Before you start](/docs/mcp/run-locally#before-you-start). `bun mcp setup` runs once. It connects `bun mcp` to your local Answerable ID: it makes a machine client there and writes its id and secret to the root `.env`. `bun mcp dev acme` then migrates the MCP's schema, starts the Toolbox with the MCP in it, gives your organisation access to it, and prints the command that connects Claude Code:
+
+```sh
+claude mcp add --transport http answerable-toolbox http://localhost:47400/mcp --client-id claude-code-toolbox --callback-port 47700
+```
+
+Run it, open Claude Code, run `/mcp`, choose `answerable-toolbox` and choose **Authenticate**. Your browser opens Answerable ID: sign in with your work account. Then ask Claude to call one of the MCP's tools, such as `acme_notes_list` once [Add a tool](/docs/mcp/add-a-tool) has added `notes.list`. A change's preview, such as `acme_notes_add`'s, names your organisation as Answerable ID holds it.
+
+For `--serve standalone` the command is `claude mcp add --transport http acme http://localhost:47400/acme/mcp --client-id claude-code-acme --callback-port 47700`, and the tool is `notes_list`. [Run an MCP on your machine](/docs/mcp/run-locally#run-an-mcp) says what each step of `bun mcp dev` does, and [Connect Claude Code](/docs/mcp/claude-code) the errors you can meet.
+
+## Undo a local MCP
+
+A command that removes an MCP: Not yet. Trigger: the first MCP that is removed. To undo one you made while trying this out, delete `mcps/acme`, run `bun mcp check <another MCP>` to rewrite the lists without it, then `bun install`. The schema stays in your development Postgres until you drop it:
+
+```sh
+psql postgres://answerable:answerable@localhost:47432/answerable_mcps -c 'drop schema if exists acme cascade'
+psql postgres://answerable:answerable@localhost:47432/answerable_mcps_test -c 'drop schema if exists acme cascade'
+```
+
+Do this only for a name that has never shipped. A name that has shipped goes into `mcps/retired.json` instead, which `bun mcp new` refuses for ever.
+
+## Next
+
+- **Add a tool:** [Add a tool](/docs/mcp/add-a-tool).
+- **Change its tables:** [Your MCP's database](/docs/mcp/database).
+- **Ship it:** [Ship an MCP](/docs/mcp/deploy). The staging tag creates the database and registers the sign-in for you.
+
+## Errors
+
+A refusal exits with code 2, before anything is written. A step that fails exits with code 1, after the files are written. [The bun mcp command](/docs/mcp/cli#errors) lists every error.
+
+<CliErrors ids={["missing-argument", "invalid-name", "name-reserved", "name-retired", "name-taken", "invalid-description", "invalid-serve", "invalid-database", "invalid-tool-name", "tool-name-reserved", "invalid-tool-description", "mutation-description", "flag-needs-tool", "cancelled", "database-down", "step-failed", "check-failed"]} />

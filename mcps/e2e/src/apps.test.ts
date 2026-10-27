@@ -1,17 +1,14 @@
 import { expect, test } from "bun:test"
 import { chromium } from "@playwright/test"
-import { buildView, bundleBrowser } from "@answerable/mcp/build"
-import { createTestMcp } from "@answerable/mcp/testing"
-import { createE2eProvider } from "./mcp"
-import { createRecordStore } from "./records"
+import { bundleBrowser } from "@answerable/mcp/build"
+import { createTestMcp } from "@answerable/mcp-postgres/testing"
+import { provider } from "./provider"
 
 test("the Apps view creates through prepare and e2e_commit, deletes after showing the summary, and hides writes from readers", async () => {
-  const html = await buildView({ entry: new URL("./views/records.tsx", import.meta.url).pathname, title: "Test records" })
   const hostBuild = await bundleBrowser(new URL("./testing/host.ts", import.meta.url).pathname)
   const hostJs = hostBuild[0].text
-  const records = createRecordStore()
   const organizationId = crypto.randomUUID()
-  const mcp = await createTestMcp(createE2eProvider({ records, viewHtml: html }))
+  const mcp = await createTestMcp(provider)
   const host = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
     const path = new URL(req.url).pathname
     if (path === "/host.js") return new Response(hostJs, { headers: { "Content-Type": "text/javascript" } })

@@ -1,8 +1,10 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "jsx": "react-jsx",
+    "lib": [
+      "ES2023",
+      "DOM"
+    ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
@@ -11,7 +13,11 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "types": ["bun"]
+    "types": [
+      "bun"
+    ]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "scripts/**/*.ts"]
+  "include": [
+    "src/**/*.ts"
+  ]
 }

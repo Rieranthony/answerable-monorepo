@@ -1,6 +1,4 @@
-// The records view's HTML, read once by whoever serves the provider: this server and the Toolbox.
-const file = Bun.file(new URL("../dist/records.html", import.meta.url))
-if (!await file.exists()) throw new Error("Missing the e2e records view. Run bun run --filter @answerable/mcp-e2e build first.")
+import { buildView } from "@answerable/mcp/build"
 
-/** The records view's HTML for `createE2eProvider({ viewHtml })`: `dist/records.html`, which `bun run --filter @answerable/mcp-e2e build` writes. Importing it throws when the view is not built. */
-export const viewHtml = await file.text()
+/** The records view's HTML for `records.show`: `src/views/records.tsx` bundled with its CSS when this module is first imported. */
+export const viewHtml = await buildView({ entry: Bun.fileURLToPath(new URL("./views/records.tsx", import.meta.url)), title: "Answerable test records" })

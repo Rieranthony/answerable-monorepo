@@ -15,11 +15,12 @@ node_count = 3
 database_size  = "g3.db.medium"
 database_nodes = 1
 
-# Production's records sit beside Vercel's DNS-only www in the answerable.org zone; the edge module writes these three
-# names and nothing else.
+# Production's records sit beside Vercel's DNS-only www in the answerable.org zone; the edge module writes these four
+# names and nothing else. On mcp the Toolbox serves every standalone MCP by path: no MCP adds a name.
 zone_name = "answerable.org"
 hostnames = {
   id        = "id.answerable.org"
   toolbox   = "toolbox.answerable.org"
   admin_mcp = "admin-mcp.answerable.org"
+  mcp       = "mcp.answerable.org"
 }

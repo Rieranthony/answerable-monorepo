@@ -1,8 +1,5 @@
-// Real Answerable ID, a real browser and the official MCP OAuth client against the e2e MCP.
+// Real Answerable ID, a real browser and the official MCP OAuth client against the e2e MCP, at its path on the Toolbox, which serves it alone there.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { createMcpServer } from "@answerable/mcp"
-import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
-import { createRecordStore } from "@answerable/mcp-e2e/records"
 import type { Client } from "@modelcontextprotocol/client"
 import { decodeJwt } from "jose"
 import { z } from "zod"
@@ -25,9 +22,13 @@ import {
   type Id,
   type OAuthSession,
 } from "../index"
+import { prepareToolbox } from "../toolbox"
 
-const resource = "http://127.0.0.1:47602/mcp"
-const otherResource = "http://127.0.0.1:47605/mcp"
+// The Toolbox serves e2e at its path; a second Toolbox, at another origin, serves it as another resource.
+const origin = "http://127.0.0.1:47604"
+const resource = `${origin}/e2e/mcp`
+const otherOrigin = "http://127.0.0.1:47605"
+const otherResource = `${otherOrigin}/e2e/mcp`
 const callback = "http://127.0.0.1:47603/callback"
 const clientId = "mcp-e2e-browser"
 const scopes = ["e2e:identity", "e2e:read", "e2e:write"]
@@ -71,9 +72,10 @@ beforeAll(async () => {
     const { organizationId } = manifest.tenants.find(({ slug }) => slug === tenant.slug)!
     await grantOrganisation(admin, organizationId, { clientId, resource, scopes, entitledScopes: tenant.scopes })
   }
-  const provider = createE2eProvider({ records: createRecordStore(), viewHtml: "<!doctype html><title>Records</title>" })
-  serve(47_602, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource } }).fetch)
-  serve(47_605, createMcpServer({ provider, auth: { issuer: manifest.idOrigin, resource: otherResource } }).fetch)
+  // The Toolbox reads who is calling from ID through its machine client, in the platform organisation.
+  const { start } = await prepareToolbox(id, { database: "answerable_toolbox_acceptance" })
+  serve(47_604, (await start(origin)).fetch)
+  serve(47_605, (await start(otherOrigin)).fetch)
   serveCallback(callback)
   browser = await launchBrowser()
 })

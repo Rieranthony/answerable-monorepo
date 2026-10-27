@@ -1,20 +1,16 @@
 // The Toolbox in process, over the test database and a fake ID: members of fresh organisations to call its MCP endpoint, and staff to call its admin API.
 import { createIdAdmin } from "@answerable/id-admin"
 import { createFakeId } from "@answerable/id-admin/testing"
-import { defineMutation, defineProvider, defineTool, type Provider } from "@answerable/mcp"
-import { createE2eProvider } from "@answerable/mcp-e2e/mcp"
+import { defineMutation, defineProvider, defineTool, type Mount, type Provider } from "@answerable/mcp"
+import { createMemoryTracer, type Serve } from "@answerable/mcp-platform"
 import type { Database } from "@answerable/mcp-postgres"
-import { createRecordStore } from "@answerable/mcp-e2e/records"
 import { createTestMcp } from "@answerable/mcp/testing"
 import { z } from "zod"
 import { writeCatalogue } from "../catalogue"
-import { createMemoryTracer } from "../spans"
 import { createToolbox } from "../toolbox"
 
 export const resource = "https://mcp.test/mcp"
 export const adminResource = "https://mcp.test/admin"
-export const view = "<!doctype html><title>Records</title>"
-export const e2e = () => createE2eProvider({ records: createRecordStore(), viewHtml: view })
 
 /** A provider with a read (`records.list`, titled) and a mutation (`records.create`), and `extra` more reads, for the admin API's tests. */
 export function records(id: string, { version = "2026-09-29", extra = [] as string[] } = {}) {
@@ -28,22 +24,32 @@ export function records(id: string, { version = "2026-09-29", extra = [] as stri
     async prepare() { return { targets: [], preview: { summary: "Create a record" } } },
     async commit() { return { results: {}, applied_changes: [], effects_performed: [] } },
   })
-  return defineProvider({ id, version, tools: [read("records.list", "List records"), create, ...extra.map(name => read(name))] })
+  return defineProvider({ id, description: "Records for the tests of the Toolbox's admin API: a read, a mutation and the extra reads a test asks for.", version, tools: [read("records.list", "List records"), create, ...extra.map(name => read(name))] })
 }
 /** A provider id no other test uses. */
 export const providerId = () => `a${crypto.randomUUID().slice(0, 8)}`
 
-export async function createHub(db: Database, providers: readonly Provider[] = [e2e()], { secret, pageSize }: { secret?: string; pageSize?: number } = {}) {
+/**
+ * The Toolbox serving `providers` (the suite's e2e unless given), a provider alone or with its `db` and where it is served, over the test database
+ * and a fake ID.
+ * `member` makes a person of a fresh organisation in the fake ID, with the access view that grants them `grants`, the providers enabled in the
+ * catalogue, and a `connect` as them.
+ */
+export async function createHub(db: Database, providers?: readonly (Provider | (Mount & { serve?: Serve }))[], { secret, pageSize }: { secret?: string; pageSize?: number } = {}) {
   const id = createFakeId({ pageSize })
   const { tracer, spans } = createMemoryTracer()
+  // The suite's mounted e2e unless `providers` are given, imported only then: importing ./mcps makes the suite's MCP databases.
+  const mount = (providers ?? [(await import("./mcps")).e2e]).map((entry): Mount & { serve?: Serve } => ("provider" in entry ? entry : { provider: entry }))
   let toolbox!: Awaited<ReturnType<typeof createToolbox>>
-  const mcp = await createTestMcp(async auth => (toolbox = await createToolbox({
-    providers, auth, db, id: createIdAdmin({ ...id.config, ...(secret ? { clientSecret: secret } : {}) }), spans: tracer,
+  const mcp = await createTestMcp(async ({ auth }) => (toolbox = await createToolbox({
+    mount, auth, db, id: createIdAdmin({ ...id.config, ...(secret ? { clientSecret: secret } : {}) }), spans: tracer,
   })))
-  async function member(grants: string[], { enable = providers.map(provider => provider.id), scopes = ["toolbox"] }: { enable?: string[]; scopes?: string[] } = {}) {
+  async function member(grants: string[], { enable = mount.filter(entry => entry.serve !== "standalone").map(({ provider }) => provider.id), scopes = ["toolbox"] }: { enable?: string[]; scopes?: string[] } = {}) {
     const organizationId = crypto.randomUUID()
     const membershipId = crypto.randomUUID()
     const userId = crypto.randomUUID()
+    id.organisation(organizationId, { name: "Member's organisation", slug: `org-${organizationId.slice(0, 8)}` })
+    id.member(organizationId, { id: membershipId, userId, name: "A member", email: "member@example.test" })
     id.grant(organizationId, membershipId, [{ kind: "resource", id: resource, scopes: [...grants, "toolbox"] }, { kind: "client_resource", id: "test-client", resource, scopes: ["toolbox", "offline_access"] }])
     for (const provider of enable) await writeCatalogue(db, organizationId, provider, { enabled: true })
     const connect = (protocol?: "2025" | "2026-07-28", clientId?: string) => mcp.connect({ organizationId, membershipId, userId, scopes, protocol, clientId })

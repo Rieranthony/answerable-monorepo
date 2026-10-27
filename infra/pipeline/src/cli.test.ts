@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { mkdirSync, writeFileSync } from "node:fs"
 import { readFile } from "node:fs/promises"
-import { resolve } from "node:path"
+import { join, resolve } from "node:path"
 import { main, systemDeps, type CliDeps } from "./cli"
 import { hostsFor } from "./environments"
 import { systemRunner } from "./run"
@@ -9,7 +10,10 @@ import type { RunResult } from "./run"
 
 const TAG = `sha-${"a".repeat(40)}`
 const DIGEST = `sha256:${"1".repeat(64)}`
-const PAIRS = ["id", "toolbox", "admin-mcp", "ops"].flatMap((name) => ["--image-digest", `${name}=${DIGEST}`])
+const PAIRS = ["id", "mcps", "ops"].flatMap((name) => ["--image-digest", `${name}=${DIGEST}`])
+const REVISION = "c".repeat(40)
+/** The chart's list as the checkout holds it: an MCP in each place. */
+const MCPS = { mcps: [{ name: "e2e", serve: "both", database: "shared" }, { name: "example", serve: "toolbox", database: "shared" }] }
 const CERTIFICATE = "-----BEGIN CERTIFICATE-----\nMIIBdemo\n-----END CERTIFICATE-----"
 const CLUSTER_ENV = {
   KUBE_SERVER: "https://cluster.example:6443",
@@ -27,16 +31,18 @@ async function fixture(
   reply: (call: RecordedCall) => Partial<RunResult> | undefined = () => undefined,
   overrides: Partial<CliDeps> = {},
 ) {
-  const root = await createRoot({ "charts/answerable/values-civo-staging.yaml": "" })
+  const root = await createRoot({ "charts/answerable/values-civo-staging.yaml": "", "charts/answerable/mcps.json": JSON.stringify(MCPS) })
   cleanups.push(root.remove)
-  // The registry answers the same digest for every image, and both client Secrets exist.
-  const runner = createFakeRunner((call) =>
-    call.argv[0] === "docker"
-      ? { stdout: `${DIGEST}\n` }
-      : call.argv.slice(0, 3).join(" ") === "kubectl get secret"
-        ? { stdout: "secret/toolbox-id-client\nsecret/admin-id-client\n" }
-        : reply(call),
-  )
+  // The registry answers the same digest for every image, the release runs REVISION and tar leaves its overlay.
+  const runner = createFakeRunner((call) => {
+    if (call.argv[0] === "docker") return { stdout: `${DIGEST}\n` }
+    if (call.argv.slice(0, 3).join(" ") === "helm get values") return { stdout: JSON.stringify({ image: { tag: `sha-${REVISION}` } }) }
+    if (call.argv[0] === "tar") {
+      mkdirSync(join(call.argv[4]!, "charts/answerable"), { recursive: true })
+      writeFileSync(join(call.argv[4]!, "charts/answerable/values-civo-staging.yaml"), "")
+    }
+    return reply(call)
+  })
   const out: string[] = []
   const err: string[] = []
   const deps: CliDeps = {
@@ -58,9 +64,9 @@ describe("deploy", () => {
     const f = await fixture()
     const code = await main(["deploy", "--environment", "staging", "--image-tag", TAG], f.deps)
     expect(code).toBe(0)
-    expect(f.runner.commands().filter((command) => command.startsWith("docker buildx imagetools inspect"))).toHaveLength(4)
-    expect(f.runner.commands()).toHaveLength(7)
-    expect(f.runner.commands().at(-1)).toContain("--set ops.bootstrap=true")
+    expect(f.runner.commands().filter((command) => command.startsWith("docker buildx imagetools inspect"))).toHaveLength(3)
+    expect(f.runner.commands()).toHaveLength(5)
+    expect(f.runner.commands().at(-1)).toContain("--set ops.bootstrap=true --set ops.register=true")
     expect(f.err()).toContain(`Deployed ${TAG} to staging.`)
     expect(f.out()).toBe("")
   })
@@ -69,9 +75,9 @@ describe("deploy", () => {
     const f = await fixture()
     const code = await main(["deploy", "--environment", "staging", "--image-tag", TAG, ...PAIRS, "--timeout", "15m"], f.deps)
     expect(code).toBe(0)
-    expect(f.runner.commands()).toHaveLength(3)
-    expect(f.runner.commands()[2]).toContain("--timeout 15m -f charts/answerable/values-civo-staging.yaml")
-    expect(f.runner.commands()[2]).toContain(`--set images.admin-mcp.digest=${DIGEST}`)
+    expect(f.runner.commands()).toHaveLength(2)
+    expect(f.runner.commands()[1]).toContain("--timeout 15m -f charts/answerable/values-civo-staging.yaml")
+    expect(f.runner.commands()[1]).toContain(`--set images.mcps.digest=${DIGEST}`)
   })
 
   test("exits 1 and names the failing step", async () => {
@@ -112,20 +118,23 @@ describe("deploy", () => {
 })
 
 describe("run-job", () => {
-  test("runs the named job, with the email and the timeout given", async () => {
+  test("runs the named job, with the email and the timeout given, and prints the commit it ran at on standard output", async () => {
     const f = await fixture()
     const code = await main(["run-job", "make-admin", "--environment", "staging", "--email", "you@answerable.org", "--timeout", "3m"], f.deps)
     expect(code).toBe(0)
-    expect(f.runner.commands()[0]).toContain("--timeout 3m --reset-then-reuse-values")
-    expect(f.runner.commands()[0]).toEndWith("--set ops.makeAdmin=true --set-string ops.adminEmail=you@answerable.org")
+    const upgrade = f.runner.commands().find((command) => command.startsWith("helm upgrade"))!
+    expect(upgrade).toContain("--timeout 3m --reset-then-reuse-values")
+    expect(upgrade).toEndWith("--set ops.makeAdmin=true --set-string ops.adminEmail=you@answerable.org")
     expect(f.err()).toContain("Ran make-admin in staging.")
+    expect(f.out()).toBe(`revision=${REVISION}\n`)
   })
 
   test("exits 2 without exactly one known job, without the environment, or with options it does not take", async () => {
     for (const args of [
       ["run-job", "--environment", "staging"],
       ["run-job", "migrate", "--environment", "staging"],
-      ["run-job", "register", "bootstrap", "--environment", "staging"],
+      ["run-job", "register", "make-admin", "--environment", "staging"],
+      ["run-job", "bootstrap", "--environment", "staging"],
       ["run-job", "register"],
       ["run-job", "make-admin", "--environment", "staging"],
       ["run-job", "register", "--environment", "staging", "--image-tag", TAG],
@@ -146,15 +155,17 @@ describe("smoke", () => {
     if (path === "/auth/jwks") return Response.json({ keys: [{ kid: "k" }] })
     if (path.startsWith("/.well-known/oauth-protected-resource")) {
       const host = new URL(url).host
-      return Response.json({ resource: `https://${host}/mcp`, authorization_servers: [issuer] })
+      return Response.json({ resource: `https://${host}${path.slice("/.well-known/oauth-protected-resource".length)}`, authorization_servers: [issuer] })
     }
-    return Response.json({ status: "ok" })
+    return Response.json({ status: "ok", providers: ["e2e", "example"] })
   }
 
-  test("prints the table on standard output and exits 0 when everything passes", async () => {
+  test("checks the MCPs of the checkout's charts/answerable/mcps.json, prints the table on standard output and exits 0 when everything passes", async () => {
     const f = await fixture(() => undefined, { fetch: healthyFetch })
     expect(await main(["smoke", "--environment", "staging"], f.deps)).toBe(0)
-    expect(f.out()).toContain("PASSED: 8 of 8 checks")
+    expect(f.out()).toContain("PASSED: 9 of 9 checks")
+    expect(f.out()).toContain("e2e resource metadata")
+    expect(f.out()).toContain('status "ok", 2 MCPs served')
     expect(f.out()).toContain("Smoke test of staging: id.answerable-staging.uk")
     expect(f.err()).toBe("")
   })
@@ -170,7 +181,7 @@ describe("smoke", () => {
       now: () => clock,
     })
     expect(await main(["smoke", "--environment", "production", "--wait", "10", "--interval", "5"], f.deps)).toBe(1)
-    expect(f.out()).toContain("FAILED: 8 of 8 checks failed")
+    expect(f.out()).toContain("FAILED: 9 of 9 checks failed")
     expect(f.out()).toContain("id.answerable.org")
     expect(sleeps).toEqual([5000, 5000])
   })
@@ -225,7 +236,7 @@ describe("main", () => {
     const f = await fixture(() => {
       throw new Error("the runner broke")
     })
-    expect(await main(["run-job", "bootstrap", "--environment", "staging"], f.deps)).toBe(1)
+    expect(await main(["run-job", "register", "--environment", "staging"], f.deps)).toBe(1)
     expect(f.err()).toContain("unexpected error: ")
     expect(f.err()).toContain("the runner broke")
   })
@@ -236,7 +247,7 @@ describe("main", () => {
       error.stack = "Error\n    at somewhere"
       throw error
     })
-    expect(await main(["run-job", "bootstrap", "--environment", "staging"], f.deps)).toBe(1)
+    expect(await main(["run-job", "register", "--environment", "staging"], f.deps)).toBe(1)
     expect(f.err()).toContain("unexpected error: the runner broke\nError\n    at somewhere")
   })
 
@@ -244,7 +255,7 @@ describe("main", () => {
     const f = await fixture(() => {
       throw "plain text"
     })
-    expect(await main(["run-job", "bootstrap", "--environment", "staging"], f.deps)).toBe(1)
+    expect(await main(["run-job", "register", "--environment", "staging"], f.deps)).toBe(1)
     expect(f.err()).toContain("unexpected error: plain text")
   })
 })

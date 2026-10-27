@@ -15,6 +15,24 @@ https://{{ .host }}{{ with .root.Values.publicPort }}:{{ . }}{{ end }}
 {{ include "answerable.origin" (dict "root" . "host" .Values.hostnames.adminMcp) }}
 {{- end -}}
 
+{{/*
+The MCPs charts/answerable/mcps.json declares, as JSON that fromJsonArray reads back: each one's name, serve (toolbox, standalone or
+both), database (shared or own) and scopes, its manifest's, which the ops register Job gives a standalone MCP's resource. bun mcp writes
+the file from each MCP's mcp.json and manifest, with an object root: fromJson turns an array into an error map, which would read as no
+MCP at all, so anything but { "mcps": [...] } fails the render.
+*/}}
+{{- define "answerable.mcps" -}}
+{{- $file := .Files.Get "mcps.json" | fromJson -}}
+{{- if not (hasKey $file "mcps") -}}
+{{- fail "charts/answerable/mcps.json must be { \"mcps\": [...] }, as bun mcp writes it" -}}
+{{- end -}}
+{{- $mcps := list -}}
+{{- range $file.mcps -}}
+{{- $mcps = append $mcps (dict "name" .name "serve" .serve "database" .database "scopes" .scopes) -}}
+{{- end -}}
+{{- toJson $mcps -}}
+{{- end -}}
+
 {{/* Selector labels of a component: the stable subset of its labels. */}}
 {{- define "answerable.selectorLabels" -}}
 app.kubernetes.io/name: answerable
@@ -139,10 +157,8 @@ volumes:
 {{- define "answerable.opsStartDeployments" -}}
 {{- $start := list -}}
 {{- range $server := list (dict "name" "toolbox" "values" .Values.toolbox) (dict "name" "admin-mcp" "values" .Values.adminMcp) -}}
-{{- if $server.values.enabled -}}
 {{- $replicas := ternary $server.values.autoscaling.minReplicas $server.values.replicas (and $server.values.autoscaling.enabled true) -}}
 {{- $start = append $start (printf "%s=%v" $server.name $replicas) -}}
-{{- end -}}
 {{- end -}}
 {{- join "," $start -}}
 {{- end -}}

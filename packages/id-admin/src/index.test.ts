@@ -146,7 +146,10 @@ test("the request id and the idempotency key, chosen or random, stay the same wh
     id.revoke()
     await admin.manage("PATCH", toolboxPath, { body: { allowedScopes: ["toolbox"] }, requestId: "exec-4", idempotencyKey })
     expect(id.received).toHaveLength(2)
-    expect(id.received[1]).toEqual(id.received[0]!)
+    // The first went with the revoked token, which names no caller; the second with the new one.
+    const [first, again] = id.received.map(({ caller, ...sent }) => ({ caller, sent }))
+    expect([first!.caller, again!.caller]).toEqual([null, "toolbox-hub"])
+    expect(again!.sent).toEqual(first!.sent)
     expect(id.received[0]).toMatchObject({ requestId: "exec-4", idempotencyKey: idempotencyKey ?? expect.stringMatching(/^[0-9a-f-]{36}$/) })
   }
 })

@@ -10,6 +10,7 @@ hostnames:
   id: id.127-0-0-1.sslip.io
   toolbox: toolbox.127-0-0-1.sslip.io
   adminMcp: admin-mcp.127-0-0-1.sslip.io
+  mcp: mcp.127-0-0-1.sslip.io
 publicPort: "48443"
 
 # The stack writes what Terraform writes on Civo (infra/k8s/local/stack.ts): the Secret origin-tls, from its own CA; the
@@ -27,6 +28,7 @@ hostAliases:
       - id.127-0-0-1.sslip.io
       - toolbox.127-0-0-1.sslip.io
       - admin-mcp.127-0-0-1.sslip.io
+      - mcp.127-0-0-1.sslip.io
 
 id:
   replicas: 1

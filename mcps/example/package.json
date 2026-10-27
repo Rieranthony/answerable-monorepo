@@ -3,16 +3,20 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./provider": "./src/provider.ts"
+  },
   "scripts": {
-    "dev": "bun --hot src/server.ts",
-    "start": "bun src/server.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src --max-warnings 0"
+    "lint": "eslint src --max-warnings 0",
+    "mcp": "bun ../../scripts/mcp/cli.ts"
   },
   "dependencies": {
     "@answerable/mcp": "workspace:*",
-    "zod": "4.6.5"
+    "@answerable/mcp-postgres": "workspace:*",
+    "drizzle-orm": "0.45.4",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

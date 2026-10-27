@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
-import { createTestMcp, errorOf } from "@answerable/mcp/testing"
+import { errorOf } from "@answerable/mcp/testing"
+import { createTestMcp } from "@answerable/mcp-postgres/testing"
 import { provider } from "./provider"
 
 //#region refusal

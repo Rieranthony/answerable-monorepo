@@ -7,6 +7,7 @@ import { requireFresh } from "./fresh"
 import { organisationWrites } from "./organisations"
 import { roleOf, roles, type Role, type Roles } from "./roles"
 import { staffWrites } from "./staff"
+import { standaloneWrites } from "./standalone"
 import { toolboxWrites, type ToolboxAdmin } from "./toolbox"
 import { createOrganisations, memberId, missingMember, missingOrganisation, organizationId, scopes, type Writes } from "./writes"
 
@@ -46,10 +47,12 @@ type AdminProviderConfig = {
   freshSeconds: number
   /** The Toolbox's admin API; without it `toolbox_enable` answers `PRECONDITION_FAILED`. */
   toolbox?: ToolboxAdmin
+  /** The origin of the MCPs the Toolbox serves alone, whose `/<name>/mcp` is each one's resource. */
+  standaloneOrigin: string
 }
 
 /** The tools of the admin MCP and the least role each needs, reading and writing ID's admin API as the admin MCP's machine client. */
-export function createAdminProvider({ id, authority, platform, resource, issuer, freshSeconds, toolbox }: AdminProviderConfig) {
+export function createAdminProvider({ id, authority, platform, resource, issuer, freshSeconds, toolbox, standaloneOrigin }: AdminProviderConfig) {
   // Each tool with the least role that may use it; null: any member of the platform organisation.
   const minimums = new Map<string, Role | null>()
   const role = <Definition extends Tool | Mutation>(minimum: Role | null, tool: Definition) => {
@@ -62,7 +65,7 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
   const whoami = role(null, defineTool({
     name: "admin.whoami", title: "Who am I",
     description: "Read who you are to the Answerable admin MCP: your user, membership, organisation and host client, your staff role as Answerable ID says it on this call (team, admin or owner; null, with how to get one, when you hold none) and the tools that role lets you use. Call it first, and when a tool you expect is missing. Changes nothing.",
-    scopes, input: z.object({}),
+    scopes, input: z.object({}), example: {},
     output: z.object({
       userId: z.uuid(), membershipId: z.uuid(), organizationId: z.uuid().describe("The platform organisation"), clientId: z.string().describe("The OAuth client of the host you are using"),
       role: z.enum(roles).nullable().describe("team reads; admin also makes ordinary changes; owner also runs the critical operations; null: none"),
@@ -87,6 +90,7 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
     description: "List the organisations in Answerable ID, newest first, 20 per page by default and at most 100: id, slug, name and status. Filter by q, text in the name or slug, and by status. When has_more is true, pass next_cursor as cursor for the next page. Changes nothing; organisations_get reads one organisation's domains and SSO provider.",
     scopes,
     input: z.object({ q: z.string().trim().min(1).max(100).optional().describe("Text to find in the name or slug, in any case"), status: status.optional(), ...page }),
+    example: { q: "newco" },
     output: paged(organisation.pick({ id: true, slug: true, name: true, status: true, createdAt: true })),
     execute: (input, context) => list("/organizations", input, context),
   }))
@@ -210,7 +214,7 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
     name: "staff.list",
     description: "List the members of the Answerable platform organisation who can reach this admin MCP, newest first, 20 per page by default and at most 100, each with their staff role (team, admin or owner, or null when they hold none), read from Answerable ID whatever their groups are called. When has_more is true, pass next_cursor as cursor. Changes nothing.",
     scopes,
-    input: z.object(page),
+    input: z.object(page), example: {},
     output: paged(z.object({ memberId: z.uuid(), userId: z.uuid(), email: z.string(), name: z.string(), role: z.enum(roles).nullable() })),
     async execute(params, context) {
       const answer = await list<{ memberId: string; userId: string; email: string; name: string; scopes: string[] }>(`/organizations/${platform}/access`, { resource, ...params }, context,
@@ -223,9 +227,10 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
   const writes: Writes = { calls, role, platform, resource, fresh, ...createOrganisations({ calls, authority, platform, fresh }) }
   const provider = defineProvider({
     id: "admin", version: "2026-10-01",
+    description: "Answerable's staff-only admin MCP: organisations, members, groups, access, single sign-on, the audit log, the Toolbox and standalone MCPs in Answerable ID, each tool behind a staff role.",
     tools: [
       whoami, organisationsList, organisationsGet, membersList, membersGet, groupsList, accessList, auditList, ssoTest, staffList,
-      ...organisationWrites(writes), ...accessWrites(writes), ...toolboxWrites(writes, toolbox), ...staffWrites(writes),
+      ...organisationWrites(writes), ...accessWrites(writes, standaloneOrigin), ...toolboxWrites(writes, toolbox), ...standaloneWrites(writes, standaloneOrigin), ...staffWrites(writes),
     ],
   })
   /** The least role a tool needs; null: any member of the platform organisation. */

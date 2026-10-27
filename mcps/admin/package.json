@@ -1,10 +1,11 @@
 {
   "name": "@answerable/mcp-admin",
-  "version": "0.3.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "exports": {
     "./admin": "./src/admin.ts",
+    "./enablement": "./src/enablement.ts",
     "./migrate": "./src/db/migrate.ts",
     "./platform": "./src/platform.ts"
   },
@@ -16,14 +17,16 @@
     "lint": "eslint src scripts drizzle.config.ts --max-warnings 0",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "bun scripts/migrate.ts",
-    "db:test:migrate": "bun scripts/migrate.ts --test"
+    "db:test:migrate": "bun scripts/test-migrate.ts"
   },
   "dependencies": {
+    "@answerable/config": "workspace:*",
     "@answerable/id-admin": "workspace:*",
     "@answerable/mcp": "workspace:*",
+    "@answerable/mcp-platform": "workspace:*",
     "@answerable/mcp-postgres": "workspace:*",
     "drizzle-orm": "0.45.4",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

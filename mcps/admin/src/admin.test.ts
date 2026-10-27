@@ -5,7 +5,7 @@ import { errorOf, type TestMcp } from "@answerable/mcp/testing"
 import { connect, createEvidence } from "@answerable/mcp-postgres"
 import { rowsOf } from "@answerable/mcp-postgres/testing"
 import { createAdminMcp } from "./admin"
-import { createAdmin, resource, seed, type FakeId } from "./test/admin"
+import { createAdmin, resource, seed, standaloneOrigin, type FakeId } from "./test/admin"
 import { serving } from "./test/database"
 
 const login = await serving()
@@ -27,10 +27,10 @@ const names = async (client: Awaited<ReturnType<TestMcp["connect"]>>) => (await 
 const reads = ["organisations_list", "organisations_get", "members_list", "members_get", "groups_list", "access_list", "audit_list", "sso_test", "staff_list"]
 const commits = ["admin_commit", "admin_commit_confirmed"]
 // What each role lists, in the provider's order: the ordinary writes for admin, and the critical ones too for owner.
-const adminTools = ["admin_whoami", ...reads, "organisations_create", "organisations_update", "domains_add", "sso_set", "groups_create", "groups_addmember", "groups_dropmember", "access_grant", "access_revoke", "access_enable", "toolbox_enable", ...commits]
+const adminTools = ["admin_whoami", ...reads, "organisations_create", "organisations_update", "domains_add", "sso_set", "groups_create", "groups_addmember", "groups_dropmember", "access_grant", "access_revoke", "access_enable", "toolbox_enable", "standalone_enable", ...commits]
 const ownerTools = [
   "admin_whoami", ...reads, "organisations_create", "organisations_update", "domains_add", "sso_set", "organisations_disable", "organisations_enable",
-  "groups_create", "groups_addmember", "groups_dropmember", "access_grant", "access_revoke", "access_enable", "toolbox_enable", "staff_grant", "staff_revoke", ...commits,
+  "groups_create", "groups_addmember", "groups_dropmember", "access_grant", "access_revoke", "access_enable", "toolbox_enable", "standalone_enable", "staff_grant", "staff_revoke", ...commits,
 ]
 type Event = Record<"kind" | "outcome" | "actor_id" | "client_id" | "capability_identity" | "capability_version", string> &
   Record<"reason" | "error_code" | "upstream" | "execution_id" | "request_id", string | null> & { data: Record<string, unknown> }
@@ -64,7 +64,7 @@ test("a platform member without a role lists admin_whoami only, which says role 
   })
   await expect(client.callTool({ name: "organisations_list", arguments: {} })).rejects.toThrow("Tool organisations_list not found")
   expect((await events(platform)).map(({ kind, reason, capability_identity, data }) => [kind, reason, capability_identity, data])).toEqual([
-    ["capability.completed", null, "admin/admin.whoami", {}],
+    ["capability.completed", null, "admin/admin.whoami", { result_bytes: expect.any(Number) }],
     ["capability.denied", "role_below_minimum", "admin/organisations.list", { held: null, needed: "team" }],
   ])
 })
@@ -115,8 +115,8 @@ test("a token without the admin scope gets no tools, recorded as denied: missing
   expect((await events(platform)).map(({ reason, data }) => [reason, data])).toEqual([["missing_scope", { missing: ["admin"] }]])
 })
 
-test("when ID cannot say what a member may use, a list fails and a call answers UPSTREAM_UNAVAILABLE; nothing is served from memory", async () => {
-  const { staff, id } = await admin()
+test("when ID cannot say what a member may use, a list fails and a call answers UPSTREAM_UNAVAILABLE, a refusal in evidence; nothing is served from memory", async () => {
+  const { staff, id, platform } = await admin()
   const client = await staff(["admin", "answerable-owner"]).connect()
   expect(await names(client)).toEqual(ownerTools)
   const log = spyOn(console, "error").mockImplementation(() => {})
@@ -130,6 +130,9 @@ test("when ID cannot say what a member may use, a list fails and a call answers 
     }
     expect(log).toHaveBeenCalledWith("[admin] reading the role failed", expect.anything())
   } finally { log.mockRestore() }
+  expect((await events(platform)).map(({ kind, capability_identity, reason, error_code }) => [kind, capability_identity, reason, error_code])).toEqual([
+    ["capability.denied", "admin/admin.whoami", "authority_unavailable", "UPSTREAM_UNAVAILABLE"], ["capability.denied", "admin/admin.whoami", "authority_unavailable", "UPSTREAM_UNAVAILABLE"],
+  ])
 })
 
 test("every call leaves one evidence row on the platform organisation's chain, and every ID call it makes carries its execution id as x-request-id", async () => {
@@ -144,7 +147,7 @@ test("every call leaves one evidence row on the platform organisation's chain, a
   expect(rows).toEqual([
     {
       kind: "capability.completed", outcome: "success", actor_id: person.member.userId, client_id: "test-client", capability_identity: "admin/organisations.get",
-      capability_version: "2026-10-01", reason: null, error_code: null, data: {}, execution_id: expect.any(String), request_id: expect.any(String), upstream: "id",
+      capability_version: "2026-10-01", reason: null, error_code: null, data: { result_bytes: expect.any(Number) }, execution_id: expect.any(String), request_id: expect.any(String), upstream: "id",
     },
     expect.objectContaining({ kind: "capability.completed", outcome: "failure", error_code: "NOT_FOUND", execution_id: missing.request_id }),
   ])
@@ -161,14 +164,14 @@ test("every call leaves one evidence row on the platform organisation's chain, a
 test("health answers ok only while the database answers", async () => {
   const own = connect(login.url, { max: 1 })
   const id = createFakeId({ clientId: "admin-mcp" })
-  const server = createAdminMcp({ auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(id.config), platform: id.organizationId })
+  const server = createAdminMcp({ auth: { issuer: "https://id.test", resource }, db: own, id: createIdAdmin(id.config), platform: id.organizationId, freshSeconds: 1800, standaloneOrigin })
   const health = async () => {
     const response = await server.fetch(new Request("https://mcp.test/health"))
     return [response.status, await response.json()]
   }
-  expect(await health()).toEqual([200, { status: "ok" }])
+  expect(await health()).toEqual([200, { status: "ok", databases: { admin: "ok" }, providers: ["admin"] }])
   await own.$client.end()
-  expect(await health()).toEqual([503, { status: "unavailable" }])
+  expect(await health()).toEqual([503, { status: "unavailable", databases: { admin: "unavailable" }, providers: ["admin"] }])
 })
 
 type Client = Awaited<ReturnType<TestMcp["connect"]>>
@@ -215,7 +218,7 @@ test("a controlled intent commits only through admin_commit_confirmed with its s
   const [patch] = writesTo(id, `PATCH /api/admin/v1/organizations/${newco.id}`)
   const committing = (await events(platform)).findLast(row => row.capability_identity === "admin/commit_confirmed")!
   expect(patch).toEqual({
-    request: `PATCH /api/admin/v1/organizations/${newco.id}`, requestId: committing.execution_id, idempotencyKey: intent.intent_id, ifMatch: `"${newco.id}:1"`, ifNoneMatch: null,
+    request: `PATCH /api/admin/v1/organizations/${newco.id}`, requestId: committing.execution_id, idempotencyKey: intent.intent_id, ifMatch: `"${newco.id}:1"`, ifNoneMatch: null, caller: "admin-mcp",
   })
   expect(receipt).toMatchObject({ results: { organizationId: newco.id, operationId: answers.find(answer => answer.request === `PATCH /api/admin/v1/organizations/${newco.id}`)!.operationId }, idempotent_replay: false })
   const again = (await confirm(client, intent)).structuredContent
@@ -325,6 +328,7 @@ test("every write to the platform organisation is an owner's critical operation,
     ["access_revoke", { organizationId: platform, entitlementId: world.roles.owner.entitlement.id }],
     ["access_enable", { organizationId: platform, entitlementId: retired.id }],
     ["toolbox_enable", { organizationId: platform, hostClientIds: ["claude-code-toolbox"], providers: ["e2e"] }],
+    ["standalone_enable", { organizationId: platform, mcp: "acme", everyone: true }],
     ["organisations_disable", { organizationId: platform }],
     ["organisations_enable", { organizationId: platform }],
   ]

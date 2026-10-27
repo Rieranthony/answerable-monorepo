@@ -3,7 +3,7 @@ import { createIdAdmin } from "@answerable/id-admin"
 import { assertProviderConformance, createTestMcp, errorOf, type TestMcp } from "@answerable/mcp/testing"
 import { createAdminProvider } from "./provider"
 import { createRoles } from "./roles"
-import { createIdFake, createFakeToolbox, entraIssuer, resource, toolboxResource } from "./test/admin"
+import { createIdFake, createFakeToolbox, entraIssuer, resource, standaloneOrigin, toolboxResource } from "./test/admin"
 import { createToolboxAdmin } from "./toolbox"
 
 const toolbox = "https://toolbox.test/mcp"
@@ -15,7 +15,7 @@ function fixture(config: { clientSecret?: string } = {}) {
   const admin = createIdAdmin({ ...id.config, ...config })
   const { provider } = createAdminProvider({
     id: admin, authority: createRoles({ id: admin, platform, resource }), platform, resource, issuer: "https://id.test", freshSeconds: 1800,
-    toolbox: createToolboxAdmin({ id: admin, resource: toolboxResource, fetch: createFakeToolbox(id).fetch }),
+    toolbox: createToolboxAdmin({ id: admin, resource: toolboxResource, fetch: createFakeToolbox(id).fetch }), standaloneOrigin,
   })
   const newco = id.organisation(crypto.randomUUID(), { name: "Newco", slug: "newco" })
   const domain = id.domain(newco.id, "newco.example")
@@ -36,6 +36,9 @@ const world = fixture()
 const { id: ids, newco, engineers, platform } = world
 ids.resource(toolbox, ["e2e", "toolbox"])
 ids.client("claude-code-toolbox")
+// A standalone MCP the deploy registered: its resource and its Claude Code client.
+ids.resource(`${standaloneOrigin}/acme/mcp`, ["acme:read", "acme:write", "offline_access"])
+ids.client("claude-code-acme")
 const team = ids.group(platform, { slug: "support", name: "Support" })
 const teamRole = ids.entitlement(platform, { groupId: team.id, resource, scopes: ["answerable-team"] })
 const unique = () => crypto.randomUUID().slice(0, 8)
@@ -50,8 +53,7 @@ function staffer(joined: boolean) {
 assertProviderConformance(world.provider, {
   manifest: new URL("../manifest.json", import.meta.url),
   examples: {
-    "admin.whoami": {},
-    "organisations.list": { q: "newco" },
+    // The ids ID makes for this test's world, and records each mutation acts on: inputs no definition can hold.
     "organisations.get": { organizationId: newco.id },
     "members.list": { organizationId: newco.id },
     "members.get": { organizationId: newco.id, memberId: world.ada.id },
@@ -59,7 +61,6 @@ assertProviderConformance(world.provider, {
     "access.list": { organizationId: newco.id },
     "audit.list": { organizationId: newco.id },
     "sso.test": { organizationId: newco.id },
-    "staff.list": {},
     "organisations.create": () => ({ slug: `created-${unique()}`, name: "Created" }),
     "organisations.update": () => ({ organizationId: organisation(), name: "Renamed" }),
     "organisations.disable": () => ({ organizationId: organisation() }),
@@ -77,6 +78,7 @@ assertProviderConformance(world.provider, {
     "access.revoke": () => ({ organizationId: newco.id, entitlementId: ids.entitlement(newco.id, { memberId: person(), resource: toolbox, scopes: ["e2e"] }).id }),
     "access.enable": () => ({ organizationId: newco.id, entitlementId: ids.entitlement(newco.id, { memberId: person(), resource: toolbox, scopes: ["e2e"], status: "disabled" }).id }),
     "toolbox.enable": () => ({ organizationId: organisation(), hostClientIds: ["claude-code-toolbox"], providers: ["e2e"] }),
+    "standalone.enable": () => ({ organizationId: organisation(), mcp: "acme", everyone: true }),
     "staff.grant": () => ({ memberId: staffer(false), role: "team" }),
     "staff.revoke": () => ({ memberId: staffer(true), role: "team" }),
   },

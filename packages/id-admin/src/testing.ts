@@ -7,8 +7,6 @@ type Stored = Record<string, unknown> & { id: string }
 // What a command answered, kept under its Idempotency-Key as ID keeps its operation journal.
 type Operation = { fingerprint: string; id: string; status: number; outcome: "applied" | "noop"; reference: { type: string; id: string } }
 
-const issuer = "https://id.test"
-const adminResource = `${issuer}/api/admin`
 // ID's problem document (apps/id/src/http/problem.ts): `extra` adds fields such as `detail` and `retryable`, `headers` the response's own.
 const problem = (status: number, code: string, title: string, extra: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
   Response.json({ type: "about:blank", title, status, code, request_id: "test", ...extra }, { status, headers: { "Content-Type": "application/problem+json", ...headers } })
@@ -22,7 +20,7 @@ const unsupported = (request: Request, ...methods: string[]) => methods.includes
 const references: [RegExp, string][] = [
   [/^\/organizations\/[^/]+\/domains/, "domain"], [/^\/organizations\/[^/]+\/sso-provider/, "sso_provider"], [/^\/organizations\/[^/]+\/groups/, "group"],
   [/^\/organizations\/[^/]+\/entitlements/, "entitlement"], [/^\/organizations\/[^/]+\/capabilities/, "capability"], [/^\/organizations/, "organization"],
-  [/^\/resources\//, "resource"], [/^\/clients\//, "client"],
+  [/^\/resources/, "resource"], [/^\/clients/, "client"],
 ]
 function referenceOf(path: string, body: Record<string, unknown> | null) {
   const type = references.find(([pattern]) => pattern.test(path))![1]
@@ -54,25 +52,42 @@ const platformIssuer = (value: unknown) => value === "https://accounts.google.co
 
 /**
  * Answerable ID in memory, for the tests of a server that calls its admin API: `config` goes to `createIdAdmin`, the rest sets up what ID holds and
- * reads back what it received. The machine client is `clientId`, owned by the organisation `organizationId` (a fresh id), which is the platform
- * organisation unless `platform` is false; `resources` maps each audience its token endpoint issues for to the scopes it may carry. With
+ * reads back what it received. ID's origin is `issuer`, `https://id.test` unless the test says another. The machine client is `clientId`, owned by the
+ * organisation `organizationId` (a fresh id), which is the platform organisation unless `platform` is false; `resources` maps each audience its token endpoint issues for to the scopes it may carry. With
  * `operationInProgress`, a write whose method, path and Idempotency-Key a running write holds answers `409 operation_in_progress`, as ID does;
  * without it, the second write runs after the first. A method the fake does not implement on a route answers `405`.
+ *
+ * Staff set a service up through the admin API: `rootSecret` is a bearer that works as a platform administrator's until `lockRoot(true)`, or until a
+ * member joins the platform organisation's `platform-admins` group without `breakGlass`, after which ID answers it `403 root_locked`; `staffToken`
+ * makes another bearer one. `POST /resources` and `POST /clients` create a resource or a client (a `client_secret_basic` client's secret is
+ * answered once, and `rotate-secret` answers another); a created client gets a `client_credentials` token for an audience it is linked to and
+ * holds a capability for, on ID's own admin resource without registration. Without `microsoft`, ID has no Microsoft platform application, and an
+ * Entra SSO provider with platform credentials is `409 platform_application_missing`. A command's `Idempotency-Key` is its caller's, as ID keys
+ * its journal by actor: the root secret, a machine client or a staff token.
  */
 export function createFakeId({
-  expiresIn = 3600, pageSize = 200, clientId = "toolbox-hub", clientSecret = "hub-secret", platform = true, operationInProgress = false,
-  resources: audiences = { [adminResource]: ["platform:read", "platform:read platform:write"] } as Record<string, readonly string[]>,
+  issuer = "https://id.test", expiresIn = 3600, pageSize = 200, clientId = "toolbox-hub", clientSecret = "hub-secret", platform = true, operationInProgress = false, rootSecret = undefined as string | undefined,
+  breakGlass = false, microsoft = true,
+  resources: audiences = { [`${issuer}/api/admin`]: ["platform:read", "platform:read platform:write"] } as Record<string, readonly string[]>,
 } = {}) {
+  const adminResource = `${issuer}/api/admin`
   const organizationId = crypto.randomUUID()
   const access = new Map<string, Target[]>()
   const events: Stored[] = []
   const requests: string[] = []
-  // The scope and audience each token was issued with, and the scopes each token request asked for.
-  const tokens = new Map<string, { scope: string; resource: string }>()
+  // The scope and audience each token was issued with, and the machine client it was issued to; and the scopes each token request asked for.
+  const tokens = new Map<string, { scope: string; resource: string; client?: string }>()
   const asked: string[] = []
-  const received: { request: string; requestId: string | null; idempotencyKey: string | null; ifMatch: string | null; ifNoneMatch: string | null }[] = []
+  const received: { request: string; requestId: string | null; idempotencyKey: string | null; ifMatch: string | null; ifNoneMatch: string | null; caller: string | null }[] = []
+  // The answer of a route a test makes fail, by method and path under the admin API.
+  const failures = new Map<string, { status: number; code: string }>()
+  // Who a bearer is: the root secret, a machine client by its id, or nobody known, as a staff token is.
+  const callerOf = (bearer: string) => (rootSecret !== undefined && bearer === rootSecret ? "root" : tokens.get(bearer)?.client ?? null)
   const resources = new Map<string, Resource>()
   const clients = new Map<string, Stored>()
+  // The secret of each client created through the API, which ID shows once; and the clients linked to ID's own admin resource, which is not registered.
+  const secrets = new Map<string, string>()
+  const adminLinks = new Set<string>()
   const organisations = new Map<string, Stored>()
   const capabilities = new Map<string, Row[]>()
   const entitlements = new Map<string, Row[]>()
@@ -89,6 +104,7 @@ export function createFakeId({
   let issued = 0
   let down = false
   let gone = false
+  let rootLocked = false
   let latency = 0
   let failing: { remaining: number; status: number } | undefined
   const rows = <T>(table: Map<string, T[]>, organisation: string) => table.get(organisation) ?? table.set(organisation, []).get(organisation)!
@@ -105,7 +121,8 @@ export function createFakeId({
   const matching = <T extends Record<string, unknown>>(items: T[], url: URL, fields: string[]) =>
     items.filter(row => fields.every(field => !url.searchParams.has(field) || String(row[field]) === url.searchParams.get(field)))
   function outsideVocabulary(resource: unknown, scopes: string[]) {
-    return typeof resource === "string" && scopes.some(scope => !resources.get(resource)?.allowedScopes.includes(scope))
+    const allowed = resource === adminResource ? ["platform:read", "platform:write", "platform:users"] : resources.get(String(resource))?.allowedScopes
+    return typeof resource === "string" && scopes.some(scope => !allowed?.includes(scope))
   }
   // ID's revision preconditions (http/admin/revision.ts): If-Match names the revision a write expects, If-None-Match: * that nothing exists yet.
   function precondition(request: Request, current: Stored | undefined, put = false) {
@@ -170,6 +187,8 @@ export function createFakeId({
     const row = { id: Bun.randomUUIDv7(), revision: 1, organizationId: organisation, groupId, memberId, validFrom: null, validUntil: null, createdAt: now(), ...window }
     assignments(groupId).set(memberId, row)
     changes++
+    // A person who holds platform:write locks the root secret, unless break glass keeps it working.
+    if (platform && organisation === organizationId && group.slug === "platform-admins" && !breakGlass) rootLocked = true
     return tagged(row, 201)
   }
   function organisationRoute(request: Request, url: URL, organisation: string, rest: string, body: Record<string, unknown>) {
@@ -214,6 +233,9 @@ export function createFakeId({
         const oidc = (body.oidc ?? { credentials: "platform" }) as Record<string, unknown>
         if (oidc.credentials === "platform" && !platformIssuer(body.issuer)) {
           return problem(400, "platform_credentials_unsupported", "Platform credentials require a Google Workspace or Microsoft Entra issuer")
+        }
+        if (oidc.credentials === "platform" && !microsoft && String(body.issuer).startsWith("https://login.microsoftonline.com/")) {
+          return problem(409, "platform_application_missing", "Configure MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET (or the Google pair) before assigning the platform application")
         }
         const refused = precondition(request, provider, true)
         if (refused) return refused
@@ -280,23 +302,38 @@ export function createFakeId({
     }
     const group = /^\/groups\/([^/]+)(\/.*)?$/.exec(rest)
     if (group) return groupRoute(request, organisation, group[1]!, group[2] ?? "", body)
+    const capability = /^\/capabilities\/([^/]+)$/.exec(rest)
     const entitlement = /^\/entitlements\/([^/]+)(\/disable|\/enable)?$/.exec(rest)
-    if (entitlement) {
-      const refusedMethod = entitlement[2] ? unsupported(request, "POST") : unsupported(request, "GET")
+    const kept = capability ?? entitlement
+    if (kept) {
+      const action = entitlement?.[2]
+      const refusedMethod = action ? unsupported(request, "POST") : unsupported(request, "GET", "PATCH")
       if (refusedMethod) return refusedMethod
-      const found = rows(entitlements, organisation).find(item => item.id === entitlement[1])
+      const found = rows(capability ? capabilities : entitlements, organisation).find(item => item.id === kept[1])
       if (!found) return notFound()
-      if (!entitlement[2]) return tagged(found)
-      change(found, { status: entitlement[2] === "/disable" ? "disabled" : "active" })
-      return Response.json(found)
+      if (action) {
+        change(found, { status: action === "/disable" ? "disabled" : "active" })
+        return Response.json(found)
+      }
+      if (request.method === "GET") return tagged(found)
+      const refused = precondition(request, found)
+      if (refused) return refused
+      // A capability's status changes with its scopes and window; an entitlement's only through disable and enable.
+      const fields = Object.fromEntries(["scopes", "validFrom", "validUntil", ...(capability ? ["status"] : [])].filter(field => field in body).map(field => [field, field === "scopes" ? [...new Set(body.scopes as string[])].sort() : body[field]]))
+      if (outsideVocabulary(found.resource, (fields.scopes ?? []) as string[])) return problem(400, "validation_failed", "Capability scopes exceed the client/resource ceiling or mix login and resource scopes")
+      change(found, fields)
+      return tagged(found)
     }
   }
   async function admin(request: Request, url: URL, path: string) {
-    const token = tokens.get(request.headers.get("Authorization")!.slice(7))!
+    const bearer = request.headers.get("Authorization")!.slice(7)
+    const token = tokens.get(bearer)!
     if (token.resource !== adminResource) return invalidToken()
     const write = request.method !== "GET"
     if (write && !token.scope.includes("platform:write"))
       return problem(403, "insufficient_scope", "Current command authority is required", {}, { "WWW-Authenticate": 'Bearer error="insufficient_scope"' })
+    const fails = failures.get(`${request.method} ${path}`)
+    if (fails) return problem(fails.status, fails.code, "The fake ID failed this route")
     const body = write && request.headers.get("Content-Type") ? await request.json() as Record<string, unknown> : {}
     if (path === "/me") {
       return unsupported(request, "GET") ?? Response.json({
@@ -313,7 +350,7 @@ export function createFakeId({
       failing = undefined
       return problem(status, "database_busy", "Database is busy", { detail: "Retry with the same idempotency key and input." }, { "Retry-After": "1" })
     }
-    const name = `${request.method} ${path} ${key}`
+    const name = `${callerOf(bearer) ?? bearer} ${request.method} ${path} ${key}`
     const fingerprint = JSON.stringify([body, request.headers.get("If-Match"), request.headers.get("If-None-Match")])
     const done = journal.get(name)
     if (done && done.fingerprint !== fingerprint) return problem(409, "idempotency_key_reused", "Idempotency key was used for different input", { retryable: false })
@@ -333,6 +370,15 @@ export function createFakeId({
     return response
   }
   async function route(request: Request, url: URL, path: string, body: Record<string, unknown>) {
+    if (path === "/resources") {
+      const refusedMethod = unsupported(request, "POST")
+      if (refusedMethod) return refusedMethod
+      if (typeof body.identifier !== "string" || typeof body.name !== "string" || !Array.isArray(body.allowedScopes)) return invalid("identifier")
+      if (resources.has(body.identifier) || body.identifier === adminResource) return conflict("oauth_resources_identifier_unique")
+      changes++
+      const created = addResource(body.identifier, [...new Set(body.allowedScopes as string[])].sort(), { name: body.name, accessTokenTtl: body.accessTokenTtl ?? null, refreshTokenTtl: body.refreshTokenTtl ?? null })
+      return Response.json({ identifier: body.identifier, ...created }, { status: 201, headers: { ETag: etag(created) } })
+    }
     const resource = /^\/resources\/([^/]+)$/.exec(path)
     if (resource) {
       const refusedMethod = unsupported(request, "GET", "PATCH")
@@ -343,29 +389,60 @@ export function createFakeId({
       if (request.method === "GET") return shown()
       const ifMatch = request.headers.get("If-Match")
       if (ifMatch && ifMatch !== etag(found)) return problem(412, "revision_mismatch", "Configuration revision does not match")
-      const allowedScopes = [...new Set(body.allowedScopes as string[])].sort()
-      if (JSON.stringify(allowedScopes) !== JSON.stringify(found.allowedScopes)) {
-        found.allowedScopes = allowedScopes
-        found.revision++
-        changes++
-      }
+      const fields = Object.fromEntries(["name", "accessTokenTtl", "refreshTokenTtl", "allowedScopes"].filter(field => field in body).map(field => [field, field === "allowedScopes" ? [...new Set(body[field] as string[])].sort() : body[field]]))
+      change(found, fields)
       return shown()
+    }
+    if (path === "/clients") {
+      const refusedMethod = unsupported(request, "POST")
+      if (refusedMethod) return refusedMethod
+      if (typeof body.name !== "string" || typeof body.tokenEndpointAuthMethod !== "string") return invalid("name")
+      const created = addClient(typeof body.clientId === "string" ? body.clientId : crypto.randomUUID(), body)
+      if (!created) return conflict("oauth_clients_client_id_unique")
+      changes++
+      return Response.json({ ...created.row, resources: [], ...(created.secret ? { clientSecret: created.secret } : {}) }, { status: 201, headers: { ETag: etag(created.row) } })
+    }
+    const rotation = /^\/clients\/([^/]+)\/rotate-secret$/.exec(path)
+    if (rotation) {
+      const refusedMethod = unsupported(request, "POST")
+      if (refusedMethod) return refusedMethod
+      if (!secrets.has(rotation[1]!)) return notFound()
+      const rotated = `rotated-${crypto.randomUUID()}`
+      secrets.set(rotation[1]!, rotated)
+      changes++
+      return Response.json({ clientId: rotation[1], clientSecret: rotated })
     }
     const client = /^\/clients\/([^/]+)$/.exec(path)
     if (client) {
+      const refusedMethod = unsupported(request, "GET", "PATCH")
+      if (refusedMethod) return refusedMethod
       const found = clients.get(decodeURIComponent(client[1]!))
-      const linked = [...resources].filter(([, row]) => row.clients.includes(String(found?.clientId))).map(([identifier]) => identifier)
-      return unsupported(request, "GET") ?? (found ? tagged({ ...found, resources: linked }) : notFound())
+      if (!found) return notFound()
+      const linked = [...resources].filter(([, row]) => row.clients.includes(String(found.clientId))).map(([identifier]) => identifier)
+      if (adminLinks.has(String(found.clientId))) linked.push(adminResource)
+      if (request.method === "PATCH") {
+        const refused = precondition(request, found)
+        if (refused) return refused
+        change(found, Object.fromEntries(["name", "redirectUris", "scopes", "clientCredentialsScopes"].filter(field => field in body).map(field => [field, body[field]])))
+      }
+      return tagged({ ...found, resources: linked })
     }
     const link = /^\/clients\/([^/]+)\/resources\/([^/]+)$/.exec(path)
     if (link) {
       const refusedMethod = unsupported(request, "PUT")
       if (refusedMethod) return refusedMethod
-      const found = resources.get(decodeURIComponent(link[2]!))
-      if (!clients.has(link[1]!) || !found) return problem(404, "not_found", "Client or resource not found")
-      const created = !found.clients.includes(link[1]!)
+      const target = decodeURIComponent(link[2]!)
+      const found = resources.get(target)
+      const linking = clients.get(link[1]!)
+      // ID's admin resource is its own and needs no registration.
+      if (!linking || (!found && target !== adminResource)) return problem(404, "not_found", "Client or resource not found")
+      const created = found ? !found.clients.includes(link[1]!) : !adminLinks.has(link[1]!)
       if (created) {
-        found.clients.push(link[1]!)
+        if (found) found.clients.push(link[1]!)
+        else adminLinks.add(link[1]!)
+        // A link moves the revision of both rows it joins (apps/id/drizzle/0001_invariants.sql, touch_client_resource_revision).
+        if (found) found.revision++
+        linking.revision = Number(linking.revision) + 1
         changes++
       }
       return Response.json({ created }, { status: created ? 201 : 200 })
@@ -433,27 +510,58 @@ export function createFakeId({
       if (gone) throw new TypeError("Unable to connect")
       if (url.pathname.startsWith("/api/admin/v1")) {
         const header = (name: string) => request.headers.get(name)
-        received.push({ request: `${request.method} ${url.pathname}${url.search}`, requestId: header("x-request-id"), idempotencyKey: key, ifMatch: header("If-Match"), ifNoneMatch: header("If-None-Match") })
+        const bearer = header("Authorization")?.slice(7) ?? ""
+        received.push({ request: `${request.method} ${url.pathname}${url.search}`, requestId: header("x-request-id"), idempotencyKey: key, ifMatch: header("If-Match"), ifNoneMatch: header("If-None-Match"), caller: callerOf(bearer) })
       }
       if (down) return new Response("Unavailable", { status: 503 })
+      if (url.pathname === "/healthz") return Response.json({ status: "ok" })
       if (busy) return problem(409, "operation_in_progress", "Operation is in progress", { detail: "Retry with the same key and input.", retryable: true })
       if (request.method === "POST" && url.pathname === "/auth/oauth2/token") {
         const form = new URLSearchParams(await request.text())
-        const basic = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`
-        if (request.headers.get("Authorization") !== basic) return Response.json({ error: "invalid_client" }, { status: 401 })
+        const [who = "", secret = ""] = Buffer.from(request.headers.get("Authorization")?.replace(/^Basic /, "") ?? "", "base64").toString().split(":")
+        const hub = who === clientId && secret === clientSecret
+        if (!hub && secrets.get(who) !== secret) return Response.json({ error: "invalid_client" }, { status: 401 })
         const scope = form.get("scope")!
         const resource = form.get("resource")!
-        if (form.get("grant_type") !== "client_credentials" || !audiences[resource]?.includes(scope)) return Response.json({ error: "invalid_request" }, { status: 400 })
+        if (form.get("grant_type") !== "client_credentials" || !(hub ? audiences[resource]?.includes(scope) : mayAsk(who, resource, scope))) return Response.json({ error: "invalid_request" }, { status: 400 })
         asked.push(scope)
-        tokens.set(`machine-${++issued}`, { scope, resource })
+        tokens.set(`machine-${++issued}`, { scope, resource, client: who })
         return Response.json({ access_token: `machine-${issued}`, token_type: "Bearer", expires_in: expiresIn })
       }
-      if (!tokens.has(request.headers.get("Authorization")?.slice(7) ?? "")) return invalidToken()
+      const bearer = request.headers.get("Authorization")?.slice(7) ?? ""
+      if (rootLocked && bearer === rootSecret) return problem(403, "root_locked", "Root access is locked", { detail: "A platform administrator exists; sign in with a staff token." })
+      if (!tokens.has(bearer)) return invalidToken()
       const path = url.pathname.replace(/^\/api\/admin\/v1/, "")
       return path === url.pathname ? notFound() : admin(request, url, path)
     } finally {
       if (command && !busy) running.delete(command)
     }
+  }
+  // Whether a created client holds what ID checks for a client_credentials token: a link to the audience, and a capability that covers the scopes.
+  function mayAsk(client: string, resource: string, scope: string) {
+    const linked = resource === adminResource ? adminLinks.has(client) : resources.get(resource)?.clients.includes(client)
+    return Boolean(linked) && [...capabilities.values()].flat().some(row => row.clientId === client && row.resource === resource && row.grantKind === "client_credentials" && scope.split(" ").every(each => row.scopes.includes(each)))
+  }
+  function addResource(identifier: string, allowedScopes: string[], fields: Record<string, unknown> = {}) {
+    const row: Resource = {
+      classification: "platform_shared", organizationId: null, id: crypto.randomUUID(), name: identifier, accessTokenTtl: null, refreshTokenTtl: null,
+      allowedScopes, disabled: false, revision: 1, createdAt: now(), updatedAt: now(), clients: [], ...fields,
+    }
+    resources.set(identifier, row)
+    return row
+  }
+  // A client with every optional field unset; `fields` set the ones it was registered with. A client_secret_basic client has a secret, which the creation shows once.
+  function addClient(id: string, fields: Record<string, unknown> = {}) {
+    if (clients.has(id)) return undefined
+    const unset = Object.fromEntries(["organizationId", "uri", "tokenEndpointAuthMethod", "jwks", "jwksUri", "grantTypes", "scopes", "clientCredentialsScopes", "skipConsent"].map(field => [field, null]))
+    const secret = fields.tokenEndpointAuthMethod === "client_secret_basic" ? `secret-${crypto.randomUUID()}` : undefined
+    const row = {
+      ...unset, id: crypto.randomUUID(), name: id, revision: 1, authorizationVersion: 1, hasClientSecret: true, redirectUris: [] as unknown,
+      disabled: false, createdAt: now(), updatedAt: now(), ...fields, clientId: id,
+    }
+    clients.set(id, row)
+    if (secret) secrets.set(id, secret)
+    return { row, secret }
   }
   // Store a row and return it, so that a test can change it as ID would.
   function add<T extends Stored>(table: Map<string, Stored[]>, organisation: string, row: T) {
@@ -466,6 +574,7 @@ export function createFakeId({
     return row
   }
   organisation(organizationId, platform ? { name: "Answerable", slug: "answerable" } : {})
+  if (rootSecret) tokens.set(rootSecret, { scope: "platform:read platform:write", resource: adminResource })
   return {
     config: { issuer, adminResource, clientId, clientSecret, fetch },
     /** The machine client's organisation: the platform organisation unless `platform` was false. */
@@ -476,7 +585,7 @@ export function createFakeId({
     scopesAsked: asked,
     /**
      * Every request to the admin API, in order, with the `x-request-id`, `Idempotency-Key`, `If-Match` and `If-None-Match` it carried (`null` when it
-     * carried none); the ones refused with `401` too.
+     * carried none), and its `caller`: `root`, a machine client's id, or `null` for any other bearer; the ones refused with `401` too.
      */
     received,
     /** The audience and scope a token was issued with, or undefined when this ID never issued it: how a fake of another service checks a bearer. */
@@ -498,24 +607,28 @@ export function createFakeId({
     slow(ms: number) { latency = ms },
     /** Revoke every token issued so far. */
     revoke() { tokens.clear() },
+    /** Lock the root secret, as ID does when a person becomes a platform administrator: ID then answers it `403 root_locked`. */
+    lockRoot(value: boolean) { rootLocked = value },
+    /** Whether ID refuses the root secret now. */
+    rootLocked: () => rootLocked,
+    /** Make `token` a staff token: a bearer of a platform administrator, who can write to the admin API. */
+    staffToken(token: string) { tokens.set(token, { scope: "platform:read platform:write", resource: adminResource }) },
     /** Register a resource with the scopes it allows, named after its identifier, as staff do; its linked clients and revision are read back. */
     resource(identifier: string, allowedScopes: string[]) {
-      resources.set(identifier, {
-        classification: "platform_shared", organizationId: null, id: crypto.randomUUID(), name: identifier, accessTokenTtl: null, refreshTokenTtl: null,
-        allowedScopes, disabled: false, revision: 1, createdAt: now(), updatedAt: now(), clients: [],
-      })
+      addResource(identifier, allowedScopes)
     },
     /** What ID holds for a resource. */
     resourceOf: (identifier: string) => resources.get(identifier)!,
     /** Register a client, as staff do. */
     client(clientId: string) {
-      const unset = Object.fromEntries([
-        "organizationId", "uri", "tokenEndpointAuthMethod", "jwks", "jwksUri", "grantTypes", "scopes", "clientCredentialsScopes", "skipConsent",
-      ].map(field => [field, null]))
-      clients.set(clientId, {
-        ...unset, id: crypto.randomUUID(), clientId, name: clientId, revision: 1, authorizationVersion: 1, hasClientSecret: true, redirectUris: [],
-        disabled: false, createdAt: now(), updatedAt: now(),
-      })
+      addClient(clientId)
+    },
+    /** What ID holds for a client: its row, the resources it is linked to, ID's admin resource among them, and its secret; undefined when it has none. */
+    clientOf(id: string) {
+      const row = clients.get(id)
+      if (!row) return undefined
+      const linked = [...resources].filter(([, resource]) => resource.clients.includes(id)).map(([identifier]) => identifier)
+      return { ...row, resources: adminLinks.has(id) ? [...linked, adminResource] : linked, secret: secrets.get(id) } as Stored & { resources: string[]; secret: string | undefined }
     },
     /** Create an organisation, or change the fields of one, and return its row. */
     organisation,
@@ -527,10 +640,14 @@ export function createFakeId({
       id: Bun.randomUUIDv7(), revision: 1, organizationId, memberId: null, groupId: null, clientId: null, resource: null, status: "active",
       validFrom: null, validUntil: null, createdAt: now(), updatedAt: now(), ...fields,
     }) as Row,
+    /** An organisation's domains, in the order added. */
+    domainsOf: (organizationId: string) => rows(domains, organizationId),
     /** Add a domain to an organisation and return its row. */
     domain: (organizationId: string, domain: string, fields: Record<string, unknown> = {}) => add(domains, organizationId, {
       id: Bun.randomUUIDv7(), organizationId, domain, status: "active", createdAt: now(), updatedAt: now(), ...fields,
     }),
+    /** An organisation's SSO provider, or undefined when it has none. */
+    ssoProviderOf: (organizationId: string) => providers.get(organizationId),
     /** Set an organisation's SSO provider, signing in with Answerable's platform application unless `fields` say otherwise, and return its row. */
     ssoProvider(organizationId: string, fields: Record<string, unknown> & { issuer: string; domain: string }) {
       const row = { id: Bun.randomUUIDv7(), revision: 1, organizationId, providerId: `sso-${organizationId}`, oidc: { credentials: "platform", hasClientSecret: false }, createdAt: now(), updatedAt: now(), ...fields }
@@ -558,14 +675,18 @@ export function createFakeId({
     /** Advance the revision of the row with this id, or of the resource with this identifier, as another writer's change would. */
     revise(id: string) {
       const stored = [
-        ...organisations.values(), ...providers.values(), ...[...groups.values(), ...entitlements.values(), ...capabilities.values()].flat(),
+        ...organisations.values(), ...providers.values(), ...clients.values(), ...[...groups.values(), ...entitlements.values(), ...capabilities.values()].flat(),
         ...[...joined.values()].flatMap(table => [...table.values()]),
       ]
       const row = stored.find(item => item.id === id) ?? resources.get(id) ?? [...resources.values()].find(item => item.id === id)
       if (!row) throw new Error(`The fake ID holds no row ${id}`)
       row.revision = Number(row.revision) + 1
     },
+    /** Forget every command's receipt, as if a caller that never sent them sent the next ones. */
+    forgetCommands() { journal.clear() },
     /** Make the `after`th write from now on answer `status` with a problem, once. */
     failWrite(after: number, status = 503) { failing = { remaining: after, status } },
+    /** Make every call of `request`, `METHOD /path` under the admin API without its query, answer `status` with problem `code`. */
+    fail(request: string, status: number, code = "internal_error") { failures.set(request, { status, code }) },
   }
 }

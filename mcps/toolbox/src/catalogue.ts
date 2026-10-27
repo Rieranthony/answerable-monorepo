@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { manifest, type Provider } from "@answerable/mcp"
 import type { Executor } from "@answerable/mcp-postgres"
 import { z } from "zod"
@@ -17,39 +17,46 @@ type CatalogueEntry = { enabled: boolean; overrides: Overrides }
 export type Catalogue = ReadonlyMap<string, CatalogueEntry>
 
 /**
- * Store each provider's id and every capability of its manifest at its version. A capability already stored at the same version with another
- * kind, risk, input or output refuses the whole ingest, naming it: a contract change needs a new version. Titles and descriptions update in place.
- * A capability the provider never had before stays off for every organisation that has the provider enabled: its identity joins their `overrides.disabled`.
+ * Store each provider's id and every capability of its manifest at its version, in one transaction, with one read and one write per provider.
+ * A capability already stored at the same version with another kind, risk, input or output refuses the whole ingest, naming it: a contract change
+ * needs a new version. Titles and descriptions update in place. A capability the provider never had before stays off for every organisation that
+ * has the provider enabled: its identity joins their `overrides.disabled`.
  */
 export async function ingest(db: Executor, providers: readonly Provider[]) {
   await db.transaction(async tx => {
     for (const provider of providers) {
-      const contract = manifest(provider)
-      await tx.insert(providerRows).values({ id: provider.id }).onConflictDoNothing()
-      const known = new Set((await tx.select({ identity: capabilities.identity }).from(capabilities).where(eq(capabilities.provider_id, provider.id))).map(row => row.identity))
-      for (const tool of contract.tools) {
-        if (tool.kind === "commit") continue
-        const risk = tool.kind === "mutate" ? tool.risk : null
-        const [stored] = await tx.select({
-          kind: sql<boolean>`${capabilities.kind} <> ${tool.kind}`, risk: sql<boolean>`${capabilities.risk} is distinct from ${risk}`,
-          input: sql<boolean>`${capabilities.input} <> ${JSON.stringify(tool.input)}::jsonb`, output: sql<boolean>`${capabilities.output} <> ${JSON.stringify(tool.output)}::jsonb`,
-        }).from(capabilities).where(and(eq(capabilities.identity, tool.identity), eq(capabilities.version, tool.version)))
-        const changed = Object.entries(stored ?? {}).filter(([, differs]) => differs).map(([field]) => field)
+      const tools = manifest(provider).tools.flatMap(tool => tool.kind === "commit" ? [] : [{
+        identity: tool.identity, version: tool.version, kind: tool.kind, risk: tool.kind === "mutate" ? tool.risk : null,
+        title: tool.title ?? null, description: tool.description, input: tool.input, output: tool.output,
+      }])
+      const json = JSON.stringify(tools)
+      // Every capability the provider has stored, at any version, and for one this manifest has at the same version, what differs.
+      const { rows: stored } = await tx.execute<{ identity: string; version: string; kind: boolean | null; risk: boolean | null; input: boolean | null; output: boolean | null }>(sql`
+        select c.identity, c.version, c.kind <> t.kind as kind, c.risk is distinct from t.risk and t.identity is not null as risk, c.input <> t.input as input, c.output <> t.output as output
+        from ${capabilities} c left join jsonb_to_recordset(${json}::jsonb) as t(identity text, version text, kind text, risk text, input jsonb, output jsonb)
+          on t.identity = c.identity and t.version = c.version
+        where c.provider_id = ${provider.id}`)
+      for (const tool of tools) {
+        const found = stored.find(row => row.identity === tool.identity && row.version === tool.version)
+        const changed = (["kind", "risk", "input", "output"] as const).filter(field => found?.[field])
         if (changed.length) {
           throw new Error(`Capability ${tool.identity} version ${tool.version} changed its ${changed.join(" and ")} without a new version; give the tool a new version (YYYY-MM-DD) in its definition or its provider`)
         }
-        await tx.insert(capabilities)
-          .values({ provider_id: provider.id, identity: tool.identity, version: tool.version, kind: tool.kind, risk, title: tool.title ?? null, description: tool.description, input: tool.input, output: tool.output })
-          .onConflictDoUpdate({ target: [capabilities.identity, capabilities.version], set: { title: sql`excluded.title`, description: sql`excluded.description` } })
       }
-      const added = contract.tools.filter(tool => tool.kind !== "commit" && !known.has(tool.identity)).map(tool => tool.identity)
-      if (added.length) {
-        await tx.update(organisationCatalogue).set({
-          updated_at: sql`now()`,
-          overrides: sql`jsonb_set(${organisationCatalogue.overrides}, '{disabled}', (
-            select coalesce(jsonb_agg(identity order by identity), '[]') from (select distinct jsonb_array_elements_text(${organisationCatalogue.overrides} -> 'disabled' || ${JSON.stringify(added)}::jsonb) as identity) as merged))`,
-        }).where(and(eq(organisationCatalogue.provider_id, provider.id), eq(organisationCatalogue.enabled, true)))
-      }
+      const known = new Set(stored.map(row => row.identity))
+      const added = [...new Set(tools.map(tool => tool.identity).filter(identity => !known.has(identity)))].sort()
+      // The provider's row, its capabilities and, when it gained one, the catalogue entries that have it enabled, in one statement.
+      await tx.execute(sql`
+        with provider as (insert into ${providerRows} (id) values (${provider.id}) on conflict do nothing),
+        stored as (
+          insert into ${capabilities} (provider_id, identity, version, kind, risk, title, description, input, output)
+          select ${provider.id}, t.identity, t.version, t.kind, t.risk, t.title, t.description, t.input, t.output
+          from jsonb_to_recordset(${json}::jsonb) as t(identity text, version text, kind text, risk text, title text, description text, input jsonb, output jsonb)
+          on conflict (identity, version) do update set title = excluded.title, description = excluded.description
+        )
+        update ${organisationCatalogue} set updated_at = now(), overrides = jsonb_set(${organisationCatalogue.overrides}, '{disabled}', (
+          select coalesce(jsonb_agg(identity order by identity), '[]') from (select distinct jsonb_array_elements_text(${organisationCatalogue.overrides} -> 'disabled' || ${JSON.stringify(added)}::jsonb) as identity) as merged))
+        where ${organisationCatalogue.provider_id} = ${provider.id} and ${organisationCatalogue.enabled} and ${added.length > 0}`)
     }
   })
 }

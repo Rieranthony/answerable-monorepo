@@ -1,4 +1,4 @@
-{{- /* The admin MCP. Configuration: apps/web/content/docs/admin/index.mdx. It waits at zero replicas until ops register has created its machine client in ID. */ -}}
+{{- /* The admin MCP, from the mcps image. Configuration: apps/web/content/docs/admin/index.mdx. It waits at zero replicas until ops register has created its machine client in ID. */ -}}
 {{- define "answerable.adminMcpEnv" -}}
 - name: ADMIN_ID_ISSUER
   value: {{ include "answerable.idUrl" . | quote }}
@@ -8,16 +8,18 @@
   value: {{ printf "%s/api/admin" (include "answerable.idUrl" .) | quote }}
 - name: ADMIN_TOOLBOX_ADMIN_RESOURCE
   value: {{ printf "%s/admin" (include "answerable.toolboxUrl" .) | quote }}
+- name: ADMIN_STANDALONE_ORIGIN
+  value: {{ include "answerable.origin" (dict "root" . "host" .Values.hostnames.mcp) | quote }}
 - name: ADMIN_ID_CLIENT_ID
   value: {{ .Values.adminMcp.clientId | quote }}
 {{ include "answerable.secretEnv" (dict "name" "ADMIN_ID_CLIENT_SECRET" "secret" "admin-id-client" "key" "ADMIN_ID_CLIENT_SECRET") }}
 {{ include "answerable.secretEnv" (dict "name" "ADMIN_DATABASE_URL" "secret" "admin-database" "key" "ADMIN_DATABASE_URL") }}
 {{- end -}}
-{{- if .Values.adminMcp.enabled }}
 {{ include "answerable.server" (dict
   "root" .
   "component" "admin-mcp"
-  "image" "admin-mcp"
+  "image" "mcps"
+  "command" (list "bun" "mcps/admin/src/server.ts")
   "port" 47520
   "values" .Values.adminMcp
   "host" .Values.hostnames.adminMcp
@@ -25,4 +27,3 @@
   "readiness" "/health"
   "liveness" ""
   "clientSecret" "admin-id-client") }}
-{{- end }}

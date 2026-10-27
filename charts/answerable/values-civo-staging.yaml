@@ -6,6 +6,7 @@ hostnames:
   id: id.answerable-staging.uk
   toolbox: toolbox.answerable-staging.uk
   adminMcp: admin-mcp.answerable-staging.uk
+  mcp: mcp.answerable-staging.uk
 
 id:
   autoscaling: { enabled: true, minReplicas: 2, maxReplicas: 4 }

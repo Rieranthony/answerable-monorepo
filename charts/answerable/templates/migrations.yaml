@@ -1,8 +1,10 @@
 {{- /*
-The migrations: one Job per database, from the server's own image, before every install and upgrade and after the ops
-bootstrap (D10). Each mounts only its own owner login, which the services never receive. They run whether or not the
-server is enabled, so a schema is never behind its image. Helm runs hooks one at a time in weight order and waits for
-each; the last run of each Job stays for its logs until the next upgrade replaces it.
+The migrations, before every install and upgrade and after the ops bootstrap (D10): ID's from its image; the Toolbox's database and every MCP
+of mcps.json in one Job, toolbox-migrate, and the admin MCP's database, from the mcps image. Each mounts only the owner logins of its own
+databases, which the services never receive: the admin MCP's credential stays in admin-migrate (D15). Each provisions the runtime login the
+bootstrap made for its service, answerable_<service>_runtime, which the migration scripts name. Helm runs hooks one at a time in weight order and waits for each: id-migrate -10,
+toolbox-migrate -9, admin-migrate -8. No Job depends on another's work beyond that order: each migrates databases no other Job touches, which
+the bootstrap (-20) has made. The last run of each Job stays for its logs until the next upgrade replaces it.
 */ -}}
 {{- define "answerable.migration" -}}
 {{- $root := .root -}}
@@ -61,21 +63,34 @@ automountServiceAccountToken: false
   "image" "id"
   "weight" -10
   "command" (list "bun" "--no-install" "apps/id/dist/scripts/migrate.js")
-  "env" (printf "%s\n- name: DATABASE_RUNTIME_ROLE\n  value: %s" (include "answerable.secretEnv" (dict "name" "DATABASE_MIGRATION_URL" "secret" "id-database-owner" "key" "DATABASE_MIGRATION_URL")) (.Values.id.runtimeRole | quote))) }}
+  "env" (include "answerable.secretEnv" (dict "name" "DATABASE_MIGRATION_URL" "secret" "id-database-owner" "key" "DATABASE_MIGRATION_URL"))) }}
 ---
+{{- /*
+The Toolbox's database, then every MCP of mcps.json, in its order: each shared one through the migrator login of answerable_mcps, as its owner
+role, and each own one as its database's owner login (mcps/toolbox/scripts/migrate.ts). One MCP's failure fails the Job, and so the release.
+*/ -}}
+{{- $mcps := fromJsonArray (include "answerable.mcps" .) }}
+{{- $toolboxEnv := list
+  (include "answerable.secretEnv" (dict "name" "TOOLBOX_DATABASE_MIGRATION_URL" "secret" "toolbox-database-owner" "key" "TOOLBOX_DATABASE_MIGRATION_URL"))
+  (include "answerable.secretEnv" (dict "name" "MCPS_DATABASE_MIGRATION_URL" "secret" "mcps-database-owner" "key" "MCPS_DATABASE_MIGRATION_URL"))
+  (printf "- name: MCPS_DECLARED\n  value: %s" (toJson $mcps | quote)) }}
+{{- range $mcps }}
+{{- if eq .database "own" }}
+{{- $toolboxEnv = append $toolboxEnv (include "answerable.secretEnv" (dict "name" (printf "MCP_%s_DATABASE_MIGRATION_URL" (upper .name)) "secret" (printf "mcp-%s-database-owner" .name) "key" "DATABASE_MIGRATION_URL")) }}
+{{- end }}
+{{- end }}
 {{ include "answerable.migration" (dict
   "root" .
   "name" "toolbox-migrate"
-  "image" "toolbox"
+  "image" "mcps"
   "weight" -9
   "command" (list "bun" "mcps/toolbox/scripts/migrate.ts")
-  "env" (printf "%s\n- name: TOOLBOX_DATABASE_RUNTIME_ROLE\n  value: %s" (include "answerable.secretEnv" (dict "name" "TOOLBOX_DATABASE_MIGRATION_URL" "secret" "toolbox-database-owner" "key" "TOOLBOX_DATABASE_MIGRATION_URL")) (.Values.toolbox.runtimeRole | quote))) }}
+  "env" (join "\n" $toolboxEnv)) }}
 ---
-{{- $adminEnv := printf "%s\n- name: ADMIN_DATABASE_RUNTIME_ROLE\n  value: %s" (include "answerable.secretEnv" (dict "name" "ADMIN_DATABASE_MIGRATION_URL" "secret" "admin-database-owner" "key" "ADMIN_DATABASE_MIGRATION_URL")) (.Values.adminMcp.runtimeRole | quote) }}
 {{ include "answerable.migration" (dict
   "root" .
   "name" "admin-migrate"
-  "image" "admin-mcp"
+  "image" "mcps"
   "weight" -8
   "command" (list "bun" "mcps/admin/scripts/migrate.ts")
-  "env" $adminEnv) }}
+  "env" (include "answerable.secretEnv" (dict "name" "ADMIN_DATABASE_MIGRATION_URL" "secret" "admin-database-owner" "key" "ADMIN_DATABASE_MIGRATION_URL"))) }}

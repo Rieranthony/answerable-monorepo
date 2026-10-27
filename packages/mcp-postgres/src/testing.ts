@@ -1,6 +1,14 @@
+import { afterAll, describe } from "bun:test"
+import { fileURLToPath } from "node:url"
+import { callerOrganisation, type Provider, type Target, type UserPrincipal } from "@answerable/mcp"
+import { assertProviderConformance as assertConformance, createTestMcp as createSdkTestMcp, type ConformanceFixture, type TestMcp, type TestServing } from "@answerable/mcp/testing"
 import { DrizzleQueryError, sql } from "drizzle-orm"
+import type { NodePgDatabase } from "drizzle-orm/node-postgres"
 import { connect, type Executor } from "./connect"
 import { configureRuntimeRole, type Grant } from "./runtime-role"
+import { testMcpDatabase } from "./mcp-test-database"
+
+export { mcpPostgresTestConfig } from "./mcp-test-database"
 
 /** A tagged template that runs a query on `db` and returns its rows: `const query = rowsOf(db); await query\`select …\``, for a suite's own reads. */
 export const rowsOf = (db: Executor) => async <T extends Record<string, unknown> = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]> =>
@@ -90,4 +98,88 @@ export function testDatabase(name: string, url = `postgres://answerable:answerab
       }
     },
   }
+}
+
+// A provider's test database, as testMcpDatabase makes it, with the organisation of the call the SDK is running.
+function providerDatabase(provider: Provider) {
+  if (!provider.database) throw new Error(`Provider ${provider.id} has no database; import createTestMcp and assertProviderConformance from @answerable/mcp/testing`)
+  const { schema, migrations } = provider.database
+  return testMcpDatabase({ name: provider.id, schema, folder: fileURLToPath(migrations), organisation: callerOrganisation })
+}
+
+/** What a test's own server is built from: the SDK's `TestServing`, with the provider and its test `db`, ready to spread into `createMcpServer`. */
+export type DatabaseServing = TestServing & { provider: Provider; db: unknown }
+
+/** An in-process MCP with a database: the SDK's `TestMcp`, with the test database to seed and read rows as an organisation. */
+export type DatabaseTestMcp = TestMcp & {
+  /** The provider's test database, the one its handlers receive, typed by no schema: pass its tables to `insert` and `select`. */
+  db: NodePgDatabase<Record<string, unknown>>
+  /** Run `fn` as a member of organisation `id` and await it, so that `db` reads and writes that organisation's rows. */
+  asOrganisation<T>(id: string, fn: () => T): Promise<Awaited<T>>
+}
+
+/**
+ * `@answerable/mcp/testing`'s `createTestMcp`, for a provider with a `database`: it serves the provider with its `db`, made by `testMcpDatabase`
+ * from `provider.database` (schema `<id>` in `answerable_mcps_test`, reset and migrated), each call seeing only the rows of its caller's
+ * organisation, so `connect({ organizationId })` gives isolation by organisation. `db` and `asOrganisation(id, fn)` seed and read rows as an
+ * organisation. `server` builds the server from the local issuer's `auth`, the test `profiles`, the provider and its `db`, for options such as
+ * `intents` or `policyClass`. `close()` also drops the test login.
+ *
+ * @example
+ * ```ts
+ * import { createTestMcp } from "@answerable/mcp-postgres/testing"
+ * import { notes } from "./db/schema"
+ * import { provider } from "./provider"
+ *
+ * const mcp = await createTestMcp(provider)
+ * const organizationId = crypto.randomUUID()
+ * await mcp.asOrganisation(organizationId, () => mcp.db.insert(notes).values({ organisation_id: organizationId, title: "First" }))
+ * const client = await mcp.connect({ organizationId })
+ * await mcp.close()
+ * ```
+ */
+export async function createTestMcp(provider: Provider, { server, ...options }: Omit<NonNullable<Parameters<typeof createSdkTestMcp>[1]>, "db"> & {
+  /** Build the server from what the test serves with, `{ auth, profiles, provider, db }`, which spreads into `createMcpServer`'s options. */
+  server?: (serving: DatabaseServing) => { fetch(request: Request): Promise<Response> }
+} = {}): Promise<DatabaseTestMcp> {
+  const database = await providerDatabase(provider)
+  const { db } = database
+  const mcp = await createSdkTestMcp(server ? serving => server({ ...serving, provider, db }) : provider, { ...options, db })
+  return {
+    ...mcp,
+    db,
+    asOrganisation: database.asOrganisation,
+    async close() {
+      await mcp.close()
+      await database.close()
+    },
+  }
+}
+
+/** What the functions of a database fixture also receive: the provider's test database, and `asOrganisation` to seed or change its rows as one. */
+export type FixtureDatabase = Pick<DatabaseTestMcp, "db" | "asOrganisation">
+
+/** The SDK's `ConformanceFixture` for a provider with a `database`: its `examples` functions and `moveTarget` also receive the test database. */
+export type DatabaseFixture = Omit<ConformanceFixture, "db" | "examples" | "moveTarget"> & {
+  /** As the SDK's, and a function also receives the test database, to create the row an input names. */
+  examples?: Record<string, Record<string, unknown> | ((principal: UserPrincipal, database: FixtureDatabase) => Record<string, unknown> | Promise<Record<string, unknown>>)>
+  /** As the SDK's, with the test database to change the target's row in. */
+  moveTarget?(target: Target, principal: UserPrincipal, database: FixtureDatabase): unknown
+}
+
+/**
+ * `@answerable/mcp/testing`'s `assertProviderConformance`, for a provider with a `database`: the kit serves the provider with its `db`, made by
+ * `testMcpDatabase` from `provider.database` and dropped after the checks, and hands that database to the fixture's functions. Call it at the
+ * top level of a test file, as the SDK's.
+ */
+export function assertProviderConformance(provider: Provider, { examples, moveTarget, ...fixture }: DatabaseFixture) {
+  describe(`${provider.id} database`, async () => {
+    const database = await providerDatabase(provider)
+    afterAll(() => database.close())
+    const given = Object.entries(examples ?? {}).map(([name, input]) => [name, typeof input === "function" ? (principal: UserPrincipal) => input(principal, database) : input])
+    assertConformance(provider, {
+      ...fixture, db: database.db, examples: Object.fromEntries(given),
+      ...(moveTarget ? { moveTarget: (target: Target, principal: UserPrincipal) => moveTarget(target, principal, database) } : {}),
+    })
+  })
 }

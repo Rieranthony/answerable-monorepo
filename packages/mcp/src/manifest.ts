@@ -26,6 +26,8 @@ type Definition = {
 export type Manifest = {
   id: string
   version: string
+  /** What the MCP is for: the provider's description. */
+  description: string
   tools: (
     | (Definition & { kind: "read" })
     | (Definition & { kind: "mutate"; risk: Risk; effects: readonly Effect[] })
@@ -39,7 +41,7 @@ export type Manifest = {
 // The same conversion the MCP SDK applies for tools/list.
 const jsonSchema = (schema: z.ZodType, io: "input" | "output") => schema["~standard"].jsonSchema[io]({ target: "draft-2020-12" })
 
-/** Serialise a provider's contract as JSON: commit the result next to the source, and let the conformance kit's `manifest_matches_snapshot` fail when it drifts. */
+/** Serialise a provider's contract as JSON, its description included: commit the result next to the source, and let the conformance kit's `manifest_matches_snapshot` fail when it drifts. */
 export function manifest(provider: Provider): Manifest {
   const mutations = provider.tools.filter(tool => tool.kind === "mutate")
   const writes = [...new Set(mutations.flatMap(mutation => mutation.scopes))].sort()
@@ -65,6 +67,7 @@ export function manifest(provider: Provider): Manifest {
   return {
     id: provider.id,
     version: provider.version,
+    description: provider.description,
     tools: tools.sort((a, b) => (a.identity < b.identity ? -1 : 1)),
     prompts: provider.prompts.map(({ name, description, scopes, input }) => ({ name, description, scopes, input: jsonSchema(input, "input") })),
     resources: provider.resources.map(({ name, uri, description, mimeType, scopes }) => ({ name, uri, description, mime_type: mimeType, scopes })),

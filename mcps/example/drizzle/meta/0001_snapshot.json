@@ -1,0 +1,70 @@
+{
+  "id": "51ca75d0-f6c6-4d9f-af6b-d723f7cfa6e8",
+  "prevId": "91028828-9570-4908-b516-cf3e591c1041",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "example.notes": {
+      "name": "notes",
+      "schema": "example",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organisation_id": {
+          "name": "organisation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "organisation_isolation": {
+          "name": "organisation_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "\"example\".\"notes\".\"organisation_id\" = nullif(current_setting('answerable.organisation_id', true), '')::uuid",
+          "withCheck": "\"example\".\"notes\".\"organisation_id\" = nullif(current_setting('answerable.organisation_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    }
+  },
+  "enums": {},
+  "schemas": {
+    "example": "example"
+  },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

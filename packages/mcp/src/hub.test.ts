@@ -3,6 +3,8 @@ import { z } from "zod"
 import { createMcpServer, defineMutation, definePrompt, defineProvider, defineResource, defineTool, defineView, ToolError, type McpServerConfig, type McpServerHandle, type Mutation, type Provider, type Served, type Tool, type ToolCall } from "./index"
 import { createTestMcp, errorOf, type TestMcp } from "./testing"
 
+const purpose = "A fixture provider for the hub tests: it serves the definitions each test gives it."
+
 // A hub serves its own provider and mounts others: the Toolbox's shape, built on createMcpServer.
 const uuidV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const about = (text: string) => `${text}. A fixture for the hub tests.`
@@ -12,7 +14,7 @@ const whoami = defineTool({
   input: z.object({}), output: z.object({ userId: z.uuid() }),
   async execute(_input, { principal }) { return { userId: principal.userId } },
 })
-const own = defineProvider({ id: "hub", version: "2026-09-29", tools: [whoami] })
+const own = defineProvider({ id: "hub", description: purpose, version: "2026-09-29", tools: [whoami] })
 
 function mounted(id: string, view = board) {
   const notes: string[] = []
@@ -32,13 +34,13 @@ function mounted(id: string, view = board) {
   })
   const guide = definePrompt({ name: "guide", description: "A mounted prompt", input: z.object({}), async execute() { return { messages: [] } } })
   const readme = defineResource({ name: "readme", uri: `fixture://${id}`, description: "A mounted resource", mimeType: "text/plain", async read() { return id } })
-  return defineProvider({ id, version: "2026-09-29", tools: [list, create], prompts: [guide], resources: [readme] })
+  return defineProvider({ id, description: purpose, version: "2026-09-29", tools: [list, create], prompts: [guide], resources: [readme] })
 }
 
 const mcps: TestMcp[] = []
 afterEach(async () => { await Promise.all(mcps.splice(0).map(mcp => mcp.close())) })
 type Decision = { user: string; identity: string; called: boolean }
-async function hub(options: Partial<Pick<McpServerConfig, "allow" | "wrapCall" | "policyClass" | "project">> & { mount?: Provider[]; provider?: Provider } = {}) {
+async function hub(options: Partial<Pick<McpServerConfig, "allow" | "wrapCall" | "policyClass" | "project" | "mount" | "db">> & { provider?: Provider } = {}) {
   // Identities each user may use; the hub's own tools follow the scope rule.
   const grants = new Map<string, string[]>()
   const decisions: Decision[] = []
@@ -47,7 +49,7 @@ async function hub(options: Partial<Pick<McpServerConfig, "allow" | "wrapCall" |
     return tool.identity === "hub/hub.whoami" ? principal.scopes.includes("hub") : (grants.get(principal.userId) ?? []).includes(tool.identity)
   })
   let server!: McpServerHandle
-  const mcp = await createTestMcp(auth => (server = createMcpServer({ provider: own, mount: options.mount ?? [mounted("alpha"), mounted("beta")], auth, ...options, allow })))
+  const mcp = await createTestMcp(serving => (server = createMcpServer({ provider: own, mount: [{ provider: mounted("alpha") }, { provider: mounted("beta") }], ...serving, ...options, allow })))
   mcps.push(mcp)
   const person = (identities: string[], scopes = ["hub"]) => {
     const userId = crypto.randomUUID()
@@ -87,11 +89,12 @@ test("a mounted mutation is prepared under its prefixed name and committed with 
 })
 
 test("a hub refuses a provider mounted twice and two different views at one URI", async () => {
-  const auth = { issuer: "https://id.test", resource: "https://mcp.test/mcp" }
-  expect(() => createMcpServer({ provider: own, mount: [mounted("alpha"), mounted("alpha")], auth })).toThrow("Provider alpha is mounted twice; mount each provider once, and never the server's own provider")
-  expect(() => createMcpServer({ provider: own, mount: [own], auth })).toThrow("Provider hub is mounted twice")
+  const serving = { auth: { issuer: "https://id.test", resource: "https://mcp.test/mcp" }, profiles: async () => { throw new Error("never called") } }
+  const mount = (...providers: Provider[]) => providers.map(provider => ({ provider }))
+  expect(() => createMcpServer({ ...serving, provider: own, mount: mount(mounted("alpha"), mounted("alpha")) })).toThrow("Provider alpha is mounted twice; mount each provider once, and never the server's own provider")
+  expect(() => createMcpServer({ ...serving, provider: own, mount: mount(own) })).toThrow("Provider hub is mounted twice")
   const other = defineView({ name: "board", html: "<!doctype html><title>Other</title>" })
-  expect(() => createMcpServer({ provider: own, mount: [mounted("alpha"), mounted("gamma", other)], auth })).toThrow("Providers alpha and gamma define two different views at ui://board/index.html; share one defineView result, or rename one view")
+  expect(() => createMcpServer({ ...serving, provider: own, mount: mount(mounted("alpha"), mounted("gamma", other)) })).toThrow("Providers alpha and gamma define two different views at ui://board/index.html; share one defineView result, or rename one view")
 })
 
 test("allow decides, per request and in place of the scope rule, what each caller sees and may call", async () => {
@@ -238,6 +241,42 @@ test("wrapCall runs around every tool, prepare and commit call, sees what it ans
   expect(new Set(calls.map(call => call.executionId)).size).toBe(calls.length)
 })
 
+test("wrapCall learns the intent a commit names before it runs: the caller's own, with its mutation, whether the commit succeeds or fails", async () => {
+  const calls: ToolCall[] = []
+  const { person } = await hub({ wrapCall: (call, run) => (calls.push(call), run()) })
+  const writer = person(everything)
+  const client = await writer.connect()
+  const prepare = async () => (await client.callTool({ name: "alpha_notes_create", arguments: { text: "a" } })).structuredContent as { intent_id: string; commit_token: string; preview: { summary: string } }
+  const commit = (intent: { intent_id: string; commit_token: string; preview: { summary: string } }, token = intent.commit_token, caller = client) =>
+    caller.callTool({ name: "hub_commit_confirmed", arguments: { intent_id: intent.intent_id, commit_token: token, preview_summary: intent.preview.summary } })
+  const intent = await prepare()
+  expect(errorOf(await commit(intent, "act_wrong")).code).toBe("COMMIT_TOKEN_INVALID")
+  expect((await commit(intent)).structuredContent).toMatchObject({ intent_id: intent.intent_id, status: "committed" })
+  const named = { id: intent.intent_id, identity: "alpha/notes.create", version: "2026-09-29" }
+  expect(calls.slice(-2).map(call => call.intent)).toEqual([named, named])
+  expect(Object.isFrozen(calls.at(-1)!.intent)).toBe(true)
+  // Another person's intent, an unknown one and an id that is no UUID name no intent; nor does a call that is not a commit.
+  const other = await person(everything).connect()
+  expect(errorOf(await commit(await prepare(), undefined, other)).code).toBe("PRINCIPAL_MISMATCH")
+  expect(errorOf(await commit({ ...intent, intent_id: Bun.randomUUIDv7() })).code).toBe("INTENT_NOT_FOUND")
+  expect(errorOf(await commit({ ...intent, intent_id: "not-a-uuid" })).code).toBe("INVALID_INPUT")
+  expect(calls.slice(-3).map(call => "intent" in call)).toEqual([false, false, false])
+  expect(calls.filter(call => call.tool.kind !== "commit").some(call => "intent" in call)).toBe(false)
+})
+
+test("a refusal is answered only once every decision of allow has settled, so what it records is written first", async () => {
+  const settled: string[] = []
+  const { person } = await hub({ allow: async (_principal, tool, called) => {
+    if (called) throw new ToolError("UPSTREAM_UNAVAILABLE", "Answerable ID did not answer")
+    await Bun.sleep(20)
+    settled.push(tool.identity)
+    return true
+  } })
+  const client = await person([]).connect()
+  expect(errorOf(await client.callTool({ name: "alpha_notes_list", arguments: {} })).code).toBe("UPSTREAM_UNAVAILABLE")
+  expect(settled.toSorted()).toEqual(["alpha/notes.create", "beta/notes.create", "beta/notes.list", "hub/hub.whoami"])
+})
+
 test("policyClass may answer asynchronously", async () => {
   const { person } = await hub({ policyClass: async () => "agent" as const })
   const client = await person(["alpha/notes.create"]).connect()
@@ -257,11 +296,11 @@ function runner(server: () => McpServerHandle, tools: () => readonly Served<Tool
 
 test("project serves some of the tools a caller may use; the others are unknown tools, yet their intents commit", async () => {
   const alpha = mounted("alpha")
-  const provider = defineProvider({ id: "hub", version: "2026-09-29", tools: [whoami, runner(() => fixture.server(), () => alpha.tools)] })
+  const provider = defineProvider({ id: "hub", description: purpose, version: "2026-09-29", tools: [whoami, runner(() => fixture.server(), () => alpha.tools)] })
   const offered: string[][] = []
   const stranger = mounted("gamma").tools[0]!
   const fixture = await hub({
-    provider, mount: [alpha],
+    provider, mount: [{ provider: alpha }],
     // A tool the caller may not use stays unserved, whatever project returns.
     project: (_principal, usable) => {
       offered.push(usable.map(tool => tool.identity))
@@ -287,11 +326,11 @@ test("call runs a served tool as its direct call would, inside the calling tool:
     name: "notes.broken", description: about("Fail with the provider's own error code"), errors: ["FLAKY_BROKEN"],
     input: z.object({}), output: z.object({}), async execute() { throw new ToolError("FLAKY_BROKEN", "Broken on purpose", { retry: { policy: "never" } }) },
   })
-  const flaky = defineProvider({ id: "flaky", version: "2026-09-29", tools: [broken] })
+  const flaky = defineProvider({ id: "flaky", description: purpose, version: "2026-09-29", tools: [broken] })
   const stranger = mounted("gamma").tools[0]!
-  const provider = defineProvider({ id: "hub", version: "2026-09-29", tools: [whoami, runner(() => fixture.server(), () => [...alpha.tools, ...flaky.tools, stranger])] })
+  const provider = defineProvider({ id: "hub", description: purpose, version: "2026-09-29", tools: [whoami, runner(() => fixture.server(), () => [...alpha.tools, ...flaky.tools, stranger])] })
   const wrapped: string[] = []
-  const fixture = await hub({ provider, mount: [alpha, flaky], wrapCall: (call, run) => (wrapped.push(call.tool.identity), run()) })
+  const fixture = await hub({ provider, mount: [{ provider: alpha }, { provider: flaky }], wrapCall: (call, run) => (wrapped.push(call.tool.identity), run()) })
   const { person } = fixture
   const client = await person(["hub/hub.run", "alpha/notes.create", "alpha/notes.list", "flaky/notes.broken"]).connect()
   const run = (identity: string, args: Record<string, unknown> = {}) => client.callTool({ name: "hub_run", arguments: { identity, args } })
@@ -321,4 +360,38 @@ test("every request advertises tools.listChanged, and toolsChanged reaches each 
   server().toolsChanged()
   expect(await changed).toMatchObject({ method: "notifications/tools/list_changed" })
   await subscription.close()
+})
+
+test("a hub's own tool runs a mounted tool, and a commit runs its mutation, with the mounted provider's db, never the hub's", async () => {
+  const seen: [string, unknown][] = []
+  const database = { schema: {}, migrations: new URL("../drizzle", import.meta.url) }
+  const keep = <Context extends object>(name: string, context: Context) => seen.push([name, "db" in context ? context.db : "none"])
+  const read = defineTool({
+    name: "notes.list", description: about("List the notes, keeping the context"), input: z.object({}), output: z.object({}),
+    async execute(_input, context) { keep("execute", context); return {} },
+  })
+  const add = defineMutation({
+    name: "notes.add", description: about("Prepare adding a note, keeping the context"), input: z.object({}), output: z.object({}),
+    async prepare(_input, context) { keep("prepare", context); return { targets: [], preview: { summary: "Add a note", changes: [{ path: "notes[]", to: "note" }] } } },
+    async commit(_plan, context) { keep("commit", context); return { results: {}, applied_changes: [], effects_performed: [] } },
+  })
+  const alpha = defineProvider({ id: "alpha", description: purpose, version: "2026-09-29", database, tools: [read, add] })
+  const beta = defineProvider({ id: "beta", description: purpose, version: "2026-09-29", tools: [read, add] })
+  const provider = defineProvider({ id: "hub", description: purpose, version: "2026-09-29", database, tools: [whoami, runner(() => fixture.server(), () => [...alpha.tools, ...beta.tools])] })
+  const fixture = await hub({ provider, db: "hub-db", mount: [{ provider: alpha, db: "alpha-db" }, { provider: beta }] })
+  const client = await fixture.person(["hub/hub.run", "alpha/notes.list", "alpha/notes.add", "beta/notes.list", "beta/notes.add"]).connect()
+  const run = async (identity: string) => (await client.callTool({ name: "hub_run", arguments: { identity } })).structuredContent as { intent_id: string; commit_token: string; preview: { summary: string } }
+  await run("alpha/notes.list")
+  await run("beta/notes.list")
+  for (const identity of ["alpha/notes.add", "beta/notes.add"]) {
+    const intent = await run(identity)
+    await client.callTool({ name: "hub_commit_confirmed", arguments: { intent_id: intent.intent_id, commit_token: intent.commit_token, preview_summary: intent.preview.summary } })
+  }
+  await client.callTool({ name: "alpha_notes_list", arguments: {} })
+  expect(seen).toEqual([
+    ["execute", "alpha-db"], ["execute", "none"],
+    ["prepare", "alpha-db"], ["prepare", "alpha-db"], ["commit", "alpha-db"],
+    ["prepare", "none"], ["prepare", "none"], ["commit", "none"],
+    ["execute", "alpha-db"],
+  ])
 })

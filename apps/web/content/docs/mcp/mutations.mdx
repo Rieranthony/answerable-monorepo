@@ -3,9 +3,9 @@ title: Mutations
 description: "Change data safely with @answerable/mcp: prepare a preview, commit it with a one-time token, targets and versions, policy classes, the intent and the receipt."
 ---
 
-<include lang="ts" meta='title="mcps/example/src/provider.ts"'>../../../../../mcps/example/src/provider.ts#add</include>
+<include lang="ts" meta='title="mcps/example/src/tools/notes-add.ts"'>../../../../../mcps/example/src/tools/notes-add.ts#add</include>
 
-A mutation is a tool that changes data. It never does so in one call. It is **prepared** first, which changes nothing and returns a preview of the change, then **committed**, which applies exactly what was prepared. Between the two, the host can show the person what will happen, and the person can say no.
+A mutation is a tool that changes data. `bun mcp add tool <mcp> <name> --mutation` writes one, and [Add a tool](/docs/mcp/add-a-tool#read-or-change) says when to choose it. It never does so in one call. It is **prepared** first, which changes nothing and returns a preview of the change, then **committed**, which applies exactly what was prepared. Between the two, the host can show the person what will happen, and the person can say no.
 
 **Why two steps.** A model can misread a request, and a person should see a deletion before it happens. The preview says what will change in plain words; the commit applies that preview and nothing else. If the data changed in the meantime, the commit refuses and the model prepares again.
 
@@ -37,7 +37,7 @@ Both throw `ToolError` for expected failures, as `execute` does. `context` is th
 
 ## Targets and versions
 
-<include lang="ts" meta='title="mcps/e2e/src/mcp.ts"'>../../../../../mcps/e2e/src/mcp.ts#delete</include>
+<include lang="ts" meta='title="mcps/e2e/src/tools/records-delete.ts"'>../../../../../mcps/e2e/src/tools/records-delete.ts#delete</include>
 
 Every resource `commit` reads or writes is a target, with the version `prepare` saw. A mutation that creates something has no target yet: `targets: []`, as `notes.add` does.
 
@@ -150,7 +150,7 @@ A refusal in steps 1 to 7 leaves the intent committable. [MCP errors](/docs/mcp/
 
 <include lang="ts" meta='title="mcps/example/src/intents.test.ts"'>../../../../../mcps/example/src/intents.test.ts#expiry</include>
 
-By default each server keeps intents in memory, lost when the process stops. An insert, at most once a minute, removes the intents that can no longer be committed (expired, failed and stale) and committed ones a day after their commit: a repeated commit replays its receipt for a day, then answers `INTENT_NOT_FOUND`. The store owns the clock and decides expiry, so a test moves `now` instead of waiting. `IntentStore` is four members: `now()`, `insert(intent)`, `get(intentId)`, which marks an intent `expired` once `expires_at` has passed, and `transition(intentId, from, to, receipt?)`, a compare-and-set on the status. [The Toolbox](/docs/toolbox#mutations-through-the-toolbox) and [the admin MCP](/docs/admin) keep their intents in Postgres with the store of `@answerable/mcp-postgres`, which removes them the same way.
+By default each server keeps intents in memory, lost when the process stops. An insert, at most once a minute, removes the intents that can no longer be committed (expired, failed and stale) and committed ones a day after their commit: a repeated commit replays its receipt for a day, then answers `INTENT_NOT_FOUND`. The store owns the clock and decides expiry, so a test moves `now` instead of waiting. `IntentStore` is four members: `now()`, `insert(intent)`, `get(intentId)`, which marks an intent `expired` once `expires_at` has passed, and `transition(intentId, from, to, receipt?)`, a compare-and-set on the status. [The Toolbox](/docs/toolbox#mutations-through-the-toolbox), for its hub and [every MCP it serves alone](/docs/mcp/servers#served-alone), and [the admin MCP](/docs/admin) keep their intents in Postgres with the store of `@answerable/mcp-postgres`, which removes them the same way.
 
 ## Views and mutations
 

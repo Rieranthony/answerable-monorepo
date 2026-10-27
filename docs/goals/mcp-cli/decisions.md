@@ -20,12 +20,14 @@ The shared mode in detail:
   - `@answerable/mcp-postgres` learns schemas: the migrator's journal, runtime grants and the hub assertion (F4);
   - each MCP's tables are `pgSchema` tables;
   - mounted provider code is trusted not to switch role itself, guarded by a lint rule and a test.
+- **Reversed in part on 2026-10-26** by D-3 of the pull request 13 audit ([decisions](../pr13-audit/decisions.md)): the per-MCP owner and runtime roles are gone. The migrator login owns every MCP's schema and tables and migrates them with drizzle's migrator, the journal in the MCP's schema; the serving login is granted `USAGE` on each schema it serves and read and write on its tables, and a borrow sets the search path and the organisation only. The role prefixes, the role scans and the migration scanner went with them. The schema per MCP, the one shared database, one pool per serving process, row-level security by organisation and the `own` mode stay. The cost: one MCP's code or migration can reach another's tables; organisation isolation does not depend on the roles.
 
 **D2. Standalone MCPs run in one shared standalone server, at `https://mcp.<zone>/<name>/mcp`.** Owner.
 - **Why:** one Deployment and one hostname, whatever the number of MCPs. The SDK already serves path resources, and ID accepts them (F3). One process serving two MCPs by path was proved locally.
 - **Alternative: a Deployment per MCP.** About 50 GiB of memory requests at 200 MCPs (F6), and an image or entry in every list per MCP.
 - **Alternative: a subdomain per MCP.** A DNS record and a reissued origin certificate for each new MCP (F1, F3).
 - **The cost:** standalone MCPs share one process, as Toolbox providers already do. An MCP that needs its own process is Not yet (trigger: an MCP with a dependency or load the others must not share).
+- **Reversed in part on 2026-10-26** by D-1 of the pull request 13 audit ([decisions](../pr13-audit/decisions.md)): the Toolbox's process serves every standalone MCP at `https://mcp.<zone>/<name>/mcp`, beside its hub, so there is no separate standalone server, database, serving login, machine client or migration Job. The `mcp.<zone>` hostname, each MCP's resource and `claude-code-<name>` client, and `standalone_enable` stay.
 
 **D3. The order: typed configuration's B1 and B2 first, then this goal.** Owner.
 - **Why:** typed configuration was approved on 2026-10-21 and isn't started. It moves `readMcpEnvironment` and every service's variables onto `@answerable/config`, with generated inventories (F8). This goal adds variables to the Toolbox and the standalone server, so building it first would mean writing them twice.
@@ -119,7 +121,7 @@ The shared mode in detail:
 
 **D13. Names.**
 - The MCP name rule is the provider id rule.
-- Reserved names: `toolbox`, `admin`, `id`, `mcp`, `mcps`, `standalone`, `api`, `www`, `test`, `ops`, `public` and `drizzle`. `e2e` and `example` aren't reserved; their directories take them.
+- Reserved names: `toolbox`, `admin`, `id`, `mcp`, `mcps`, `standalone`, `api`, `www`, `test`, `ops`, `public`, `drizzle`, `platform` and `postgres` (the last two would collide with `@answerable/mcp-platform` and `@answerable/mcp-postgres`). `e2e` and `example` aren't reserved; their directories take them.
 - Retired names are listed in `mcps/retired.json` and refused for ever.
 - The tool name rule is the SDK's, unique within the MCP.
 - `bun mcp retire`: Not yet.

@@ -6,7 +6,7 @@ import { generateDrizzleJson, generateMigration } from "drizzle-kit/api"
 import { assertRuntimeRole, createEvidence, evidenceChainSql, legacyBaseline as shared, type Database } from "@answerable/mcp-postgres"
 import { rowsOf } from "@answerable/mcp-postgres/testing"
 import { ingest, readCatalogue, readHostClient, removeHostClient, writeCatalogue, writeHostClient } from "../catalogue"
-import { e2e } from "../test/hub"
+import { e2e } from "../test/mcps"
 import { database } from "../test/database"
 import { legacyBaseline, migrate, migrationsFolder, runtimeGrants } from "./migrate"
 import * as schema from "./schema"
@@ -97,8 +97,8 @@ test("after migrating, the runtime role holds exactly what the Toolbox's tables 
     await assertRuntimeRole(login.db)
     // The boot's ingest, twice as on a restart, a catalogue write and read, and a host client's life, all as the runtime role.
     const organisation = crypto.randomUUID()
-    await ingest(login.db, [e2e()])
-    await ingest(login.db, [e2e()])
+    await ingest(login.db, [e2e.provider])
+    await ingest(login.db, [e2e.provider])
     await writeCatalogue(login.db, organisation, "e2e", { enabled: true })
     expect((await readCatalogue(login.db, organisation)).get("e2e")?.enabled).toBe(true)
     const client = `client-${crypto.randomUUID()}`
@@ -116,7 +116,7 @@ test("a database the file migrator built is adopted without DDL: it equals a fre
   try {
     await applyLegacy(legacy.db)
     const organisation = crypto.randomUUID()
-    await ingest(legacy.db, [e2e()])
+    await ingest(legacy.db, [e2e.provider])
     await writeCatalogue(legacy.db, organisation, "e2e", { enabled: true, overrides: { disabled: ["e2e/records.show"] } })
     const evidence = createEvidence(legacy.db)
     await evidence.record({ organisation_id: organisation, kind: "capability.completed", actor_type: "user", actor_id: "ada", outcome: "success" })
@@ -125,7 +125,7 @@ test("a database the file migrator built is adopted without DDL: it equals a fre
     expect(await describe(legacy.db)).toEqual(await describe(fresh.db))
     expect(await tables(legacy.db)).toEqual(every)
     expect((await readCatalogue(legacy.db, organisation)).get("e2e")).toEqual({ enabled: true, overrides: { disabled: ["e2e/records.show"], policy_class: {} } })
-    await ingest(legacy.db, [e2e()])
+    await ingest(legacy.db, [e2e.provider])
     await evidence.record({ organisation_id: organisation, kind: "capability.completed", actor_type: "user", actor_id: "ada", outcome: "success" })
     expect(await evidence.verify(organisation)).toEqual({ ok: true, length: 2 })
     await migrate(legacy.db)

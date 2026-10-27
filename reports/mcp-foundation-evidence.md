@@ -599,6 +599,179 @@ Tree: `main` at d25108b plus this change, uncommitted when measured. Versions: B
 - **Changing a group's set of tools is not a tool.** ID keeps one entitlement per principal and target and `access_grant` refuses a second, so A8 gives the member their own entitlement rather than widening the group's; staff who want to change a group's tools use ID's `updateEntitlement` with cURL, or one group per set of tools. Registered as `Q-ADMIN-ACCESS-UPDATE`.
 - **The poller once polled after ID had stopped.** In the full run, after the admin journeys' `afterAll` stopped ID, the Toolbox's grants poller logged `[toolbox] reading ID's audit log failed … Unable to connect` once and the run went on to pass: the kit's cleanup stops ID before the poller that was registered after it. Harmless, seen in 1 of 4 runs, not changed.
 
+## 26 October 2026: the MCP CLI goal closed (brief M9)
+
+Tree: branch `claude/typed-config-b1` at e4b217f1 (M8 and the coordinator's fixes) plus M9, uncommitted when measured. The goal is the range `971ada93..e4b217f1`, eight commits, M1 to M8 ([the plan](../docs/goals/mcp-cli/task_plan.md), [the log](../docs/goals/mcp-cli/progress.md)). Versions: Bun 1.3.1; `@modelcontextprotocol/server` and `client` 2.4.0; drizzle-orm 0.45.4; pg 8.23.1; Zod 4.6.7; the development Postgres 17.9, `max_connections` 100. One acceptance or kind stack ran at a time, with nothing else heavy beside it.
+
+**What the goal built.**
+
+- **A database for every MCP** (`@answerable/mcp-postgres`, M1): a schema per MCP in the shared database `answerable_mcps`, with an owner role and a runtime role, and three logins whatever the number of MCPs; or a database of its own (`own`). `provisionMcps`; `migrateMcps`, each MCP as its owner role with its journal in its own schema; `mcpDatabase`, which takes the MCP's role and the caller's organisation on every borrow; row-level security by organisation by default; `assertServingLogin`.
+- **Who is calling, and the MCP's typed database, in every tool** (`@answerable/mcp`, M2): `person`, `organisation`, `client` and `db`, through `withDatabase({ schema })`; `description` on providers and `example` on tools; `createIdProfiles` in `@answerable/id-admin`.
+- **`bun mcp`** (`scripts/mcp`, M3 and M7): `new`, `add tool`, `list`, `check`, `db`, `setup`, `dev` and `help`, asking in a terminal and never waiting without one; the generated lists and `charts/answerable/mcps.json`.
+- **The runtime** (`@answerable/mcp-platform` and `mcps/standalone`, M4): the Toolbox and the standalone server serve every declared MCP from their generated lists, each on one pool to `answerable_mcps`.
+- **Shipping** (M5 and M6): one `mcps` image; the chart renders the bootstrap's list, `mcps-migrate`, the standalone server and its path Ingress on `mcp.<zone>` from the list; register registers every standalone MCP in ID on every deploy, as its own machine client.
+- **The documentation** (M8): `/docs/mcp` pages to create an MCP, add a tool, its database, sign-in and deploy, and the CLI reference rendered from the CLI's definitions.
+
+**What M9 changed.**
+
+- **One registrar.** `infra/ops/src/registrar.ts` reads, makes and changes ID's rows for the register Job and for `bun mcp setup` and `dev`, which had a copy of it in `scripts/mcp/local-id.ts`. The test that held the two copies equal is deleted.
+- **Servers that exit.** The Toolbox, the standalone server and the admin MCP call `process.exit(0)` once closed. Under `bun --hot`, as `toolbox:dev`, `standalone:dev` and `admin:dev` run them, each had kept its process alive with its port closed. Their entry-point tests now send SIGTERM to a `bun --hot` process and allow 5 seconds: before the change all three were still running after 30.
+- **One default.** `bun mcp`'s `ROOT_ADMIN_SECRET` default is read from ID's own definition.
+- **Removed or merged by the cleanup pass:** the `servedBy` table written three times; the `sqlOf` adapter written four times and inlined three; the `Sql` type twice; the privilege set twice; the shared logins typed out in three test helpers; the intent ownership check twice in `@answerable/mcp`; the help flag three times and the unknown-command refusal twice in `bun mcp`; five inline flag-value checks; a test hub with one caller; exports, options and re-exports nobody used; a journey that repeated another; stale lines in four READMEs, a workflow and `docs/10`. Outside this report and the plan, 94 tracked files: 350 lines added and 624 deleted, three files among them deleted; and three new files, `registrar.ts` (141 lines), its test (35) and `bench/scale.ts` (174, in place of `bench/ingest.ts`'s 37).
+
+| Gate, from the root | Result |
+| --- | --- |
+| `bun run typecheck --force` | 21 of 21 tasks, none cached, 13.0 seconds |
+| `bun run lint` (forced) | 21 of 21 tasks, none cached, 10.5 seconds |
+| `bun run build` (forced) | 2 of 2 tasks, none cached, 21.0 seconds |
+| `bun --filter web test` | 120 pass, 0 fail, 1.6 seconds, with this report in the link check |
+| `bun --filter @answerable/id test:coverage`, after `db:test:migrate` | 1,491 pass, 0 fail, 130 files, 100% lines and functions, 303.4 seconds |
+| `bun run mcp:test` | 1,020 pass, 0 fail, 29.0 seconds, every one of the 14 suites at 100% lines and functions: `scripts` 215, `mcp-admin` 140, `mcp` 125, `mcp-postgres` 114, `infra-pipeline` 99, `mcp-toolbox` 81, `infra-ops` 75, `auth` 62, `id-admin` 28, `mcp-platform` 20, `mcp-e2e` 20, `mcp-example` 17, `mcp-standalone` 17, `config` 7 |
+| `bun run mcp:test:e2e`, alone | 69 pass, 0 fail across 8 files, 149.9 seconds; nothing left behind |
+| `bun run infra:check` | Passed, 19.7 seconds |
+| `bun run infra:test`, alone | 123 pass, 0 fail across 2 files, 239.4 seconds (3 minutes 59.5 seconds with the build); the first register "35 created, 0 changed", the one after the lock "3 created, 0 changed, 32 as declared already" |
+| `bunx knip` | No finding; 54 configuration hints, each a shared entry pattern of `knip.json` that matches nothing in some workspace or repeats a `package.json` entry |
+
+The heavy gates ran before the last edits of the pass, which touched only tests' clean-up, imports, two types' `export`, the benchmark's arguments and documentation; the fast gates ran again after them.
+
+**The 200-MCP benchmark.** `bun bench/mcp-database.ts` in `packages/mcp-postgres` three times and `bun bench/scale.ts` in `mcps/toolbox` four times, on the development Postgres in databases of their own, which they drop with their roles. Each MCP has one table limited to the caller's organisation and, in the Toolbox's, 5 tools in 2 domains (3 reads, 2 changes). The probes ([findings](../docs/goals/mcp-cli/findings.md), F4 and F8a) ran on a throwaway Postgres 17.9 on 24 and 25 October.
+
+| What, at 200 MCPs | Probe | M9 |
+| --- | --- | --- |
+| Provisioning: 200 schemas, 400 roles | 2.1 s | 0.70 to 0.73 s |
+| First migration of all 200 (`migrateMcps`) | 7.1 s | 1.96 to 2.16 s |
+| A migration with nothing pending | Not measured for schemas (3.2 s for a database per MCP) | 1.16 to 1.36 s |
+| The shared database's size | 29.9 MiB, with the admin MCP's tables in each schema | 22.7 to 22.8 MiB, with one table in each |
+| 1,000 queries over the 200 at once, one pool of 10 | 302 ms on 10 connections (a database per MCP: 105 of 200 refused) | 192 to 198 ms, no error, on 10 connections |
+| One query: plain, then through `mcpDatabase` | 0.50 ms plain; 1.41 ms role-switched per transaction | 0.18 to 0.24 ms plain; 0.47 to 0.51 ms through `mcpDatabase`; a transaction of 10 queries 2.26 to 2.45 ms plain, 2.58 to 2.69 ms through it |
+| The Toolbox's boot ingest, 200 × 5 tools, first boot | 1.6 s | 0.35 to 0.53 s, twelve runs |
+| The same, unchanged | 1.8 s | 0.37 to 0.61 s, twelve runs |
+| 1,000 tool calls at once through the Toolbox, in process, over the 200, from 20 organisations | Not probed | 5.18 to 5.94 s, no error, at most 10 connections to `answerable_mcps` |
+| One tool call with the caller's profile cached, 1,000 in turn, in process | 4.9 ms median in M4's acceptance, 2 MCPs | Median 10.7 to 12.3 ms, maximum 38.1 to 102.7 ms, for a caller of 1,000 tools |
+| The release Helm stores (M5's measurement, rerun) | M5: 52.8 KiB, 5.2% of 1 MiB | 60.2 KiB (61,680 bytes), 5.9%; 36.7 KiB at 0 MCPs |
+
+**What the numbers say.** The database holds at 200: one pool of 10 connections serves every MCP, and a burst never needed more. The Toolbox's cost is per caller, not per MCP: with the same 1,000 calls, the median call took 3.4 to 4.0 ms for a caller of 10 tools (2 MCPs), 3.7 to 4.4 ms for 100 (20 MCPs), two runs each, and 10.7 to 12.3 ms for 1,000, and the burst 1.3 to 1.4 s, 1.6 to 1.7 s and 5.2 to 5.9 s. Each request builds the caller's MCP server and checks every tool the caller may use (`packages/mcp/src/server.ts`, `usable`). In this run's acceptance, `example_example_status` through the Toolbox took a median of 4.4 ms, maximum 6.6 ms, with who is calling cached, and 28.9 ms read from ID.
+
+**The end-to-end proof, from a clean copy.** The worktree was copied as `scripts/mcp/end-to-end.test.ts` copies it (every tracked and untracked file git does not ignore) into the session's scratch folder, installed with `bun install --frozen-lockfile` (3.3 seconds), and made a git repository of its own whose first commit is the tree as it lands. Then, with no terminal attached:
+
+| Step | Result |
+| --- | --- |
+| `bun mcp new demo --description "…" --serve both` | Exit 0 in 4.7 seconds: its 12 files, the generated lists, the install, schema `demo` in `answerable_mcps`, its first migration, its manifest (6 tests) and `bun mcp check` |
+| `bun mcp add tool demo items.list --description "…"` | Exit 0 in 3.5 seconds: the tool, its test, table `items` with row-level security and `drizzle/0001_items.sql`; 7 tests |
+| `bun mcp add tool demo items.add --mutation --description "…"` | Exit 0 in 3.7 seconds; 11 tests |
+| `bun mcp check demo` | Exit 0 in 2.8 seconds: typecheck, lint, 11 tests at 100% lines and functions, manifest and generated files current, no role switch, no own database |
+| The commit | 28 files: `mcps/demo` and what `bun mcp` writes (`bun.lock`, `charts/answerable/mcps.json`, both servers' generated lists and `package.json`); nothing edited by hand |
+| The Toolbox's and the standalone server's suites in the copy, with no edit | `mcp:check` passed: 81 and 17 tests at 100%, `demo` mounted and served from the generated lists |
+| `bun run infra:test` from the copy, with two proofs added for `demo` | 125 pass, 0 fail, 244.9 seconds. The images built from the commit; the bootstrap provisioned schema `demo` and its roles, `mcps-migrate` migrated it as `mcp_demo_owner` (2 migrations, `items` with row-level security), the Toolbox's `/health` listed it, the standalone server served `/demo/mcp` through Traefik, and the first register made its resource, its client `claude-code-demo` and their link (38 created). Staff ran `standalone_enable`, and the client organisation's person signed in to `/demo/mcp` through `claude-code-demo` (0.6 seconds; `demo:read demo:write offline_access`) and called `demo_status`; staff ran `toolbox_enable` and `access_grant` of `demo`, and the same person signed in to the Toolbox (0.8 seconds) and listed `demo_demo_status`, `demo_items_add` and `demo_items_list` and called two of them. The first run of these proofs failed on the stack's own limit, not on `demo`: its company directories let the staff member sign in 3 times and the client's person once, so the copy raised them to 5 and 3 |
+| Afterwards | The copy deleted; `demo`'s schemas in `answerable_mcps` and `answerable_mcps_test` and its four roles dropped (`forget`); no role, database or schema named like `demo` on the development Postgres, and nothing of it in the worktree; Docker's containers, networks, volumes and images as they were before the first kind run |
+
+**Size** of the goal's workspaces (`packages/mcp`, `mcp-postgres`, `mcp-platform`, `id-admin`, `acceptance`, the five servers in `mcps`, `scripts`, `infra/ops`, `infra/pipeline`, `infra/k8s` and `charts/answerable`; TypeScript, SQL and chart templates, without drizzle's snapshots), source then tests: 11,075 and 12,569 lines before M1; 16,541 and 19,196 at e4b217f1; 16,660 and 19,151 after M9. The two benchmarks are 277 of those source lines after M9 and 131 before it, so the rest of the source shrank by 27 lines and the tests by 45.
+
+**Found by measuring.**
+
+- **The Toolbox's cost grows with the tools a caller holds**, not with the MCPs it mounts: about 3.5 ms a call at 10 tools, 11 to 12 ms at 1,000 (above). Not changed here: building only the called tool's registration for a `tools/call` request is a change to `@answerable/mcp`'s request path, and goes to the owner first.
+- **The release Helm stores grew** from M5's 52.8 KiB to 60.2 KiB at 200 MCPs, with M6's register list in it; 5.9% of the 1 MiB limit.
+- **Importing the Toolbox's test hub made the suite's MCP databases**, which nothing then dropped: three benchmark runs left a database, four roles and three logins on the development Postgres, removed by hand. The hub now imports them only when a test uses its default provider.
+
+**Not yet**, each with what triggers it (rows in [the register](../docs/02-plan.md#open-register)):
+
+| What | Trigger |
+| --- | --- |
+| A switch that holds one MCP of a commit back from production (`Q-MCP-ENV-SWITCH`) | The first MCP that must stay out of production while its commit ships |
+| `bun mcp retire` (`Q-MCP-RETIRE`) | The first MCP removed |
+| `bun mcp move` between `shared` and `own` (`Q-MCP-MOVE`) | The first MCP that must change mode after it shipped |
+| A narrower register scope in ID, `platform:register` (`Q-PLATFORM-REGISTER-SCOPE`) | A leaked `ops-id-client`, or a second team running the ops Jobs |
+| Civo's `max_connections` (`Q-CIVO-MAX-CONNECTIONS`) | The first staging tag of this work |
+| A process of its own for one MCP (`Q-MCP-OWN-PROCESS`) | An MCP with a dependency or load the others must not share |
+
+## 26 October 2026: the audit before merge (pull request 13)
+
+Tree: branch `claude/typed-config-b1`, from 7ffd16b4 (M9) to the commit that carries brief R6b. The plan, the six audits, the decisions, the briefs and the log are in [`docs/goals/pr13-audit`](../docs/goals/pr13-audit/task_plan.md). The report the owner decided from is `docs/goals/pr13-audit/report.html`.
+
+**How it ran.**
+- Six read-only audits (A configuration, B database, C SDK and servers, D CLI, E shipping, F tests and docs), each an independent Opus agent working without the coordinator's views, found 90 findings: 83 distinct once overlaps and M9's open items were merged.
+- The coordinator checked each finding against the code. Two were reproduced:
+  - a serving login switches MCP role with `set_config('role', …, true)`;
+  - an empty variable follows two rules.
+- One was measured: `mcp:test` broke between 50 and 100 generated MCPs ("too many clients").
+
+**What the owner decided** (`decisions.md`):
+- D-1: standalone MCPs are served from the Toolbox's process;
+- D-2: the `own` mode stays;
+- D-3: per-MCP roles are replaced with grants;
+- the rest as recommended.
+
+C9, taking `platform:write` off the Toolbox, went to a follow-up after R4 found it touches pre-PR code and needs register to narrow a deployed capability.
+
+**What changed,** brief by brief:
+
+| Brief | What |
+| --- | --- |
+| R1 | Eleven defects. A local ID listens on loopback (`ID_HOST`); readiness waits only on a server's own database; `mcp:test` runs through Turborepo, four suites at a time; the profile read starts beside the grants read; the documented undo keeps `bun install` working; one rule for filtering by organisation; the inventory, lockfile and drifted docs |
+| R2 | D-1. The Toolbox serves each standalone or `both` MCP at `<origin>/<name>/mcp`. Gone: the standalone server, its database, logins, client, Deployment, network policy and migration Job; one `toolbox-migrate` Job remains |
+| R3 | D-3. The migrator owns each MCP's schema and migrates it with drizzle's own migrator; the Toolbox's login is granted the tables and refused if it holds more. Gone: the roles, prefixes, role scans, migration scanner and the reset on release |
+| R4 | One local value per variable; an empty one counts as unset. Gone: `default.env`, the local-database shim, the grants hook, `context.client`, the staff-token path, `run-job bootstrap`, the chart's `enabled` switches and a second fake of ID |
+| R5 | Gone: `--json`, the default status tool, `--no-check`, the generated README, the JSON schema, duplicate refusal tables, private CHANGELOGs and by-hand recipes. `parseArgs` replaces the parser; `bun mcp check` guards against an MCP setting the organisation itself; the CLI's end-to-end test joins the acceptance |
+| R6b | The 14 docs gaps and 2 CLI points a newcomer, reading only the docs, could not get past |
+
+**Size.** The audit's diff outside the planning files is 323 files, +4,183 and −9,176, a net 4,993 lines fewer. In code alone (TypeScript, SQL, chart templates, Terraform, Dockerfiles) it is +3,339 and −5,037.
+
+**Gates on the final tree:**
+
+| Gate | Result |
+| --- | --- |
+| Typecheck, lint and build, forced | 20 of 20, 20 of 20 and 2 of 2 |
+| `bun run mcp:test` | 13 of 13 tasks, 945 pass, 0 fail, every gated suite at 100%, 12 s |
+| `bun --filter web test` | 117 pass, with this report in the link check |
+| `bunx knip`, `bun run infra:check` | clean, passed |
+| ID, after `db:test:migrate` | 1,493 pass, 100% lines and functions, 303 s (R6, on 33ed630d; R6b changed no ID code) |
+| The acceptance, alone | 65 pass, 164 s (R6b's run) |
+| The kind stack, alone | 130 pass, 209 s, from a copy with three proof MCPs (R6) |
+
+CI passed on every push of the audit, kind included.
+
+**The end-to-end proof** (R6), from a clean copy, without a terminal:
+- `bun mcp new` made `prooftb` (`toolbox`), `proofsa` (`standalone`) and `proofbo` (`both`, `own`), and `add tool` gave each a read and a mutation. Twelve commands exited 0, in 2.7 to 4.1 s each; 62 files, nothing edited by hand.
+- In the kind stack built from that copy:
+  - the bootstrap provisioned all three, `proofbo`'s database and logins included;
+  - `toolbox-migrate` migrated them with row-level security on;
+  - register wrote the standalone rows;
+  - a person signed in at each standalone path after `standalone_enable`, and through the Toolbox after `toolbox_enable` and `access_grant`;
+  - a committed write landed in `proofbo`'s own database.
+
+**The numbers at 200 MCPs** (R6, on the development Postgres 17.9):
+
+| What | M9 | Now |
+| --- | --- | --- |
+| Roles made by provisioning | 400 | 0 |
+| Provisioning | 0.70 to 0.73 s | 108 to 122 ms |
+| First migration of all 200 | 1.96 to 2.16 s | 2.08 to 2.14 s |
+| Migration with nothing pending | 1.16 to 1.36 s | 1.03 to 1.29 s |
+| One query through `mcpDatabase` | 0.47 to 0.51 ms | 0.38 ms |
+| A burst of 1,000 queries, pool of 10 | 192 to 198 ms | 126 to 137 ms, 0 errors |
+| 1,000 tool calls at once through the Toolbox | 5.18 to 5.94 s | 5.05 to 5.14 s, 0 errors |
+| One tool call, cached caller, median | 10.7 to 12.3 ms | 10.3 to 10.6 ms |
+| Helm release | 61,680 bytes, 5.9% | 50,672 bytes, 4.8% |
+| `mcp:test` with 200 generated MCPs | broke before 100 | 2,144 pass in 39.3 s, at most 7 connections |
+
+**What a newcomer could not do** (R6). A fresh agent, given only the docs, made, tested and planned to ship an MCP in a copy. Every command worked as documented. It was blocked or confused by 14 docs gaps and 2 CLI points, all fixed in R6b. Among them:
+- local sign-in needs a company directory, and the docs now give both routes, including the acceptance kit's host lane;
+- a tool's contract change needs a new version, or the Toolbox refuses it at the next deploy;
+- `bun mcp dev`'s fix line named itself.
+
+**Found by measuring:**
+- One `own` MCP already takes the connection budget past PostgreSQL's default of 100 at the autoscalers' ceilings (`bun mcp check` warns).
+- A deploy that fails on a contract change shows only Helm's message; the Toolbox's reason is in its pod's log.
+
+**Not yet**, each with its trigger:
+
+| What | Trigger |
+| --- | --- |
+| `platform:write` off the Toolbox (C9) | The follow-up proposed for after this merges |
+| A check that a shipped tool's contract changed without a new version | The owner's decision; a failed staging deploy shows the need |
+| Civo's `max_connections` (`Q-CIVO-MAX-CONNECTIONS`) | The first staging tag of this work |
+| The Claude Code sign-in to a `bun mcp` MCP, by hand | The owner, at a browser |
+
 ## Limits
 
 The acceptance uses local test issuers for company directories, a pre-registered public client and loopback HTTP. It does not certify Claude.ai, another host, another company directory or a production deployment; the host lane above records LibreChat and Claude Code by hand.

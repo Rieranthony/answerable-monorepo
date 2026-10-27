@@ -1,23 +1,44 @@
+import { ownMcpDatabase, provisionMcps, provisionOwnMcp, sharedMcps, type DeclaredMcp, type Sql } from "@answerable/mcp-postgres"
 import type { SecretRef, SecretStore } from "./secret-store"
 
-/** A statement on the administrative connection: `text` with `$1`… bound to `params`, returning its rows. */
-export type Sql = (text: string, params?: unknown[]) => Promise<Record<string, unknown>[]>
-
 type Login = { name: string; ref: SecretRef }
-type Database = { name: string; owner: Login; runtime: Login }
+/** A database, owned by its owner login, which migrates it, and served by restricted runtime logins. */
+type Database = { name: string; owner: Login; runtime: Login[] }
 
 const login = (name: string, secret: string, key: string): Login => ({ name, ref: { secret, key } })
+/** A server's own database: `answerable_<name>`, its owner's URL in `<name>-database-owner`, its runtime login's in `<name>-database`. */
+const server = (name: string, prefix: string): Database => ({
+  name: `answerable_${name}`,
+  owner: login(`answerable_${name}_owner`, `${name}-database-owner`, `${prefix}DATABASE_MIGRATION_URL`),
+  runtime: [login(`answerable_${name}_runtime`, `${name}-database`, `${prefix}DATABASE_URL`)],
+})
 
 /**
- * The three databases, each owned by its owner login, which migrates, and served by a restricted runtime login (D4, B1). Each login's URL is
- * a key of a Secret the chart reads: the owners' in the `*-database-owner` Secrets the migration Jobs mount, the runtime logins' in the
- * `*-database` Secrets the services mount.
+ * Every database the release runs on (D4, B1), each login's URL a key of a Secret the chart reads: the owners' in the Secrets the migration
+ * Jobs mount, the runtime logins' in those the services mount.
+ * - ID's, the Toolbox's and the admin MCP's, each with its owner and one runtime login;
+ * - the shared MCP database, owned by its migrator, which the toolbox-migrate Job mounts, and served by the Toolbox's login, which is granted
+ *   each MCP's schema and tables;
+ * - for each own MCP of the chart's list, `answerable_mcp_<name>`, with its owner and runtime logins in `mcp-<name>-database-owner` and
+ *   `mcp-<name>-database`.
  */
-export const databases: Database[] = [
-  { name: "answerable_id", owner: login("answerable_id_owner", "id-database-owner", "DATABASE_MIGRATION_URL"), runtime: login("answerable_id_runtime", "id-database", "DATABASE_URL") },
-  { name: "answerable_toolbox", owner: login("answerable_toolbox_owner", "toolbox-database-owner", "TOOLBOX_DATABASE_MIGRATION_URL"), runtime: login("answerable_toolbox_runtime", "toolbox-database", "TOOLBOX_DATABASE_URL") },
-  { name: "answerable_admin", owner: login("answerable_admin_owner", "admin-database-owner", "ADMIN_DATABASE_MIGRATION_URL"), runtime: login("answerable_admin_runtime", "admin-database", "ADMIN_DATABASE_URL") },
-]
+export function databasesFor(mcps: readonly DeclaredMcp[]): Database[] {
+  const { database, logins } = sharedMcps
+  return [
+    server("id", ""),
+    server("toolbox", "TOOLBOX_"),
+    server("admin", "ADMIN_"),
+    {
+      name: database,
+      owner: login(logins.migrator, "mcps-database-owner", "MCPS_DATABASE_MIGRATION_URL"),
+      runtime: [login(logins.toolbox, "toolbox-mcps-database", "TOOLBOX_MCPS_DATABASE_URL")],
+    },
+    ...mcps.filter(mcp => mcp.database === "own").map(({ name }) => {
+      const own = ownMcpDatabase(name)
+      return { name: own.database, owner: login(own.owner, `mcp-${name}-database-owner`, "DATABASE_MIGRATION_URL"), runtime: [login(own.runtime, `mcp-${name}-database`, "DATABASE_URL")] }
+    }),
+  ]
+}
 
 /** 32 random bytes, base64url: a password with no character that needs quoting in a URL or SQL. */
 function generatePassword() {
@@ -34,6 +55,10 @@ const unfixable = [["rolsuper", "SUPERUSER"], ["rolreplication", "REPLICATION"],
 
 type Options = {
   sql: Sql
+  /** The same administrative login, on one connection to another database, for provisioning the MCPs there. */
+  database: (name: string) => { sql: Sql; close: () => Promise<void> }
+  /** The chart's list of MCPs (OPS_MCPS). */
+  mcps: readonly DeclaredMcp[]
   store: SecretStore
   /** The database host and port the services connect to, written into each URL. */
   host: string
@@ -42,20 +67,28 @@ type Options = {
   sslRootCert: string
   password?: () => string
   log?: (line: string) => void
+  /** `@answerable/mcp-postgres`'s provisioning, of the shared database's MCPs and of an own MCP's database; a test passes its own. */
+  provision?: { shared: typeof provisionMcps; own: typeof provisionOwnMcp }
+}
+
+// A statement that waits on a lock, or runs away, fails with PostgreSQL's reason instead of holding the Job until its deadline.
+async function bounded(sql: Sql) {
+  await sql("set lock_timeout = '10s'")
+  await sql("set statement_timeout = '60s'")
 }
 
 /**
- * Create, or bring back in line, the three databases and their six logins with an administrative login that may create databases and roles
- * (a managed database's administrator, not necessarily a superuser), and write each login's URL to the store. A login whose Secret holds a URL
- * gets that URL's password; one whose Secret is empty gets a new password, written. Running it again changes nothing. Never prints a password.
+ * Create, or bring back in line, every database of {@link databasesFor} and their logins with an administrative login that may create databases
+ * and roles (a managed database's administrator, not necessarily a superuser), and write each login's URL to the store. A login whose Secret
+ * holds a URL gets that URL's password; one whose Secret is empty gets a new password, written. Then, on a connection to each, `@answerable/mcp-
+ * postgres` provisions the MCPs of `mcps`: in the shared database, each shared MCP's schema, owned by the migrator, with `USAGE` for the Toolbox,
+ * which serves it; in each own MCP's database, its schema. Running it again changes nothing. Never prints a password.
  */
-export async function bootstrap({ sql, store, host, port, sslRootCert, password = generatePassword, log = console.log }: Options) {
+export async function bootstrap({ sql, database: connect, mcps, store, host, port, sslRootCert, password = generatePassword, log = console.log, provision = { shared: provisionMcps, own: provisionOwnMcp } }: Options) {
   const address = host.includes(":") ? `[${host}]` : host
-  // A statement that waits on a lock, or runs away, fails with PostgreSQL's reason instead of holding the Job until its deadline.
-  await sql("set lock_timeout = '10s'")
-  await sql("set statement_timeout = '60s'")
-  for (const database of databases) {
-    for (const [login, restricted] of [[database.owner, false], [database.runtime, true]] as const) {
+  await bounded(sql)
+  for (const database of databasesFor(mcps)) {
+    for (const [login, restricted] of [[database.owner, false], ...database.runtime.map(runtime => [runtime, true] as const)] as const) {
       const where = `${login.ref.secret}/${login.ref.key}`
       const stored = await store.get(login.ref)
       const secret = stored === undefined ? password() : passwordIn(stored, where, login.name)
@@ -84,10 +117,29 @@ export async function bootstrap({ sql, store, host, port, sslRootCert, password 
       await sql(`alter database ${identifier(database.name)} owner to ${identifier(database.owner.name)}`)
       log(`${database.name}: now owned by ${database.owner.name}`)
     }
+    const runtime = database.runtime.map(({ name }) => identifier(name)).join(", ")
     await sql(`revoke all on database ${identifier(database.name)} from public`)
-    await sql(`grant connect on database ${identifier(database.name)} to ${identifier(database.runtime.name)}`)
-    await sql(`revoke temporary on database ${identifier(database.name)} from ${identifier(database.runtime.name)}`)
-    log(`${database.name}: only its owner and ${database.runtime.name} may connect`)
+    await sql(`grant connect on database ${identifier(database.name)} to ${runtime}`)
+    await sql(`revoke temporary on database ${identifier(database.name)} from ${runtime}`)
+    log(`${database.name}: only its owner and ${database.runtime.map(({ name }) => name).join(" and ")} may connect`)
+  }
+  const shared = mcps.filter(mcp => mcp.database === "shared")
+  await on(connect(sharedMcps.database), sql => provision.shared(sql, { mcps: shared.map(({ name }) => ({ name })), logins: sharedMcps.logins }))
+  log(`${sharedMcps.database}: ${shared.length ? `${shared.map(({ name }) => name).join(", ")} provisioned` : "no MCP to provision"}`)
+  for (const { name } of mcps.filter(mcp => mcp.database === "own")) {
+    const own = ownMcpDatabase(name)
+    await on(connect(own.database), sql => provision.own(sql, { name, owner: own.owner, runtime: own.runtime }))
+    log(`${own.database}: schema ${name} provisioned`)
+  }
+}
+
+/** `work` on a bounded connection, closed afterwards. */
+async function on(connection: { sql: Sql; close: () => Promise<void> }, work: (sql: Sql) => Promise<void>) {
+  try {
+    await bounded(connection.sql)
+    await work(connection.sql)
+  } finally {
+    await connection.close()
   }
 }
 

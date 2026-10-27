@@ -1,9 +1,10 @@
 import { parseArgs } from "node:util"
-import { resolve } from "node:path"
+import { join, resolve } from "node:path"
 import { deploy, parseDigests, parseJob, runJob, type Deps } from "./deploy"
-import { hostsFor, parseEnvironment } from "./environments"
+import { CHART, hostsFor, parseEnvironment } from "./environments"
 import { PipelineError, UsageError } from "./errors"
 import { systemRunner, type Output, type Runner } from "./run"
+import type { DeclaredMcp } from "@answerable/mcp-postgres"
 import { formatReport, runSmoke, smokePassed, type Fetch } from "./smoke"
 
 /** Everything the command line touches outside itself. Tests pass fakes; {@link systemDeps} passes the real ones. */
@@ -36,17 +37,18 @@ export function systemDeps(): CliDeps {
 }
 
 const USAGE = `Usage:
-  bun infra/pipeline/src/cli.ts deploy --environment <staging|production> --image-tag <sha-commit> [--image-digest <image>=sha256:<hex> x4] [--timeout <10m>]
-  bun infra/pipeline/src/cli.ts run-job <bootstrap|register|make-admin> --environment <staging|production> [--email <address>] [--timeout <10m>]
+  bun infra/pipeline/src/cli.ts deploy --environment <staging|production> --image-tag <sha-commit> [--image-digest <image>=sha256:<hex> for each image] [--timeout <10m>]
+  bun infra/pipeline/src/cli.ts run-job <register|make-admin> --environment <staging|production> [--email <address>] [--timeout <10m>]
   bun infra/pipeline/src/cli.ts smoke --environment <staging|production> [--wait <seconds>] [--interval <seconds>]
 
-deploy pins the four images (id, toolbox, admin-mcp, ops) by manifest digest: given with --image-digest for all
-four, or looked up with docker buildx from the tag. It writes the Secret id-env from BETTER_AUTH_SECRET
+deploy pins the images of infra/pipeline/images.json (id, mcps, ops) by manifest digest: given with --image-digest for
+every one, or looked up with docker buildx from the tag. It writes the Secret id-env from BETTER_AUTH_SECRET
 and ROOT_ADMIN_SECRET, the MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET pair and the
 GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET pair when set, and BETTER_AUTH_SECRETS when set. run-job runs one ops Job on
-the release's own values; make-admin needs --email. deploy and run-job read the cluster from KUBE_SERVER, KUBE_CA and
-KUBE_TOKEN and report on standard error. smoke prints its table on standard output. Exit codes: 0 done, 1 failed,
-2 wrong usage.
+the release's own values, with the chart of the commit the release runs, and prints revision=<commit> on standard
+output; make-admin needs --email. deploy and run-job read the cluster from KUBE_SERVER, KUBE_CA and KUBE_TOKEN and
+report on standard error. smoke checks the MCPs of the checkout's charts/answerable/mcps.json and prints its table on
+standard output. Exit codes: 0 done, 1 failed, 2 wrong usage.
 `
 
 function parse<const Options extends NonNullable<Parameters<typeof parseArgs>[0]>["options"]>(args: readonly string[], options: Options) {
@@ -105,7 +107,7 @@ async function runCommand(command: string, args: readonly string[], deps: CliDep
         timeout: { type: "string" },
       })
       if (positionals.length !== 1) throw new UsageError("run-job takes exactly one job name")
-      await runJob(
+      const revision = await runJob(
         {
           environment: parseEnvironment(values.environment),
           job: parseJob(positionals[0]),
@@ -114,6 +116,7 @@ async function runCommand(command: string, args: readonly string[], deps: CliDep
         },
         deployDeps(deps),
       )
+      deps.out(`revision=${revision}\n`)
       return 0
     }
     case "smoke": {
@@ -125,7 +128,8 @@ async function runCommand(command: string, args: readonly string[], deps: CliDep
       noPositionals(positionals, command)
       const environment = parseEnvironment(values.environment)
       const hosts = hostsFor(environment)
-      const results = await runSmoke(hosts, {
+      const { mcps } = (await Bun.file(join(deps.root, CHART, "mcps.json")).json()) as { mcps: DeclaredMcp[] }
+      const results = await runSmoke(hosts, mcps, {
         fetch: deps.fetch,
         sleep: deps.sleep,
         now: deps.now,

@@ -1,95 +1,105 @@
 import type { IdAdmin } from "@answerable/id-admin"
-import { createMcpServer, errorCodeOf, ToolError, type IdVerifierConfig, type Mutation, type Provider, type Served, type Tool, type UserPrincipal } from "@answerable/mcp"
-import { createEvidence, createPostgresIntentStore, type Database, type EvidenceEvent } from "@answerable/mcp-postgres"
-import { sql } from "drizzle-orm"
-import type { Tracer } from "@opentelemetry/api"
+import { createMcpServer, type IdVerifierConfig, type Mount, type Mutation, type Served, type Tool, type UserPrincipal } from "@answerable/mcp"
+import { createCalls, createIdProfiles, health, perRequest, type Checked, type Serve, type Tracer } from "@answerable/mcp-platform"
+import type { Database } from "@answerable/mcp-postgres"
 import { createAdmin } from "./admin"
-import { ingest, readCatalogue, readHostClient, type Catalogue, type HostClient } from "./catalogue"
+import { ingest, readCatalogue, readHostClient } from "./catalogue"
 import { createGrantsReader } from "./grants"
 import { createToolboxProvider } from "./meta"
 import { allowed, ordered, policyClassOf, projectionOf } from "./projection"
 import { search } from "./search"
-import { traced } from "./spans"
 
-/** What `createToolbox` takes: the providers to mount, the ID issuer and resource to trust, the database, ID's admin API and a tracer. */
+const metadata = "/.well-known/oauth-protected-resource/"
+
+/** What `createToolbox` takes: the providers to serve, the ID issuer and resource to trust, the database, ID's admin API and a tracer. */
 export type ToolboxConfig = {
-  providers: readonly Provider[]
+  /**
+   * The providers it serves, each with its `db` when it has a `database`, and where: in the hub, alone, or both, `toolbox` unless given:
+   * `mcpDatabases(mounted, …).mount`.
+   */
+  mount: readonly (Mount & { readonly serve?: Serve })[]
+  /** The pools of the mounted providers' databases, by name, which `/health` reports beside the Toolbox's own: `mcpDatabases(mounted, …).pools`. */
+  pools?: Readonly<Record<string, Checked>>
+  /** The hub's ID issuer and resource, `<origin>/mcp`, the audience of its tokens. */
   auth: IdVerifierConfig
+  /** Where the MCPs served alone are: each is the resource `<origin>/<name>/mcp`, the audience of its tokens. The hub's origin unless given. */
+  origin?: string
   db: Database
-  /** ID's admin API as the Toolbox's machine client: `createIdAdmin(config)`, shared with `startGrantsPoller`. */
+  /** ID's admin API as the Toolbox's machine client: `createIdAdmin(config)`, shared with the audit-log poller; it also reads who is calling. */
   id: IdAdmin
-  /** Where spans go: `createTracer(endpoint).tracer`, or `createMemoryTracer().tracer` in tests. */
+  /** Where spans go: `createTracer("answerable-toolbox", endpoint).tracer`, or `createMemoryTracer().tracer` in tests. */
   spans: Tracer
 }
 
-// The most a read may answer, as JSON: larger data goes through pagination, projection or aggregation.
-const resultLimit = 100 * 1024
-const text = (value: unknown) => (typeof value === "string" ? value : undefined)
-
 /**
- * The Toolbox: one MCP endpoint that serves each person the capabilities their organisation granted them. It ingests every provider's manifest
- * (refusing a changed contract under an old version), reads each caller's grant strings from ID through a 60-second cache that the poller
- * invalidates, and the organisation's catalogue and the host client's settings on every request, serves the direct or the meta projection, keeps
- * intents in Postgres, records evidence and a span for every call and every intent transition, answers `RESULT_TOO_LARGE` for a read above
- * 100 KiB, tells listening callers when a grant changes, answers `GET /health` from the database and serves the platform-tier admin API under
- * `/admin/v1`.
+ * The Toolbox: one MCP endpoint, the hub, that serves each person the capabilities their organisation granted them. It ingests every hub
+ * provider's manifest (refusing a changed contract under an old version), reads each caller's grant strings and who they are from ID, at once on
+ * a call, through 60-second caches that the poller invalidates, and the organisation's catalogue and the host client's settings once per request,
+ * serves the direct or the meta projection, runs each capability with its own provider's `db`, keeps intents in Postgres, records evidence and a
+ * span for every call, every refusal and every intent transition (`@answerable/mcp-platform`), answers `RESULT_TOO_LARGE` for a read above 100
+ * KiB, tells listening callers when a grant changes, answers `GET /health` from its own database, reporting every MCP it serves and the MCP
+ * databases, and serves the platform-tier admin API under `/admin/v1`.
+ *
+ * Beside the hub, each MCP served `standalone` or `both` is served alone at `<origin>/<name>/mcp`, with its own `createMcpServer` and
+ * resource, so that a token for one MCP, or for the hub, is refused by another: a request goes to the MCP its path names, `/<name>/…` or
+ * `/.well-known/oauth-protected-resource/<name>/…`, and every other path to the hub. A tool served alone is refused, and the refusal recorded,
+ * unless the token carries its scopes; its intents and evidence are in the Toolbox's database, and who is calling comes from the same cache.
  */
-export async function createToolbox({ providers, auth, db, id, spans }: ToolboxConfig) {
+export async function createToolbox({ mount, pools = {}, auth, origin = new URL(auth.resource).origin, db, id, spans }: ToolboxConfig) {
   const grants = createGrantsReader({ id, resource: auth.resource, changed: () => server.toolsChanged() })
-  const evidence = createEvidence(db)
-  const mounted = providers.toSorted((a, b) => (a.id < b.id ? -1 : 1)).map(ordered)
-  const admin = createAdmin({ auth, db, providers: mounted, id, evidence })
+  //#region profiles
+  // Every handler, in the hub and in each MCP served alone, is told who is calling, which only ID knows: the Toolbox's machine client reads it,
+  // cached per member.
+  const profiles = createIdProfiles(id)
+  //#endregion
+  // The most a read may answer, as JSON: larger data goes through pagination, projection or aggregation.
+  const calls = createCalls({ db, spans, salt: auth.resource, readLimit: 100 * 1024 })
+  const hub = mount.filter(entry => entry.serve !== "standalone")
+  const entries = hub.toSorted((a, b) => (a.provider.id < b.provider.id ? -1 : 1)).map(entry => ({ ...entry, provider: ordered(entry.provider) }))
+  const mounted = entries.map(entry => entry.provider)
+  const admin = createAdmin({ auth, db, providers: mounted, id, evidence: calls.evidence })
   const capabilities = mounted.flatMap(provider => provider.tools)
-  // One read per request: the SDK verifies the token into a new principal for every request.
-  const authorities = new WeakMap<UserPrincipal, Promise<{ grants: readonly string[]; catalogue: Catalogue; host: HostClient }>>()
-  function authority(principal: UserPrincipal) {
-    let found = authorities.get(principal)
-    if (!found) {
-      found = Promise.all([grants.read(principal), readCatalogue(db, principal.organizationId), readHostClient(db, principal.clientId)])
-        .then(([granted, catalogue, host]) => ({ grants: granted, catalogue, host }))
-      authorities.set(principal, found)
-    }
-    return found
-  }
+  const authority = perRequest((principal: UserPrincipal) => Promise.all([grants.read(principal), readCatalogue(db, principal.organizationId), readHostClient(db, principal.clientId)])
+    .then(([granted, catalogue, host]) => ({ grants: granted, catalogue, host })))
   async function caller(principal: UserPrincipal) {
     const { grants: granted, catalogue } = await authority(principal)
     const usable = capabilities.filter(tool => allowed(granted, catalogue, tool))
     return { grants: granted, capabilities: usable.map(tool => ({ tool, policy_class: tool.kind === "mutate" ? policyClassOf(catalogue, tool) : null })) }
   }
-  // The capability a meta tool ran or refused, by execution id: the call's evidence and span are that capability's.
-  const named = new Map<string, { tool: Served<Tool | Mutation>; denied?: boolean }>()
   const toolbox = createToolboxProvider({
     providers: mounted,
     caller,
     search: (query, tools, page) => search(db, query, tools, page),
+    // The capability a meta tool runs or refuses: the call's evidence and span are that capability's.
     run(tool, args, context) {
-      named.set(context.executionId, { tool })
+      calls.attribute(context.executionId, tool)
       return server.call(tool, args, context)
     },
     refused(identity, context) {
       const tool = capabilities.find(capability => capability.identity === identity)
-      if (tool) named.set(context.executionId, { tool, denied: true })
+      if (tool) calls.attribute(context.executionId, tool, "not granted")
     },
   })
   const whoami = toolbox.tools.find(tool => tool.name === "toolbox.whoami")
-  const own = new Set(toolbox.tools)
-  await ingest(db, [toolbox, ...providers])
-  const actor = (principal: UserPrincipal) => ({ organisation_id: principal.organizationId, actor_type: "user" as const, actor_id: principal.userId, client_id: principal.clientId })
+  const own = new Set<Served<Tool | Mutation>>(toolbox.tools)
+  await ingest(db, [toolbox, ...hub.map(entry => entry.provider)])
+  const decide = calls.allow(async (principal, tool) => {
+    if (!principal.scopes.includes("toolbox")) return { reason: "no toolbox scope" }
+    if (own.has(tool)) return undefined
+    const { grants: granted, catalogue } = await authority(principal)
+    return allowed(granted, catalogue, tool) ? undefined : { reason: "not granted" }
+  })
   const server = createMcpServer({
     provider: toolbox,
-    mount: mounted,
+    mount: entries,
     auth,
-    intents: createPostgresIntentStore(db, evidence),
-    async allow(principal, tool, called) {
-      const scoped = principal.scopes.includes("toolbox")
-      const ok = scoped && (own.has(tool) || await authority(principal).then(({ grants, catalogue }) => allowed(grants, catalogue, tool)))
-      if (!ok && called) {
-        await evidence.record({
-          ...actor(principal), kind: "capability.denied", outcome: "denied", capability_identity: tool.identity, capability_version: tool.version,
-          reason: scoped ? "not granted" : "no toolbox scope",
-        })
-      }
-      return ok
+    profiles,
+    intents: calls.intents,
+    allow(principal, tool, called) {
+      // A call starts reading who is calling now, beside the grants read, not after it: the read before the handler then shares it, since
+      // `profiles` keeps one read per member and organisation. A refused call has read it for nothing.
+      if (called) profiles(principal).catch(() => {})
+      return decide(principal, tool, called)
     },
     // Both projections serve toolbox_whoami; the direct one serves the granted capabilities, the meta one the Toolbox's tools that reach them.
     async project(principal, usable) {
@@ -97,51 +107,31 @@ export async function createToolbox({ providers, auth, db, id, spans }: ToolboxC
       return usable.filter(tool => tool === whoami || own.has(tool) === meta)
     },
     policyClass: async (mutation, principal) => policyClassOf((await authority(principal)).catalogue, mutation),
-    wrapCall: (call, run) => traced(spans, call, auth.resource, async span => {
-      const settled = await run().then(data => ({ data }), (failure: unknown) => ({ failure }))
-      const { tool, denied } = named.get(call.executionId) ?? { tool: call.tool }
-      named.delete(call.executionId)
-      span.updateName(`tools/call ${tool.identity}`)
-      span.setAttributes({ "answerable.capability.identity": tool.identity, "answerable.capability.version": tool.version })
-      const { traceId, spanId } = span.spanContext()
-      const record = (fields: Pick<EvidenceEvent, "kind" | "outcome" | "reason" | "error_code" | "data" | "intent_id" | "receipt_id">) => evidence.record({
-        ...actor(call.principal), capability_identity: tool.identity, capability_version: tool.version,
-        execution_id: call.executionId, request_id: String(call.requestId), trace_id: traceId, span_id: spanId, ...fields,
-      })
-      async function fail(failure: unknown): Promise<never> {
-        span.setAttribute("answerable.outcome", denied ? "denied" : "failure")
-        await record(denied
-          ? { kind: "capability.denied", outcome: "denied", reason: "not granted" }
-          : { kind: "capability.completed", outcome: "failure", error_code: errorCodeOf(failure) })
-        throw failure
-      }
-      if ("failure" in settled) return fail(settled.failure)
-      const bytes = Buffer.byteLength(JSON.stringify(settled.data))
-      if (tool.kind === "read" && bytes > resultLimit) {
-        return fail(new ToolError("RESULT_TOO_LARGE", `The result of ${tool.identity} is ${bytes} bytes, above the 100 KiB limit (${resultLimit} bytes); narrow the request with limit, cursor or filters`, { details: { bytes, limit: resultLimit } }))
-      }
-      span.setAttributes({ "answerable.outcome": "success", "answerable.result.bytes": bytes })
-      // A prepare or a commit names its intent, and a commit its receipt.
-      const ids = tool.kind === "read" ? {} : { intent_id: text(settled.data.intent_id), receipt_id: text(settled.data.receipt_id) }
-      await record({ kind: "capability.completed", outcome: "success", data: { result_bytes: bytes }, ...ids })
-      return settled.data
-    }),
+    wrapCall: calls.wrapCall,
   })
+  //#region alone
+  // Each MCP served alone: a server of its own whose resource is its path, refusing a tool whose scopes the token lacks.
+  const alone = createCalls({ db, spans, salt: origin })
+  const scoped = alone.allow((principal, tool) => {
+    const missing = tool.scopes.filter(scope => !principal.scopes.includes(scope))
+    return missing.length ? { reason: "missing_scope", data: { missing } } : undefined
+  })
+  const servers = new Map(mount.filter(entry => entry.serve === "standalone" || entry.serve === "both").map(({ provider, db: mcp }) => [provider.id, createMcpServer({
+    provider, db: mcp, auth: { ...auth, resource: `${origin}/${provider.id}/mcp` }, profiles, intents: alone.intents, allow: scoped, wrapCall: alone.wrapCall,
+  })]))
+  //#endregion
+  const healthy = health({ toolbox: db.$client }, mount.map(entry => entry.provider.id).toSorted(), pools)
   return {
     async fetch(request: Request) {
       const { pathname } = new URL(request.url)
       if (/^\/admin\/v1(\/|$)/.test(pathname)) return admin(request)
-      if (request.method === "GET" && pathname === "/health") {
-        try {
-          await db.execute(sql`select 1`)
-          return Response.json({ status: "ok" })
-        } catch {
-          return Response.json({ status: "unavailable" }, { status: 503 })
-        }
-      }
-      return server.fetch(request)
+      if (request.method === "GET" && pathname === "/health") return healthy()
+      const name = (pathname.startsWith(metadata) ? pathname.slice(metadata.length - 1) : pathname).split("/")[1]!
+      return (servers.get(name) ?? server).fetch(request)
     },
-    /** The grant cache, for `startGrantsPoller` to invalidate; an invalidation tells listening callers that their tools changed. */
+    /** The grant cache, for `startAuditPoller` to invalidate; an invalidation tells listening callers that their tools changed. */
     grants,
+    /** Who each caller is, cached, for `startAuditPoller` to invalidate on the same events. */
+    profiles,
   }
 }

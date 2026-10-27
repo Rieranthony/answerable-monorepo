@@ -1,0 +1,124 @@
+---
+title: Ship an MCP
+description: "Ship an MCP to staging and then production with two git tags: what happens in order, how to check it worked, how to roll back, what is not automatic, and the errors the workflows give."
+---
+
+```sh
+git tag staging/acme-notes
+git push origin staging/acme-notes
+```
+
+The owner runs these two commands, not a coding agent. They ship the commit you tag to **staging**. Your MCP gets its database, its migrations, its sign-in through Answerable ID and its place in the Toolbox or at its own URL, with nothing else to set up. Then ship the same commit to **production**:
+
+```sh
+git tag production/acme-notes
+git push origin production/acme-notes
+```
+
+A **tag** is a name attached to a commit. A tag that starts with `staging/` ships to staging, and one that starts with `production/` ships to production. What follows the slash is yours: use the MCP and what changed, in lowercase letters, digits and hyphens. A name works once: git refuses a tag that exists, so tag the next change `staging/acme-notes-2`.
+
+**What a name may hold.** The workflows start on the patterns `staging/*` and `production/*`, where `*` matches anything but a `/`. So a tag with a second slash, such as `staging/acme/notes`, starts nothing, and git refuses spaces and `~ ^ : ? * [ \` in any tag.
+
+## Before you tag
+
+Commit your MCP and land it on `main`: every file [What to commit](/docs/mcp/create#what-to-commit) lists. `bun mcp check acme` passes and has nothing left to commit. A tool whose kind, risk, input or output changed since the last tag has a new version, or the deploy fails: [Change a tool after it ships](/docs/mcp/add-a-tool#change-a-tool-after-it-ships). A tag on a commit that is not on `main` is refused. Only the owner pushes to `main` and pushes tags, because write access to `main` is access to every deploy secret.
+
+**A coding agent hands over** a branch, never a tag. It commits on a branch, then tells the owner:
+
+- the branch and its last commit;
+- the output of `bun mcp check acme`;
+- the two tag names, such as `staging/acme-notes` and `production/acme-notes`.
+
+The owner lands the branch on `main`, then tags the commit as it is on `main`: the same one after a fast-forward, a new one after a rebase.
+
+## What happens
+
+On a `staging/` tag, in this order. Each step stops the run when it fails.
+
+1. **The tag names a commit of `main`.**
+2. **CI runs:** typecheck, lint, build, every test suite, and the checks of the charts and the Terraform.
+3. **Staging's infrastructure is applied.** It changes nothing unless Terraform or a chart for it changed.
+4. **The images are built once** for the commit, signed, and named `sha-<commit>`. One image, `mcps`, holds the Toolbox, the admin MCP and every MCP, so a new MCP needs no image of its own.
+5. **The release is deployed,** by the digest of each image. Before the servers start, these Jobs run one after another:
+   1. **`ops-bootstrap` makes your MCP's database.** It makes the schema of an MCP that is new, from `charts/answerable/mcps.json`, with `USAGE` on it for the Toolbox. It changes nothing when everything exists.
+   2. **The migrations run.** `id-migrate`, then `toolbox-migrate`, which migrates the Toolbox's database and applies your MCP's pending migrations, then `admin-migrate`. [Your MCP's database](/docs/mcp/database#migrations-ship-by-themselves).
+6. **The servers roll.** The Toolbox starts with your MCP mounted in its hub, if it runs in the Toolbox, and with its new path, `/acme/mcp`, if it runs on its own URL. The deploy waits until the servers are ready.
+7. **`ops-register` registers your MCP in Answerable ID,** on every deploy. For an MCP on its own URL it makes the resource `https://mcp.<zone>/acme/mcp`, its Claude Code client `claude-code-acme` and their link. An MCP in the Toolbox registers nothing: the Toolbox's resource covers it, and staff enable it later. [Its sign-in](/docs/mcp/sign-in).
+8. **The smoke test runs** through the public hostnames, and retries for five minutes.
+
+A step that fails after the release started rolls the whole release back, and the workflow prints the logs of the migration and ops Jobs.
+
+**On a `production/` tag,** the run first checks that the commit is on `main` and that staging built and signed every image for it. A commit staging never shipped is refused. It then waits for the owner to approve, applies production's infrastructure, deploys **exactly the images staging tested**, by digest, and runs the smoke test. Production is never rebuilt.
+
+## Check that it worked
+
+```sh
+gh run watch
+```
+
+The run's summary says which commit each environment runs, and ends with the smoke test's table:
+
+| Check | Passes when |
+| --- | --- |
+| `id /healthz` | Answerable ID answers `status` `ok` |
+| `id /readyz` | Answerable ID is ready |
+| `id discovery` | Its discovery document names the issuer |
+| `id jwks` | It publishes at least one signing key |
+| `toolbox /health` | The Toolbox is `ok` and lists **every MCP**, yours included, in `providers` |
+| `toolbox resource metadata` | The Toolbox's resource names itself and Answerable ID |
+| `admin-mcp /health` | The admin MCP is `ok` |
+| `admin-mcp resource metadata` | Its resource names itself and Answerable ID |
+| `<name> resource metadata` | For each MCP of `standalone` or `both`: its resource, `https://mcp.<zone>/<name>/mcp`, names itself and Answerable ID |
+
+You can ask the same questions yourself. `providers` lists `acme`:
+
+```sh
+curl https://toolbox.answerable-staging.uk/health
+```
+
+For an MCP on its own URL, the metadata names its resource:
+
+```sh
+curl https://mcp.answerable-staging.uk/.well-known/oauth-protected-resource/acme/mcp
+```
+
+`bun mcp list` prints where each MCP is reached in staging and production, so you know which URL to open. It does not say whether the MCP has shipped. The hostnames for production are `toolbox.answerable.org` and `mcp.answerable.org`.
+
+When the smoke test passes, the MCP is reachable and signed in. **Nobody can use it yet:** [staff enable it for an organisation and grant it to people](/docs/mcp/sign-in#what-staff-do-for-each-organisation).
+
+## Roll back
+
+| You want | Do this |
+| --- | --- |
+| Staging, or production, back to an earlier commit | Tag that commit with a new name: `git tag staging/back-acme-notes <commit>`, or `production/back-acme-notes`. Nothing is built again: the images exist. A production tag needs a commit staging has shipped |
+| A failed deploy | Nothing. It rolled itself back, and the logs are in the workflow. Fix the cause and tag again with a new name |
+
+**A migration is never rolled back.** The earlier version runs on the newer schema, so write every migration to allow that: add in one release, remove in a later one. [Your MCP's database](/docs/mcp/database#migrations-ship-by-themselves).
+
+## Where things stand
+
+- **The whole sequence above has run in the local Kubernetes stack** (`bun run infra:test`), for one MCP in the Toolbox and one on its own URL: schema, migration, mounting, path, registration and smoke test.
+- **On Civo, staging has run the release before this one.** `staging/fourth` passed its smoke test on 2026-10-23. The first tag that ships the `mcps` image and the `mcp` hostname has not been pushed: Not yet. It needs steps from the owner, once: Terraform adds the `mcp.<zone>` hostname and reissues the origin certificate by itself, but the new `mcps` package on GHCR is private, so the owner makes it public and reruns the failed jobs, and, only when Answerable ID's root secret is already locked, ships that tag with break glass and removes it with the next tag. `infra/README.md` in the repository lists them under "The first ship of the mcps image".
+- **Production: Not yet.** No `production/` tag has shipped. The owner's first one waits for the production rehearsal, which `docs/12-deployment.md` describes. Until then there are no production URLs to open.
+
+## What is not automatic
+
+- **Enabling an organisation and granting people.** [Staff do it](/docs/mcp/sign-in#what-staff-do-for-each-organisation), in the admin MCP, after the MCP ships.
+- **Removing an MCP.** Its name goes into `mcps/retired.json` and its folder is deleted. Its schema and its rows in Answerable ID stay. A command that removes them: Not yet. Trigger: the first MCP that is removed.
+- **Holding one MCP back from production** while its commit ships: Not yet. A tag ships every MCP of the commit. Trigger: the first MCP that must stay out of production while its commit ships.
+
+## Errors
+
+The first two rows are in the workflow's log, as an error. A tag that matches no pattern starts no run at all. The others are in the deploy's log and its summary, except the Toolbox's own message, which is in its log.
+
+| You see | Meaning | What to do |
+| --- | --- | --- |
+| `<tag> points at <commit>, which is not on main; tag a commit of main` | The tag is on a commit that is not on `main` | Land the commit on `main`, then tag it |
+| `<registry>/<image>:sha-<commit> does not exist: staging has not shipped <commit>; tag it staging/<name> first` | A production tag on a commit staging never shipped | Tag the commit `staging/<name>` first, and wait for it to pass |
+| No run starts | The tag does not match `staging/*` or `production/*`, as with a second slash | Tag the commit again, with one slash, after `staging` or `production` |
+| `The upgrade failed. The logs of the migration and ops Jobs follow.` | A migration or an ops Job failed, or the pods did not become ready. Helm rolled the release back | Read the Job log printed below the message: `toolbox-migrate` names the MCP whose migration failed, and `ops-register` the row it could not make. Fix it, commit and tag again with a new name. When every Job's log is clean, a server did not become ready; for the Toolbox, one cause is a tool changed without a new version, the next row |
+| `Capability <identity> version <version> changed its <fields> without a new version; give the tool a new version (YYYY-MM-DD) in its definition or its provider`, in the Toolbox's log | A tool in the Toolbox changed its kind, risk, input or output under the version staging already holds, so the Toolbox refused to start and the upgrade failed as above | Give the tool a new version: [Change a tool after it ships](/docs/mcp/add-a-tool#change-a-tool-after-it-ships). Commit and tag again with a new name |
+| `helm upgrade failed with exit code <code>` | The last line of the same failure | As above |
+| `providers are <list>, expected <list>` | The Toolbox's smoke check: `/health` lists other MCPs than `charts/answerable/mcps.json` declares. The release that serves is not the one you shipped | Check the deploy finished. Run `bun mcp check <name>` and commit what it rewrites |
+| `HTTP <status>` on `<name> resource metadata` | The check got an answer other than 200. With 404, the Toolbox does not serve the MCP's path | Check that `serve` is `standalone` or `both` in `mcp.json` and that the generated lists are committed |
+| `no answer: …` | The environment did not answer the smoke test within the five minutes. A rollout or a first certificate can take longer | Run the workflow's smoke job again; if it still fails, the owner reads the pods' logs |

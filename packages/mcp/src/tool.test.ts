@@ -92,3 +92,16 @@ test("errors declare the custom codes a tool raises: none by default, frozen, an
     )
   }
 })
+
+test("an example is one valid input, checked when the module loads; a wrong one is refused, naming the tool and the field", () => {
+  expect(defineTool({ ...fields, example: { limit: 5 } }).example).toEqual({ limit: 5 })
+  expect(defineTool(fields).example).toBeUndefined()
+  expect(() => defineTool({ ...fields, example: { limit: 500 } })).toThrow("Tool records.list: the example is not a valid input: limit: Too big: expected number to be <=100")
+  expect(() => defineTool({ ...fields, example: { limit: 5, extra: true } as never })).toThrow("Tool records.list: the example is not a valid input: extra: Unknown field")
+  const mutation = {
+    name: "records.delete", description, input: z.object({ id: z.uuid() }), output: z.object({}),
+    async prepare() { return { targets: [], preview: { summary: "Delete" } } }, async commit() { return { results: {}, applied_changes: [], effects_performed: [] } },
+  }
+  expect(defineMutation({ ...mutation, example: { id: "0199a4e2-7b06-7000-87bd-91723fe45f93" } }).example).toEqual({ id: "0199a4e2-7b06-7000-87bd-91723fe45f93" })
+  expect(() => defineMutation({ ...mutation, example: { id: "r1" } })).toThrow("Mutation records.delete: the example is not a valid input: id: Invalid UUID")
+})

@@ -12,13 +12,13 @@ const operations = Object.entries(contract.paths).flatMap(([template, methods]) 
 const admin = "https://id.test/api/admin"
 const toolbox = "https://toolbox.test/mcp"
 const google = "https://accounts.google.com"
-type Options = { body?: unknown; key?: string | null; token?: "read" | "write" | "other" | null; ifMatch?: string; ifNoneMatch?: "*" }
+type Options = { body?: unknown; key?: string | null; token?: "read" | "write" | "other" | "root" | null; ifMatch?: string; ifNoneMatch?: "*" }
 // One answer: the status the fake gives, the request, and what else to check in it.
 type Row = [status: number, method: string, path: string, options?: Options, check?: (body: unknown, response: globalThis.Response) => void]
 
 test("every answer the fake gives is one Answerable ID's admin contract declares for the operation: its status, its body's schema and its headers", async () => {
-  const id = createFakeId({ operationInProgress: true, resources: { [admin]: ["platform:read", "platform:read platform:write"], "https://other.test/api": ["other"] } })
-  const tokens: Record<string, string> = {}
+  const id = createFakeId({ operationInProgress: true, rootSecret: "root-secret", resources: { [admin]: ["platform:read", "platform:read platform:write"], "https://other.test/api": ["other"] } })
+  const tokens: Record<string, string> = { root: "root-secret" }
   for (const [name, resource, scope] of [["read", admin, "platform:read"], ["write", admin, "platform:read platform:write"], ["other", "https://other.test/api", "other"]] as const) {
     const answer = await id.config.fetch("https://id.test/auth/oauth2/token", {
       method: "POST", headers: { Authorization: `Basic ${btoa("toolbox-hub:hub-secret")}` }, body: new URLSearchParams({ grant_type: "client_credentials", resource, scope }),
@@ -35,6 +35,8 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
   id.domain(organisation, "newco.example")
   const provider = id.ssoProvider(organisation, { issuer: google, domain: "newco.example" })
   const entitlement = id.entitlement(organisation, { memberId: member, resource: toolbox, scopes: ["e2e"] }).id
+  const capability = Bun.randomUUIDv7()
+  id.capabilities(organisation).push({ id: capability, revision: 1, organizationId: organisation, clientId: "claude-code", resource: toolbox, grantKind: "refresh_token", scopes: ["e2e"], status: "active", memberId: null, groupId: null, validFrom: null, validUntil: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } as never)
   id.grant(organisation, member, [{ kind: "resource", id: toolbox, scopes: ["e2e"] }])
   id.event("organization.created", organisation, { targetType: "organization", targetId: organisation })
   id.resource(toolbox, ["e2e", "toolbox"])
@@ -126,7 +128,15 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
     [200, "POST", at(`/entitlements/${entitlement}/disable`)],
     [200, "POST", at(`/entitlements/${entitlement}/enable`)],
     [405, "GET", at(`/entitlements/${entitlement}/disable`)],
-    [405, "PATCH", at(`/entitlements/${entitlement}`), { body: {} }],
+    [412, "PATCH", at(`/entitlements/${entitlement}`), { body: { scopes: ["toolbox"] }, ifMatch: `"${entitlement}:1"` }],
+    [200, "PATCH", at(`/entitlements/${entitlement}`), { body: { scopes: ["toolbox", "e2e", "e2e"] }, ifMatch: `"${entitlement}:3"` }, body => expect(body).toMatchObject({ scopes: ["e2e", "toolbox"], revision: 4 })],
+    [400, "PATCH", at(`/entitlements/${entitlement}`), { body: { scopes: ["nothing"] }, ifMatch: `"${entitlement}:4"` }],
+    [404, "PATCH", at(`/entitlements/${missing}`), { body: { scopes: ["toolbox"] } }],
+    [200, "GET", at(`/capabilities/${capability}`)],
+    [404, "GET", at(`/capabilities/${missing}`)],
+    [200, "PATCH", at(`/capabilities/${capability}`), { body: { scopes: ["toolbox", "e2e"] }, ifMatch: `"${capability}:1"` }, body => expect(body).toMatchObject({ scopes: ["e2e", "toolbox"], revision: 2 })],
+    [412, "PATCH", at(`/capabilities/${capability}`), { body: { scopes: ["e2e"] }, ifMatch: `"${capability}:1"` }],
+    [405, "DELETE", at(`/capabilities/${capability}`)],
     [200, "GET", at("/capabilities")],
     [201, "POST", at("/capabilities"), { body: { clientId: "claude-code", resource: toolbox, grantKind: "authorization_code", scopes: ["e2e"] } }],
     [200, "GET", resource],
@@ -136,7 +146,36 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
     [405, "DELETE", resource],
     [200, "GET", "/clients/claude-code"],
     [404, "GET", "/clients/nobody"],
-    [405, "PATCH", "/clients/claude-code", { body: {} }],
+    [200, "GET", "/organizations?q=newco", { token: "root" }],
+    [201, "POST", "/resources", { body: { classification: "platform_shared", organizationId: null, identifier: "https://acme.test/mcp", name: "Acme", allowedScopes: ["acme:write", "acme:read", "acme:read"], accessTokenTtl: 900 } }, body => {
+      expect(body).toMatchObject({ identifier: "https://acme.test/mcp", name: "Acme", allowedScopes: ["acme:read", "acme:write"], accessTokenTtl: 900, revision: 1, clients: [] })
+    }],
+    [409, "POST", "/resources", { body: { classification: "platform_shared", organizationId: null, identifier: "https://acme.test/mcp", name: "Acme", allowedScopes: ["acme:read"] } }],
+    [400, "POST", "/resources", { body: { identifier: "https://nothing.test/mcp" } }, body => expect(body).toMatchObject({ errors: [{ path: "identifier" }] })],
+    [405, "GET", "/resources"],
+    [200, "PATCH", `/resources/${encodeURIComponent("https://acme.test/mcp")}`, { body: { name: "Acme MCP", accessTokenTtl: 600, allowedScopes: ["acme:write", "acme:read", "acme:admin"] } }, body => {
+      expect(body).toMatchObject({ name: "Acme MCP", accessTokenTtl: 600, allowedScopes: ["acme:admin", "acme:read", "acme:write"], revision: 2 })
+    }],
+    [201, "POST", "/clients", { body: { clientId: "ops", name: "Ops", organizationId: organisation, tokenEndpointAuthMethod: "client_secret_basic", grantTypes: ["client_credentials"], redirectUris: [], clientCredentialsScopes: ["platform:read"] } }, body => {
+      expect(body).toMatchObject({ clientId: "ops", name: "Ops", clientCredentialsScopes: ["platform:read"], hasClientSecret: true, clientSecret: expect.stringMatching(/^secret-/), resources: [] })
+    }],
+    [201, "POST", "/clients", { body: { clientId: "browser", name: "Browser", tokenEndpointAuthMethod: "none", grantTypes: ["authorization_code"], redirectUris: ["http://localhost:47700/callback"] } }, body => {
+      expect(body).not.toHaveProperty("clientSecret")
+    }],
+    [409, "POST", "/clients", { body: { clientId: "ops", name: "Ops", tokenEndpointAuthMethod: "client_secret_basic", grantTypes: ["client_credentials"], redirectUris: [] } }],
+    [400, "POST", "/clients", { body: { clientId: "nameless" } }, body => expect(body).toMatchObject({ errors: [{ path: "name" }] })],
+    [405, "GET", "/clients"],
+    [200, "PATCH", "/clients/ops", { body: { name: "Ops client", clientCredentialsScopes: ["platform:read", "platform:write"] } }, body => {
+      expect(body).toMatchObject({ name: "Ops client", clientCredentialsScopes: ["platform:read", "platform:write"], revision: 2 })
+    }],
+    [412, "PATCH", "/clients/ops", { body: { name: "Stale" }, ifMatch: `"${missing}:9"` }],
+    [404, "PATCH", "/clients/nobody", { body: { name: "Nobody" } }],
+    [200, "POST", "/clients/ops/rotate-secret", {}, body => expect(body).toMatchObject({ clientId: "ops", clientSecret: expect.stringMatching(/^rotated-/) })],
+    [404, "POST", "/clients/nobody/rotate-secret"],
+    [405, "GET", "/clients/ops/rotate-secret"],
+    [201, "PUT", `/clients/ops/resources/${encodeURIComponent(admin)}`],
+    [200, "PUT", `/clients/ops/resources/${encodeURIComponent(admin)}`],
+    [201, "POST", at("/capabilities"), { body: { clientId: "ops", resource: admin, grantKind: "client_credentials", scopes: ["platform:read"] } }],
     [201, "PUT", `/clients/claude-code${resource}`],
     [200, "PUT", `/clients/claude-code${resource}`],
     [404, "PUT", `/clients/nobody${resource}`],
@@ -187,4 +226,115 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
   id.slow(0)
   await conforms(running, first!)
   await conforms([409, "POST", at("/enable"), {}, body => expect(body).toMatchObject({ code: "operation_in_progress", retryable: true })], second!)
+})
+
+test("a link moves the revision of the resource and of the client it joins, as ID does, so a later change bound to the old ETag is refused; a link that exists moves nothing", async () => {
+  const id = createFakeId()
+  id.resource(toolbox, ["toolbox"])
+  id.client("claude-code")
+  const answer = await id.config.fetch("https://id.test/auth/oauth2/token", {
+    method: "POST", headers: { Authorization: `Basic ${btoa("toolbox-hub:hub-secret")}` }, body: new URLSearchParams({ grant_type: "client_credentials", resource: admin, scope: "platform:read platform:write" }),
+  })
+  const authorization = `Bearer ${(await answer.json()).access_token}`
+  const send = (method: string, path: string, init: { body?: unknown; ifMatch?: string } = {}) => id.config.fetch(`https://id.test/api/admin/v1${path}`, {
+    method,
+    headers: { Authorization: authorization, "Idempotency-Key": crypto.randomUUID(), ...(init.body ? { "Content-Type": "application/json" } : {}), ...(init.ifMatch ? { "If-Match": init.ifMatch } : {}) },
+    body: init.body ? JSON.stringify(init.body) : undefined,
+  })
+  const at = `/resources/${encodeURIComponent(toolbox)}`
+  const [resourceBefore, clientBefore] = await Promise.all([send("GET", at), send("GET", "/clients/claude-code")])
+  const stale = resourceBefore.headers.get("ETag")!
+  expect((await send("PUT", `/clients/claude-code${at}`)).status).toBe(201)
+  const [resourceAfter, clientAfter] = await Promise.all([send("GET", at), send("GET", "/clients/claude-code")])
+  expect([resourceAfter.headers.get("ETag"), clientAfter.headers.get("ETag")]).toEqual([`"${id.resourceOf(toolbox).id}:2"`, clientBefore.headers.get("ETag")!.replace(/:1"$/, ':2"')])
+  expect(stale).toBe(`"${id.resourceOf(toolbox).id}:1"`)
+  expect((await send("PATCH", at, { body: { allowedScopes: ["toolbox", "e2e"] }, ifMatch: stale })).status).toBe(412)
+  expect((await send("PUT", `/clients/claude-code${at}`)).status).toBe(200)
+  expect((await send("GET", at)).headers.get("ETag")).toBe(resourceAfter.headers.get("ETag"))
+  expect((await send("PATCH", at, { body: { allowedScopes: ["toolbox", "e2e"] }, ifMatch: resourceAfter.headers.get("ETag")! })).status).toBe(200)
+})
+
+test("a client created through the API is shown its secret once and gets a token only for an audience it is linked to and holds a capability for; rotating the secret ends the old one", async () => {
+  const id = createFakeId({ rootSecret: "root-secret" })
+  const toolboxAdmin = "https://toolbox.test/admin"
+  const send = (method: string, path: string, body?: unknown) => id.config.fetch(`https://id.test/api/admin/v1${path}`, {
+    method, headers: { Authorization: "Bearer root-secret", "Idempotency-Key": crypto.randomUUID(), ...(body ? { "Content-Type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined,
+  })
+  const token = async (secret: string, resource: string, scope: string) => (await id.config.fetch("https://id.test/auth/oauth2/token", {
+    method: "POST", headers: { Authorization: `Basic ${btoa(`dev:${secret}`)}` }, body: new URLSearchParams({ grant_type: "client_credentials", resource, scope }),
+  })).status
+  const created = await (await send("POST", "/clients", { clientId: "dev", name: "Dev", organizationId: id.organizationId, tokenEndpointAuthMethod: "client_secret_basic", grantTypes: ["client_credentials"], redirectUris: [], clientCredentialsScopes: ["platform:read", "toolbox:admin"] })).json()
+  await send("POST", "/resources", { classification: "platform_shared", organizationId: null, identifier: toolboxAdmin, name: "Toolbox admin", allowedScopes: ["toolbox:admin"] })
+  // Neither linked nor entitled: ID refuses.
+  expect([await token(created.clientSecret, admin, "platform:read"), await token(created.clientSecret, toolboxAdmin, "toolbox:admin")]).toEqual([400, 400])
+  await send("PUT", `/clients/dev/resources/${encodeURIComponent(admin)}`)
+  await send("PUT", `/clients/dev/resources/${encodeURIComponent(toolboxAdmin)}`)
+  // Linked, without a capability.
+  expect([await token(created.clientSecret, admin, "platform:read"), await token(created.clientSecret, toolboxAdmin, "toolbox:admin")]).toEqual([400, 400])
+  for (const [resource, scopes] of [[admin, ["platform:read"]], [toolboxAdmin, ["toolbox:admin"]]] as const) {
+    await send("POST", `/organizations/${id.organizationId}/capabilities`, { clientId: "dev", resource, grantKind: "client_credentials", scopes })
+  }
+  expect([await token(created.clientSecret, admin, "platform:read"), await token(created.clientSecret, toolboxAdmin, "toolbox:admin")]).toEqual([200, 200])
+  // The capability covers platform:read only.
+  expect(await token(created.clientSecret, admin, "platform:read platform:write")).toBe(400)
+  expect(await token("wrong", admin, "platform:read")).toBe(401)
+  const rotated = await (await send("POST", "/clients/dev/rotate-secret")).json()
+  expect([await token(created.clientSecret, admin, "platform:read"), await token(rotated.clientSecret, admin, "platform:read")]).toEqual([401, 200])
+  expect(id.clientOf("dev")).toMatchObject({ clientId: "dev", resources: [toolboxAdmin, admin], secret: rotated.clientSecret })
+  expect(id.clientOf("nobody")).toBeUndefined()
+})
+
+test("as the ops Jobs meet it: each caller keeps its own keys, a route can be made to fail, an Entra provider needs ID's Microsoft application, and joining platform-admins locks the root secret unless break glass keeps it", async () => {
+  const send = (id: ReturnType<typeof createFakeId>, method: string, path: string, { body, key = crypto.randomUUID(), bearer = "root-secret", ifNoneMatch = false }: { body?: unknown; key?: string; bearer?: string; ifNoneMatch?: boolean } = {}) =>
+    id.config.fetch(`https://id.test/api/admin/v1${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${bearer}`, ...(method === "GET" ? {} : { "Idempotency-Key": key }), ...(ifNoneMatch ? { "If-None-Match": "*" } : {}), ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  const id = createFakeId({ rootSecret: "root-secret", microsoft: false })
+  id.staffToken("staff-token")
+  const platform = id.organizationId
+  const groups = `/organizations/${platform}/groups`
+  // The same key from another caller is another command: here, a second group of the same slug, which ID refuses.
+  expect((await send(id, "POST", groups, { body: { slug: "staff", name: "Staff" }, key: "one-key" })).status).toBe(201)
+  expect((await send(id, "POST", groups, { body: { slug: "staff", name: "Staff" }, key: "one-key" })).headers.get("Idempotency-Replayed")).toBe("true")
+  expect(await (await send(id, "POST", groups, { body: { slug: "staff", name: "Staff" }, key: "one-key", bearer: "staff-token" })).json()).toMatchObject({ status: 409, code: "conflict" })
+  expect(id.received.slice(-3).map(({ caller }) => caller)).toEqual(["root", "root", null])
+  // A failing route answers so on every call, reads included.
+  id.fail("GET /organizations", 502, "bad_gateway")
+  for (let call = 0; call < 2; call++) expect(await (await send(id, "GET", "/organizations?q=answerable")).json()).toMatchObject({ status: 502, code: "bad_gateway" })
+  id.fail(`POST ${groups}`, 500)
+  expect(await (await send(id, "POST", groups, { body: { slug: "other", name: "Other" } })).json()).toMatchObject({ status: 500, code: "internal_error" })
+  // Without Answerable's Microsoft application, ID refuses an Entra provider with platform credentials, before its precondition.
+  const entra = await send(id, "PUT", `/organizations/${platform}/sso-provider`, { body: { issuer: "https://login.microsoftonline.com/0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0/v2.0", domain: "answerable.org" }, ifNoneMatch: true })
+  expect(await entra.json()).toMatchObject({ status: 409, code: "platform_application_missing" })
+  expect(operations.find(({ method, pattern }) => method === "PUT" && pattern.test(`/api/admin/v1/organizations/${platform}/sso-provider`))!.responses["409"]).toBeDefined()
+  // A member who joins platform-admins locks the root secret; another group does not, nor does break glass.
+  for (const [breakGlass, locked] of [[false, true], [true, false]] as const) {
+    const fake = createFakeId({ rootSecret: "root-secret", breakGlass })
+    const ada = fake.member(fake.organizationId, { email: "ada@answerable.org" }).id
+    for (const slug of ["answerable-owner", "platform-admins"]) {
+      const group = fake.group(fake.organizationId, { slug }).id
+      expect((await send(fake, "PUT", `/organizations/${fake.organizationId}/groups/${group}/members/${ada}`, { body: {}, ifNoneMatch: true })).status).toBe(201)
+      expect(fake.rootLocked(), slug).toBe(slug === "platform-admins" && locked)
+    }
+  }
+})
+
+test("the root secret works as a platform administrator's until it is locked, then ID answers it 403 root_locked; a staff token keeps working", async () => {
+  const id = createFakeId({ rootSecret: "root-secret" })
+  id.staffToken("staff-token")
+  const status = async (bearer: string) => (await id.config.fetch("https://id.test/api/admin/v1/organizations?q=answerable", { headers: { Authorization: `Bearer ${bearer}` } })).status
+  expect([await status("root-secret"), await status("staff-token"), await status("other")]).toEqual([200, 200, 401])
+  id.lockRoot(true)
+  const locked = await id.config.fetch("https://id.test/api/admin/v1/organizations", { headers: { Authorization: "Bearer root-secret" } })
+  expect([locked.status, await locked.json()]).toMatchObject([403, { code: "root_locked" }])
+  expect(await status("staff-token")).toBe(200)
+})
+
+test("ID answers its liveness check, and a fake that is down answers it 503", async () => {
+  const id = createFakeId()
+  expect(await (await id.config.fetch("https://id.test/healthz")).json()).toEqual({ status: "ok" })
+  id.outage(true)
+  expect((await id.config.fetch("https://id.test/healthz")).status).toBe(503)
 })

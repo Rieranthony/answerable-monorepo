@@ -1,0 +1,641 @@
+[
+  {
+    "name": "ID",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with their local values, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "PORT",
+        "secret": false,
+        "fallback": "47300",
+        "doc": "The port ID listens on",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "ID_HOST",
+        "secret": false,
+        "fallback": "127.0.0.1",
+        "doc": "The address to listen on: loopback unless a container or a proxy in front needs another",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "DATABASE_URL",
+        "secret": true,
+        "local": "postgres://answerable_id_runtime:answerable@localhost:47432/answerable_id",
+        "doc": "ID's Postgres URL as its restricted runtime login, never the schema owner",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "BETTER_AUTH_URL",
+        "secret": false,
+        "local": "http://localhost:47300",
+        "doc": "ID's origin: the issuer, the pages' origin and the base of the admin API's audience",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "BETTER_AUTH_SECRET",
+        "secret": true,
+        "local": "development-only-better-auth-secret-never-for-production",
+        "doc": "The application secret, at least 32 characters: signs cookies and encrypts what ID stores",
+        "source": "deploy",
+        "optional": false
+      },
+      {
+        "name": "BETTER_AUTH_SECRETS",
+        "secret": true,
+        "doc": "The rotation ring, version:secret pairs separated by commas: the first writes, every one decrypts",
+        "source": "deploy",
+        "optional": true
+      },
+      {
+        "name": "GOOGLE_CLIENT_ID",
+        "secret": false,
+        "doc": "The Google platform application's client ID; set it with GOOGLE_CLIENT_SECRET or leave both unset",
+        "source": "deploy",
+        "optional": true
+      },
+      {
+        "name": "GOOGLE_CLIENT_SECRET",
+        "secret": true,
+        "doc": "The Google platform application's client secret",
+        "source": "deploy",
+        "optional": true
+      },
+      {
+        "name": "MICROSOFT_CLIENT_ID",
+        "secret": false,
+        "doc": "The Entra platform application's client ID; set it with MICROSOFT_CLIENT_SECRET or leave both unset",
+        "source": "deploy",
+        "optional": true
+      },
+      {
+        "name": "MICROSOFT_CLIENT_SECRET",
+        "secret": true,
+        "doc": "The Entra platform application's client secret",
+        "source": "deploy",
+        "optional": true
+      },
+      {
+        "name": "BETTER_AUTH_TRUSTED_ORIGINS",
+        "secret": false,
+        "fallback": "",
+        "doc": "Origins trusted besides ID's own, separated by commas: browser origins and identity-provider endpoints; production requires them",
+        "source": "chart",
+        "optional": true
+      },
+      {
+        "name": "ROOT_ADMIN_SECRET",
+        "secret": true,
+        "local": "development-only-root-admin-secret-never-for-production",
+        "doc": "The root bearer, at least 32 characters, for the first run; it stops working once a person holds platform:write",
+        "source": "deploy",
+        "optional": true
+      },
+      {
+        "name": "ROOT_ADMIN_BREAK_GLASS",
+        "secret": false,
+        "fallback": "false",
+        "doc": "true keeps the root bearer working after a person holds platform:write; for break-glass only",
+        "source": "operator",
+        "optional": true
+      },
+      {
+        "name": "TRUSTED_PROXY_CIDRS",
+        "secret": false,
+        "doc": "The ingress proxies' networks, IPv4 or IPv6, separated by commas; production requires them",
+        "source": "cluster",
+        "optional": true
+      },
+      {
+        "name": "DATABASE_POOL_MAX",
+        "secret": false,
+        "fallback": "20",
+        "doc": "Connections per process; size it with docs/06's formula against the database's limit",
+        "source": "operator",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "ID migration",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with their local values, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "DATABASE_MIGRATION_URL",
+        "secret": true,
+        "local": "postgres://answerable:answerable@localhost:47432/answerable_id",
+        "doc": "ID's Postgres URL as the schema owner, for the migration only",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "DATABASE_RUNTIME_ROLE",
+        "secret": false,
+        "fallback": "answerable_id_runtime",
+        "doc": "The restricted role the migration provisions and ID serves as",
+        "source": "chart",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "ID test database",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with their local values, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "TEST_DATABASE_URL",
+        "secret": false,
+        "fallback": "postgres://answerable:answerable@localhost:47432/answerable_id_test",
+        "doc": "The disposable database ID's test suite resets, named answerable_id_test",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "Toolbox",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with their local values, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "TOOLBOX_DATABASE_URL",
+        "secret": true,
+        "local": "postgres://answerable_toolbox_runtime:answerable@localhost:47432/answerable_toolbox",
+        "doc": "The Toolbox's Postgres URL as its restricted runtime login, never the schema owner",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "TOOLBOX_MCPS_DATABASE_URL",
+        "secret": true,
+        "local": "postgres://answerable_mcps_toolbox:answerable@localhost:47432/answerable_mcps",
+        "doc": "The shared MCP database, answerable_mcps, as the Toolbox's serving login, answerable_mcps_toolbox, which is granted each mounted MCP's schema and tables",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "TOOLBOX_ID_ISSUER",
+        "secret": false,
+        "local": "http://localhost:47300",
+        "doc": "The Answerable ID issuer whose tokens the Toolbox accepts",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "TOOLBOX_RESOURCE_URL",
+        "secret": false,
+        "local": "http://localhost:47400/mcp",
+        "doc": "The Toolbox's own URL, the audience of the tokens it accepts",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "TOOLBOX_STANDALONE_ORIGIN",
+        "secret": false,
+        "local": "http://localhost:47400",
+        "doc": "The origin of the MCPs the Toolbox serves alone, standalone or both: each is the resource <origin>/<name>/mcp, the audience of its tokens",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "TOOLBOX_HOST",
+        "secret": false,
+        "fallback": "127.0.0.1",
+        "doc": "The address to listen on: loopback unless a container or a proxy in front needs another",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "TOOLBOX_PORT",
+        "secret": false,
+        "fallback": "47400",
+        "doc": "The port the Toolbox listens on",
+        "optional": true
+      },
+      {
+        "name": "TOOLBOX_ID_CLIENT_ID",
+        "secret": false,
+        "doc": "The Toolbox's machine client in ID, toolbox-hub, with platform:read and platform:write, registered as the Toolbox's docs show",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "TOOLBOX_ID_CLIENT_SECRET",
+        "secret": true,
+        "doc": "The Toolbox machine client's secret",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "TOOLBOX_ID_ADMIN_RESOURCE",
+        "secret": false,
+        "local": "http://localhost:47300/api/admin",
+        "doc": "ID's admin API, the audience of the machine client's tokens",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "secret": false,
+        "doc": "Where to export spans over OTLP/HTTP, such as a local collector; unset, none are exported",
+        "source": "operator",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "Toolbox migration",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with their local values, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "TOOLBOX_DATABASE_MIGRATION_URL",
+        "secret": true,
+        "local": "postgres://answerable:answerable@localhost:47432/answerable_toolbox",
+        "doc": "The Toolbox's Postgres URL as the schema owner, for the migration only",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "MCPS_DATABASE_MIGRATION_URL",
+        "secret": true,
+        "local": "postgres://answerable_mcps_migrator:answerable@localhost:47432/answerable_mcps",
+        "doc": "The shared MCP database, answerable_mcps, as its migrator login, answerable_mcps_migrator, which owns every shared MCP's schema; for the migration only",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "MCPS_DECLARED",
+        "secret": false,
+        "local": "[]",
+        "doc": "The MCPs charts/answerable/mcps.json declares, as JSON [{ name, serve, database, scopes }], which the chart renders; locally none, since bun mcp db <name> migrate migrates each",
+        "source": "chart",
+        "optional": false
+      }
+    ]
+  },
+  {
+    "name": "Toolbox test database",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with their local values, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "TOOLBOX_TEST_DATABASE_URL",
+        "secret": false,
+        "fallback": "postgres://answerable:answerable@localhost:47432/answerable_toolbox_test",
+        "doc": "The disposable database the Toolbox's tests reset, named answerable_toolbox_test",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "admin MCP",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with their local values, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "ADMIN_ID_ISSUER",
+        "secret": false,
+        "local": "http://localhost:47300",
+        "doc": "The Answerable ID issuer whose tokens the admin MCP accepts",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "ADMIN_RESOURCE_URL",
+        "secret": false,
+        "local": "http://localhost:47520/mcp",
+        "doc": "The admin MCP's own URL, the audience of the tokens it accepts",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "ADMIN_HOST",
+        "secret": false,
+        "fallback": "127.0.0.1",
+        "doc": "The address to listen on: loopback unless a container or a proxy in front needs another",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "ADMIN_PORT",
+        "secret": false,
+        "fallback": "47520",
+        "doc": "The port the admin MCP listens on",
+        "optional": true
+      },
+      {
+        "name": "ADMIN_DATABASE_URL",
+        "secret": true,
+        "local": "postgres://answerable_admin_runtime:answerable@localhost:47432/answerable_admin",
+        "doc": "The admin MCP's Postgres URL as its restricted runtime login, never the schema owner",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "ADMIN_ID_CLIENT_ID",
+        "secret": false,
+        "doc": "The admin MCP's machine client in ID, admin-mcp, owned by the platform organisation, registered as the admin MCP's docs show",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "ADMIN_ID_CLIENT_SECRET",
+        "secret": true,
+        "doc": "The admin MCP machine client's secret",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "ADMIN_ID_ADMIN_RESOURCE",
+        "secret": false,
+        "local": "http://localhost:47300/api/admin",
+        "doc": "ID's admin API, the audience of the machine client's tokens",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "ADMIN_TOOLBOX_ADMIN_RESOURCE",
+        "secret": false,
+        "local": "http://localhost:47400/admin",
+        "doc": "The Toolbox's admin API, for enabling the Toolbox for an organisation; unset, that is refused",
+        "source": "chart",
+        "optional": true
+      },
+      {
+        "name": "ADMIN_STANDALONE_ORIGIN",
+        "secret": false,
+        "local": "http://localhost:47400",
+        "doc": "The origin of the MCPs the Toolbox serves alone, whose <origin>/<name>/mcp is each one's resource, for giving an organisation access to one",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "ADMIN_FRESH_SECONDS",
+        "secret": false,
+        "fallback": "1800",
+        "doc": "How recent an upstream sign-in a critical operation needs, in seconds",
+        "source": "operator",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "admin MCP migration",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with their local values, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "ADMIN_DATABASE_MIGRATION_URL",
+        "secret": true,
+        "local": "postgres://answerable:answerable@localhost:47432/answerable_admin",
+        "doc": "The admin MCP's Postgres URL as the schema owner, for the migration only",
+        "source": "cluster",
+        "optional": false
+      }
+    ]
+  },
+  {
+    "name": "admin MCP test database",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with their local values, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "ADMIN_TEST_DATABASE_URL",
+        "secret": false,
+        "fallback": "postgres://answerable:answerable@localhost:47432/answerable_admin_test",
+        "doc": "The disposable database the admin MCP's tests reset, named answerable_admin_test",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "ops",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with their local values, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "OPS_DATABASE_ADMIN_URL",
+        "secret": true,
+        "doc": "bootstrap: the managed database's administrative login (CREATEDB and CREATEROLE), a URL with sslmode=verify-full",
+        "source": "cluster",
+        "optional": false
+      },
+      {
+        "name": "OPS_MCPS",
+        "secret": false,
+        "doc": "bootstrap and register: the MCPs charts/answerable/mcps.json declares, as JSON [{ name, serve, database, scopes }]: bootstrap provisions their schemas and own databases, register each standalone or both one in ID",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "OPS_ID_URL",
+        "secret": false,
+        "doc": "register and make-admin: ID's origin",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "OPS_ID_ROOT_SECRET",
+        "secret": true,
+        "doc": "register and make-admin: ID's root secret, ROOT_ADMIN_SECRET; make-admin requires it, and register mints its own client with it when ops-id-client is empty",
+        "source": "deploy",
+        "optional": true
+      },
+      {
+        "name": "OPS_TOOLBOX_URL",
+        "secret": false,
+        "doc": "register: the Toolbox's origin",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "OPS_ADMIN_MCP_URL",
+        "secret": false,
+        "doc": "register: the admin MCP's origin",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "OPS_MCP_URL",
+        "secret": false,
+        "doc": "register: the origin of the MCPs the Toolbox serves alone; <origin>/<name>/mcp is each standalone or both MCP's resource",
+        "source": "chart",
+        "optional": false
+      },
+      {
+        "name": "OPS_CLAUDE_CALLBACK_PORT",
+        "secret": false,
+        "fallback": "47700",
+        "doc": "register: the port of Claude Code's OAuth callback, --callback-port, that the host clients allow",
+        "optional": true
+      },
+      {
+        "name": "OPS_START_DEPLOYMENTS",
+        "secret": false,
+        "doc": "register: the Deployments to start once their client secrets exist, name=replicas separated by commas",
+        "source": "chart",
+        "optional": true
+      },
+      {
+        "name": "OPS_STAFF_DOMAIN",
+        "secret": false,
+        "doc": "register: the staff email domain to connect to the platform organisation, with OPS_ENTRA_TENANT",
+        "source": "chart",
+        "optional": true
+      },
+      {
+        "name": "OPS_ENTRA_TENANT",
+        "secret": false,
+        "doc": "register: the staff directory's Entra tenant ID, a GUID, with OPS_STAFF_DOMAIN",
+        "source": "chart",
+        "optional": true
+      },
+      {
+        "name": "OPS_ADMIN_EMAIL",
+        "secret": false,
+        "doc": "make-admin: the email of the staff member, signed in once, to make the first administrator",
+        "source": "chart",
+        "optional": false
+      }
+    ]
+  },
+  {
+    "name": "MCP Postgres test databases",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with their local values, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "MCP_POSTGRES_TEST_DATABASE_URL",
+        "secret": false,
+        "fallback": "postgres://answerable:answerable@localhost:47432/answerable_mcp_postgres_test",
+        "doc": "The disposable database @answerable/mcp-postgres's own tests reset, named answerable_mcp_postgres_test",
+        "optional": true
+      },
+      {
+        "name": "MCPS_TEST_DATABASE_URL",
+        "secret": false,
+        "fallback": "postgres://answerable:answerable@localhost:47432/answerable_mcps_test",
+        "doc": "The shared MCP test database, answerable_mcps_test, as a superuser of the development Postgres: each MCP's tests reset only their own schema there",
+        "optional": true
+      }
+    ]
+  },
+  {
+    "name": "bun mcp",
+    "fields": [
+      {
+        "name": "NODE_ENV",
+        "secret": false,
+        "fallback": "development",
+        "doc": "development, test or production (unset, development): the first two fill unset variables with their local values, production none; the images set production",
+        "source": "image",
+        "optional": true
+      },
+      {
+        "name": "MCPS_DATABASE_ADMIN_URL",
+        "secret": false,
+        "fallback": "postgres://answerable:answerable@localhost:47432/answerable_mcps",
+        "doc": "The shared MCP database, answerable_mcps, as a superuser of the development Postgres: bun mcp db migrate provisions and migrates an MCP's local schema there, and an own MCP's database beside it",
+        "optional": true
+      },
+      {
+        "name": "MCP_DEV_ID_CLIENT_ID",
+        "secret": false,
+        "doc": "bun mcp's machine client in your local ID, mcp-dev, through which bun mcp dev registers an MCP and its servers read who is calling; bun mcp setup makes it and writes this",
+        "optional": true
+      },
+      {
+        "name": "MCP_DEV_ID_CLIENT_SECRET",
+        "secret": true,
+        "doc": "mcp-dev's secret, which ID shows once; bun mcp setup writes it",
+        "optional": true
+      },
+      {
+        "name": "MCP_DEV_ORGANISATION",
+        "secret": false,
+        "local": "answerable",
+        "doc": "The slug of the organisation bun mcp dev gives access to the MCP it runs, so that you can call every tool: your local ID's platform organisation unless bun mcp setup --organisation says another",
+        "optional": false
+      },
+      {
+        "name": "ROOT_ADMIN_SECRET",
+        "secret": true,
+        "local": "development-only-root-admin-secret-never-for-production",
+        "doc": "ID's root bearer, which bun mcp setup uses while ID's root is unlocked: ID's own local default unless .env sets another",
+        "optional": true
+      }
+    ]
+  }
+]

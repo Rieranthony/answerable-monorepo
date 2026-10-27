@@ -1,42 +1,43 @@
 {
   "name": "@answerable/mcp-toolbox",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "exports": {
     "./admin": "./src/admin.ts",
     "./grants": "./src/grants.ts",
     "./migrate": "./src/db/migrate.ts",
-    "./poller": "./src/poller.ts",
-    "./spans": "./src/spans.ts",
+    "./mounted": "./src/mounted.generated.ts",
     "./toolbox": "./src/toolbox.ts"
   },
   "scripts": {
-    "dev": "bun run --filter @answerable/mcp-e2e build && bun --hot src/server.ts",
+    "dev": "bun --hot src/server.ts",
     "start": "bun src/server.ts",
     "test": "bun run db:test:migrate && bun test",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src scripts drizzle.config.ts --max-warnings 0",
+    "lint": "eslint src scripts bench drizzle.config.ts --max-warnings 0",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "bun scripts/migrate.ts",
-    "db:test:migrate": "bun scripts/migrate.ts --test"
+    "db:test:migrate": "bun scripts/test-migrate.ts"
   },
   "dependencies": {
     "@answerable/auth": "workspace:*",
+    "@answerable/config": "workspace:*",
     "@answerable/id-admin": "workspace:*",
     "@answerable/mcp": "workspace:*",
     "@answerable/mcp-e2e": "workspace:*",
+    "@answerable/mcp-example": "workspace:*",
+    "@answerable/mcp-platform": "workspace:*",
     "@answerable/mcp-postgres": "workspace:*",
-    "@opentelemetry/api": "1.9.1",
-    "@opentelemetry/exporter-trace-otlp-http": "0.222.0",
-    "@opentelemetry/resources": "2.11.0",
-    "@opentelemetry/sdk-trace-base": "2.11.0",
     "drizzle-orm": "0.45.4",
-    "zod": "4.6.5"
+    "pg": "8.23.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
+    "@modelcontextprotocol/client": "2.4.0",
     "@types/bun": "1.3.1",
+    "@types/pg": "8.23.1",
     "drizzle-kit": "0.31.11",
     "eslint": "9.39.5",
     "typescript": "5.9.3",

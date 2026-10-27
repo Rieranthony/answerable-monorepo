@@ -5,7 +5,7 @@ import { defineMutation, definePrompt, defineProvider, defineResource, defineToo
 const $schema = "https://json-schema.org/draft/2020-12/schema"
 const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const
 const provider = defineProvider({
-  id: "acme", version: "2026-09-29",
+  id: "acme", description: "A fixture provider of records and identities, used to test manifests.", version: "2026-09-29",
   tools: [
     defineTool({
       name: "records.list", title: "Records", errors: ["ACME_QUOTA_EXCEEDED"],
@@ -30,6 +30,7 @@ test("the manifest is the provider's contract as plain JSON, tools sorted by ide
   expect(manifest(provider)).toEqual({
     id: "acme",
     version: "2026-09-29",
+    description: "A fixture provider of records and identities, used to test manifests.",
     tools: [
       {
         identity: "acme/identity.get", name: "identity_get", version: "2026-01-01", kind: "read",
@@ -75,7 +76,7 @@ test("the manifest carries no code", () => {
 test("a mutation carries its risk, effects and the schemas of its input and results, and the provider gains the two commit tools", () => {
   const plan = async () => ({ targets: [], preview: { summary: "Nothing" } })
   const document = manifest(defineProvider({
-    id: "acme", version: "2026-09-29",
+    id: "acme", description: "A fixture provider of records and identities, used to test manifests.", version: "2026-09-29",
     tools: [
       defineMutation({
         name: "records.delete", effects: ["cascade_delete"], prepare: plan,

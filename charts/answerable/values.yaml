@@ -15,28 +15,28 @@ images:
   id:
     repository: ghcr.io/rieranthony/answerable/id
     digest: ""
-  toolbox:
-    repository: ghcr.io/rieranthony/answerable/toolbox
-    digest: ""
-  admin-mcp:
-    repository: ghcr.io/rieranthony/answerable/admin-mcp
+  # The Toolbox, the admin MCP, their migrations and every MCP (mcps/Dockerfile): each Deployment and Job names its command.
+  mcps:
+    repository: ghcr.io/rieranthony/answerable/mcps
     digest: ""
   # The ops Jobs render only while this names a repository.
   ops:
     repository: ghcr.io/rieranthony/answerable/ops
     digest: ""
 
-# The public origins are https://<hostname>, with :<publicPort> when it is not 443 (the kind stack's 48443).
+# The public origins are https://<hostname>, with :<publicPort> when it is not 443 (the kind stack's 48443). mcp is that of the MCPs the
+# Toolbox serves alone: each standalone or both MCP of mcps.json is the resource https://<mcp>/<name>/mcp, routed to the Toolbox.
 hostnames:
   id: id.answerable.org
   toolbox: toolbox.answerable.org
   adminMcp: admin-mcp.answerable.org
+  mcp: mcp.answerable.org
 publicPort: ""
 
 ingress:
   # Traefik's IngressClass (charts/platform, D31).
   className: traefik
-  # The Secret (type kubernetes.io/tls) every Ingress serves, one certificate for the three hostnames: Cloudflare's Origin
+  # The Secret (type kubernetes.io/tls) every Ingress serves, one certificate for the four hostnames: Cloudflare's Origin
   # CA certificate, which Terraform writes in this namespace (the kind stack writes one from its own CA). The Ingresses
   # name no TLS option: Traefik's default one, which charts/platform renders here, demands Cloudflare's origin-pull
   # client certificate (D19).
@@ -71,7 +71,6 @@ id:
   resources:
     requests: { cpu: 250m, memory: 256Mi }
     limits: { memory: 768Mi }
-  runtimeRole: answerable_id_runtime
   # BETTER_AUTH_TRUSTED_ORIGINS: origin-only URLs; production requires at least one. A company directory on a private
   # network must be listed here, and reachable through extraEgress.
   trustedOrigins: []
@@ -86,7 +85,6 @@ id:
   env: {}
 
 toolbox:
-  enabled: true
   replicas: 2
   autoscaling:
     enabled: true
@@ -96,11 +94,9 @@ toolbox:
     requests: { cpu: 100m, memory: 128Mi }
     limits: { memory: 512Mi }
   clientId: toolbox-hub
-  runtimeRole: answerable_toolbox_runtime
   env: {}
 
 adminMcp:
-  enabled: true
   replicas: 2
   autoscaling:
     enabled: true
@@ -110,7 +106,6 @@ adminMcp:
     requests: { cpu: 100m, memory: 128Mi }
     limits: { memory: 384Mi }
   clientId: admin-mcp
-  runtimeRole: answerable_admin_runtime
   env: {}
 
 migrations:
@@ -121,17 +116,16 @@ migrations:
   activeDeadlineSeconds: 600
 
 # The ops image's Jobs (infra/ops/README.md): bootstrap writes the database's certificate authority on first use, creates
-# the databases and their logins and writes their Secrets before the migrations; register registers the Toolbox and the
-# admin MCP in ID after the release, writes their client Secrets and starts them; make-admin makes adminEmail's member, who
-# has signed in once, an owner and a platform administrator, which locks ID's root secret. The deploy switches bootstrap
-# on every time and register on the first install; deploy.ts run-job switches one on for one upgrade.
+# the databases and their logins, the MCPs' schemas from mcps.json, and writes their Secrets before the migrations;
+# register, as its own machine client (ops-register, kept in ops-id-client), registers the Toolbox, the admin MCP and each
+# standalone MCP of mcps.json in ID after the release, writes the client Secrets and starts the servers; make-admin makes
+# adminEmail's member, who has signed in once, an owner and a platform administrator, which locks ID's root secret. The
+# deploy switches bootstrap and register on every time; deploy.ts run-job switches one on for one upgrade.
 ops:
   bootstrap: false
   register: false
   makeAdmin: false
   adminEmail: ""
-  # Claude Code's --callback-port, in the redirect URI of the host clients register creates (docs/admin/setup).
-  claudeCallbackPort: 47700
   activeDeadlineSeconds: 600
   # How long a finished Job, and its pod's log, stays before Kubernetes removes it; the next run replaces it anyway.
   ttlSecondsAfterFinished: 86400

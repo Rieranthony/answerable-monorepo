@@ -86,6 +86,7 @@ export async function startRuntime(
     await signingKeyCheck(database.db, auth);
     const app = createApp({ auth, db: database.db, environment, metrics });
     server = Bun.serve({
+      hostname: environment.hostname,
       port: environment.port,
       maxRequestBodySize: maxRequestBodyBytes,
       fetch: app.fetch,

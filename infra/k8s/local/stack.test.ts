@@ -1,19 +1,23 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { type Admin, setSsoProvider } from "@answerable/acceptance"
 import { X509Certificate } from "node:crypto"
+import { runSmoke, smokePassed } from "../../pipeline/src/smoke"
 import type { SignInInput } from "./sign-in"
-import { databaseAdmin, exec, hosts, image, images, origin, type Stack, startStack, step, timings } from "./stack"
+import type { StandaloneSignInInput } from "./standalone-sign-in"
+import { databaseAdmin, declared, exec, hosts, image, images, origin, registered, servedAlone, type Stack, startStack, step, timings } from "./stack"
 
-// bun run infra:test: the four images, a kind cluster with charts/platform and charts/answerable as a cloud runs them,
-// a TLS-only PostgreSQL 17 holding only an administrative login, the ops Jobs that bootstrap the databases and register
-// the servers in ID, a staff member's sign-in through the cluster, and the proofs that the stack behaves as production
-// must. Needs Docker, kind, kubectl and helm, Playwright's Chromium (cd packages/acceptance && bun x playwright install
+// bun run infra:test: the images of infra/pipeline/images.json, a kind cluster with charts/platform and charts/answerable as a
+// cloud runs them, a TLS-only PostgreSQL 17 holding only an administrative login, the ops Jobs that bootstrap the databases and
+// the MCPs of charts/answerable/mcps.json and register the servers in ID, a staff member's sign-in through the cluster, and the
+// proofs that the stack behaves as production must. Needs Docker, kind, kubectl and helm, Playwright's Chromium (cd packages/acceptance && bun x playwright install
 // chromium), ports 47700, 47710 and [::1]:48443 on this host, and public DNS for *.127-0-0-1.sslip.io. Deletes its cluster at the end,
 // on failure and on Ctrl-C; set INFRA_STACK_KEEP=1 to keep it for a look (then delete it with kind delete cluster --name
 // answerable-local).
 
 let stack: Stack | undefined
 const started = performance.now()
+// A client organisation an operator set up with root before the lock: its own domain and company directory.
+let tenant: { slug: string; email: string; organizationId: string }
 
 // The acceptance kit stops what it opened on Ctrl-C and exits at once, before the cluster is deleted: this file's handler
 // replaces it, and the process's exit ends the servers the kit started.
@@ -28,17 +32,25 @@ beforeAll(async () => {
   // The Deployments are rolled out by now, but Traefik routes to a pod only once its provider has seen the new endpoints,
   // a moment after the pod turns Ready: on GitHub's runner the Toolbox's first health call through the edge got Traefik's
   // own answer instead. Wait until each server answers through the edge, as a visitor will reach it, before any test.
-  for (const url of [`${origin(hosts.id)}/readyz`, `${origin(hosts.toolbox)}/health`, `${origin(hosts.adminMcp)}/health`]) await untilServed(url)
+  for (const url of [`${origin(hosts.id)}/readyz`, `${origin(hosts.toolbox)}/health`, `${origin(hosts.adminMcp)}/health`, ...servedAlone.map(({ name }) => metadataUrl(name))]) await untilServed(url)
+  const { slug, email, domain } = stack.tenant
+  const { id: organizationId } = await rootAdmin("POST", "/organizations", { slug, name: "Tenant" }) as { id: string }
+  await rootAdmin("POST", `/organizations/${organizationId}/domains`, { domain })
+  await setSsoProvider(rootAdmin, organizationId, stack.tenant)
+  tenant = { slug, email, organizationId }
 })
 
-/** Wait up to `ms` for `url`, through the edge, to answer 200 with `{ status: "ok" }`; otherwise diagnose the cluster and fail, naming the last answer. */
+/** A standalone MCP's protected-resource metadata on the mcp host, where the Toolbox serves it. */
+const metadataUrl = (name: string) => `${origin(hosts.mcp)}/.well-known/oauth-protected-resource/${name}/mcp`
+
+/** Wait up to `ms` for `url`, through the edge, to answer 200 with `{ status: "ok" }` or a resource's metadata; otherwise diagnose the cluster and fail, naming the last answer. */
 async function untilServed(url: string, ms = 90_000) {
   let last = "no answer"
   for (const deadline = Date.now() + ms; Date.now() < deadline; await Bun.sleep(1000)) {
     try {
       const response = await viaIngress(url)
       const body = await response.text()
-      if (response.status === 200 && body.includes('"ok"')) return
+      if (response.status === 200 && (body.includes('"ok"') || body.includes('"resource"'))) return
       last = `${response.status} ${body.slice(0, 120)}`
     } catch (error) {
       last = (error as Error).message
@@ -139,7 +151,7 @@ describe("through Traefik, with Cloudflare's origin-pull certificate", () => {
 
   test("the Toolbox answers health, and challenges a call without a token with metadata naming ID", async () => {
     const toolbox = origin(hosts.toolbox)
-    expect(await (await viaIngress(`${toolbox}/health`)).json()).toEqual({ status: "ok" })
+    expect(await (await viaIngress(`${toolbox}/health`)).json()).toMatchObject({ status: "ok" })
     const challenge = await viaIngress(`${toolbox}/mcp`)
     expect(challenge.status).toBe(401)
     const metadataUrl = `${toolbox}/.well-known/oauth-protected-resource/mcp`
@@ -340,13 +352,13 @@ const rootAdmin: Admin = async (method, path, body, headers) => {
   return text ? JSON.parse(text) : {}
 }
 
-/** Run SQL as the database's superuser over its local socket; the rows, one per line, columns joined by |. */
-async function psql(sql: string) {
-  const { stdout } = await stack!.kubectl(["exec", "-n", "database", "statefulset/postgres", "-c", "postgres", "--", "psql", "-U", "postgres", "-d", "postgres", "-tAc", sql])
+/** Run SQL as the database's superuser over its local socket, in `database`; the rows, one per line, columns joined by |. */
+async function psql(sql: string, database = "postgres") {
+  const { stdout } = await stack!.kubectl(["exec", "-n", "database", "statefulset/postgres", "-c", "postgres", "--", "psql", "-U", "postgres", "-d", database, "-tAc", sql])
   return stdout.trim().split("\n")
 }
 
-/** The six URL Secrets the ops bootstrap writes, with their login and database. */
+/** The URL Secrets the ops bootstrap writes, with their login and database: own MCPs' come from the list. */
 const urlSecrets = [
   ["id-database-owner", "DATABASE_MIGRATION_URL", "answerable_id_owner", "answerable_id"],
   ["id-database", "DATABASE_URL", "answerable_id_runtime", "answerable_id"],
@@ -354,8 +366,14 @@ const urlSecrets = [
   ["toolbox-database", "TOOLBOX_DATABASE_URL", "answerable_toolbox_runtime", "answerable_toolbox"],
   ["admin-database-owner", "ADMIN_DATABASE_MIGRATION_URL", "answerable_admin_owner", "answerable_admin"],
   ["admin-database", "ADMIN_DATABASE_URL", "answerable_admin_runtime", "answerable_admin"],
+  ["mcps-database-owner", "MCPS_DATABASE_MIGRATION_URL", "answerable_mcps_migrator", "answerable_mcps"],
+  ["toolbox-mcps-database", "TOOLBOX_MCPS_DATABASE_URL", "answerable_mcps_toolbox", "answerable_mcps"],
+  ...declared.filter(mcp => mcp.database === "own").flatMap(({ name }) => [
+    [`mcp-${name}-database-owner`, "DATABASE_MIGRATION_URL", `answerable_mcp_${name}_owner`, `answerable_mcp_${name}`],
+    [`mcp-${name}-database`, "DATABASE_URL", `answerable_mcp_${name}_runtime`, `answerable_mcp_${name}`],
+  ]),
 ] as const
-const clientSecrets = [["toolbox-id-client", "TOOLBOX_ID_CLIENT_SECRET"], ["admin-id-client", "ADMIN_ID_CLIENT_SECRET"]] as const
+const clientSecrets = [["ops-id-client", "OPS_ID_CLIENT_SECRET"], ["toolbox-id-client", "TOOLBOX_ID_CLIENT_SECRET"], ["admin-id-client", "ADMIN_ID_CLIENT_SECRET"]] as const
 
 /** Every value the ops Jobs generated, for checking that no log prints one. */
 async function generatedValues() {
@@ -368,23 +386,20 @@ async function generatedValues() {
 const jobLog = async (job: string) => (await stack!.kubectl(["logs", "-n", "answerable", `job/${job}`])).stdout
 
 describe("the ops Jobs", () => {
-  test("bootstrap, with an administrative login that is not a superuser, made each database its owner's, with a restricted runtime login and nothing for PUBLIC", async () => {
+  test("bootstrap, with an administrative login that is not a superuser, made each database its owner's, with restricted serving logins and nothing for PUBLIC", async () => {
     expect(await psql(`select rolsuper || '|' || rolcreatedb || '|' || rolcreaterole from pg_roles where rolname = '${databaseAdmin}'`)).toEqual(["false|true|true"])
-    expect(await psql("select datname || ' ' || pg_get_userbyid(datdba) from pg_database where datname like 'answerable_%' order by datname")).toEqual([
-      "answerable_admin answerable_admin_owner", "answerable_id answerable_id_owner", "answerable_toolbox answerable_toolbox_owner",
-    ])
-    // super, createdb, createrole, inherit, replication, bypassrls: none.
-    expect(await psql("select rolname, rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls from pg_roles where rolname like 'answerable\\_%\\_runtime' order by rolname")).toEqual([
-      "answerable_admin_runtime|f|f|f|f|f|f", "answerable_id_runtime|f|f|f|f|f|f", "answerable_toolbox_runtime|f|f|f|f|f|f",
-    ])
+    const owners = urlSecrets.filter(([secret]) => secret.endsWith("-owner")).map(([, , login, database]) => `${database} ${login}`).sort()
+    expect(await psql("select datname || ' ' || pg_get_userbyid(datdba) from pg_database where datname like 'answerable_%' order by datname")).toEqual(owners)
+    // The logins the services serve as: super, createdb, createrole, inherit, replication, bypassrls: none.
+    const serving = urlSecrets.filter(([secret]) => !secret.endsWith("-owner")).map(([, , login]) => login).sort()
+    expect(await psql(`select rolname, rolsuper, rolcreatedb, rolcreaterole, rolinherit, rolreplication, rolbypassrls from pg_roles where rolname in (${serving.map(login => `'${login}'`).join(", ")}) order by rolname`)).toEqual(serving.map(login => `${login}|f|f|f|f|f|f`))
     expect(await psql("select count(*) from pg_database d, aclexplode(d.datacl) acl where d.datname like 'answerable_%' and acl.grantee = 0")).toEqual(["0"])
-    for (const database of ["answerable_id", "answerable_toolbox", "answerable_admin"]) {
-      const runtime = `${database}_runtime`
-      expect(await psql(`select has_database_privilege('${runtime}', '${database}', 'CONNECT') || ' ' || has_database_privilege('${runtime}', '${database}', 'TEMP')`), database).toEqual(["true false"])
+    for (const [, , login, database] of urlSecrets.filter(([secret]) => !secret.endsWith("-owner"))) {
+      expect(await psql(`select has_database_privilege('${login}', '${database}', 'CONNECT') || ' ' || has_database_privilege('${login}', '${database}', 'TEMP')`), login).toEqual(["true false"])
     }
   })
 
-  test("bootstrap wrote six URLs, each its login's, verifying the database with the mounted certificate authority, with a 32-byte password", async () => {
+  test("bootstrap wrote every URL, each its login's, verifying the database with the mounted certificate authority, with a 32-byte password", async () => {
     for (const [name, key, login, database] of urlSecrets) {
       const url = new URL((await stack!.readSecret("answerable", name))[key]!)
       expect(`${url.protocol}//${decodeURIComponent(url.username)}@${url.host}${url.pathname}${url.search}`, name).toBe(`postgres://${login}@postgres.database.svc.cluster.local:5432/${database}?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem`)
@@ -392,20 +407,22 @@ describe("the ops Jobs", () => {
     }
     const log = await jobLog("ops-bootstrap")
     expect(log).toContain("answerable_id: created, owned by answerable_id_owner")
+    expect(log).toContain(`answerable_mcps: ${declared.filter(mcp => mcp.database === "shared").map(mcp => mcp.name).join(", ")} provisioned`)
     for (const value of await generatedValues()) expect(log.includes(value)).toBe(false)
   })
 
-  test("register stored both machine clients' secrets, started the Toolbox and the admin MCP, and printed Claude Code's commands without a secret", async () => {
+  test("register minted its own client with root first, stored the machine clients' secrets, started the servers that waited for them, and printed Claude Code's commands without a secret", async () => {
     for (const [name, key] of clientSecrets) expect((await stack!.readSecret("answerable", name))[key]?.length, name).toBeGreaterThan(20)
-    for (const deployment of ["toolbox", "admin-mcp"]) {
+    for (const deployment of registered) {
       const { stdout } = await stack!.kubectl(["get", "deployment", "-n", "answerable", deployment, "-o", "jsonpath={.status.readyReplicas}"])
       expect(stdout, deployment).toBe("1")
     }
-    expect(await (await viaIngress(`${origin(hosts.adminMcp)}/health`)).json()).toEqual({ status: "ok" })
+    expect(await (await viaIngress(`${origin(hosts.adminMcp)}/health`)).json()).toMatchObject({ status: "ok" })
     const log = await jobLog("ops-register")
+    expect(log).toContain("ops-register is minted: register goes on as its own machine client")
+    console.log(`The first register, with root: ${log.match(/Registered in [^\n]+/)?.[0]}`)
     expect(log).toContain(`claude mcp add --transport http answerable-admin ${origin(hosts.adminMcp)}/mcp --client-id claude-code-admin --callback-port 47700`)
-    expect(log).toContain("toolbox: scaled from 0 to 1")
-    expect(log).toContain("admin-mcp: scaled from 0 to 1")
+    for (const deployment of registered) expect(log).toContain(`${deployment}: scaled from 0 to 1`)
     for (const value of [...await generatedValues(), stack!.secrets.rootAdminSecret]) expect(log.includes(value)).toBe(false)
   })
 
@@ -425,6 +442,74 @@ describe("the ops Jobs", () => {
     // The same request without the token is refused.
     expect((await viaIngress(`${toolboxAdmin}/v1/providers`)).status).toBe(401)
   })
+})
+
+describe("the MCPs of charts/answerable/mcps.json", () => {
+  const shared = declared.filter(mcp => mcp.database === "shared")
+
+  test("bootstrap provisioned each one's schema, owned by the migrator, for the Toolbox, which serves every one, and toolbox-migrate migrated each in turn, as the migrator, making no role", async () => {
+    expect(await psql("select nspname || ' ' || pg_get_userbyid(nspowner) || ' ' || has_schema_privilege('answerable_mcps_toolbox', oid, 'USAGE') from pg_namespace where nspname !~ '^pg_' and nspname not in ('public', 'information_schema') order by 1", "answerable_mcps"))
+      .toEqual(shared.map(({ name }) => `${name} answerable_mcps_migrator true`).sort())
+    // The Toolbox's serving login is a member of nothing, and no role is named after an MCP.
+    expect(await psql("select count(*) from pg_auth_members where member = 'answerable_mcps_toolbox'::regrole")).toEqual(["0"])
+    expect(await psql("select count(*) from pg_roles where rolname like 'mcp\\_%'")).toEqual(["0"])
+    for (const { name } of shared) {
+      expect(await psql(`select distinct tableowner from pg_tables where schemaname = '${name}'`, "answerable_mcps"), name).toEqual(["answerable_mcps_migrator"])
+      expect(Number((await psql(`select count(*) from "${name}".__drizzle_migrations`, "answerable_mcps"))[0]), name).toBeGreaterThan(0)
+    }
+    const log = await jobLog("toolbox-migrate")
+    expect(log).toContain("Migrated answerable_toolbox; provisioned answerable_toolbox_runtime")
+    for (const { name } of shared) expect(log).toContain(`${name}: migrating in answerable_mcps as answerable_mcps_migrator`)
+    const took = log.match(/Migrated (\d+) MCPs? in ([\d.]+) s/)
+    expect(Number(took?.[1])).toBe(declared.length)
+    console.log(`toolbox-migrate migrated ${took?.[1]} MCPs in ${took?.[2]} s, as its log says`)
+  })
+
+  test("the Toolbox serves every MCP, in its hub or alone: its health lists them, its MCP database answering", async () => {
+    const health = await (await viaIngress(`${origin(hosts.toolbox)}/health`)).json() as { status: string; databases: Record<string, string>; providers: string[] }
+    expect(health.status).toBe("ok")
+    expect(health.databases.mcps).toBe("ok")
+    expect([...health.providers].sort()).toEqual(declared.map(({ name }) => name).sort())
+  })
+
+  test("the Toolbox serves each standalone and both MCP at /<name>/mcp through Traefik on the mcp host: a challenge naming its own metadata, the metadata naming its resource and ID, and nothing else there", async () => {
+    for (const { name } of servedAlone) {
+      const challenge = await viaIngress(`${origin(hosts.mcp)}/${name}/mcp`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: "{}" })
+      expect(challenge.status, name).toBe(401)
+      expect(challenge.headers.get("www-authenticate"), name).toContain(metadataUrl(name))
+      expect(await (await viaIngress(metadataUrl(name))).json(), name).toMatchObject({ resource: `${origin(hosts.mcp)}/${name}/mcp`, authorization_servers: [origin(hosts.id)] })
+    }
+    // The Ingress routes each MCP's two paths only: no other name, no unprefixed metadata, and the hub and the Toolbox's /health stay on its own host.
+    for (const path of ["/nosuchmcp/mcp", "/.well-known/oauth-protected-resource/mcp", "/health", "/mcp"]) expect((await viaIngress(`${origin(hosts.mcp)}${path}`)).status, path).toBe(404)
+  })
+
+  test("the Toolbox keeps the SDK's Host check at each MCP's path: inside the cluster, under another host, it refuses each MCP and the hub", async () => {
+    const forward = Bun.spawn(["kubectl", "port-forward", "-n", "answerable", "svc/toolbox", "47398:47400"], { env: { ...process.env, KUBECONFIG: stackKubeconfig() }, stdout: "pipe", stderr: "pipe" })
+    try {
+      await forward.stdout.getReader().read()
+      for (const path of [...servedAlone.map(({ name }) => `/${name}/mcp`), "/mcp"]) {
+        const refused = await fetch(`http://127.0.0.1:47398${path}`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: "{}" })
+        expect(refused.status, path).toBe(403)
+      }
+    } finally {
+      forward.kill()
+      await forward.exited
+    }
+  })
+
+  test("the deploy's smoke test, its checks generated from mcps.json, passes through Traefik", async () => {
+    const port = (host: string) => `${host}:48443`
+    const results = await runSmoke({ id: port(hosts.id), toolbox: port(hosts.toolbox), admin: port(hosts.adminMcp), mcp: port(hosts.mcp) }, declared, {
+      fetch: (url, init) => viaIngress(url, init),
+      sleep: Bun.sleep,
+      now: Date.now,
+      timeoutMs: 60_000,
+      intervalMs: 2_000,
+    })
+    console.log(results.map(result => `${result.ok ? "PASS" : "FAIL"} ${result.name}: ${result.detail}`).join("\n"))
+    expect(results.map(result => result.name)).toEqual(expect.arrayContaining([...servedAlone.map(({ name }) => `${name} resource metadata`), "toolbox /health"]))
+    expect(smokePassed(results)).toBe(true)
+  }, 120_000)
 })
 
 describe("a staff member signs in through the cluster", () => {
@@ -461,12 +546,14 @@ describe("running the ops Jobs again", () => {
     expect(bootstrap).not.toContain("URL written")
     expect(bootstrap).toContain("answerable_toolbox_runtime: password set to the one its Secret holds")
     const register = await jobLog("ops-register")
+    expect(register).toContain("Registering as ops-register, register's own machine client")
+    expect(register).toMatch(/ s: 0 created, 0 changed, \d+ as declared already/)
     expect(register).not.toContain("rotated")
     expect(register).not.toContain("secret stored")
     expect(register).toContain("toolbox: already running")
     // The services still connect with the passwords they hold.
     expect(await (await viaIngress(`${origin(hosts.id)}/readyz`)).json()).toEqual({ status: "ok" })
-    expect(await (await viaIngress(`${origin(hosts.adminMcp)}/health`)).json()).toEqual({ status: "ok" })
+    expect(await (await viaIngress(`${origin(hosts.adminMcp)}/health`)).json()).toMatchObject({ status: "ok" })
   }), 600_000)
 })
 
@@ -485,7 +572,7 @@ describe("the edge fails closed", () => {
   test("the default option alone keeps every host closed: no Ingress names an option, and without the default the host opens", async () => {
     expect((await kubectl(["get", "tlsoptions.traefik.io", "-A", "-o", "name"])).stdout.trim().split("\n")).toEqual(["tlsoption.traefik.io/default"])
     const ingresses = JSON.parse((await kubectl(["get", "ingress", "-n", "answerable", "-o", "json"])).stdout) as { items: { metadata: { annotations?: Record<string, string> }; spec: { tls: { secretName: string }[] } }[] }
-    expect(ingresses.items).toHaveLength(3)
+    expect(ingresses.items).toHaveLength(servedAlone.length ? 4 : 3)
     for (const ingress of ingresses.items) {
       expect(Object.keys(ingress.metadata.annotations ?? {}).filter(key => key.includes("tls.options") || key.startsWith("cert-manager.io/"))).toEqual([])
       expect(ingress.spec.tls.map(entry => entry.secretName)).toEqual(["origin-tls"])
@@ -523,6 +610,80 @@ describe("the first administrator", () => {
     expect(refused.status).toBe(403)
     expect(((await refused.json()) as { code: string }).code).toBe("root_locked")
   }), 300_000)
+})
+
+// Last of all, as the first ship after the lock: a deploy registers a new standalone MCP with register's own client, the Toolbox serves it at its
+// path, and an organisation that staff enable signs in to it.
+describe("after the root lock, a deploy with a new standalone MCP", () => {
+  let next: Awaited<ReturnType<Stack["next"]>>
+  // The MCP the commit has the Toolbox serve alone: example, which its hub mounts, now served both ways.
+  const added = "example"
+  const mcpUrl = () => `${origin(hosts.mcp)}/${added}/mcp`
+  /** ID's admin API as ops-register, with its client's secret from ops-id-client, as the register Job calls it. */
+  async function asOpsRegister(path: string) {
+    const secret = (await stack!.readSecret("answerable", "ops-id-client")).OPS_ID_CLIENT_SECRET!
+    const issued = await viaIngress(`${origin(hosts.id)}/auth/oauth2/token`, {
+      method: "POST",
+      headers: { authorization: `Basic ${Buffer.from(`ops-register:${secret}`).toString("base64")}`, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "client_credentials", resource: `${origin(hosts.id)}/api/admin`, scope: "platform:read platform:write" }),
+    })
+    const { access_token: token } = await issued.json() as { access_token: string }
+    return (await viaIngress(`${origin(hosts.id)}/api/admin/v1${path}`, { headers: { authorization: `Bearer ${token}` } })).json() as Promise<Record<string, unknown>>
+  }
+
+  test("registers it as ops-register, with no root secret: its resource, its Claude Code client and their link", () => watched("the deploy after the lock", 540_000, async () => {
+    next = await step("build the next release: example served both", () => stack!.next(declaration => {
+      if (declaration.name === added) declaration.serve = "both"
+    }))
+    expect(next.declared.find(mcp => mcp.name === added)?.serve).toBe("both")
+    // As the deploy runs it: bootstrap and register on, the new image.
+    await step("deploy the next release", () => stack!.release(["ops.bootstrap=true", "ops.register=true", ...next.sets], { chart: next.chart }))
+    const log = await jobLog("ops-register")
+    expect(log).toContain("Registering as ops-register, register's own machine client")
+    for (const key of [`mcp-${added}-resource-v1: done`, `claude-code-${added}-v1: done`, `claude-code-${added}-link-v1-r1: done`]) expect(log).toContain(key)
+    expect(log).not.toContain("rotated")
+    console.log(`register after the lock, with ${next.declared.filter(mcp => mcp.serve !== "toolbox").length} standalone MCPs: ${log.match(/Registered in [^\n]+/)?.[0]}`)
+    for (const value of await generatedValues()) expect(log.includes(value)).toBe(false)
+    const job = JSON.parse((await stack!.kubectl(["get", "job", "-n", "answerable", "ops-register", "-o", "json"])).stdout) as { status: { startTime: string; completionTime: string } }
+    console.log(`The ops-register Job, pod start to completion: ${(Date.parse(job.status.completionTime) - Date.parse(job.status.startTime)) / 1000} s`)
+    const scopes = next.declared.find(mcp => mcp.name === added)!.scopes
+    expect(await asOpsRegister(`/resources/${encodeURIComponent(mcpUrl())}`)).toMatchObject({ allowedScopes: [...scopes, "offline_access"].sort(), clients: [`claude-code-${added}`], accessTokenTtl: 900 })
+    expect(await asOpsRegister(`/clients/claude-code-${added}`)).toMatchObject({ tokenEndpointAuthMethod: "none", redirectUris: ["http://localhost:47700/callback"], scopes: [...scopes, "offline_access", "openid"].sort() })
+    const audit = (await asOpsRegister(`/audit-events?action=resource.created&targetId=${encodeURIComponent(mcpUrl())}`)).items as { actorType: string; actorId: string }[]
+    expect(audit.map(({ actorType, actorId }) => `${actorType} ${actorId}`)).toEqual(["client ops-register"])
+    // The root secret is still refused: nothing in this deploy used it.
+    const refused = await viaIngress(`${origin(hosts.id)}/api/admin/v1/organizations?limit=1`, { headers: { authorization: `Bearer ${stack!.secrets.rootAdminSecret}` } })
+    expect(((await refused.json()) as { code: string }).code).toBe("root_locked")
+  }), 600_000)
+
+  test("the deploy's smoke test of the new list passes through Traefik, the new MCP's metadata among its checks", async () => {
+    await untilServed(metadataUrl(added))
+    const port = (host: string) => `${host}:48443`
+    const results = await runSmoke({ id: port(hosts.id), toolbox: port(hosts.toolbox), admin: port(hosts.adminMcp), mcp: port(hosts.mcp) }, next.declared, {
+      fetch: (url, init) => viaIngress(url, init), sleep: Bun.sleep, now: Date.now, timeoutMs: 60_000, intervalMs: 2_000,
+    })
+    console.log(results.map(result => `${result.ok ? "PASS" : "FAIL"} ${result.name}: ${result.detail}`).join("\n"))
+    expect(results.map(result => result.name)).toContain(`${added} resource metadata`)
+    expect(smokePassed(results)).toBe(true)
+  }, 120_000)
+
+  test("staff run standalone_enable for a client organisation; its person signs in through Claude Code's client and calls a tool; the staff member's organisation is refused", () => watched("standalone_enable and the sign-ins", 200_000, async () => {
+    const scopes = next.declared.find(mcp => mcp.name === added)!.scopes
+    const input: StandaloneSignInInput = { mcp: added, scopes, staff: { email: stack!.directory.email }, tenant, stackCa: stack!.stackCa, originPullCert: stack!.originPullCert, edgeCert: stack!.edgeCert }
+    const { stdout } = await step("enable the MCP and sign in through the browser", () => exec([process.execPath, "infra/k8s/local/standalone-sign-in.ts"], { stdin: JSON.stringify(input) }))
+    const result = JSON.parse(stdout.trim().split("\n").at(-1)!) as {
+      preview: { summary: string; changes: { path: string }[] }; receipt: { status: string; results: { created: string[]; existing: string[] } }; signedIn: number
+      prepared: string; refused: string; claims: { aud: string; organization_id: string; client_id: string; scope: string }
+    }
+    console.log(`standalone_enable's preview: ${result.preview.summary}; rows: ${result.preview.changes.map(change => change.path).join(", ")}`)
+    expect(result.preview.summary).toBe(`Enable ${added} for organisation “Tenant” (${tenant.slug}) from claude-code-${added}, with ${scopes.join(" ")} for everyone in it`)
+    expect(result.receipt).toMatchObject({ status: "committed", results: { created: result.preview.changes.map(change => change.path), existing: [] } })
+    expect(result.claims).toMatchObject({ aud: mcpUrl(), organization_id: tenant.organizationId, client_id: `claude-code-${added}` })
+    expect(result.claims.scope.split(" ").sort()).toEqual([...scopes, "offline_access"].sort())
+    expect(result.prepared).toBe("Add “From Claude Code” to the notes of Tenant")
+    expect(result.refused).toContain("Access is unavailable for this organisation")
+    console.log(`The client organisation's person signed in to ${added} in ${result.signedIn} s`)
+  }), 240_000)
 })
 
 function stackKubeconfig() {

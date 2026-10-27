@@ -8,7 +8,7 @@ bun install
 bun run mcp:test:e2e
 ```
 
-Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL 17 in a Compose project on port `47532` and ID on `47600`, runs every `*.journeys.test.ts` in `src/journeys` one after another, and removes both afterwards, including after Ctrl-C. The kit's own unit tests (`cleanup.test.ts`, `id.test.ts`) run in the same command. The kit is test support: no coverage gate.
+Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL 17 in a Compose project on port `47532` and ID on `47600`, and the Toolbox, with the MCPs it serves alone at their paths, on `47604` (a second one on `47605`), runs every `*.journeys.test.ts` in `src/journeys` one after another, and removes PostgreSQL and ID afterwards, including after Ctrl-C. The kit's own unit tests (`cleanup.test.ts`, `id.test.ts`) run in the same command. The kit is test support: no coverage gate.
 
 | File | Job |
 | --- | --- |
@@ -18,12 +18,15 @@ Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL 17 in a Compose proj
 | `src/browser.ts` | `launchBrowser`, `signIn`, `signInRefused` and `verifySignIn`: the SDK challenge and ID's pages in Chromium |
 | `src/mcp.ts` | `serve`, `serveCallback`, `connect`, `tool`, `refusal` and the journeys' `intentSchema` |
 | `src/cleanup.ts` | What `stop` and Ctrl-C run, and a collection of garbage after them |
-| `src/toolbox.ts` | `startToolboxStack`: the Toolbox registered in ID with its host clients, its machine client and a staff client, its database (migrated as the owner, served as the runtime login) and its poller; the Toolbox journeys and the host lane start from it |
+| `src/mcps.ts` | `mcpsDatabase`: the shared MCP database `answerable_mcps_acceptance` with its two logins, and every MCP the Toolbox serves provisioned and migrated, once per start |
+| `src/toolbox.ts` | `prepareToolbox`: the Toolbox's machine client and database (migrated as the owner, served as the runtime login), and `start(origin)`, a Toolbox on fresh pools serving its generated list in its hub and at `<origin>/<name>/mcp`, with its poller; the e2e journeys start from it. `startToolboxStack`: that, with the Toolbox's resources, host clients and a staff client registered in ID; the Toolbox, MCP and CLI journeys and the host lane start from it |
 | `src/admin-mcp.ts` | `startAdminStack`: the admin MCP and the Toolbox registered in ID as the admin MCP's setup page shows, with a database each (migrated as the owner, served as the runtime login) and the Toolbox's poller; the admin journeys and the admin lane start from it |
-| `src/journeys/e2e.journeys.test.ts` | The e2e MCP: sign-in, tokens, J4 agent-class mutation, isolation, refresh, revocation |
+| `src/journeys/e2e.journeys.test.ts` | The e2e MCP at its path, which the Toolbox serves alone: sign-in, tokens, J4 agent-class mutation, isolation, refresh, revocation |
+| `src/journeys/mcp-cli.journeys.test.ts` | The CLI's registrations in real ID (`bun mcp setup` and `bun mcp dev`, from `scripts/mcp`): mcp-dev, the Toolbox's host client, e2e's resource and client, and each organisation's access; then who is calling, from ID, in `example`'s tool, `example` in the Toolbox and e2e at its path, and widening what ID holds |
+| `src/journeys/scaffold.journeys.test.ts` | `bun mcp` end to end, as a coding agent runs it, in a copy of the working tree with its own install: `new`, `check`, `add tool` for a read and a mutation, `list` and a refused second `new`, against the development Postgres on 47432; no ID |
 | `src/journeys/admin.journeys.test.ts` | The admin MCP on port `47606` and the Toolbox: A1 roles without re-authorisation (`staff_grant` and `staff_revoke` against real ID), A2 onboarding through the tools, A3 the Toolbox outcome, A8 tool-level access (a grant string naming one capability, to a group and to a member), A4 refusals, A5 idempotency, A6 freshness (Verify sign-in) and A7 evidence |
 | `src/journeys/toolbox.journeys.test.ts` | The Toolbox on port `47604`: J1 direct list, J2 partial and denied, J6 human class, J7 meta projection, J3 grant change and `tools/list_changed`, J10 evidence, and the admin API (enabling organisations, the catalogue) |
 
-[Test MCPs locally](../../apps/web/content/docs/mcp/local-testing.mdx) lists what each journey proves, the ports, every kit function, how to write a journey, and the errors you can hit. Changes: [CHANGELOG](CHANGELOG.md).
+[Test MCPs against real ID](../../apps/web/content/docs/mcp/local-testing.mdx) lists the ports, every kit function, how to write a journey, and the errors you can hit.
 
 The lanes keep ID and the servers up for Claude Code by hand: `bun packages/acceptance/scripts/host-lane.ts` (the Toolbox, with LibreChat) and `bun packages/acceptance/scripts/admin-lane.ts` (the admin MCP and the Toolbox, with the new organisation's person). They start from the same code as the journeys, which are their proof. Neither runs beside the journeys.

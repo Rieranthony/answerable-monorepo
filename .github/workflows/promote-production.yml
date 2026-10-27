@@ -1,7 +1,7 @@
 name: Promote production
 
 # A tag production/<name> on a commit of main ships that commit to production, with the images staging built for it:
-# the four signatures are verified first, then the run waits for the production environment's reviewer, applies the
+# the signatures of every image of infra/pipeline/images.json are verified first, then the run waits for the production environment's reviewer, applies the
 # production infrastructure, deploys exactly the verified digests and smoke-tests. Production is never rebuilt, and a
 # commit staging never shipped is refused. To roll back, tag an earlier commit that staging shipped.
 #
@@ -29,7 +29,7 @@ env:
   IMAGE_TAG: sha-${{ github.sha }}
 
 jobs:
-  # The commit is on main, and its four images were built and signed by deploy-staging.yml on a staging tag, so
+  # The commit is on main, and each image of infra/pipeline/images.json was built and signed by deploy-staging.yml on a staging tag, so
   # they were built from a commit that passed CI and ran on staging. The digests the tag points to are read once,
   # verified, and handed to the deploy, so a tag moved afterwards changes nothing.
   verify:
@@ -60,7 +60,7 @@ jobs:
         run: |
           identity="^${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/deploy-staging.yml@refs/tags/staging/"
           digests=()
-          for image in id toolbox admin-mcp ops; do
+          for image in $(jq -r '.[].name' infra/pipeline/images.json); do
             if ! digest=$(docker buildx imagetools inspect "$REGISTRY/$image:$IMAGE_TAG" --format '{{.Manifest.Digest}}' 2>/dev/null); then
               echo "::error::$REGISTRY/$image:$IMAGE_TAG does not exist: staging has not shipped $GITHUB_SHA; tag it staging/<name> first"
               exit 1
@@ -137,13 +137,14 @@ jobs:
           MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          BETTER_AUTH_SECRETS: ${{ secrets.BETTER_AUTH_SECRETS }}
         run: |
-          # The digests verified above: <image>=sha256:<hex>, space-separated.
+          # The digests verified above: <image>=sha256:<hex>, space-separated, one for each image of infra/pipeline/images.json.
           read -ra pairs <<< "$IMAGE_DIGESTS"
           pins=()
           for pair in "${pairs[@]}"; do pins+=(--image-digest "$pair"); done
-          if [ "${#pins[@]}" -ne 8 ]; then
-            echo "::error::expected the verified digest of all four images, got '$IMAGE_DIGESTS'"
+          if [ "${#pairs[@]}" -ne "$(jq length infra/pipeline/images.json)" ]; then
+            echo "::error::expected the verified digest of every image of infra/pipeline/images.json, got '$IMAGE_DIGESTS'"
             exit 1
           fi
           bun infra/pipeline/src/cli.ts deploy --environment production --image-tag "$IMAGE_TAG" "${pins[@]}"

@@ -19,8 +19,11 @@ test("prompts, resources and views validate names, scopes and URIs", () => {
   expect(() => defineResource({ name: "Bad", uri: "fixture://bad", description: "", mimeType: "text/plain", async read() { return "" } })).toThrow('Resource name "Bad" must be a lowercase letter then lowercase letters, digits or underscores, for example guide')
 })
 
+const principal = testPrincipal()
 const context = {
-  principal: testPrincipal(),
+  principal,
+  person: { id: principal.userId, membershipId: principal.membershipId, name: "Test Person", email: "person@example.test", groups: [] },
+  organisation: { id: principal.organizationId, name: "Test Organisation", slug: "test" },
   executionId: Bun.randomUUIDv7(),
   signal: new AbortController().signal,
 }
@@ -59,7 +62,7 @@ test("a wrapper applies to tools of different shapes and runs through the server
     async execute({ title }) { return { title } },
   })
   const tools = [count, echo].map(tool => audited(tool, line => log.push(line)))
-  const mcp = await createTestMcp(defineProvider({ id: "test", version: "2026-09-29", tools }))
+  const mcp = await createTestMcp(defineProvider({ id: "test", description: "A fixture provider of wrapped tools, used to test composition.", version: "2026-09-29", tools }))
   try {
     const userId = crypto.randomUUID()
     const client = await mcp.connect({ userId })

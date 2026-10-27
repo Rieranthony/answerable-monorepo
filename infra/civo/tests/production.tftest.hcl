@@ -1,6 +1,6 @@
 # Production as envs/production.tfvars describes it, run as terraform.sh plans it: `terraform test
 # -filter=tests/production.tftest.hcl -var-file=envs/production.tfvars` (bun run infra:check does). Every name
-# answerable-production-, three nodes, one database node until failover is measured, the answerable.org zone's three
+# answerable-production-, three nodes, one database node until failover is measured, the answerable.org zone's four
 # hostnames and never www, which Vercel serves, and the GitHub environment production.
 mock_provider "civo" {}
 mock_provider "cloudflare" {}
@@ -82,8 +82,8 @@ run "serves_answerable_org_without_touching_www" {
   command = plan
 
   assert {
-    condition     = output.hostnames == tolist(["admin-mcp.answerable.org", "id.answerable.org", "toolbox.answerable.org"])
-    error_message = "Production serves id, toolbox and admin-mcp under answerable.org (D12)."
+    condition     = output.hostnames == tolist(["admin-mcp.answerable.org", "id.answerable.org", "mcp.answerable.org", "toolbox.answerable.org"])
+    error_message = "Production serves id, toolbox, admin-mcp and mcp, the standalone MCPs, under answerable.org (D12)."
   }
 
   assert {

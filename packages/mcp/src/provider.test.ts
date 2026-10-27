@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test"
 import { z } from "zod"
-import { defineMutation, definePrompt, defineProvider, defineResource, defineTool, defineView, type Mutation, type Tool } from "./index"
+import { checkDescription, checkMutationDescription, checkProviderId, checkToolName, defineMutation, definePrompt, defineProvider, defineResource, defineTool, defineView, withDatabase, type Mutation, type Tool } from "./index"
 
 const description = "A fixture tool that returns nothing, used to test providers."
+const purpose = "A fixture provider that holds nothing, used to test providers."
 const tool = (name: string, extra: Partial<Pick<Tool, "version" | "scopes" | "view" | "deprecated" | "errors">> = {}) => defineTool({
   name, description, input: z.object({}), output: z.object({}), async execute() { return {} }, ...extra,
 })
@@ -17,11 +18,11 @@ const resource = defineResource({ name: "notes", uri: "fixture://notes", descrip
 
 test("fills each definition's identity, version and scopes and freezes the result", () => {
   const provider = defineProvider({
-    id: "acme", version: "2026-09-29",
+    id: "acme", description: purpose, version: "2026-09-29",
     tools: [tool("records.list"), tool("identity.get", { version: "2026-01-01", scopes: ["acme:identity"] })],
     prompts: [prompt], resources: [resource],
   })
-  expect(provider).toMatchObject({ id: "acme", version: "2026-09-29" })
+  expect(provider).toMatchObject({ id: "acme", description: purpose, version: "2026-09-29" })
   expect(provider.tools.map(({ name, identity, version, scopes }) => ({ name, identity, version, scopes }))).toEqual([
     { name: "records.list", identity: "acme/records.list", version: "2026-09-29", scopes: ["acme:read"] },
     { name: "identity.get", identity: "acme/identity.get", version: "2026-01-01", scopes: ["acme:identity"] },
@@ -31,21 +32,21 @@ test("fills each definition's identity, version and scopes and freezes the resul
   for (const value of [provider, provider.tools, provider.prompts, provider.resources, ...provider.tools, ...provider.prompts, ...provider.resources, provider.tools[0]!.scopes]) {
     expect(Object.isFrozen(value)).toBe(true)
   }
-  expect(defineProvider({ id: "acme", version: "2026-09-29", tools: [] })).toEqual({ id: "acme", version: "2026-09-29", tools: [], prompts: [], resources: [] })
+  expect(defineProvider({ id: "acme", description: purpose, version: "2026-09-29", tools: [] })).toEqual({ id: "acme", description: purpose, version: "2026-09-29", tools: [], prompts: [], resources: [] })
 })
 
 test("ids are a lowercase letter then up to 11 letters or digits, and the version is a date", () => {
   for (const id of ["Acme", "acme-co", "1acme", "", "abcdefghijklm"]) {
-    expect(() => defineProvider({ id, version: "2026-09-29", tools: [] })).toThrow(`Provider id "${id}" must be a lowercase letter then up to 11 lowercase letters or digits, for example acme`)
+    expect(() => defineProvider({ id, description: purpose, version: "2026-09-29", tools: [] })).toThrow(`Provider id "${id}" must be a lowercase letter then up to 11 lowercase letters or digits, for example acme`)
   }
-  expect(defineProvider({ id: "abcdefghijkl", version: "2026-09-29", tools: [] }).id).toBe("abcdefghijkl")
+  expect(defineProvider({ id: "abcdefghijkl", description: purpose, version: "2026-09-29", tools: [] }).id).toBe("abcdefghijkl")
   for (const version of ["0.1.0", "2026-13-01", "20260929"]) {
-    expect(() => defineProvider({ id: "acme", version, tools: [] })).toThrow(`Provider acme: version "${version}" must be a date, YYYY-MM-DD`)
+    expect(() => defineProvider({ id: "acme", description: purpose, version, tools: [] })).toThrow(`Provider acme: version "${version}" must be a date, YYYY-MM-DD`)
   }
 })
 
 test("refuses duplicate tools, prompts and resource URIs, and conflicting views", () => {
-  const base = { id: "acme", version: "2026-09-29" }
+  const base = { id: "acme", description: purpose, version: "2026-09-29" }
   expect(() => defineProvider({ ...base, tools: [tool("records.list"), tool("records.list", { version: "2026-01-01" })] })).toThrow("Provider acme defines tool records.list twice; rename one")
   expect(() => defineProvider({ ...base, tools: [], prompts: [prompt, prompt] })).toThrow("Provider acme defines prompt guide twice")
   expect(() => defineProvider({ ...base, tools: [], resources: [resource, resource] })).toThrow("Provider acme defines resource fixture://notes twice")
@@ -57,7 +58,7 @@ test("refuses duplicate tools, prompts and resource URIs, and conflicting views"
 })
 
 test("a deprecated tool names a current tool of the provider as its replacement", () => {
-  const base = { id: "acme", version: "2026-09-29" }
+  const base = { id: "acme", description: purpose, version: "2026-09-29" }
   const deprecated = { since: "2026-09-29", sunset: "2027-09-29", replacement: "records.search" }
   const old = tool("records.find", { deprecated })
   expect(defineProvider({ ...base, tools: [old, tool("records.search")] }).tools[0]!.deprecated).toEqual(deprecated)
@@ -68,7 +69,7 @@ test("a deprecated tool names a current tool of the provider as its replacement"
 })
 
 test("mutations join the tools: <id>:write by default, and the same identity, duplicate and deprecation rules", () => {
-  const base = { id: "acme", version: "2026-09-29" }
+  const base = { id: "acme", description: purpose, version: "2026-09-29" }
   const provider = defineProvider({ ...base, tools: [tool("records.list"), mutation("records.delete"), mutation("records.create", { version: "2026-01-01", scopes: ["acme:create"] })] })
   expect(provider.tools.map(({ name, kind, identity, version, scopes }) => ({ name, kind, identity, version, scopes }))).toEqual([
     { name: "records.list", kind: "read", identity: "acme/records.list", version: "2026-09-29", scopes: ["acme:read"] },
@@ -82,12 +83,44 @@ test("mutations join the tools: <id>:write by default, and the same identity, du
 })
 
 test("a declared error starts with the provider's id in capitals", () => {
-  const base = { id: "acme", version: "2026-09-29" }
+  const base = { id: "acme", description: purpose, version: "2026-09-29" }
   const locked = { errors: ["ACME_LOCKED"] }
   expect(defineProvider({ ...base, tools: [tool("records.list", locked), mutation("records.delete", locked)] }).tools.map(({ errors }) => errors)).toEqual([["ACME_LOCKED"], ["ACME_LOCKED"]])
-  expect(defineProvider({ id: "e2e", version: "2026-09-29", tools: [tool("records.list", { errors: ["E2E_LOCKED"] })] }).tools).toHaveLength(1)
+  expect(defineProvider({ id: "e2e", description: purpose, version: "2026-09-29", tools: [tool("records.list", { errors: ["E2E_LOCKED"] })] }).tools).toHaveLength(1)
   for (const code of ["OTHER_LOCKED", "ACMEX_LOCKED"]) {
     expect(() => defineProvider({ ...base, tools: [tool("records.list", { errors: [code] })] })).toThrow(`Provider acme: records.list declares error "${code}"; a custom code of this provider starts with ACME_`)
     expect(() => defineProvider({ ...base, tools: [mutation("records.delete", { errors: [code] })] })).toThrow(`Provider acme: records.delete declares error "${code}"; a custom code of this provider starts with ACME_`)
   }
+})
+
+test("a description is 40 to 1,000 characters, with the message a tool's has", () => {
+  for (const length of [39, 1001]) {
+    expect(() => defineProvider({ id: "acme", description: "x".repeat(length), version: "2026-09-29", tools: [] }))
+      .toThrow(`Provider acme: the description is ${length} characters; write 40 to 1,000 saying what it does, when to use it and its limits`)
+  }
+  for (const length of [40, 1000]) expect(defineProvider({ id: "acme", description: "x".repeat(length), version: "2026-09-29", tools: [] }).description).toHaveLength(length)
+})
+
+test("the rules are exported for checking a name before anything is defined, and say what is wrong after their subject", () => {
+  expect(checkProviderId("acme")).toBeUndefined()
+  expect(`MCP name ${checkProviderId("Acme")}`).toBe('MCP name "Acme" must be a lowercase letter then up to 11 lowercase letters or digits, for example acme')
+  expect(checkToolName("notes.list")).toBeUndefined()
+  expect(checkToolName("notes")).toBe('"notes" must be <domain>.<operation>, each part a lowercase letter then up to 15 lowercase letters or digits, for example records.list')
+  expect(checkDescription("x".repeat(40))).toBeUndefined()
+  expect(`A tool's description ${checkDescription("Gets notes.")}`).toBe("A tool's description is 11 characters; write 40 to 1,000 saying what it does, when to use it and its limits")
+  expect(checkDescription("x")).toStartWith("is 1 character; write")
+  for (const description of ["Prepare adding a note.", "Returns an intent to add a note."]) expect(checkMutationDescription(description)).toBeUndefined()
+  expect(`A mutation's description ${checkMutationDescription("Add a note.")}`).toBe('A mutation\'s description must say that it prepares an intent; use the word "prepare" or "intent"')
+})
+
+test("a database is kept and frozen, and tools defined with withDatabase need the provider to declare that schema", () => {
+  const schema = { notes: {} }
+  const database = { schema, migrations: new URL("../drizzle", import.meta.url) }
+  const typed = withDatabase({ schema }).defineTool({ name: "notes.list", description, input: z.object({}), output: z.object({}), async execute() { return {} } })
+  const provider = defineProvider({ id: "acme", description: purpose, version: "2026-09-29", database, tools: [typed, tool("records.list")] })
+  expect(provider.database).toEqual(database)
+  expect(Object.isFrozen(provider.database)).toBe(true)
+  const refusal = "Provider acme: notes.list is defined with withDatabase, so the provider needs database: { schema, migrations }, with the schema src/mcp.ts gives withDatabase"
+  expect(() => defineProvider({ id: "acme", description: purpose, version: "2026-09-29", tools: [typed] })).toThrow(refusal)
+  expect(() => defineProvider({ id: "acme", description: purpose, version: "2026-09-29", database: { ...database, schema: { notes: {} } }, tools: [typed] })).toThrow(refusal)
 })

@@ -47,7 +47,7 @@ Every tool failure is `{ "isError": true, "content": [{ "type": "text", "text": 
 
 The codes and their retry policies are read from `errorCodes` in `@answerable/mcp` when these docs build ([reference](/docs/mcp/reference#errorcodes)); a `ToolError` without `retry` gets the policy shown.
 
-**Who answers what.** The server answers `INVALID_INPUT` for bad arguments, `TIMEOUT` and `INTERNAL` for every tool. The commit tools answer the `INTENT_*` codes, `COMMIT_TOKEN_INVALID`, `PRINCIPAL_MISMATCH`, `APPROVAL_REQUIRED`, `COMMIT_IN_PROGRESS` and `PERMISSION_DENIED`, in [this order](/docs/mcp/mutations#commit-tools). [The Toolbox](/docs/toolbox#errors) answers `RESULT_TOO_LARGE` and `UPSTREAM_UNAVAILABLE`; its meta tools answer `NOT_FOUND` for a capability you may not use and `INVALID_INPUT` for a capability sent to the wrong one of `toolbox_execute` and `toolbox_prepare`. Your handlers throw the rest with `ToolError`.
+**Who answers what.** The server answers `INVALID_INPUT` for bad arguments, `TIMEOUT` and `INTERNAL` for every tool, and `UPSTREAM_UNAVAILABLE` when [who is calling](/docs/mcp/servers#who-is-calling) cannot be read, or `PERMISSION_DENIED` when ID says the caller's membership is not in force or no longer exists. The commit tools answer the `INTENT_*` codes, `COMMIT_TOKEN_INVALID`, `PRINCIPAL_MISMATCH`, `APPROVAL_REQUIRED`, `COMMIT_IN_PROGRESS` and `PERMISSION_DENIED`, in [this order](/docs/mcp/mutations#commit-tools). [The Toolbox](/docs/toolbox#errors) answers `RESULT_TOO_LARGE` and `UPSTREAM_UNAVAILABLE`; its meta tools answer `NOT_FOUND` for a capability you may not use and `INVALID_INPUT` for a capability sent to the wrong one of `toolbox_execute` and `toolbox_prepare`. Your handlers throw the rest with `ToolError`.
 
 ## Custom codes
 
@@ -107,7 +107,8 @@ These throw when the module loads, so the server never starts with a broken defi
 | Message | Meaning | What to do |
 | --- | --- | --- |
 | `Tool name "…" must be <domain>.<operation>…` | The name breaks the naming rule; a mutation says `Mutation name` | Rename it, for example `notes.list` |
-| `Tool …: the description is N characters…` | Shorter than 40 or longer than 1,000; a mutation says `Mutation …` | Say what it does, when to use it and its limits |
+| `Tool …: the description is N characters…` | Shorter than 40 or longer than 1,000; a mutation says `Mutation …`, a provider `Provider …` | Say what it does, when to use it and its limits; for a provider, what the MCP is for |
+| `Tool …: the example is not a valid input: <field>: …` | The `example` does not fit `input`; a mutation says `Mutation …` | Fix the field the message names |
 | `Tool …: timeoutMs … must be a whole number of milliseconds from 1 to 55,000` | The timeout is out of range | Use at most 55,000 |
 | `Mutation …: risk "…" must be low, normal or high` | Another value | Use one of the three, or omit it for `normal` |
 | `Mutation …: effect "…" is not in the vocabulary…` | An effect outside the six | Use a name from the vocabulary |
@@ -127,10 +128,12 @@ These throw when the module loads, so the server never starts with a broken defi
 | `ToolError code "…" is not in the standard table; pass { retry }…` | A custom code without a retry policy | Pass `{ retry: { policy } }` |
 | `Tool …: errors entry "…" must be a custom code…` | An entry in `errors` is a standard code, or not `<PROVIDER>_<CODE>` in capitals; a mutation says `Mutation …` | Remove standard codes; write custom ones as `ACME_QUOTA_EXCEEDED` |
 | `Provider …: … declares error "…"; a custom code of this provider starts with …_` | A declared code does not start with the provider id in capitals | Rename it, for example `ACME_QUOTA_EXCEEDED` in provider `acme` |
+| `Provider …: … is defined with withDatabase, so the provider needs database: { schema, migrations }…` | A tool made with `withDatabase` is in a provider that declares no database, or another schema | Give `defineProvider` `database` with the schema `src/mcp.ts` gives `withDatabase` |
+| `Provider … has a database, so its server needs its db…` at start | `createMcpServer` or a `mount` entry has no `db` for a provider with a database | Pass `db`, made with `mcpDatabase` from `@answerable/mcp-postgres`; in a test, use [its `createTestMcp`](/docs/mcp/testing#an-mcp-with-a-database) |
+| `Invalid Toolbox configuration: TOOLBOX_ID_CLIENT_ID: …` at start | The Toolbox reads who is calling from ID, for its hub and every MCP it serves alone, and has no machine client | Run `bun mcp setup` and start it with `bun mcp dev <name>`, or set the client's id and secret; see [the Toolbox's environment](/docs/toolbox#environment) |
 | `Invalid MCP configuration: …` at start | A missing or invalid variable | Set the named variable; see [Configure](/docs/mcp/servers#configure) |
-| `Server name "…" must be a lowercase letter then up to 11 lowercase letters or digits…` from `mcp:new` | The name is not a provider id | Use a name such as `acme` |
-| `mcps/<name> already exists; choose another name or remove it` from `mcp:new` | The directory exists | Choose another name, or remove the directory |
-| `…/manifest.json is out of date; regenerate it with UPDATE_MANIFEST=1…` | The manifest differs from the code, or has not been written yet | Run `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-<name> test`, review the diff and commit |
+| A message from `bun mcp` | A refusal before anything was written, or a step that failed after | [The bun mcp command](/docs/mcp/cli#errors) lists every message, with what to do |
+| `…/manifest.json is out of date; regenerate it with UPDATE_MANIFEST=1…` | The manifest differs from the code, or has not been written yet | Run `bun mcp check <name>`, or for a hub the command in the message ([the manifest snapshot](/docs/mcp/testing#the-manifest-snapshot)); review the diff and commit |
 
 ## Limits
 

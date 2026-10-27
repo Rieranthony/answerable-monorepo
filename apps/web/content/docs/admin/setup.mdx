@@ -9,11 +9,13 @@ bun packages/acceptance/scripts/admin-lane.ts
 
 The lane starts a throwaway ID, the admin MCP and the Toolbox, registers them as this page shows, and prints the Claude Code commands to try: [Try it locally](#try-it-locally). To use your own ID, [register the admin MCP](#register-the-admin-mcp) in it, [run it](#run-it) and [connect Claude Code](#connect-claude-code).
 
-[The admin MCP](/docs/admin) describes what it does. The journeys in `packages/acceptance` make the same registrations, through the kit's functions in `src/admin-mcp.ts`, in a real ID and then use the result: [What the admin journeys prove](/docs/mcp/local-testing#what-the-admin-journeys-prove).
+[The admin MCP](/docs/admin) describes what it does. The journeys in `packages/acceptance` make the same registrations, through the kit's functions in `src/admin-mcp.ts`, in a real ID and then use the result: [What the acceptance proves](/docs/mcp/local-testing#what-the-acceptance-proves).
 
 ## Register the admin MCP
 
-**Who.** Answerable staff, once per ID. Use the root secret as `TOKEN` while no person is a platform administrator; ID then answers `403 root_locked` and `TOKEN` is a [staff token](/docs/id/onboard#get-a-staff-token). Each write sends its own `Idempotency-Key`, so a lost answer can be retried.
+**In a deployment, nobody runs this.** The deploy's register Job makes these registrations, with these keys, on every deploy, as its own machine client, `ops-register`, which its first run mints with the root secret; no later deploy needs the root secret. It also registers each standalone MCP, which the Toolbox serves at its own path: its resource, its Claude Code client and their link.
+
+**Who.** Answerable staff, once per ID of your own, such as a local one. Use the root secret as `TOKEN` while no person is a platform administrator; ID then answers `403 root_locked` and `TOKEN` is a [staff token](/docs/id/onboard#get-a-staff-token). Each write sends its own `Idempotency-Key`, so a lost answer can be retried.
 
 ```bash
 export ID=http://localhost:47300
@@ -124,7 +126,7 @@ export TOOLBOX_ADMIN_PATH=http%3A%2F%2Flocalhost%3A47400%2Fadmin
 
 ## Run it
 
-Put the machine client's id and secret in the root `.env`, with the rest of the [environment](/docs/admin#environment): `ADMIN_ID_ISSUER=http://localhost:47300`, `ADMIN_RESOURCE_URL=http://localhost:47520/mcp`, `ADMIN_DATABASE_URL` (the runtime login), `ADMIN_DATABASE_MIGRATION_URL` (the owner, for `db:migrate`), `ADMIN_ID_CLIENT_ID=admin-mcp`, `ADMIN_ID_CLIENT_SECRET`, `ADMIN_ID_ADMIN_RESOURCE=http://localhost:47300/api/admin` and `ADMIN_TOOLBOX_ADMIN_RESOURCE=http://localhost:47400/admin`. A Postgres volume made before the admin MCP existed has no database for it, and one made before its [runtime login](/docs/admin#database-roles) has no login: create them once.
+Put the machine client's id and secret in the root `.env`: `ADMIN_ID_CLIENT_ID=admin-mcp` and `ADMIN_ID_CLIENT_SECRET`. Every other variable of the [environment](/docs/admin#environment) has a local default. A Postgres volume made before the admin MCP existed has no database for it, and one made before its [runtime login](/docs/admin#database-roles) has no login: create them once.
 
 ```bash
 docker exec answerable-postgres-1 psql -U answerable -d postgres \
@@ -173,7 +175,7 @@ At ID's email step type the address given; the company sign-in that follows acce
 | 7 | Ask: `Create the group staff in newco, grant it e2e/records.list on http://127.0.0.1:47604/mcp, and add tester@newco.example.test to it.` | Three previews and receipts; `members_list` finds the member, who has signed in. Within a minute the Toolbox lists two tools for the same sign-in, `toolbox_whoami` and `e2e_records_list`, and `toolbox_whoami` shows the grant `e2e/records.list`: [Some tools, not all](/docs/admin#some-tools-not-all) |
 | 8 | As the staff member, ask: `Show ID's audit events for the receipt's operation id.` | The machine client is the actor, and `requestId` is the commit's execution id |
 
-The admin journeys run these steps headlessly, from the same registrations, with the kit's browser: [What the admin journeys prove](/docs/mcp/local-testing#what-the-admin-journeys-prove).
+The admin journeys run these steps headlessly, from the same registrations, with the kit's browser: [What the acceptance proves](/docs/mcp/local-testing#what-the-acceptance-proves).
 
 **When Claude Code asks.** Claude Code 2.1.282's source asks before any tool marked `anthropic/requiresUserInteraction`, whatever your allow rules say, and the server marks `admin_commit_confirmed` and no other tool: the admin journeys assert it (A1). Seeing that prompt in a session with a model: Not yet tested.
 

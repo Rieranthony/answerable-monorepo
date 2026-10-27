@@ -24,6 +24,8 @@ WORKDIR /app
 COPY --from=dependencies /app ./
 # connect() is the only import from mcp-postgres, which brings drizzle-orm and pg; its imports of @answerable/mcp are types, which Bun strips.
 COPY packages/mcp-postgres packages/mcp-postgres
+# The OPS_* definitions (src/commands.ts).
+COPY packages/config packages/config
 COPY infra/ops infra/ops
 # Bun's transpiler cache would write under the home directory; the root filesystem is read-only.
 ENV NODE_ENV=production \

@@ -1,27 +1,25 @@
 {
   "name": "@answerable/mcp-e2e",
-  "version": "0.1.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "exports": {
-    "./mcp": "./src/mcp.ts",
-    "./records": "./src/records.ts",
-    "./view": "./src/view.ts"
+    "./provider": "./src/provider.ts"
   },
   "scripts": {
-    "test": "bun test src",
+    "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src scripts --max-warnings 0",
-    "build": "bun scripts/build.ts",
-    "dev": "bun run build && bun --hot src/server.ts",
-    "start": "bun src/server.ts"
+    "lint": "eslint src --max-warnings 0",
+    "mcp": "bun ../../scripts/mcp/cli.ts"
   },
   "dependencies": {
     "@answerable/mcp": "workspace:*",
-    "@modelcontextprotocol/ext-apps": "2.0.0",
+    "@answerable/mcp-postgres": "workspace:*",
+    "@modelcontextprotocol/ext-apps": "2.0.3",
+    "drizzle-orm": "0.45.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

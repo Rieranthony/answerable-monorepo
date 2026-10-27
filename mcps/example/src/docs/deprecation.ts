@@ -7,6 +7,7 @@ export const notesRecent = defineTool({
   description: "List your organisation's five newest notes. Use notes.list instead, which pages through every note.",
   input: z.object({}),
   output: z.object({ texts: z.array(z.string()) }),
+  example: {},
   deprecated: { since: "2026-09-30", sunset: "2027-09-30", replacement: "notes.list" },
   async execute() {
     return { texts: [] }

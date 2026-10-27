@@ -38,11 +38,11 @@ export const rfisList = defineTool({
 })
 ```
 
-Everything else has a default: `kind` is `read` unless the definition has `prepare` and `commit`, `version` is the provider's, `risk` is `normal`, `cost_units` is 1, annotations and `_meta` are derived, the tool name on the wire is derived from `name`. A mutation adds `prepare` and `commit` and nothing else. A provider is `defineProvider({ id, version, tools })`. A server is `createMcpServer({ provider, auth })`. A test is `createTestMcp` plus `assertProviderConformance`. The scaffold makes a new server with one tool, one test and its environment file in one command: `bun run mcp:new <name>`; the first test run writes its manifest snapshot. One command checks a package: `bun run mcp:check` (typecheck, lint, tests with coverage, conformance, manifest drift).
+Everything else has a default: `kind` is `read` unless the definition has `prepare` and `commit`, `version` is the provider's, `risk` is `normal`, `cost_units` is 1, annotations and `_meta` are derived, the tool name on the wire is derived from `name`. A mutation adds `prepare` and `commit` and nothing else. A provider is `defineProvider({ id, version, tools })`. A server is `createMcpServer({ provider, auth })`. A test is `createTestMcp` plus `assertProviderConformance`. `bun mcp new <name>` makes a new MCP with one tool and its test in one command, and its first test run writes its manifest snapshot (it replaced this plan's `bun run mcp:new`; [the MCP CLI goal](goals/mcp-cli/task_plan.md)). One command checks a package: `bun run mcp:check` (typecheck, lint, tests with coverage, conformance, manifest drift).
 
 The rule for every API decision in the goal: if a field, option or step can be derived or defaulted, it is. Names are the ones authors already know: `defineTool`, not `defineCapability`. Error messages name the definition and say what to change.
 
-**SDK from day one.** Every export carries documentation comments that the reference page is generated from; the `exports` map is the whole public surface; nothing imports a package's internals; types are exported; packages are versioned `0.x` with a changelog; each package has a README that runs; examples live in `mcps/e2e` and are tested. A public npm release is not in the goal, and nothing in the goal would have to change for it.
+**SDK from day one.** Every export carries documentation comments that the reference page is generated from; the `exports` map is the whole public surface; nothing imports a package's internals; types are exported; packages are versioned `0.x` (with no changelog while they are private: pull request 13, D-7); each package has a README that runs; examples live in `mcps/e2e` and are tested. A public npm release is not in the goal, and nothing in the goal would have to change for it.
 
 **Documentation.** Every behaviour that lands has its page on the docs site before the brief is done, following [`AGENTS.md`](../AGENTS.md): a copy-pasteable command or definition first, tables, a Limits section, an Errors table, "Not yet." for what is not built, `title` and `description` on every page, cross-links both ways.
 
@@ -102,11 +102,13 @@ Each journey runs against real Answerable ID through `packages/acceptance` unles
 
 ## After the goal
 
-In order, each with the exit evidence the design names.
+**Done since this plan.** The admin MCP for Answerable staff ([`11-admin-mcp.md`](11-admin-mcp.md)). Hosted deployment on Civo ([`12-deployment.md`](12-deployment.md)): staging has run, and production: Not yet. The MCP CLI and shipping goal ([`goals/mcp-cli`](goals/mcp-cli/task_plan.md)): `bun mcp` makes, checks and runs an MCP, which gets a database schema of its own and its sign-in through Answerable ID automatically, the Toolbox mounts it in its hub or serves it on its own URL from one declaration, `mcps/<name>/mcp.json`, and a tag ships it to staging and then production.
+
+Still to do, in order, each with the exit evidence the design names.
 
 1. Approval pages for the human class (the hub as an OIDC client of ID, `toolbox/approve`, `four_eyes`) and the operations table with the pg-boss worker.
 2. Tenant-tier writes for groups, group members and entitlements in ID; the OpenAPI adapter, for other OpenAPI sources. The admin MCP for Answerable staff is built, standalone and hand-written ([`11-admin-mcp.md`](11-admin-mcp.md)); an admin MCP for an organisation's own administrators needs the tenant-tier writes first.
-3. Hosts: CIMD and policy-gated DCR in ID with the Better Auth upgrade as its own commit; hosted deployment; Claude.ai on a public URL.
+3. Hosts: CIMD and policy-gated DCR in ID with the Better Auth upgrade as its own commit; production deployment; Claude.ai on a public URL.
 4. Programmatic composition: `toolbox_run` on QuickJS in a pool of secret-free Bun subprocesses (capped WebAssembly memory, host-side deadline, call budget, parent-side kill), typed handles, intents returned as a set.
 5. Remote providers and upstream identity: RFC 8693 token exchange in ID, the credential vault and per-person connect flows, the upstream-MCP adapter.
 6. Public SDK release and third-party providers.

@@ -1,0 +1,5 @@
+[
+  { "name": "id", "dockerfile": "apps/id/Dockerfile" },
+  { "name": "mcps", "dockerfile": "mcps/Dockerfile" },
+  { "name": "ops", "dockerfile": "infra/ops/Dockerfile" }
+]

@@ -5,13 +5,13 @@
 > - **Rule:** the service is reachable only through the ingress proxies you list; the application never runs as the database owner; the three deployment secret families are independent and live outside Postgres; Google and Entra use platform applications by default.
 > - **Not here:** the design (`03-answerable-id.md`), the schema (`04-answerable-id-schema.md`), day-two operations (`../apps/id/OPERATIONS.md`), the release gate (`../reports/answerable-id-release-decision-plan.md`).
 
-Everything below is derived from the code on this branch: `apps/id/src/env.ts` (configuration), `apps/id/src/runtime.ts` (startup checks), `apps/id/src/db/runtime-role.ts` and `apps/id/scripts/migrate.ts` (database roles), `apps/id/src/app.ts` (ingress admission), `apps/id/src/auth.ts` (provider configuration), `apps/id/src/auth/platform-applications.ts` (platform credentials and default scopes). If the code and this page disagree, the code wins; fix the page.
+Everything below is derived from the code on this branch: `apps/id/src/config.ts` and `apps/id/src/env.ts` (configuration), `apps/id/src/runtime.ts` (startup checks), `apps/id/src/db/runtime-role.ts` and `apps/id/scripts/migrate.ts` (database roles), `apps/id/src/app.ts` (ingress admission), `apps/id/src/auth.ts` (provider configuration), `apps/id/src/auth/platform-applications.ts` (platform credentials and default scopes). If the code and this page disagree, the code wins; fix the page.
 
 ## What runs
 
 | Component | What it is | Notes |
 | --- | --- | --- |
-| `apps/id` | One Bun process serving the OAuth/OIDC provider, the admin API, login, selection, consent, error and security pages, health and discovery on `PORT` (default 47300) | Stateless apart from per-process rate-limit buckets and a five-minute JWKS cache, so replicas are fine |
+| `apps/id` | One Bun process serving the OAuth/OIDC provider, the admin API, login, selection, consent, error and security pages, health and discovery on `ID_HOST` and `PORT` (default `127.0.0.1` and 47300; the image sets `0.0.0.0`) | Stateless apart from per-process rate-limit buckets and a five-minute JWKS cache, so replicas are fine |
 | `apps/web` | Next.js site and docs | Public website |
 | PostgreSQL 17 | The only state: users, sessions, native OAuth state, policy, audit, command receipts | Local compose uses `postgres:17-alpine`; production needs your own instance with backups |
 | Ingress | TLS termination and the `x-forwarded-for` header | The **only** network path to `apps/id`; see the first requirement below |
@@ -58,27 +58,7 @@ Every SSO row, platform or own credentials, defaults to `email openid profile` w
 
 ## Configuration
 
-Required in production. In Answerable's deployment the Bootstrap workflow generates the application and root secrets and the deploy delivers every value ([`12-deployment.md`](12-deployment.md#secrets)); nothing here reads a file.
-
-| Variable | Value | Why |
-| --- | --- | --- |
-| `NODE_ENV` | `production` | See above |
-| `PORT` | listener port, default 47300 | Ingress upstream |
-| `BETTER_AUTH_URL` | `https://id.answerable.org` | Issuer, discovery, admin audience |
-| `BETTER_AUTH_TRUSTED_ORIGINS` | `https://login.microsoftonline.com,https://graph.microsoft.com,https://accounts.google.com,https://oauth2.googleapis.com,https://www.googleapis.com,https://openidconnect.googleapis.com`; use the IdP origins in use, with no paths or trailing slash | Browser CORS/CSRF and IdP endpoint trust |
-| `TRUSTED_PROXY_CIDRS` | comma-separated IPv4/IPv6 networks of the ingress proxies | Client address resolution |
-| `DATABASE_URL` | `postgres://answerable_id_runtime:…@host/answerable_id` | Application connection, restricted role |
-| `DATABASE_MIGRATION_URL` | owner login, used only by the migration Job; never given to the service | DDL and permission provisioning |
-| `DATABASE_RUNTIME_ROLE` | `answerable_id_runtime` unless you named it differently | Which role migration provisions |
-| `BETTER_AUTH_SECRET` | ≥ 32 characters, high entropy | Cookie signing, JWKS private-key encryption |
-| `GOOGLE_CLIENT_ID` | Google Web application client ID | Set together with `GOOGLE_CLIENT_SECRET` when using Google platform credentials |
-| `GOOGLE_CLIENT_SECRET` | Google client secret from the secret store | Environment only; never stored in platform SSO rows |
-| `MICROSOFT_CLIENT_ID` | Multi-tenant Entra Application (client) ID | Set together with `MICROSOFT_CLIENT_SECRET` when using Microsoft platform credentials |
-| `MICROSOFT_CLIENT_SECRET` | Entra client secret from the secret store | Environment only; record expiry and rotate before it |
-| `ROOT_ADMIN_SECRET` | ≥ 32 characters | Break-glass bearer for first run and recovery |
-| `ROOT_ADMIN_BREAK_GLASS` | `false` (set `true` only during a recovery) | Root stops working once a human holds `platform:write` |
-
-Optional, with defaults that hold for a first deployment: `BETTER_AUTH_SECRETS` (versioned ring for rotation; promotion signs everyone out, see the ID README), `DATABASE_POOL_MAX` 20.
+Every variable ID reads is in the `ID` group of [`packages/config/inventory.json`](../packages/config/inventory.json), and its migration's in `ID migration`: whether each is a secret, its default and where a deployment's value comes from. `bun run env:inventory` writes the file from [`apps/id/src/config.ts`](../apps/id/src/config.ts) and [`apps/id/scripts/env.ts`](../apps/id/scripts/env.ts); production applies no local default. A variable the file marks `optional` can still be required: the definition's `refine` adds production's requirements, such as `TRUSTED_PROXY_CIDRS` and `BETTER_AUTH_TRUSTED_ORIGINS`, which the metadata does not show, so each one's `doc` says so. In Answerable's deployment the Bootstrap workflow generates the application and root secrets and the deploy delivers every value ([`12-deployment.md`](12-deployment.md#secrets)); nothing here reads a file.
 
 Fixed in `apps/id/src/env.ts`, not configurable: the admin API's resource `${BETTER_AUTH_URL}/api/admin`; the platform organisation's slug `answerable` and name `Answerable`, seeded at first boot and bound by immutable id afterwards; statement timeout 10 s, lock timeout 2 s, idle-in-transaction timeout 15 s, pool checkout 5 s and pool idle 10 s; operational log every 30 s; protocol sweep every 60 s in batches of 1,000; OpenAPI routes outside production only.
 

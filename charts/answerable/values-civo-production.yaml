@@ -6,6 +6,7 @@ hostnames:
   id: id.answerable.org
   toolbox: toolbox.answerable.org
   adminMcp: admin-mcp.answerable.org
+  mcp: mcp.answerable.org
 
 # Two replicas of each server at least, on different nodes (D21).
 spreadOverNodes: DoNotSchedule

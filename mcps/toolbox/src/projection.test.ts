@@ -4,12 +4,14 @@ import { z } from "zod"
 import type { Catalogue } from "./catalogue"
 import { allowed, ordered, policyClassOf } from "./projection"
 
+const purpose = "A fixture provider for the Toolbox's tests: it serves the tools each test gives it."
+
 const read = (name: string) => defineTool({ name, description: "A fixture read that returns its name and changes nothing.", input: z.object({}), output: z.object({ name: z.string() }), async execute() { return { name } } })
 const remove = defineMutation({
   name: "records.delete", description: "Prepare deleting a record: returns an intent and changes nothing.", input: z.object({}), output: z.object({}),
   async prepare() { return { targets: [], preview: { summary: "Delete" } } }, async commit() { return { results: {}, applied_changes: [], effects_performed: [] } },
 })
-const provider = defineProvider({ id: "e2e", version: "2026-09-29", tools: [read("records.list"), read("identity.get"), remove, read("records.get")] })
+const provider = defineProvider({ id: "e2e", description: purpose, version: "2026-09-29", tools: [read("records.list"), read("identity.get"), remove, read("records.get")] })
 const enabled = (overrides: Partial<{ disabled: string[]; policy_class: Record<string, "agent" | "controlled" | "human"> }> = {}): Catalogue =>
   new Map([["e2e", { enabled: true, overrides: { disabled: [], policy_class: {}, ...overrides } }]])
 

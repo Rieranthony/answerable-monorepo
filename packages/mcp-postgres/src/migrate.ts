@@ -3,8 +3,9 @@ import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { sql } from "drizzle-orm"
 import { readMigrationFiles } from "drizzle-orm/migrator"
+import type { NodePgDatabase } from "drizzle-orm/node-postgres"
 import { migrate as apply } from "drizzle-orm/node-postgres/migrator"
-import type { Database } from "./connect"
+import { quote } from "./names"
 
 /**
  * The evidence chain's functions and triggers, which drizzle cannot express: the text of `sql/evidence-chain.sql`, with `--> statement-breakpoint`
@@ -33,12 +34,11 @@ export const legacyBaseline: LegacyBaseline = {
 }
 
 type File = ReturnType<typeof readMigrationFiles>[number]
-const receipts = sql`drizzle.__drizzle_migrations`
 
 // A database the file migrator built: `schema_migrations` lists exactly the legacy records, and drizzle has recorded nothing yet (a run without
 // `legacy` leaves its empty receipts table). Record drizzle's receipts for the journal entries those files reproduce and drop the table, in one
 // transaction and without DDL on the schema itself.
-async function adopt(db: Database, legacy: LegacyBaseline, files: File[], applied: boolean) {
+async function adopt(db: NodePgDatabase, legacy: LegacyBaseline, files: File[], applied: boolean) {
   const { rows: [table] } = await db.execute<{ present: boolean }>(sql`select to_regclass('public.schema_migrations') is not null as present`)
   if (!table!.present) return
   if (applied) throw new Error("Refusing to migrate: schema_migrations, the file migrator's table, is beside drizzle's receipts; drop whichever is not this database's history")
@@ -51,6 +51,7 @@ async function adopt(db: Database, legacy: LegacyBaseline, files: File[], applie
     ...rows.filter(row => !(row.name in legacy.records)).map(row => `${row.name} is not a file the first ${legacy.entries} drizzle migrations reproduce`),
   ]
   if (differences.length) throw new Error(`Refusing to adopt a database the file migrator built: ${differences.join("; ")}. Recreate a disposable database, or restore its files`)
+  const receipts = sql`drizzle.__drizzle_migrations`
   await db.transaction(async tx => {
     await tx.execute(sql`create schema if not exists drizzle`)
     await tx.execute(sql`create table if not exists ${receipts} (id serial primary key, hash text not null, created_at bigint)`)
@@ -62,24 +63,26 @@ async function adopt(db: Database, legacy: LegacyBaseline, files: File[], applie
 /**
  * Apply the folder's pending migrations in one transaction, as drizzle's migrator does, after refusing what it would silently mishandle: it records
  * each file's hash and journal time but compares neither, so an applied file that was edited would be ignored and a regenerated one would run again.
- * An applied file that is not the one in the folder refuses the run, naming it.
+ * An applied file that is not the one in the folder refuses the run, naming it. The receipts are drizzle's, in `<schema>.__drizzle_migrations`:
+ * `schema` is `drizzle` unless given; an MCP's are in its own schema, which drizzle creates when missing.
  *
  * With `legacy`, a database the file migrator built is adopted first: when `schema_migrations` lists exactly `legacy.records`, drizzle's receipts for the
  * journal's first `legacy.entries` entries are recorded and the table dropped, in one transaction and without DDL, since those files made the same
  * schema. Any other `schema_migrations`, or one beside drizzle's receipts, refuses the run, naming what differs.
  */
-export async function migrate(db: Database, { folder, legacy }: { folder: string; legacy?: LegacyBaseline }): Promise<void> {
+export async function migrate(db: NodePgDatabase, { folder, legacy, schema = "drizzle" }: { folder: string; legacy?: LegacyBaseline; schema?: string }): Promise<void> {
   const files = readMigrationFiles({ migrationsFolder: folder })
   const { entries } = JSON.parse(await readFile(`${folder}/meta/_journal.json`, "utf8")) as { entries: { tag: string }[] }
-  const recorded = async () => (await db.execute<{ applied: boolean }>(sql`select to_regclass('drizzle.__drizzle_migrations') is not null as applied`)).rows[0]!.applied
-    ? (await db.execute<{ hash: string; created_at: string }>(sql`select hash, created_at::text from ${receipts} order by id`)).rows
+  const receipts = `${quote(schema)}.__drizzle_migrations`
+  const recorded = async () => (await db.execute<{ applied: boolean }>(sql`select to_regclass(${receipts}) is not null as applied`)).rows[0]!.applied
+    ? (await db.execute<{ hash: string; created_at: string }>(sql`select hash, created_at::text from ${sql.raw(receipts)} order by id`)).rows
     : []
   if (legacy) await adopt(db, legacy, files, (await recorded()).length > 0)
   for (const [index, receipt] of (await recorded()).entries()) {
     const file = files[index]
     if (file?.hash === receipt.hash && String(file.folderMillis) === receipt.created_at) continue
     const name = entries[index] ? `drizzle/${entries[index].tag}.sql` : `the file applied as migration ${index + 1}`
-    throw new Error(`Refusing to migrate: ${name} is not the migration this database applied. Restore the applied file, or recreate a disposable database.`)
+    throw new Error(`Refusing to migrate${schema === "drizzle" ? "" : ` ${schema}`}: ${name} is not the migration this database applied. Restore the applied file, or recreate a disposable database.`)
   }
-  await apply(db, { migrationsFolder: folder })
+  await apply(db, { migrationsFolder: folder, migrationsSchema: schema })
 }

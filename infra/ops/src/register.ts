@@ -1,17 +1,24 @@
-import { adminApi, type Call, failure, findBySlug, platformOrganisation } from "./admin-api"
+import type { DeclaredMcp } from "@answerable/mcp-postgres"
+import { adminApi, type Call, clientToken, failure, findBySlug, platformOrganisation } from "./admin-api"
+import { createRegistrar, hostClient, hostGrants, registerStandalone, signIn, toolboxRows } from "./registrar"
 import type { SecretRef, SecretStore } from "./secret-store"
 
 type Options = {
   /** Answerable ID's origin: its issuer and its admin API's base. */
   id: string
-  /** The root secret while no person is a platform administrator, then a staff token (docs/id/onboard). */
-  token: string
+  /**
+   * ID's root secret, which mints register's own machine client, ops-register, while the Secret ops-id-client holds none: before a person is a
+   * platform administrator, or after with break glass (`ROOT_ADMIN_BREAK_GLASS`). Unused once ops-register's secret is stored.
+   */
+  rootSecret?: string
   /** The Toolbox's origin: `/mcp` is its resource, `/admin` its admin resource. */
   toolbox: string
   /** The admin MCP's origin: `/mcp` is its resource. */
   adminMcp: string
-  /** The platform organisation's slug, `answerable` in ID. */
-  platformSlug: string
+  /** The origin of the MCPs the Toolbox serves alone: each standalone or both MCP is the resource `<origin>/<name>/mcp`. */
+  mcpOrigin: string
+  /** The MCPs of charts/answerable/mcps.json: each standalone or both one is registered, with its manifest's scopes. */
+  mcps: readonly Pick<DeclaredMcp, "name" | "serve" | "scopes">[]
   /** Claude Code's `--callback-port`, in the host clients' redirect URI. */
   callbackPort: number
   /** The staff email domain and the Microsoft Entra tenant that signs the staff in, to connect to the platform organisation. */
@@ -23,11 +30,19 @@ type Options = {
   timeoutMs?: number
 }
 
-/** Where each machine client's secret goes: the Secrets the Toolbox and the admin MCP read. */
-export const clientSecrets = {
+/** Where each machine client's secret goes: register's own, and the Secrets the Toolbox and the admin MCP read. */
+const clientSecrets = {
+  "ops-register": { secret: "ops-id-client", key: "OPS_ID_CLIENT_SECRET" },
   "toolbox-hub": { secret: "toolbox-id-client", key: "TOOLBOX_ID_CLIENT_SECRET" },
   "admin-mcp": { secret: "admin-id-client", key: "ADMIN_ID_CLIENT_SECRET" },
 } as const satisfies Record<string, SecretRef>
+type Machine = keyof typeof clientSecrets
+const clientNames: Record<Machine, string> = { "ops-register": "Ops register", "toolbox-hub": "Toolbox", "admin-mcp": "Admin MCP" }
+
+/** The one-time remedy when register has no client of its own and nothing to mint it with: break glass, for one ship. */
+const once = "Once: add ROOT_ADMIN_BREAK_GLASS: \"true\" under id.env in the environment's overlay and ship it; register mints its client, ops-register, with the root secret and needs it no more. Then remove the line and ship again (infra/README.md#register-again)"
+const noClient = "register has no machine client of its own yet (the Secret ops-id-client is empty)"
+const remedy = `${noClient}, and ID refuses the root secret (root_locked): a platform administrator exists. ${once}`
 
 /** The `Idempotency-Key`s of the staff domain and directory: those of `apps/web/content/docs/id/onboard.mdx` § First run. */
 const STAFF_KEYS = { domain: "platform-domain-setup", sso: "platform-sso-setup" } as const
@@ -35,88 +50,117 @@ const STAFF_KEYS = { domain: "platform-domain-setup", sso: "platform-sso-setup" 
 const roles = ["team", "admin", "owner"] as const
 
 /**
- * Register the Toolbox and the admin MCP in ID as their docs do (apps/web/content/docs/toolbox/admin.mdx and admin/setup.mdx), with the same
- * calls and `Idempotency-Key`s, and store each machine client's secret the moment ID answers it. Safe to run again: a call ID has seen
- * replays, and an object that already exists (made under another key or by another caller) is left as it is. A machine client that exists
- * while its secret is not stored gets a new one, rotated in ID. With `staff`, then connects the staff domain and directory (see
- * {@link connectStaff}). Prints the Claude Code commands and the first owner's step; never a secret.
+ * Register in ID what the deployment needs, as register's own machine client, `ops-register` (`platform:read platform:write`): the run that finds no
+ * secret in `ops-id-client` mints that client with `rootSecret` first, stores its secret, and goes on with it; every later run needs no root
+ * secret. Then the Toolbox, as `toolboxRows` registers it, and the admin MCP, as its docs register it (apps/web/content/docs/admin/setup.mdx),
+ * and for each standalone or both MCP of `mcps`, which the Toolbox serves alone, its resource, `<mcpOrigin>/<name>/mcp`, its
+ * Claude Code client, `claude-code-<name>`, and their link.
+ *
+ * Every resource and client is read first: one ID lacks is created with its `Idempotency-Key`; one that differs is changed with `If-Match`,
+ * under `<key>-r<revision>`, in the fields that differ. Scopes and redirect URIs only widen: the Toolbox's resource keeps what enable calls added. An
+ * MCP's own resource follows its manifest, and a scope the manifest dropped is logged as it goes. An MCP removed from the list keeps its rows.
+ * Links are made under `<key>-r<revision>` of the client when its read lacks them; capabilities, entitlements and groups are created when missing.
+ * Each machine client's secret is stored the moment ID answers it, and one that exists while its secret is not stored is rotated. With `staff`,
+ * then connects the staff domain and directory (see {@link connectStaff}). Prints the Claude Code commands and the first owner's step; never a secret.
  */
-export async function register({ id, token, toolbox, adminMcp, platformSlug, callbackPort, staff, store, fetch = globalThis.fetch, log = console.log, timeoutMs = 30_000 }: Options) {
+export async function register({ id, rootSecret, toolbox, adminMcp, mcpOrigin, mcps, callbackPort, staff, store, fetch = globalThis.fetch, log = console.log, timeoutMs = 30_000 }: Options) {
   const admin = `${id}/api/admin`
-  const toolboxResource = `${toolbox}/mcp`
   const toolboxAdmin = `${toolbox}/admin`
   const adminResource = `${adminMcp}/mcp`
   const callback = `http://localhost:${callbackPort}/callback`
-  const call = adminApi({ id, token, fetch, timeoutMs, rootLocked: "ID refused the root secret (root_locked): a platform administrator exists. Pass a staff token as OPS_ID_TOKEN (docs/id/onboard#get-a-staff-token)" })
+  const started = performance.now()
+  const asOpsRegister = (clientSecret: string) => adminApi({
+    id, fetch, timeoutMs, rootLocked: remedy,
+    token: clientToken({
+      id, clientId: "ops-register", clientSecret, fetch, timeoutMs,
+      refused: "ID refused ops-register's client credentials: the Secret ops-id-client holds a secret ID does not. Empty its key OPS_ID_CLIENT_SECRET and run register again, which rotates it with the root secret: with break glass once root is locked (infra/README.md#register-again)",
+    }),
+  })
 
-  /** A write with its key: created, replayed, or already there (a conflict on create, or 200 on a PUT that links). Anything else throws. */
-  async function write(method: string, path: string, key: string, body?: unknown) {
-    const answer = await call(method, path, { key, body })
-    const existed = (answer.status === 409 && answer.body.code === "conflict") || (method === "PUT" && answer.status === 200)
-    if (!answer.ok && !existed) throw new Error(`${method} ${path} (Idempotency-Key ${key}) answered ${answer.status} ${answer.body.code ?? ""}`.trimEnd())
-    log(`${key}: ${answer.replayed ? "replayed" : existed ? "already there" : "done"}`)
-    return answer.body
-  }
-  /** A machine client of the platform organisation: its secret stored from the creation's answer, or rotated when it exists unstored. */
-  async function machine(clientId: keyof typeof clientSecrets, key: string, scopes: string[]) {
+  const stored = await store.get(clientSecrets["ops-register"])
+  if (!stored && !rootSecret) throw new Error(`${noClient}, and no root secret to mint one. ${once}`)
+  let call: Call = stored ? asOpsRegister(stored) : adminApi({ id, token: rootSecret!, fetch, timeoutMs, rootLocked: remedy })
+  // The registrar calls ID as whoever `call` is at the time: the root secret until ops-register is minted, then ops-register.
+  const registrar = createRegistrar((...args) => call(...args), log)
+  const { tally, write, link } = registrar
+
+  /**
+   * A machine client of the platform organisation with, on each audience, its link and its capability: its secret stored from the creation's
+   * answer, or rotated when it exists unstored.
+   */
+  async function machine(clientId: Machine, audiences: [string, string, string[]][]) {
     const ref = clientSecrets[clientId]
-    const created = await write("POST", "/clients", key, { clientId, name: clientId === "admin-mcp" ? "Admin MCP" : "Toolbox", organizationId: platform, tokenEndpointAuthMethod: "client_secret_basic", grantTypes: ["client_credentials"], clientCredentialsScopes: scopes })
-    if (typeof created.clientSecret === "string") {
-      await store.put(ref, created.clientSecret)
+    const scopes = [...new Set(audiences.flatMap(([, , granted]) => granted))]
+    const held = await registrar.client(`${clientId}-v1`, { clientId, name: clientNames[clientId], organizationId: platform, tokenEndpointAuthMethod: "client_secret_basic", grantTypes: ["client_credentials"], clientCredentialsScopes: scopes })
+    if (typeof held.created?.clientSecret === "string") {
+      await store.put(ref, held.created.clientSecret)
       log(`${clientId}: secret stored in ${ref.secret}/${ref.key}`)
     } else if (!(await store.get(ref))) {
       const rotated = await write("POST", `/clients/${clientId}/rotate-secret`, `${clientId}-rotate-${crypto.randomUUID()}`)
       await store.put(ref, String(rotated.clientSecret))
       log(`${clientId}: its secret was not stored, so ID rotated it; stored in ${ref.secret}/${ref.key}`)
     }
+    for (const [suffix, audience, granted] of audiences) {
+      await link(`${clientId}-link${suffix}-v1`, clientId, audience, held)
+      await capability(`${clientId}-capability${suffix}-v1`, clientId, audience, "client_credentials", granted)
+    }
   }
-  const capability = (key: string, clientId: string, resource: string | null, grantKind: string, scopes: string[]) =>
-    write("POST", `/organizations/${platform}/capabilities`, key, { clientId, resource, grantKind, scopes })
-  const link = (key: string, clientId: string, resource: string) => write("PUT", `/clients/${clientId}/resources/${encodeURIComponent(resource)}`, key)
+  const capability = (key: string, clientId: string, target: string | null, grantKind: string, scopes: string[]) =>
+    write("POST", `/organizations/${platform}/capabilities`, key, { clientId, resource: target, grantKind, scopes }, { create: true })
+  const entitlement = (key: string, body: Record<string, unknown>) => write("POST", `/organizations/${platform}/entitlements`, key, body, { create: true })
 
-  const platform = await platformOrganisation(call, platformSlug)
+  const platform = await platformOrganisation(call)
+  if (stored) log("Registering as ops-register, register's own machine client")
+  else {
+    // Its own machine client first, so that every later run needs no root secret; this run goes on with it.
+    await machine("ops-register", [["", admin, ["platform:read", "platform:write"]]])
+    call = asOpsRegister((await store.get(clientSecrets["ops-register"]))!)
+    log("ops-register is minted: register goes on as its own machine client, and needs no root secret again")
+  }
 
-  // The Toolbox: its resource and admin resource, its machine client on ID's admin API, and Claude Code as its host client. The first enable
-  // call that names the host client links it and approves it for the organisation (docs/toolbox/admin).
-  await write("POST", "/resources", "toolbox-resource-v1", { classification: "platform_shared", organizationId: null, identifier: toolboxResource, name: "Toolbox", allowedScopes: ["offline_access", "toolbox"], accessTokenTtl: 900 })
-  await write("POST", "/resources", "toolbox-admin-resource-v1", { classification: "platform_shared", organizationId: null, identifier: toolboxAdmin, name: "Toolbox admin", allowedScopes: ["toolbox:admin"], accessTokenTtl: 300 })
-  await machine("toolbox-hub", "toolbox-hub-v1", ["platform:read", "platform:write"])
-  await link("toolbox-hub-link-v1", "toolbox-hub", admin)
-  await capability("toolbox-hub-capability-v1", "toolbox-hub", admin, "client_credentials", ["platform:read", "platform:write"])
-  await write("POST", "/clients", "claude-code-toolbox-v1", { clientId: "claude-code-toolbox", name: "Claude Code (Toolbox)", tokenEndpointAuthMethod: "none", grantTypes: ["authorization_code", "refresh_token"], redirectUris: [callback], scopes: ["openid", "offline_access", "toolbox"] })
+  // The Toolbox: its resource and admin resource, its machine client on ID's admin API, which also reads who is calling for the MCPs it serves
+  // alone, and Claude Code as its host client. The first enable call that names the host client links it and approves it for the organisation
+  // (docs/toolbox/admin).
+  const toolboxed = toolboxRows(toolbox, callback)
+  for (const [key, fields] of toolboxed.resources) await registrar.resource(key, fields)
+  await machine("toolbox-hub", [["", admin, ["platform:read", "platform:write"]]])
+  await registrar.client(...toolboxed.host)
 
   // The admin MCP: its resource, Claude Code as its host client with the platform organisation's access, a group per role, and its machine
   // client on ID's admin API and the Toolbox's admin API (docs/admin/setup).
-  await write("POST", "/resources", "admin-mcp-resource-v1", { classification: "platform_shared", organizationId: null, identifier: adminResource, name: "Admin MCP", allowedScopes: ["admin", "answerable-team", "answerable-admin", "answerable-owner", "offline_access"], accessTokenTtl: 900 })
-  await write("POST", "/clients", "claude-code-admin-v1", { clientId: "claude-code-admin", name: "Claude Code (admin MCP)", tokenEndpointAuthMethod: "none", grantTypes: ["authorization_code", "refresh_token"], redirectUris: [callback], scopes: ["openid", "offline_access", "admin"] })
-  await link("claude-code-admin-link-v1", "claude-code-admin", adminResource)
-  for (const grant of ["authorization_code", "refresh_token"]) {
-    await capability(`admin-login-${grant}-v1`, "claude-code-admin", null, grant, ["openid", "offline_access"])
+  await registrar.resource("admin-mcp-resource-v1", { identifier: adminResource, name: "Admin MCP", allowedScopes: ["admin", "answerable-team", "answerable-admin", "answerable-owner", "offline_access"], accessTokenTtl: 900 })
+  const adminHost = await registrar.client("claude-code-admin-v1", hostClient("claude-code-admin", "Claude Code (admin MCP)", ["admin"], callback))
+  await link("claude-code-admin-link-v1", "claude-code-admin", adminResource, adminHost)
+  for (const grant of hostGrants) {
+    await capability(`admin-login-${grant}-v1`, "claude-code-admin", null, grant, signIn)
     await capability(`admin-resource-${grant}-v1`, "claude-code-admin", adminResource, grant, ["admin"])
   }
-  await write("POST", `/organizations/${platform}/entitlements`, "admin-login-entitlement-v1", { clientId: "claude-code-admin", scopes: ["openid", "offline_access"] })
-  await write("POST", `/organizations/${platform}/entitlements`, "admin-resource-entitlement-v1", { clientId: "claude-code-admin", resource: adminResource, scopes: ["admin"] })
+  await entitlement("admin-login-entitlement-v1", { clientId: "claude-code-admin", scopes: signIn })
+  await entitlement("admin-resource-entitlement-v1", { clientId: "claude-code-admin", resource: adminResource, scopes: ["admin"] })
   const groups = {} as Record<(typeof roles)[number], string>
   for (const role of roles) {
-    await write("POST", `/organizations/${platform}/groups`, `admin-group-${role}-v1`, { slug: `answerable-${role}`, name: `Answerable ${role}` })
+    await write("POST", `/organizations/${platform}/groups`, `admin-group-${role}-v1`, { slug: `answerable-${role}`, name: `Answerable ${role}` }, { create: true })
     // A replay answers the receipt, not the group, so the group is found by its slug.
     groups[role] = (await findBySlug(call, `/organizations/${platform}/groups`, `answerable-${role}`))!
-    await write("POST", `/organizations/${platform}/entitlements`, `admin-role-${role}-v1`, { groupId: groups[role], resource: adminResource, scopes: [`answerable-${role}`] })
+    await entitlement(`admin-role-${role}-v1`, { groupId: groups[role], resource: adminResource, scopes: [`answerable-${role}`] })
   }
-  await machine("admin-mcp", "admin-mcp-v1", ["platform:read", "platform:write", "toolbox:admin"])
-  await link("admin-mcp-link-id-v1", "admin-mcp", admin)
-  await capability("admin-mcp-capability-id-v1", "admin-mcp", admin, "client_credentials", ["platform:read", "platform:write"])
-  await link("admin-mcp-link-toolbox-v1", "admin-mcp", toolboxAdmin)
-  await capability("admin-mcp-capability-toolbox-v1", "admin-mcp", toolboxAdmin, "client_credentials", ["toolbox:admin"])
+  await machine("admin-mcp", [["-id", admin, ["platform:read", "platform:write"]], ["-toolbox", toolboxAdmin, ["toolbox:admin"]]])
+
+  // Each MCP the Toolbox serves alone.
+  const standalone = mcps.filter(mcp => mcp.serve !== "toolbox")
+  for (const mcp of standalone) await registerStandalone(registrar, mcp, { mcpOrigin, callback })
 
   if (staff) await connectStaff(call, platform, staff, log)
 
   log(`
-Registered. Next:
-1. Connect Claude Code to the admin MCP and the Toolbox:
+Registered in ${((performance.now() - started) / 1000).toFixed(1)} s: ${tally.made} created, ${tally.changed} changed, ${tally.found} as declared already; ${standalone.length} standalone MCP${standalone.length === 1 ? "" : "s"}.
+Next:
+1. Connect Claude Code to the admin MCP, the Toolbox and each standalone MCP:
    claude mcp add --transport http answerable-admin ${adminResource} --client-id claude-code-admin --callback-port ${callbackPort}
-   claude mcp add --transport http answerable-toolbox ${toolboxResource} --client-id claude-code-toolbox --callback-port ${callbackPort}
-2. The first owner: sign in once at ${id}/login with your work account, then run the ops Job make-admin with your email,
+   claude mcp add --transport http answerable-toolbox ${toolbox}/mcp --client-id claude-code-toolbox --callback-port ${callbackPort}${standalone.map(({ name }) => `
+   claude mcp add --transport http ${name} ${mcpOrigin}/${name}/mcp --client-id claude-code-${name} --callback-port ${callbackPort}`).join("")}
+   An organisation signs in to a standalone MCP once staff have run standalone_enable for it in the admin MCP.
+2. While nobody is the first owner: sign in once at ${id}/login with your work account, then run the ops Job make-admin with your email,
    which puts you in the owner and platform-admins groups and locks ID's root secret.`)
   return { platform, ownerGroup: groups.owner }
 }

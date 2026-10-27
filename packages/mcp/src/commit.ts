@@ -1,3 +1,4 @@
+import type { UserPrincipal } from "@answerable/auth"
 import { bounded } from "./call"
 import { commitToolName } from "./commit-tools"
 import type { ToolContext } from "./definitions"
@@ -73,7 +74,12 @@ type CommitRequest = {
   /** The commit tool called. */
   tool: string
   input: { intent_id: string; commit_token: string; preview_summary?: string }
-  context: ToolContext
+  /** The intent `input.intent_id` names, as the store answered when the call began; `undefined` when it has none. */
+  intent: Intent | undefined
+  /** The caller. */
+  principal: UserPrincipal
+  /** The context the mutation's `prepare` and `commit` run with: the caller's, with the database of the mutation's own provider. */
+  contextOf(mutation: Served<Mutation>): ToolContext
   store: IntentStore
   mutations: readonly Served<Mutation>[]
   /** Whether the caller may still use a mutation. */
@@ -84,16 +90,16 @@ type CommitRequest = {
 
 const strictness: Record<PolicyClass, number> = { agent: 0, controlled: 1, human: 2 }
 
+/** Whether `intent` was prepared by this caller: the same person, membership and client. */
+export const ownedBy = ({ principal: owner }: Intent, principal: UserPrincipal) =>
+  owner.user_id === principal.userId && owner.membership_id === principal.membershipId && owner.client_id === principal.clientId
+
 /** Commit an intent: check it can be committed by this caller through this tool, claim it, then apply it. */
 export async function commitIntent(request: CommitRequest): Promise<Receipt> {
-  const { id, tool, input, context, store, mutations, permitted, policyClass } = request
-  const { principal } = context
-  const intent = await store.get(input.intent_id)
+  const { id, tool, input, intent, principal, contextOf, store, mutations, permitted, policyClass } = request
   if (!intent) throw new ToolError("INTENT_NOT_FOUND", `No intent ${input.intent_id} exists; prepare the mutation again`)
-  const { intent_id, principal: owner } = intent
-  if (owner.user_id !== principal.userId || owner.membership_id !== principal.membershipId || owner.client_id !== principal.clientId) {
-    throw new ToolError("PRINCIPAL_MISMATCH", `Intent ${intent_id} belongs to another person, membership or client; prepare your own`)
-  }
+  const { intent_id } = intent
+  if (!ownedBy(intent, principal)) throw new ToolError("PRINCIPAL_MISMATCH", `Intent ${intent_id} belongs to another person, membership or client; prepare your own`)
   // The token before the status, so that a replay, and what became of the intent, needs it too.
   if (hashToken(input.commit_token) !== intent.commit_token_hash) throw new ToolError("COMMIT_TOKEN_INVALID", `The commit token does not match intent ${intent_id}`)
   if (intent.status !== "prepared") return settled(intent, id)
@@ -117,6 +123,6 @@ export async function commitIntent(request: CommitRequest): Promise<Receipt> {
     throw approvalRequired(intent.policy_class, needed, `preview_summary differs from the summary of intent ${intent_id}; show the person the preview and pass its summary word for word`)
   }
   // Losing the claim to a concurrent commit means the status moved on: read it again.
-  if (!(await store.transition(intent_id, "prepared", "committing"))) return commitIntent(request)
-  return apply(intent, mutation, context, store)
+  if (!(await store.transition(intent_id, "prepared", "committing"))) return commitIntent({ ...request, intent: await store.get(intent_id) })
+  return apply(intent, mutation, contextOf(mutation), store)
 }

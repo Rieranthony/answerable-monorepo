@@ -5,6 +5,7 @@ import { createKit, type Kit, type Subject, type ConformanceFixture } from "./ki
 import type { Mutation } from "./mutation"
 import type { intentView } from "./prepare"
 import type { Provider, Served } from "./provider"
+import { checkMutationDescription } from "./rules"
 import { lintOutput, type Schema } from "./schema-lint"
 import { wireName, type Tool } from "./tool"
 
@@ -15,9 +16,10 @@ function assert(condition: unknown, message: string): asserts condition {
 const reads = (provider: Provider) => provider.tools.filter((tool): tool is Served<Tool> => tool.kind === "read")
 const wire = (tool: { name: string }) => wireName(tool.name)
 
-async function example(kit: Kit, name: string) {
-  const value = kit.fixture.examples[name]
-  assert(value !== undefined, `fixture.examples has no entry for ${name}; add one valid input for it`)
+// The fixture's input for a definition, else the definition's own example.
+async function example(kit: Kit, { name, identity, example }: Served<Tool | Mutation>) {
+  const value = kit.fixture.examples?.[name] ?? example
+  assert(value !== undefined, `${identity} has no example; add example, one valid input, to its definition`)
   return typeof value === "function" ? await value(kit.principal) : value
 }
 
@@ -33,7 +35,7 @@ async function ok(kit: Kit, name: string, args: Record<string, unknown>) {
 // The kit never validates only, so every intent it prepares has an id and a token.
 type PreparedIntent = z.output<typeof intentView> & { intent_id: string; commit_token: string }
 async function prepare(kit: Kit, mutation: Served<Mutation>, args?: Record<string, unknown>) {
-  return await ok(kit, wire(mutation), args ?? await example(kit, mutation.name)) as PreparedIntent
+  return await ok(kit, wire(mutation), args ?? await example(kit, mutation)) as PreparedIntent
 }
 const commitArgs = (intent: PreparedIntent) => ({
   intent_id: intent.intent_id, commit_token: intent.commit_token,
@@ -72,7 +74,7 @@ export const readChecks = {
   },
   async read_has_no_side_effect(kit: Kit) {
     for (const tool of reads(kit.provider)) {
-      const args = await example(kit, tool.name)
+      const args = await example(kit, tool)
       const before = kit.stored.length
       const first = await ok(kit, wire(tool), args)
       const second = await ok(kit, wire(tool), args)
@@ -93,9 +95,9 @@ export const readChecks = {
 /** The checks of the mutate checklist, by name, each run for one mutation. `targets_have_versions` and `commit_rejects_stale` apply only to a mutation that prepares targets. */
 export const mutateChecks = {
   async prepare_has_no_side_effect(kit: Kit, mutation: Served<Mutation>) {
-    const args = await example(kit, mutation.name)
+    const args = await example(kit, mutation)
     const inputs: [Served<Tool>, Record<string, unknown>][] = []
-    for (const tool of reads(kit.provider)) inputs.push([tool, await example(kit, tool.name)])
+    for (const tool of reads(kit.provider)) inputs.push([tool, await example(kit, tool)])
     const before = await snapshot(kit, inputs)
     await prepare(kit, mutation, args)
     await prepare(kit, mutation, args)
@@ -136,7 +138,8 @@ export const targetChecks: readonly (keyof typeof mutateChecks)[] = ["targets_ha
 export const providerChecks = {
   descriptions_operational({ provider }: Subject) {
     for (const tool of provider.tools) {
-      assert(tool.kind === "read" || /prepare|intent/i.test(tool.description), `${tool.identity}: a mutation's description must say that it prepares an intent; use the word "prepare" or "intent"`)
+      const problem = tool.kind === "read" ? undefined : checkMutationDescription(tool.description)
+      assert(!problem, `${tool.identity}: a mutation's description ${problem}`)
     }
   },
 }
@@ -149,21 +152,23 @@ function register<Args extends unknown[]>(checks: Record<string, (kit: Kit, ...a
 }
 
 /**
- * Register one test per conformance check for a provider: call it at the top level of a test file, with the provider built on
- * test dependencies such as in-memory stores. The provider is served in-process with its own intent store, so a failing test names the check
+ * Register one test per conformance check for a provider: call it at the top level of a test file. The provider is served in-process with its own intent store, so a failing test names the check
  * and the definition to change. Each mutation is prepared once while the checks are registered: the two checks that need a target are
  * registered as skipped, with the reason, for a mutation that prepares none.
  *
- * @param fixture What the kit cannot derive: the committed manifest, one valid input per tool and how to move a target.
+ * Each definition is called with its own `example`, unless the fixture's `examples` give another input. A provider with a `database` needs its
+ * `db`: an MCP with a database imports `assertProviderConformance` from `@answerable/mcp-postgres/testing`, which makes it.
+ *
+ * @param fixture What the kit cannot derive: the committed manifest, the inputs no definition's `example` can hold, how to move a target and the database.
  * @example
  * ```ts
  * import { assertProviderConformance } from "@answerable/mcp/testing"
- * import { createE2eProvider } from "./mcp"
+ * import { provider, tickets } from "./provider"
  *
- * assertProviderConformance(createE2eProvider({ records, viewHtml: "<title>Records</title>" }), {
+ * assertProviderConformance(provider, {
  *   manifest: new URL("../manifest.json", import.meta.url),
- *   examples: { "records.list": { limit: 5 }, "records.create": { title: "Example" } },
- *   moveTarget: (target, principal) => records.touch(principal, target.resource_id),
+ *   examples: { "tickets.close": principal => ({ id: tickets.open(principal.organizationId, "Leak").id }) },
+ *   moveTarget: target => tickets.touch(target.resource_id),
  * })
  * ```
  */

@@ -3,6 +3,8 @@ import { z } from "zod"
 import { createMcpServer, defineProvider, defineTool, defineView, definePrompt, defineResource, manifest, ToolError, type Tool, type ToolContext, type Prompt } from "./index"
 import { createTestMcp, errorOf, type TestMcp } from "./testing"
 
+const purpose = "A fixture provider for the server tests: it serves the definitions each test gives it."
+
 const resource = "https://mcp.test/mcp"
 const uuidV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
@@ -69,7 +71,7 @@ const brokenPrompt = definePrompt({
 const tools = [read, write, invalid, failed, known, old]
 
 function provider(definitions: readonly Tool[] = tools, prompts: readonly Prompt[] = [prompt, brokenPrompt]) {
-  return defineProvider({ id: "test", version: "2026-09-29", tools: definitions, prompts, resources: [document, broken] })
+  return defineProvider({ id: "test", description: purpose, version: "2026-09-29", tools: definitions, prompts, resources: [document, broken] })
 }
 async function fixture(definitions?: readonly Tool[], prompts?: readonly Prompt[]) {
   const mcp = await createTestMcp(provider(definitions, prompts))
@@ -111,8 +113,8 @@ test("rejects untrusted hosts, origins and a token for another audience", async 
 })
 test("a 2026-07-28 client may keep tools/list for 30 seconds, for itself alone; a 2025 client asks every time", async () => {
   let posts = 0
-  const mcp = await createTestMcp(auth => {
-    const server = createMcpServer({ provider: provider(), auth })
+  const mcp = await createTestMcp(serving => {
+    const server = createMcpServer({ ...serving, provider: provider() })
     return { fetch: request => (posts++, server.fetch(request)) }
   })
   cleanups.push(() => mcp.close())
@@ -217,7 +219,7 @@ test("tool errors answer the envelope and unexpected failures answer INTERNAL wi
     expect(log.mock.calls.map(call => call[1])).toEqual([expect.stringMatching(uuidV7), expect.stringMatching(uuidV7)])
   } finally { log.mockRestore() }
 })
-test("handlers receive a frozen context with a fresh UUIDv7 execution id", async () => {
+test("handlers receive a frozen context with a fresh UUIDv7 execution id, and the test person of the test organisation by default", async () => {
   const mcp = await fixture()
   const { client, organizationId } = await clientFor(mcp, ["read", "content"])
   contexts.length = 0
@@ -226,10 +228,13 @@ test("handlers receive a frozen context with a fresh UUIDv7 execution id", async
   expect(contexts).toHaveLength(2)
   for (const context of contexts) {
     expect(Object.isFrozen(context)).toBe(true)
-    expect(Object.keys(context).sort()).toEqual(["executionId", "principal", "signal"])
+    expect(Object.keys(context).sort()).toEqual(["executionId", "organisation", "person", "principal", "signal"])
     expect(context.executionId).toMatch(uuidV7)
     expect(context.principal.organizationId).toBe(organizationId)
     expect(context.signal).toBeInstanceOf(AbortSignal)
+    expect(context.person).toEqual({ id: context.principal.userId, membershipId: context.principal.membershipId, name: "Test Person", email: "person@example.test", groups: [] })
+    expect(context.organisation).toEqual({ id: organizationId, name: "Test Organisation", slug: "test" })
+    for (const part of [context.person, context.person.groups, context.organisation]) expect(Object.isFrozen(part)).toBe(true)
   }
   expect(contexts[0]!.executionId).not.toBe(contexts[1]!.executionId)
   const text = ((await client.readResource({ uri: document.uri })).contents[0] as { text: string }).text
@@ -283,7 +288,7 @@ test("the resource URL is the endpoint and the challenge names the metadata rout
     ["https://mcp.test/nested/tools", "/nested/tools", "/.well-known/oauth-protected-resource/nested/tools"],
     ["https://mcp.test/mcp/", "/mcp/", "/.well-known/oauth-protected-resource/mcp"],
   ] as const) {
-    const app = await createTestMcp(auth => createMcpServer({ provider: provider([], []), auth: { ...auth, resource } }))
+    const app = await createTestMcp(({ auth, profiles }) => createMcpServer({ provider: provider([], []), auth: { ...auth, resource }, profiles }))
     cleanups.push(() => app.close())
     const request = (path: string) => new Request(`https://mcp.test${path}`, { headers: { Host: "mcp.test" } })
     const challenge = await app.fetch(request(endpoint))

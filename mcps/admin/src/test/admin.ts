@@ -10,6 +10,8 @@ export const resource = "https://mcp.test/mcp"
 export const toolboxResource = "https://toolbox.test/admin"
 /** The Toolbox's MCP resource, which entitlements for people name. */
 export const toolboxMcp = "https://toolbox.test/mcp"
+/** The origin of the MCPs the Toolbox serves alone, in the tests: each standalone MCP is the resource `<origin>/<name>/mcp`. */
+export const standaloneOrigin = "https://mcp.test"
 export const entraIssuer = "https://login.microsoftonline.com/00000000-0000-0000-0000-00000000000a/v2.0"
 
 /** A fake ID whose machine client, admin-mcp, gets tokens for ID's admin API and, with `toolbox:admin`, for the Toolbox's admin API. */
@@ -85,7 +87,7 @@ export function seed(id: FakeId) {
 }
 
 /** The admin MCP in-process on a fake ID whose machine client belongs to the platform organisation, a fake Toolbox, and staff to sign in as. */
-export async function createAdmin(db: Database, { freshSeconds }: { freshSeconds?: number } = {}) {
+export async function createAdmin(db: Database, { freshSeconds = 1800 }: { freshSeconds?: number } = {}) {
   const id = createIdFake()
   const toolbox = createFakeToolbox(id)
   const platform = id.organizationId
@@ -112,9 +114,9 @@ export async function createAdmin(db: Database, { freshSeconds }: { freshSeconds
     headers.set("Authorization", `Bearer ${await mcp.issuer.sign({ resource, claims: { ...claims, upstream_auth_time: signedIn.get(claims.membership_id) } })}`)
     return new Request(request, { headers })
   }
-  const mcp: TestMcp = await createTestMcp(auth => {
+  const mcp: TestMcp = await createTestMcp(({ auth }) => {
     const server = createAdminMcp({
-      auth, db, id: createIdAdmin({ ...id.config, fetch: observed }), platform, freshSeconds, toolbox: { resource: toolboxResource, fetch: toolbox.fetch },
+      auth, db, id: createIdAdmin({ ...id.config, fetch: observed }), platform, freshSeconds, toolbox: { resource: toolboxResource, fetch: toolbox.fetch }, standaloneOrigin,
     })
     return { fetch: async (request: Request) => server.fetch(await resign(request)) }
   })

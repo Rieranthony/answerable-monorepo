@@ -1,0 +1,105 @@
+---
+title: Your MCP's database
+description: "Every MCP has a Postgres database linked to it, made and migrated for you, locally and on every deploy: how to add a table, why every table is limited to the caller's organisation, how migrations ship, the two modes, the limits and the errors."
+---
+
+```sh
+bun mcp db acme generate
+```
+
+**Your MCP has a database. You do not create it.** `bun mcp new` made its schema and migrated it on your machine. Every deploy makes it in staging and in production, and migrates it. Your tools read and write it through `context.db`, with no connection to open. This command writes the migration after you change a table in `src/db/schema.ts`.
+
+| You do | The platform does |
+| --- | --- |
+| Describe your tables in `src/db/schema.ts` | Makes the schema and its grants, locally and on every deploy |
+| Run `bun mcp db acme generate` after a change, and commit the migration | Applies each migration once, on every deploy, before the new version starts |
+| Use `context.db` in a tool | Gives it a typed connection, and tells Postgres which organisation is calling |
+| Write a test with `createTestMcp` | Makes a test schema for it, and removes it afterwards |
+
+## What it is
+
+A **schema** is a named set of tables inside a Postgres database. Your MCP's schema has the MCP's name, `acme`, and nothing outside it is yours to read or write. By default it lives in `answerable_mcps`, one database shared by every MCP. [The two modes](#the-two-modes) explains the other choice.
+
+| Postgres object | What it is | You touch it? |
+| --- | --- | --- |
+| Schema `acme` | Your tables, and the record of the migrations applied to them | Through `src/db/schema.ts` |
+| Login `answerable_mcps_migrator` | Owns the database, your schema and its tables. The migration Job runs as it | No |
+| Login `answerable_mcps_toolbox` | What your tools run as, in the Toolbox, which serves every MCP. It may use your schema and read and write its tables, and owns nothing | No |
+
+Two logins in all, whatever the number of MCPs, and no role of your MCP's own: the logins and the Secrets that hold them do not grow with the number of MCPs. `src/db/schema.ts` starts like this:
+
+<ScaffoldFile file="src/db/schema.ts" />
+
+## Add a table
+
+Define it in `src/db/schema.ts`, with `acmeSchema.table(…)`. This is `mcps/example`'s:
+
+<include lang="ts" meta='title="mcps/example/src/db/schema.ts"'>../../../../../mcps/example/src/db/schema.ts#notes</include>
+
+**Every table has `organisation_id` and the `organisationIsolation` policy.** When your tool runs a query, the platform tells Postgres which organisation is calling. The policy then hides every row that belongs to another organisation. A query cannot read or write another organisation's rows, even one that forgets to filter. This matters because one process serves every organisation: a slip in one `where` would otherwise show one client another client's data.
+
+**The rule for filtering by organisation.** A query on a table with the policy needs no filter on the organisation: Postgres adds it. Data from anywhere else, such as an upstream API or a table without the policy, is constrained by `organisation.id` in your code, so that another organisation's data is not found, never forbidden.
+
+**A table with no `organisation_id` is shared by every organisation.** That is an exception, and a reviewer should see why. Write the reason in a comment above the table. The serving login can read and write every table; row-level security, not grants, limits which rows.
+
+Then, in order:
+
+```sh
+bun mcp db acme generate
+bun mcp db acme migrate
+bun mcp check acme
+```
+
+1. **`generate`** compares `src/db/schema.ts` with the migrations and writes the next file in `drizzle/`. It leaves out the line that creates the schema, because the platform creates it. It prints `no change to src/db/schema.ts` when there is nothing to write. Name a migration with `--name`.
+2. **Review the file.** Then commit it with the schema change.
+3. **`migrate`** makes the schema on your machine if it is missing, then applies the migrations that are pending, as the migrator, and grants the serving login the tables.
+4. **`check`** runs the tests, which migrate a test schema from the same files.
+
+Each action prints one line:
+
+<CliSteps command="db" />
+
+**Rules for a migration file.** The platform makes the schema and the grants, so a migration creates no schema, grants nothing and touches no table outside your schema. Every table in `src/db/schema.ts` must be in your own schema: `bun mcp db generate` refuses one that is not, and leaves out the line that creates the schema. A `GRANT` or `REVOKE` a migration makes itself is undone by the grants that follow every migration. Postgres does not stop a migration that alters another MCP's tables: the migrator owns every MCP's schema. Review keeps each migration to its own schema.
+
+**An applied migration is never edited, regenerated or removed.** The database keeps a receipt of each. To change a table again, write a new migration.
+
+## Migrations ship by themselves
+
+Commit the migration with the code that needs it. On every deploy, to staging and to production, the Job `toolbox-migrate` migrates the Toolbox's database, then applies each MCP's pending migrations in turn, before the new version of the servers starts. Each MCP's migrations are applied in one transaction. A migration that fails fails the deploy, which rolls back, and its log names the MCP. Another Job, `ops-bootstrap`, runs before it and makes the schema of an MCP that is new, with `USAGE` on it for the Toolbox. [Ship an MCP](/docs/mcp/deploy) lists the order.
+
+**Write every migration so the previous version still works.** The version before yours keeps serving while a deploy rolls out, and after a rollback. So add a column in one release, and remove the column the code stopped using in a later one. A migration that cannot be written that way needs a restore, not a rollback.
+
+## Test it
+
+Every MCP's tests run against its own schema in `answerable_mcps_test` on the development Postgres. `createTestMcp`, from `@answerable/mcp-postgres/testing`, migrates the schema from your `drizzle/` folder as the migrator, then serves your tools through a login of the test's own, granted as production's serving login is, for a test person and a test organisation. There is nothing to set up. Suites can run together, because each resets only its own schema.
+
+The tests need the development Postgres on port 47432. A sandbox that cannot reach it cannot run them. [Test an MCP](/docs/mcp/testing#an-mcp-with-a-database) shows a test that seeds rows for two organisations.
+
+## The two modes
+
+| | `shared` | `own` |
+| --- | --- | --- |
+| **Where its tables live** | Schema `acme` in the database `answerable_mcps` | Schema `acme` in a database of its own, `answerable_mcp_acme` |
+| **Chosen by** | Default | `--database own` when you make it, or `"database": "own"` in `mcp.json` |
+| **Logins and Secrets it adds** | None | Two logins, an owner and a runtime login, and two Kubernetes Secrets, `mcp-acme-database-owner` and `mcp-acme-database` |
+| **Connections it adds** | None | Every server that serves it opens one more pool: up to 10 connections for each replica |
+| **Pick it when** | Almost always | The MCP needs hard isolation, a size or a maintenance window of its own, or a client asks for it |
+
+**What `own` isolates, and what it does not.** Its tables are in a database of their own, which only its two logins, and the instance's administrator, may connect to: the shared database's logins cannot reach them, and no other MCP's migration can alter them. It does not leave the instance: the database is on the same Postgres instance as every other, and shares its CPU, memory, connection limit and backups. And its runtime URL, with that login's password, is in the environment of the process that serves it, the Toolbox, which serves every MCP: code in that process can read it.
+
+The code is the same in both. Tables are `pgSchema("acme")` tables either way, so moving an MCP between modes is a dump and a restore of its schema, with no code change. A command that does it: Not yet. Trigger: the first MCP that changes its database mode. `bun mcp list` shows each MCP's mode, and `bun mcp check` warns when MCPs of their own database would take the servers' pools past the connection limit.
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Where a table may be | In your MCP's schema: `bun mcp db generate` refuses a table defined elsewhere. Postgres refuses your tools a new table anywhere, but not a hand-written migration that makes one outside your schema, nor a query that names another MCP's tables: one login migrates, and one serves, every MCP. Review keeps each MCP to its own schema. Such a query still sees only the caller's organisation's rows |
+| Code that sets the caller's organisation itself | Never needed: the platform sets it on every query. `bun mcp check` refuses a file of the MCP's `src` that names `answerable.organisation_id`, the setting row-level security reads. That is a guard against a mistake, not a boundary: a name built at run time gets past it, so review must catch that |
+| Connections to Civo's database | **Unknown.** Civo's `max_connections` for the database's size has not been measured. `bun mcp check` assumes PostgreSQL's default, 100, and warns when `own` MCPs push the servers' pools past it. `docs/12-deployment.md` in the repository has the arithmetic |
+| Removing an MCP | Its name goes into `mcps/retired.json`, and `bun mcp new` refuses it for ever. Its schema stays in the database. A command that removes it: Not yet. Trigger: the first MCP that is removed |
+
+## Errors
+
+<CliErrors ids={["unknown-action", "unexpected-flag", "mcp-required", "mcp-not-found", "table-outside-schema", "database-down", "migration-edited", "organisation-setting"]} />
+
+A migration that fails in Postgres itself ends `database failed: acme: 0001_notes.sql failed: …`, with Postgres's own message. Fix the SQL in a migration that has not been applied, or write a new migration. The migration Job's log names the MCP: `kubectl -n answerable logs job/toolbox-migrate`.

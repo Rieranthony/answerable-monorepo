@@ -1,11 +1,16 @@
 import type { z } from "zod"
+import { violationsOf } from "./call"
 import { checkScopes, isDate, type ToolContext, type View } from "./definitions"
 import { customCode, errorCodes } from "./errors"
+import { checkDescription, checkToolName } from "./rules"
 
 type Deprecation = Readonly<{ since: string; sunset: string; replacement?: string }>
 
-/** A read tool: frozen data made by `defineTool`. Only `name`, `description`, `input`, `output` and `execute` are required. */
-export type Tool<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObject = z.ZodObject> = Readonly<{
+/**
+ * A read tool: frozen data made by `defineTool`. Only `name`, `description`, `input`, `output` and `execute` are required. `Context` is what
+ * `execute` receives: `ToolContext`, with the MCP's `db` for a tool made with `withDatabase`.
+ */
+export type Tool<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodObject = z.ZodObject, Context extends ToolContext = ToolContext> = Readonly<{
   kind: "read"
   /** `<domain>.<operation>`, for example `records.list`; the wire name is `records_list`. */
   name: string
@@ -35,21 +40,36 @@ export type Tool<Input extends z.ZodObject = z.ZodObject, Output extends z.ZodOb
   timeoutMs: number
   /** The custom `<PROVIDER>_<CODE>` codes the handler throws. Default: none; standard codes need no declaration, and an undeclared custom code answers `INTERNAL`. */
   errors: readonly string[]
+  /** One valid input, checked against `input` when the module loads. The conformance kit calls the tool with it, unless the fixture's `examples` give another. */
+  example?: z.input<Input>
   /** Do the work: receives the parsed input and the caller, returns an object that matches `output`, and throws `ToolError` for an expected failure. */
-  execute(input: z.output<Input>, context: ToolContext): Promise<z.input<Output>>
+  execute(input: z.output<Input>, context: Context): Promise<z.input<Output>>
 }>
 
-type Shared = { name: string; description: string; input: z.ZodObject; version?: string; scopes?: readonly string[]; deprecated?: Deprecation; timeoutMs?: number; errors?: readonly string[] }
-const name = /^[a-z][a-z0-9]{0,15}\.[a-z][a-z0-9]{0,15}$/
+/** What `defineTool` takes: a tool's fields, with `timeoutMs` and `errors` optional. */
+export type ToolDefinition<Input extends z.ZodObject, Output extends z.ZodObject, Context extends ToolContext> = Omit<Tool<Input, Output, Context>, "kind" | "timeoutMs" | "errors"> & {
+  /** Default 25,000; at most 55,000. The call is aborted and answers `TIMEOUT` after it. */
+  timeoutMs?: number
+  /** The custom `<PROVIDER>_<CODE>` codes the handler throws. Default: none; standard codes need no declaration. */
+  errors?: readonly string[]
+}
 
-/** The rules tools and mutations share: name, description, timeout, version, deprecation, scopes and declared errors. */
+type Shared = {
+  name: string; description: string; input: z.ZodObject; example?: unknown; version?: string; scopes?: readonly string[]; deprecated?: Deprecation; timeoutMs?: number; errors?: readonly string[]
+}
+
+/** The rules tools and mutations share: name, description, example, timeout, version, deprecation, scopes and declared errors. */
 export function checkShared<Definition extends Shared>(noun: "Tool" | "Mutation", definition: Definition) {
-  if (!name.test(definition.name)) {
-    throw new Error(`${noun} name "${definition.name}" must be <domain>.<operation>, each part a lowercase letter then up to 15 lowercase letters or digits, for example records.list`)
-  }
+  const named = checkToolName(definition.name)
+  if (named) throw new Error(`${noun} name ${named}`)
   const label = `${noun} ${definition.name}`
-  const { length } = definition.description
-  if (length < 40 || length > 1000) throw new Error(`${label}: the description is ${length} characters; write 40 to 1,000 saying what it does, when to use it and its limits`)
+  const described = checkDescription(definition.description)
+  if (described) throw new Error(`${label}: the description ${described}`)
+  const input = definition.input.strict()
+  if (definition.example !== undefined) {
+    const checked = input.safeParse(definition.example)
+    if (!checked.success) throw new Error(`${label}: the example is not a valid input: ${violationsOf(checked.error).message}`)
+  }
   const timeoutMs = definition.timeoutMs ?? 25_000
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 55_000) {
     throw new Error(`${label}: timeoutMs ${timeoutMs} must be a whole number of milliseconds from 1 to 55,000`)
@@ -67,7 +87,7 @@ export function checkShared<Definition extends Shared>(noun: "Tool" | "Mutation"
   return {
     ...definition,
     errors: Object.freeze([...errors]),
-    input: definition.input.strict() as z.ZodObject as Definition["input"],
+    input: input as z.ZodObject as Definition["input"],
     scopes: checkScopes(label, definition.scopes, noun === "Tool" ? "read" : "write"),
     deprecated: definition.deprecated && Object.freeze({ ...definition.deprecated }),
     timeoutMs,
@@ -94,14 +114,9 @@ export function checkShared<Definition extends Shared>(noun: "Tool" | "Mutation"
  * })
  * ```
  */
-export function defineTool<Input extends z.ZodObject, Output extends z.ZodObject>(
-  tool: Omit<Tool<Input, Output>, "kind" | "timeoutMs" | "errors"> & {
-    /** Default 25,000; at most 55,000. The call is aborted and answers `TIMEOUT` after it. */
-    timeoutMs?: number
-    /** The custom `<PROVIDER>_<CODE>` codes the handler throws. Default: none; standard codes need no declaration. */
-    errors?: readonly string[]
-  },
-): Tool<Input, Output> {
+export function defineTool<Input extends z.ZodObject, Output extends z.ZodObject, Context extends ToolContext = ToolContext>(
+  tool: ToolDefinition<Input, Output, Context>,
+): Tool<Input, Output, Context> {
   return Object.freeze({ ...checkShared("Tool", tool), kind: "read" })
 }
 

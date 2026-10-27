@@ -6,3 +6,4 @@ coverageThreshold = { lines = 1, functions = 1 }
 coverageReporter = ["text", "lcov"]
 coverageDir = "coverage"
 coveragePathIgnorePatterns = ["src/**/*.test.ts", "src/test/**", "../**"]
+preload = ["./src/test/preload.ts"]

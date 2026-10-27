@@ -1,0 +1,169 @@
+// One tool's file and its test: a read that lists its domain's table, or a mutation that adds a row to it. Each file opens with the guidance the
+// design gives (docs/goals/mcp-cli/design.md), each rule said once.
+import { tableBinding, toolBinding, wireName, type ToolAnswers } from "./names"
+
+// The guidance a tool's file opens with, each rule said once: its name, its description, its fields, what execute gets or a mutation's risk,
+// prepare and commit, and the organisation rule.
+function guidance(name: string, { name: tool, mutation }: ToolAnswers) {
+  const wire = wireName(tool)
+  const lines = [
+    `One tool = one thing the caller can do. Hosts call this tool ${name}_${wire} in the Toolbox, ${wire} alone.`,
+    "",
+    "name: <domain>.<operation>, from the caller's side: notes.list, projects.search, rfis.create. Never the vendor or the transport",
+    "  (sharepoint_query), never a mode switch (manage_notes). Unique in this MCP.",
+    "",
+    ...(mutation ? [
+      "description: the model reads only this to choose the tool. Say what it changes, when to use it and its limits, in 40 to 1,000",
+      `  characters, and that it prepares an intent: use the word "prepare" or "intent".`,
+      `  Good: "Prepare a new note on a project; commit it to save it. Use notes.list first to avoid duplicates." Bad: "Adds notes."`,
+      "",
+      `input and output: Zod objects; describe every field with .describe("…"), which hosts show the model. output is the receipt's results.`,
+      "",
+      "risk: low lets the agent commit on its own; normal, the default, shows the person the preview's summary first; high needs a person's",
+      "  approval, which is Not yet: its commit answers APPROVAL_REQUIRED (https://www.answerable.org/docs/mcp/mutations#policy-classes).",
+      "prepare: checks the input, reads nothing that changes and changes nothing; its summary, which the person confirms, names their",
+      "  organisation.",
+      "commit: applies exactly what was prepared, from plan; a new row takes organisation_id from organisation.id.",
+    ] : [
+      "description: the model reads only this to choose the tool. Say what it does, when to use it and its limits, in 40 to 1,000 characters.",
+      `  Good: "List the notes of a project, newest first, 20 per page. Use projects.search first to find the project id." Bad: "Gets notes."`,
+      "",
+      `input and output: Zod objects; describe every field with .describe("…"), which hosts show the model. A list takes limit and cursor`,
+      "  and returns items, next_cursor and has_more.",
+      "",
+      "execute: gets the checked input and the caller: person, organisation and db.",
+    ]),
+    "",
+    "The MCP's tables need no filter on the organisation: row-level security adds it (src/db/schema.ts). Data from anywhere else is",
+    "constrained by organisation.id. Throw ToolError for a failure the caller can fix.",
+  ]
+  return `${lines.map(line => (line ? `// ${line}` : "//")).join("\n")}\n`
+}
+
+const read = (name: string, tool: ToolAnswers) => `${guidance(name, tool)}import { desc, lt } from "drizzle-orm"
+import { z } from "zod"
+import * as schema from "../db/schema"
+import { defineTool } from "../mcp"
+
+const item = z.object({
+  id: z.uuid().describe("The row's id"),
+  title: z.string(),
+  created_at: z.iso.datetime().describe("When it was added"),
+})
+
+export const ${toolBinding(tool.name)} = defineTool({
+  name: "${tool.name}",
+  description: ${JSON.stringify(tool.description)},
+  input: z.object({
+    limit: z.number().int().min(1).max(100).default(20).describe("Items per page, 1 to 100"),
+    cursor: z.uuid().optional().describe("next_cursor from the previous page; omit it for the first page"),
+  }),
+  output: z.object({
+    items: z.array(item).describe("Newest first"),
+    next_cursor: z.uuid().nullable().describe("The cursor of the next page, or null on the last"),
+    has_more: z.boolean(),
+  }),
+  example: { limit: 5 },
+  async execute({ limit, cursor }, { db }) {
+    const table = schema.${tableBinding(tool.name.split(".")[0]!)}
+    const rows = await db.select().from(table).where(cursor ? lt(table.id, cursor) : undefined).orderBy(desc(table.id)).limit(limit + 1)
+    const items = rows.slice(0, limit).map(row => ({ id: row.id, title: row.title, created_at: row.created_at.toISOString() }))
+    const has_more = rows.length > limit
+    return { items, next_cursor: has_more ? items.at(-1)!.id : null, has_more }
+  },
+})
+`
+
+const mutation = (name: string, tool: ToolAnswers) => {
+  const domain = tool.name.split(".")[0]!
+  return `${guidance(name, tool)}import { z } from "zod"
+import * as schema from "../db/schema"
+import { defineMutation } from "../mcp"
+
+export const ${toolBinding(tool.name)} = defineMutation({
+  name: "${tool.name}",
+  description: ${JSON.stringify(tool.description)},
+  risk: "normal",
+  input: z.object({ title: z.string().trim().min(1).max(200).describe("The title, 1 to 200 characters") }),
+  output: z.object({ id: z.uuid(), title: z.string(), created_at: z.iso.datetime() }),
+  example: { title: "First" },
+  async prepare({ title }, { organisation }) {
+    return {
+      targets: [],
+      preview: { summary: \`Add “\${title}” to the ${domain} of \${organisation.name}\`, changes: [{ path: "${domain}[]", to: { title } }] },
+      plan: { title },
+    }
+  },
+  async commit({ plan }, { db, organisation }) {
+    const [row] = await db.insert(schema.${tableBinding(domain)}).values({ organisation_id: organisation.id, title: plan.title }).returning()
+    const added = { id: row!.id, title: row!.title, created_at: row!.created_at.toISOString() }
+    return { results: added, applied_changes: [{ path: "${domain}[]", to: added }], effects_performed: [] }
+  },
+})
+`
+}
+
+/** A tool's file, `src/tools/<domain>-<operation>.ts`: a read, or a mutation. */
+export const toolTs = (name: string, tool: ToolAnswers) => (tool.mutation ? mutation(name, tool) : read(name, tool))
+
+const readTest = ({ name: tool }: ToolAnswers) => {
+  const table = `schema.${tableBinding(tool.split(".")[0]!)}`
+  return `import { expect, test } from "bun:test"
+import { createTestMcp } from "@answerable/mcp-postgres/testing"
+import * as schema from "../db/schema"
+import { provider } from "../provider"
+
+type Page = { items: { title: string }[]; next_cursor: string | null; has_more: boolean }
+
+test("${wireName(tool)} lists the caller's organisation's rows only, newest first, a page at a time", async () => {
+  const mcp = await createTestMcp(provider)
+  try {
+    const [mine, theirs] = [crypto.randomUUID(), crypto.randomUUID()]
+    for (const title of ["First", "Second", "Third"]) await mcp.asOrganisation(mine, () => mcp.db.insert(${table}).values({ organisation_id: mine, title }))
+    await mcp.asOrganisation(theirs, () => mcp.db.insert(${table}).values({ organisation_id: theirs, title: "Theirs" }))
+    const client = await mcp.connect({ organizationId: mine })
+    const first = (await client.callTool({ name: "${wireName(tool)}", arguments: { limit: 2 } })).structuredContent as Page
+    expect(first.items.map(item => item.title)).toEqual(["Third", "Second"])
+    expect(first.has_more).toBe(true)
+    const second = await client.callTool({ name: "${wireName(tool)}", arguments: { limit: 2, cursor: first.next_cursor } })
+    expect(second.structuredContent).toMatchObject({ items: [{ title: "First" }], next_cursor: null, has_more: false })
+    const other = await mcp.connect({ organizationId: theirs })
+    expect((await other.callTool({ name: "${wireName(tool)}", arguments: {} })).structuredContent).toMatchObject({ items: [{ title: "Theirs" }] })
+  } finally {
+    await mcp.close()
+  }
+})
+`
+}
+
+const mutationTest = ({ name: tool }: ToolAnswers) => {
+  const domain = tool.split(".")[0]!
+  const table = `schema.${tableBinding(domain)}`
+  return `import { expect, test } from "bun:test"
+import { createTestMcp } from "@answerable/mcp-postgres/testing"
+import * as schema from "../db/schema"
+import { provider } from "../provider"
+
+type Intent = { intent_id: string; commit_token: string; commit_tool: string; preview: { summary: string } }
+
+test("${wireName(tool)} prepares a row, and the commit tool its intent names adds it to the caller's organisation only", async () => {
+  const mcp = await createTestMcp(provider)
+  try {
+    const [mine, theirs] = [crypto.randomUUID(), crypto.randomUUID()]
+    const client = await mcp.connect({ organizationId: mine, organisation: { name: "Acme" } })
+    const intent = (await client.callTool({ name: "${wireName(tool)}", arguments: { title: "First" } })).structuredContent as Intent
+    expect(intent.preview.summary).toBe("Add “First” to the ${domain} of Acme")
+    const { intent_id, commit_token, preview } = intent
+    const committed = await client.callTool({ name: intent.commit_tool, arguments: { intent_id, commit_token, preview_summary: preview.summary } })
+    expect(committed.structuredContent).toMatchObject({ status: "committed", results: { title: "First" } })
+    expect(await mcp.asOrganisation(mine, () => mcp.db.select({ title: ${table}.title }).from(${table}))).toEqual([{ title: "First" }])
+    expect(await mcp.asOrganisation(theirs, () => mcp.db.select().from(${table}))).toEqual([])
+  } finally {
+    await mcp.close()
+  }
+})
+`
+}
+
+/** A tool's test, beside its file. */
+export const toolTest = (tool: ToolAnswers) => (tool.mutation ? mutationTest(tool) : readTest(tool))

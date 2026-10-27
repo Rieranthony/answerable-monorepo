@@ -1,6 +1,6 @@
 # Admin MCP
 
-The staff-only MCP through which Answerable staff onboard and manage organisations in Answerable ID from an AI host: read organisations, members, access and the audit log, and change them through prepared intents the person confirms. Only members of the platform organisation get a tool, and each tool only to a role at or above its minimum: the role is read from ID once per request and never cached. Development and test only. The page for staff: [The admin MCP](../../apps/web/content/docs/admin/index.mdx).
+The staff-only MCP through which Answerable staff onboard and manage organisations in Answerable ID from an AI host: read organisations, members, access and the audit log, and change them through prepared intents the person confirms. Only members of the platform organisation get a tool, and each tool only to a role at or above its minimum: the role is read from ID once per request and never cached. Deployed to staging since 2026-10-23 ([evidence](../../reports/staging-evidence.md)); production: Not yet. The page for staff: [The admin MCP](../../apps/web/content/docs/admin/index.mdx).
 
 ```sh
 bun run --filter @answerable/mcp-admin test
@@ -16,11 +16,11 @@ bun --env-file=.env run --filter @answerable/mcp-admin db:migrate   # as the own
 bun run admin:dev                                                   # as the runtime login, ADMIN_DATABASE_URL; serves http://localhost:47520/mcp
 ```
 
-It needs its registrations in ID and the `ADMIN_*` variables, which `default.env` lists: [Run it locally](../../apps/web/content/docs/admin/index.mdx#run-it-locally). It serves as a restricted login and refuses to start as the owner, or as any login that could change the evidence; `db:migrate` grants `ADMIN_DATABASE_RUNTIME_ROLE` (`answerable_admin_runtime`) `@answerable/mcp-postgres`'s `runtimeGrants`. The local login comes from `infra/postgres/init/005-create-mcp-runtime-roles.sql`: [Database roles](../../apps/web/content/docs/admin/index.mdx#database-roles).
+It needs its registrations in ID and the `ADMIN_*` variables, which [its page](../../apps/web/content/docs/admin/index.mdx#environment) lists: [Run it locally](../../apps/web/content/docs/admin/index.mdx#run-it-locally). It serves as a restricted login and refuses to start as the owner, or as any login that could change the evidence; `db:migrate` grants its runtime role, `answerable_admin_runtime`, `@answerable/mcp-postgres`'s `runtimeGrants`. The local login comes from `infra/postgres/init/005-create-mcp-runtime-roles.sql`: [Database roles](../../apps/web/content/docs/admin/index.mdx#database-roles).
 
 | File | Job |
 | --- | --- |
-| `src/admin.ts` | `createAdminMcp({ auth, db, id, platform, freshSeconds, toolbox })`: the provider on `@answerable/mcp` with `allow` (the platform check, the `admin` scope and the role against each tool's minimum), every mutation controlled class, evidence for every call and refusal on the platform organisation's chain, intents in Postgres, `/health` |
+| `src/admin.ts` | `createAdminMcp({ auth, db, id, platform, freshSeconds, toolbox, standaloneOrigin })`: the provider on `@answerable/mcp` with `allow` (the platform check, the `admin` scope and the role against each tool's minimum), every mutation controlled class, evidence for every call and refusal on the platform organisation's chain, a refusal because ID did not answer with the role included, and `/health`, from `@answerable/mcp-platform`; intents in Postgres; `profiles`, which the entry point's audit-log poller invalidates |
 | `src/roles.ts` | `createRoles`: each caller's role from ID's member access view, once per request; `roleOf`, the three grant strings; `refusal`, why a caller may not use a tool |
 | `src/provider.ts` | `createAdminProvider`: `admin_whoami`, the read tools and the writes, each with its minimum role |
 | `src/calls.ts` | `createCalls`: ID's admin API as the tools call it, with the call's execution id as `x-request-id`; reads with ETags, and writes with the intent's id as `Idempotency-Key`, sent once more when ID does not answer; ID asking to be asked again (`503`, `409 operation_in_progress`) is `UPSTREAM_UNAVAILABLE` after its `Retry-After` |
@@ -29,13 +29,15 @@ It needs its registrations in ID and the `ADMIN_*` variables, which `default.env
 | `src/access.ts` | `groups.create`, `.addmember` and `.dropmember`, `access.grant`, `.revoke` and `.enable` |
 | `src/staff.ts` | `staff.grant` and `staff.revoke`: a role through the group whose entitlement on the admin MCP's resource carries it |
 | `src/toolbox.ts` | `createToolboxAdmin`, the Toolbox's admin API with a `toolbox:admin` token for its admin resource, and `toolbox.enable` |
+| `src/standalone.ts`, `src/enablement.ts` | `standalone.enable`: an organisation's access, through `claude-code-<name>`, to a standalone MCP the Toolbox serves at `<standaloneOrigin>/<name>/mcp`, from `enablementSteps`, the plan `bun mcp dev` also makes locally |
 | `src/fresh.ts` | `requireFresh`: the critical operations' rule on the token's `upstream_auth_time`, and `ADMIN_REAUTHENTICATION_REQUIRED` |
 | `src/platform.ts` | `readPlatform`: the platform organisation's id from ID's `GET /me`, refusing a machine client of any other organisation |
 | `src/environment.ts` | `readAdminEnvironment` |
 | `src/server.ts` | The entry point: `assertRuntimeRole` before it listens; `src/server.test.ts` starts it against a fake ID over HTTP, as a runtime login and as the owner, which it refuses |
 | `src/db/schema.ts`, `src/db/migrate.ts`, `drizzle/` | The drizzle schema, `@answerable/mcp-postgres`'s tables and no others; `drizzle/0000_initial.sql` is generated from it and `0001_evidence_chain.sql` is the package's trigger SQL; `migrate(db)` applies the folder through the package's migrator, adopting a database the file migrator built |
-| `scripts/migrate.ts` | `db:migrate` and `db:test:migrate`: the migrations, then `configureRuntimeRole` with the package's `runtimeGrants` |
+| `scripts/migrate.ts` | `db:migrate`: the migrations, then `configureRuntimeRole` with the package's `runtimeGrants` |
+| `scripts/test-migrate.ts` | `db:test:migrate`: the same on the test database, reset first; apart, so that the migration Job loads no test kit |
 
-The package exports `./admin` (`createAdminMcp`), `./migrate` (`migrate`) and `./platform` (`readPlatform`): the acceptance runs the server in its journeys and its lane, as [Set up the admin MCP](../../apps/web/content/docs/admin/setup.mdx) shows.
+The package exports `./admin` (`createAdminMcp`), `./enablement` (`enablementSteps`, which `bun mcp dev` uses), `./migrate` (`migrate`) and `./platform` (`readPlatform`): the acceptance runs the server in its journeys and its lane, as [Set up the admin MCP](../../apps/web/content/docs/admin/setup.mdx) shows.
 
 It builds on `@answerable/id-admin` (`createIdAdmin`, the machine client, and the fake ID in its tests) and `@answerable/mcp-postgres` (intents, evidence, the drizzle base schema and the migrator). `src/test/admin.ts` holds the tests' fake Toolbox, the seeded organisations and role groups, and the in-process server, which signs a member's tokens again with the directory sign-in time a test sets; `src/test/database.ts` names the test database for `@answerable/mcp-postgres/testing`'s `testDatabase`, which refuses any other. `manifest.json` is the `admin` provider's contract; `UPDATE_MANIFEST=1 bun run --filter @answerable/mcp-admin test` rewrites it.

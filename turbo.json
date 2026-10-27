@@ -13,12 +13,15 @@
         "../id/openapi.json",
         "../id/openapi.admin.json",
         "../../packages/auth/src/**",
+        "../../packages/config/inventory.json",
+        "../../packages/config/src/**",
         "../../packages/mcp/src/**",
+        "../../packages/mcp-postgres/src/**",
         "../../mcps/*/src/**",
         "../../mcps/*/scripts/**",
         "../../mcps/*/manifest.json",
         "../../mcps/*/package.json",
-        "../../scripts/mcp-templates.ts"
+        "../../scripts/mcp/**"
       ],
       "outputs": [".next/**", "!.next/cache/**"]
     },
@@ -28,7 +31,14 @@
         "$TURBO_DEFAULT$",
         "../id/openapi.json",
         "../id/openapi.admin.json",
-        "../../packages/mcp/src/errors.ts",
+        "../../packages/config/inventory.json",
+        "../../packages/mcp/src/**",
+        "../../scripts/mcp/**",
+        "../../infra/pipeline/**",
+        "../../.github/workflows/*.yml",
+        "../../apps/id/src/**",
+        "../../mcps/admin/src/**",
+        "../../mcps/toolbox/src/**",
         "../../*.md",
         "../../docs/**/*.md",
         "../../reports/**/*.md",
@@ -55,8 +65,10 @@
       "outputs": ["coverage/**"]
     },
     "@answerable/mcp-e2e#test": {
-      "cache": false,
-      "dependsOn": ["^build"]
+      "cache": false
+    },
+    "@answerable/mcp-platform#test": {
+      "cache": false
     },
     "@answerable/mcp#test": {
       "cache": false,
@@ -84,13 +96,7 @@
       "cache": false
     },
     "@answerable/mcp-postgres#test": {
-      "cache": false,
-      "passThroughEnv": ["MCP_POSTGRES_TEST_DATABASE_URL"]
-    },
-    "@answerable/mcp-e2e#dev": {
-      "cache": false,
-      "persistent": true,
-      "env": ["MCP_ID_ISSUER", "MCP_RESOURCE_URL", "MCP_PORT"]
+      "cache": false
     },
     "@answerable/mcp-toolbox#test": {
       "cache": false,
@@ -120,6 +126,7 @@
       "env": ["PORT"],
       "passThroughEnv": [
         "TEST_DATABASE_URL",
+        "ID_HOST",
         "ROOT_ADMIN_SECRET",
         "ROOT_ADMIN_BREAK_GLASS",
         "DATABASE_*",
@@ -142,6 +149,7 @@
       "passThroughEnv": ["TEST_DATABASE_URL", "DATABASE_RUNTIME_ROLE"]
     }
   },
+  "globalPassThroughEnv": ["MCP_POSTGRES_TEST_DATABASE_URL", "MCPS_TEST_DATABASE_URL", "MCPS_DATABASE_ADMIN_URL"],
   "globalEnv": [
     "GOOGLE_SHEETS_ID",
     "GOOGLE_SERVICE_ACCOUNT_EMAIL",

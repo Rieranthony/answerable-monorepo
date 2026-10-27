@@ -1,11 +1,14 @@
 import { afterAll, afterEach, expect, test } from "bun:test"
-import { defineProvider, defineTool, manifest, type Provider } from "@answerable/mcp"
+import { defineMutation, defineProvider, defineTool, manifest, type Mount, type Provider } from "@answerable/mcp"
 import { errorOf } from "@answerable/mcp/testing"
 import { rowsOf } from "@answerable/mcp-postgres/testing"
 import { z } from "zod"
 import { writeCatalogue, writeHostClient } from "./catalogue"
 import { serving } from "./test/database"
-import { createHub, e2e, names, type Client, type Hub } from "./test/hub"
+import { createHub, names, type Client, type Hub } from "./test/hub"
+import { e2e } from "./test/mcps"
+
+const purpose = "A fixture provider for the Toolbox's tests: it serves the tools each test gives it."
 
 const login = await serving()
 const { db } = login
@@ -13,7 +16,7 @@ const query = rowsOf(db)
 afterAll(() => login.drop())
 const hubs: Hub[] = []
 afterEach(async () => { await Promise.all(hubs.splice(0).map(hub => hub.mcp.close())) })
-async function hub(providers?: Provider[]) {
+async function hub(providers?: (Provider | Mount)[]) {
   const created = await createHub(db, providers)
   hubs.push(created)
   return created
@@ -35,7 +38,7 @@ const refusal = async (client: Client, name: string, args: Record<string, unknow
 type Event = Record<"kind" | "outcome" | "capability_identity", string> & Record<"error_code" | "reason" | "intent_id", string | null>
 const events = (organisation: string) => query<Event>`select kind, outcome, capability_identity, error_code, reason, intent_id::text from evidence_events where organisation_id = ${organisation} order by seq`
 // 41 reads: one more than the default direct limit.
-const wide = defineProvider({ id: "wide", version: "2026-09-29", tools: Array.from({ length: 41 }, (_, index) => defineTool({
+const wide = defineProvider({ id: "wide", description: purpose, version: "2026-09-29", tools: Array.from({ length: 41 }, (_, index) => defineTool({
   name: `items.get${index}`, description: `Read item ${index} of the wide fixture; it changes nothing.`, input: z.object({}), output: z.object({}), async execute() { return {} },
 })) })
 
@@ -101,7 +104,7 @@ test("toolbox_search never returns a capability the caller may not use", async (
 test("toolbox_describe gives up to five capabilities' descriptions and manifest schemas; one the caller may not use is NOT_FOUND, as an unknown one is", async () => {
   const { member } = await hub()
   const clientId = await metaClient()
-  const contract = new Map(manifest(e2e()).tools.map(entry => [entry.identity, entry]))
+  const contract = new Map(manifest(e2e.provider).tools.map(entry => [entry.identity, entry]))
   const beta = await (await member(["e2e/records"])).connect(undefined, clientId)
   const described = await call(beta, "toolbox_describe", { identities: ["e2e/records.list", "e2e/records.delete"] })
   expect(described).toEqual({ capabilities: ["e2e/records.list", "e2e/records.delete"].map(identity => {
@@ -171,4 +174,22 @@ test("toolbox_prepare prepares a mutation as its direct prepare tool would, and 
     "intent.committed e2e/records.delete", "receipt.issued e2e/records.delete", "capability.completed toolbox/commit_confirmed",
     "capability.completed toolbox/toolbox.prepare", "capability.completed e2e/records.create",
   ])
+})
+
+test("toolbox_execute and toolbox_prepare run a capability with its own provider's db and the caller's profile, and its commit does too", async () => {
+  const seen: [string, unknown, string][] = []
+  const keep = (step: string, context: Parameters<Parameters<typeof defineTool>[0]["execute"]>[1]) => seen.push([step, "db" in context ? context.db : "none", context.person.name])
+  const read = defineTool({ name: "notes.list", description: "List the notes, keeping the context. A fixture with a database.", input: z.object({}), output: z.object({}), async execute(_input, context) { keep("execute", context); return {} } })
+  const add = defineMutation({
+    name: "notes.add", description: "Prepare adding a note, keeping the context. A fixture with a database.", input: z.object({}), output: z.object({}),
+    async prepare(_input, context) { keep("prepare", context); return { targets: [], preview: { summary: "Add a note", changes: [{ path: "notes[]", to: "note" }] } } },
+    async commit(_plan, context) { keep("commit", context); return { results: {}, applied_changes: [], effects_performed: [] } },
+  })
+  const notes = defineProvider({ id: "notes", description: purpose, version: "2026-09-29", database: { schema: {}, migrations: new URL("../drizzle", import.meta.url) }, tools: [read, add] })
+  const { member } = await hub([e2e, { provider: notes, db: "notes-db" }])
+  const client = await (await member(["notes"])).connect(undefined, await metaClient())
+  await call(client, "toolbox_execute", { identity: "notes/notes.list" })
+  const intent = await call(client, "toolbox_prepare", { identity: "notes/notes.add" }) as { intent_id: string; commit_token: string; commit_tool: string; preview: { summary: string } }
+  await call(client, intent.commit_tool, { intent_id: intent.intent_id, commit_token: intent.commit_token, preview_summary: intent.preview.summary })
+  expect(seen).toEqual([["execute", "notes-db", "A member"], ["prepare", "notes-db", "A member"], ["prepare", "notes-db", "A member"], ["commit", "notes-db", "A member"]])
 })

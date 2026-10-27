@@ -98,3 +98,231 @@
   - `standalone-hub`'s Secret, deploy and start plumbing;
   - the README's branch lines;
   - `@answerable/id-admin`'s new dependency on `@answerable/mcp` named.
+
+## 2026-10-25: building, in pull request #13
+
+- **The owner's decisions:** "let's do everything in one PR"; Auto-fix is on for #13. Typed configuration's B1, zod 4.6.7 and B2 are already in the pull request.
+- **M1, the database model,** by Opus. Built in `@answerable/mcp-postgres` 0.8.0:
+  - `provisionMcps`, `provisionOwnMcp`, `migrateMcp` and `migrateMcps`;
+  - `withoutSchemaCreation`, `organisationIsolation` and `mcpDatabase`;
+  - `assertServingLogin` and `ensureLocalMcpDatabases`, with `infra/postgres/init/006`;
+  - `testMcpDatabase`;
+  - the role-switching scan test.
+- **M1's measurements** (throwaway Postgres 17.9, 3 runs):
+  - a query through `mcpDatabase`: 0.91 to 1.11 ms, against 0.46 to 0.60 ms plain;
+  - a burst of 1,000 queries over 200 schemas: 277 to 341 ms on at most 10 connections;
+  - `provisionMcps` at 200: about 1.0 s;
+  - first `migrateMcps` at 200: 3.1 to 3.9 s; with nothing pending: 1.5 to 2.0 s.
+- **What M1 corrected in the design.**
+  - Grants run as the owner role inside the migration's transaction, because the migrator may not grant after `reset role`.
+  - Migrations may not switch role.
+  - Test helpers drop logins under the role lock.
+- **The coordinator's gates on M1:**
+  - `mcp:test`: 713 pass, 0 fail, with `mcp-postgres` at 93 pass and 100% coverage;
+  - typecheck and lint forced, 19 of 19;
+  - web: 100;
+  - knip clean;
+  - frozen install unchanged.
+
+  The development Postgres holds exactly the 3 new logins and 2 new databases.
+- **M2, the SDK context,** by Opus.
+  - **What it built:**
+    - `checkProviderId`, `checkToolName` and `checkDescription` exported;
+    - `description` and `database` on providers, and `example` on tools;
+    - `person`, `organisation` and `client` in every handler's context, from a required `profiles`;
+    - `db` per provider through `withDatabase({ schema })`, with the call scope `callerOrganisation()`;
+    - `createIdProfiles` in `@answerable/id-admin`;
+    - both `createTestMcp`s and `assertProviderConformance` in `@answerable/mcp-postgres/testing`.
+  - **Moved onto it:** the Toolbox (`mount`), the admin MCP, e2e, the example and the acceptance.
+  - **The agent's acceptance run:** 57 pass in 127 s.
+  - **The coordinator's change:** a member or organisation ID answers 404 for is refused with `PERMISSION_DENIED` and never served from a cached value (test added; servers, errors and README docs updated).
+  - **Gates:**
+    - `mcp:test`: 746 pass, 0 fail;
+    - typecheck, lint and build forced: 19, 19 and 3 of 3;
+    - web: 100;
+    - knip clean;
+    - frozen install unchanged.
+- **M3, the `bun mcp` CLI,** by Opus.
+  - **What it built:**
+    - the commands `new`, `add tool`, `list`, `check`, `db` and `help`, in `scripts/mcp/`, with `@clack/prompts` 1.8.1 in a terminal only;
+    - templates with the guidance comments;
+    - `mcp.json`, its JSON schema and `mcps/retired.json`;
+    - the generator, writing `charts/answerable/mcps.json`;
+    - `mcps/example` remade with the CLI;
+    - `mcp:new` removed;
+    - `scripts` at 100% coverage.
+  - **What it fixed in M1:** a cross-database race between `ensureLocalMcpDatabases` and `provisionMcps`.
+  - **Measured** in the end-to-end test on a copy of the tree: `bun mcp new` 4.2 s, `add tool` 3.3 to 3.4 s; in the real tree, 3.8 to 4.5 s.
+  - **The coordinator's review:** a command now refuses every wrong or missing answer at once, with one fix command and `error.problems` in JSON.
+  - **Gates:**
+    - `mcp:test`: 830 pass, 0 fail;
+    - typecheck, lint and build forced: 19, 19 and 3 of 3;
+    - web: 100;
+    - knip clean;
+    - frozen install unchanged.
+- **M4, the runtime,** by Opus.
+  - **The SDK bump:** `@modelcontextprotocol/server` and `client` 2.1.0 → 2.4.0 first. The acceptance on the bump alone passed 57 of 57 in 131 s.
+  - **What it built:**
+    - `@answerable/mcp-platform`: evidence for every call and refusal, closing `Q-SDK-ALLOW-EVIDENCE`; spans on OpenTelemetry 3.0; health; the audit poller; databases per declared MCP;
+    - the Toolbox mounting from `mounted.generated.ts`, with batched ingest and profiles;
+    - `mcps/standalone`;
+    - the admin MCP on the platform;
+    - e2e on Postgres as `both`, with a byte-identical manifest;
+    - the acceptance with the `mcps` journeys.
+  - **Removed:** `readMcpEnvironment`.
+  - **Measured:**
+    - ingest at 200 × 5: 0.41 to 0.61 s, against 1.2 to 1.5 s before;
+    - a Toolbox tool call: median 4.9 ms with a cached profile, 30.1 ms read from ID;
+    - standalone server start: about 0.2 s.
+  - **Gates:**
+    - `mcp:test`: 867 pass, 0 fail, 14 suites at 100%;
+    - typecheck and lint forced: 21 of 21;
+    - build: 2 of 2;
+    - web: 100;
+    - knip clean;
+    - frozen install unchanged;
+    - the agent's final acceptance: 62 pass in 139 s.
+- **M5, shipping,** by Opus.
+  - **What it built:**
+    - one `mcps` image (262 MB; `infra/pipeline/images.json`: `id`, `mcps`, `ops`);
+    - the chart from `mcps.json`;
+    - the bootstrap provisioning `answerable_mcps`, `answerable_standalone` and own databases;
+    - `mcps-migrate` at -6 beside the hubs' Jobs;
+    - the standalone server's Deployment and path Ingress on `mcp.<zone>`;
+    - `standalone-hub`;
+    - the `mcp` hostname in Terraform;
+    - `run-job` at the deployed revision (`git archive` of `image.tag`);
+    - a smoke test from the list;
+    - the connection budget in `bun mcp check`;
+    - deployed URLs in `bun mcp list`;
+    - from M3's notes, the admin's self-grant `INHERIT FALSE`; from M4's, `assertOwnLogin`.
+  - **Measured:**
+    - the release at 200 MCPs: 52.8 KiB stored, 5.2% of Helm's 1 MiB;
+    - `mcps-migrate` in kind: 0.1 s for 2 MCPs;
+    - the kind stack: 273 s.
+  - **Gates:**
+    - `mcp:test`: 889 pass, 0 fail;
+    - typecheck and lint forced: 21 of 21;
+    - build: 2 of 2;
+    - web: 100;
+    - knip clean;
+    - `infra:check` passed;
+    - the agent's runs: `infra:test` 120 pass, and the acceptance 62 pass.
+  - **Side effect:** while cleaning up its images, the agent ran `docker image prune -f`, which also removed dangling (untagged) images elsewhere on the machine.
+- **M6, registration,** by Opus. Interrupted once when the machine slept, then resumed.
+  - **The first test, against real ID:** `ops-register` (`platform:read platform:write`), minted with root, creates and patches a resource, a client and a link after the root lock.
+  - **What it built:**
+    - register mints its own client on the first run with a bearer and needs neither root nor a token after;
+    - it registers each standalone MCP from `OPS_MCPS` (now with scopes) on every deploy;
+    - compare, then patch with `If-Match` under revision-suffixed keys, widening only (an MCP's own resource may narrow, logged);
+    - a failed register still rolls the release back, deliberately;
+    - `standalone_enable` in the admin MCP;
+    - `Q-OPS-REGISTER-CLIENT` resolved, and `Q-PLATFORM-REGISTER-SCOPE` added.
+  - **Found:** a standalone MCP's grants must name the host client (ID's `member-permission.ts:147`); the design is corrected, and M7 and M8 carry the fix.
+  - **Measured:** register in kind took 1.3 s on the first run, then 0.8 s with nothing to change; about 10 to 24 s estimated at 200 MCPs.
+  - **The kind proof:**
+    1. first deploy mints with root;
+    2. root locked;
+    3. a new standalone MCP registered by `ops-register` with no token;
+    4. smoke test;
+    5. `standalone_enable` committed by staff in a browser;
+    6. the tenant's person signs in and calls `example_status`;
+    7. the unenabled organisation is refused.
+  - **The agent's gates:**
+    - `mcp:test`: 908 pass;
+    - `infra:test`: 123 pass in 265 s;
+    - the acceptance: 63 pass in 147 s;
+    - `infra:check` passed.
+- **The coordinator's gates on M6:**
+  - typecheck and lint forced: 21 of 21;
+  - build: 2 of 2;
+  - web: 100;
+  - knip clean;
+  - frozen install unchanged;
+  - `infra:check` passed;
+  - the acceptance: 63 pass, 0 fail, in 144 s;
+  - `mcp:test`: 908 pass, 0 fail, 6 runs in a row, after one fix.
+- **The fix:** the CLI's end-to-end test removed its copy and roles in `afterAll`, which timed out at Bun's 5-second hook limit in about 1 run in 5 under load, and Bun 1.3.1 rejects a hook timeout. The clean-up now runs in the test's own `finally`, under its 300 s timeout.
+- **What's left for CI:** the kind stack, on the push of M4 to M6.
+- **M7, the local loop,** by Sonnet.
+  - **What it built:**
+    - `bun mcp setup`: the `mcp-dev` machine client, `.env` written with mode 0600, no secret printed, root or staff token;
+    - `bun mcp dev`: refuses everything first; migrates every mounted MCP and the hubs; starts the Toolbox and/or the standalone server as `mcp-dev`; registers; grants and widens; prints the `claude mcp add` command; Ctrl-C;
+    - `access_grant` refusing a standalone resource without `clientId`;
+    - the fake ID bumping revisions on link;
+    - `bun mcp check` rewriting the inventories;
+    - `standalone_enable`'s plan shared in `@answerable/mcp-admin/enablement`;
+    - `mcp-cli.journeys.test.ts` (7).
+  - **Measured:**
+    - `bun mcp dev` to ready: 1.9 s cold, 1.6 s warm;
+    - `setup`: 0.5 s;
+    - the new journeys: 11.8 s.
+  - **Not done:** the by-hand Claude Code sign-in, which needs the owner at a browser; the steps are in the M7 report and the final summary.
+  - **The coordinator** found and stopped two leftover `bun --hot` processes from B1's clone proof (Toolbox on 47400, ID): `--hot` ignores SIGTERM. M9 makes the servers exit.
+  - **The agent's gates:**
+    - `mcp:test`: 963 pass;
+    - scripts: 159 at 100%;
+    - mcp-admin: 140;
+    - id-admin: 28;
+    - the acceptance: 70 pass in 154 s.
+- **M8, the documentation,** by Sonnet.
+  - **What it wrote:**
+    - six pages under `/docs/mcp`: create, add a tool, database, sign-in, deploy, and the CLI reference;
+    - the CLI reference rendered from `scripts/mcp/definitions.ts` and `errors.ts` (`<CliReference />`, `<CliSteps />`, `<CliExitCodes />`, `<CliErrors />`), and `errors.test.ts` runs the real command for every error row;
+    - `quickstart.mdx` removed, with redirects to `create`;
+    - the `AGENTS.md` block and the agents prompt.
+  - **The fresh agent,** working only from the docs, found a defect: the Toolbox's and the standalone server's tests listed the mounted MCPs by hand and assumed no own-database MCP, so a new `toolbox` or `both` MCP failed CI. M8 documented it as a known gap.
+- **The coordinator's fix:** both suites now read the generated lists. The test databases, the health answer and the expected environment come from `mounted.generated.ts` and `served.generated.ts`, and an own-database MCP gets a test database of its own (`answerable_toolbox_test_<name>`, `answerable_standalone_test_<name>`).
+  - **The proof:** in a copy of the working tree, `bun mcp new` made a shared MCP and an own-database MCP, both served `both`. With no other edit, `mcp:check` passed for the Toolbox (81) and the standalone server (17). The copy, the schemas, the roles and the database were then removed.
+  - The five known-gap notes are gone. A description of 1 character now reads "1 character".
+- **The coordinator's gates on M8:**
+  - typecheck and lint forced: 21 of 21;
+  - build: 2 of 2;
+  - web: 120;
+  - `mcp:test`: 1,022 pass, 0 fail (one test in `scripts` still expected "1 characters" and was updated);
+  - knip clean;
+  - frozen install unchanged;
+  - `infra:check` passed.
+- **M9, the cleanup pass, the benchmark and the evidence,** by Opus.
+  - **What it changed:**
+    - one registrar, `infra/ops/src/registrar.ts`, for the register Job and `bun mcp setup` and `dev`, with the conformance test deleted;
+    - `process.exit(0)` at the end of `close()` in the Toolbox, the standalone server and the admin MCP, each proven under `bun --hot`;
+    - `ROOT_ADMIN_SECRET`'s local default read from ID's definition;
+    - duplicates merged (`servedBy`, `sqlOf`, the privilege set, the ownership check, the CLI's flag and refusal helpers);
+    - unused exports and options removed, and stale lines fixed;
+    - the evidence section in `reports/mcp-foundation-evidence.md`, and the status paragraph and register rows in `docs/02-plan.md`.
+  - **The 200-MCP benchmark** (`packages/mcp-postgres/bench/mcp-database.ts`, `mcps/toolbox/bench/scale.ts`):
+    - provisioning in 0.70 to 0.73 s;
+    - the first migration in 1.96 to 2.16 s, and with nothing pending 1.16 to 1.36 s;
+    - 1,000 queries on 10 connections in 192 to 198 ms;
+    - the Toolbox's ingest in 0.35 to 0.61 s;
+    - 1,000 tool calls at once in 5.18 to 5.94 s, with no error and at most 10 connections;
+    - a call's median of 10.7 to 12.3 ms for a caller of 1,000 tools;
+    - the Helm release at 60.2 KiB.
+  - **The end-to-end proof from a clean copy:** `demo`, served `both`, made, given two tools, checked and committed with no hand edit. Then the kind stack from the copy: 125 pass. A person signed in at its path and through the Toolbox. Everything was removed afterwards.
+  - **The agent's gates:**
+    - ID: 1,491 pass, at 100%;
+    - `mcp:test`: 1,020;
+    - the acceptance: 69;
+    - kind: 123 (125 with the proof);
+    - web: 120;
+    - knip clean.
+  - **Left open, for the audit before merge:**
+    - the Toolbox's per-call cost grows with the tools a caller holds;
+    - `migrateLocal` reads `process.env`, not `readSettings`;
+    - the chart-list entry is typed four times;
+    - three stale status lines outside the goal;
+    - two hubs build the same test databases;
+    - the kind stack's sign-in budget.
+- **The coordinator's review of M9:**
+  - the register Job's idempotency keys and rows are unchanged, and `register.test.ts` passes untouched;
+  - the CLI's relative imports of ID's config and the registrar follow `scripts/env-inventory.ts`, and the scripts suite is uncached.
+- **The coordinator's gates on M9:**
+  - frozen install unchanged;
+  - typecheck and lint forced: 21 of 21;
+  - build: 2 of 2;
+  - `mcp:test`: 1,020 pass, 0 fail, 29 s;
+  - web: 120;
+  - knip clean;
+  - `infra:check` passed;
+  - the acceptance, alone: 69 pass, 0 fail, 150 s, nothing left behind.

@@ -7,8 +7,6 @@ type Options = {
   rootSecret: string
   /** The staff member's email: they have signed in once, which made them a member of the platform organisation. */
   email: string
-  /** The platform organisation's slug, `answerable` in ID. */
-  platformSlug: string
   fetch?: typeof globalThis.fetch
   log?: (line: string) => void
   /** How long one call to ID may take before make-admin fails naming it. */
@@ -23,9 +21,9 @@ type Options = {
  * Each run sends keys of its own: ID keeps a key's receipt for ever, so a constant key would replay the first run's
  * answer and add nobody when break glass restores an administrator who left.
  */
-export async function makeAdmin({ id, rootSecret, email, platformSlug, fetch = globalThis.fetch, log = console.log, timeoutMs = 30_000 }: Options) {
+export async function makeAdmin({ id, rootSecret, email, fetch = globalThis.fetch, log = console.log, timeoutMs = 30_000 }: Options) {
   const call = adminApi({ id, token: rootSecret, fetch, timeoutMs, rootLocked: "ID refuses the root secret already (root_locked): a person is a platform administrator, so the first run is over. Add more staff with your own session (docs/id/onboard, The next staff member)" })
-  const platform = await platformOrganisation(call, platformSlug)
+  const platform = await platformOrganisation(call)
   const members = `/organizations/${platform}/members?email=${encodeURIComponent(email)}`
   const listed = await call("GET", members)
   if (!listed.ok) throw failure("GET", members, listed)
@@ -49,8 +47,8 @@ export async function makeAdmin({ id, rootSecret, email, platformSlug, fetch = g
   })
   if (check === undefined) {
     log(`Root is locked now: ID refuses the root secret (403 root_locked), because a person holds platform:write.
-From now on register, and anything else with ID's admin API, needs a staff token: get one as apps/web/content/docs/id/onboard.mdx
-(Get a staff token) says, put it in the Secret ops-staff-token (key OPS_ID_TOKEN) in this namespace, and run register.
+register goes on as its own machine client, ops-register, which its first run minted. Anything else with
+ID's admin API needs your own session or a staff token (apps/web/content/docs/id/onboard.mdx, Get a staff token).
 Keep ROOT_ADMIN_SECRET in the GitHub environment, with ROOT_ADMIN_BREAK_GLASS unset: it is the break-glass.`)
     return { platform, member: member.id }
   }
