@@ -12,7 +12,12 @@ import { Input } from "@answerable/ui/components/input"
 
 const initialState: WaitlistState = { status: "idle" }
 
-export function WaitlistForm() {
+export function WaitlistForm({
+  autoFocus = true,
+}: {
+  /** Focus the email field on mount. Off where something else is playing, such as a splash. */
+  autoFocus?: boolean
+}) {
   const [state, formAction, pending] = useActionState(
     joinWaitlist,
     initialState,
@@ -23,8 +28,8 @@ export function WaitlistForm() {
   // hydration, so focus here — without scrolling, since the field sits far
   // enough down the page to yank the reader past the declaration.
   useEffect(() => {
-    inputRef.current?.focus({ preventScroll: true })
-  }, [])
+    if (autoFocus) inputRef.current?.focus({ preventScroll: true })
+  }, [autoFocus])
 
   if (state.status === "success") {
     return (

@@ -10,11 +10,15 @@ const HEADER_TOP_MARGIN = 16
 
 type ExpandableSectionsProps = {
   children: ReactNode
+  /** Called with the values of the open sections; at most one is open. */
+  onValueChange?: (value: string[]) => void
 }
 
 type ExpandableSectionProps = {
   value: string
   title: string
+  /** Title size: `sm` is Bold 14/24, `lg` is Bold 18/24. */
+  size?: "sm" | "lg"
   children: ReactNode
 }
 
@@ -45,10 +49,14 @@ function keepHeaderOnScreen(event: MouseEvent<HTMLButtonElement>) {
   window.scrollTo({ top, behavior: reduceMotion ? "instant" : "smooth" })
 }
 
-export function ExpandableSections({ children }: ExpandableSectionsProps) {
+export function ExpandableSections({
+  children,
+  onValueChange,
+}: ExpandableSectionsProps) {
   return (
     <Accordion.Root
       keepMounted
+      onValueChange={onValueChange}
       data-expandable-sections
       className="-my-2 flex flex-col"
     >
@@ -60,11 +68,17 @@ export function ExpandableSections({ children }: ExpandableSectionsProps) {
 export function ExpandableSection({
   value,
   title,
+  size = "sm",
   children,
 }: ExpandableSectionProps) {
   return (
     <Accordion.Item value={value}>
-      <Accordion.Header render={<h2 />} className="text-sm/6 font-bold">
+      <Accordion.Header
+        render={<h2 />}
+        className={
+          size === "lg" ? "text-lg/6 font-bold" : "text-sm/6 font-bold"
+        }
+      >
         <Accordion.Trigger
           onClick={keepHeaderOnScreen}
           className="group focus-visible:ring-ring/50 flex w-full cursor-pointer items-start gap-2 py-2 text-left outline-none focus-visible:ring-2"

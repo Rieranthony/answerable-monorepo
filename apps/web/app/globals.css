@@ -26,3 +26,148 @@
     }
   }
 }
+
+/*
+ * The /new splash, about 2.2s from first paint (timings in ms on the
+ * animations below): the field alone to 200; three squares at 200, 400 and
+ * 600; at 900 the first two fade, the third grows its tail and the row slides
+ * to centre until 1300; at 1300 the comma becomes a hole in the field and
+ * grows until the field is gone at 2200. Transform and opacity, except the
+ * tail's clip. Origins are the SVG's own (0 0), which the markup puts at the
+ * centre of the viewport or of a square.
+ */
+@keyframes splash-life {
+  from {
+    visibility: visible;
+  }
+  to {
+    visibility: hidden;
+  }
+}
+
+@keyframes splash-skip {
+  from {
+    opacity: 1;
+    visibility: visible;
+  }
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+@keyframes splash-dot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes splash-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes splash-slide {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-96px);
+  }
+}
+
+@keyframes splash-tail {
+  from {
+    clip-path: inset(0 0 33.4% 0) fill-box;
+  }
+  to {
+    clip-path: inset(0 0 0 0) fill-box;
+  }
+}
+
+@keyframes splash-open {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(60);
+  }
+}
+
+@layer components {
+  .splash {
+    animation: splash-life 2200ms linear forwards;
+  }
+  .splash[data-skip] {
+    animation: splash-skip 200ms linear forwards;
+  }
+  /* The image column's frame (FRAME_SCRIPT): as wide as the scrollbar's
+     gutter on top, bottom and left; on the right the gutter is outside this
+     fixed box already, so only what it lacks is added. */
+  .splash-inset,
+  .splash-frame {
+    --splash-frame: var(--frame, 16px);
+    --splash-frame-right: calc(var(--splash-frame) - var(--gutter, 0px));
+  }
+  .splash-inset {
+    position: absolute;
+    inset: var(--splash-frame) var(--splash-frame-right) var(--splash-frame)
+      var(--splash-frame);
+  }
+  /* A border, not a white backdrop, so the comma's hole still shows the page;
+     it fades as the comma finishes opening. */
+  .splash-frame {
+    position: absolute;
+    inset: 0;
+    border: solid white;
+    border-width: var(--splash-frame) var(--splash-frame-right)
+      var(--splash-frame) var(--splash-frame);
+    animation: splash-fade 200ms linear 2000ms forwards;
+  }
+  .splash-field {
+    fill: var(--splash, var(--highlight-1));
+  }
+  /* The first two squares come in, then fade at 900; the third comes in at
+     600 and becomes the comma. */
+  .splash-dot-1 {
+    animation:
+      splash-dot-in 160ms cubic-bezier(0.2, 0, 0, 1) 200ms both,
+      splash-fade 200ms linear 900ms forwards;
+  }
+  .splash-dot-2 {
+    animation:
+      splash-dot-in 160ms cubic-bezier(0.2, 0, 0, 1) 400ms both,
+      splash-fade 200ms linear 900ms forwards;
+  }
+  .splash-dot-3 {
+    animation: splash-dot-in 160ms cubic-bezier(0.2, 0, 0, 1) 600ms both;
+  }
+  .splash-row {
+    animation: splash-slide 400ms cubic-bezier(0.2, 0, 0, 1) 900ms both;
+  }
+  .splash-comma {
+    clip-path: inset(0 0 33.4% 0) fill-box;
+    animation: splash-tail 400ms cubic-bezier(0.2, 0, 0, 1) 900ms both;
+  }
+  .splash-mark {
+    animation: splash-fade 160ms linear 1300ms both;
+  }
+  .splash-hole {
+    transform: scale(0);
+    animation: splash-open 900ms cubic-bezier(0.7, 0, 0.2, 1) 1300ms forwards;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .splash {
+      display: none;
+    }
+  }
+}

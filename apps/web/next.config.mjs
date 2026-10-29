@@ -10,6 +10,8 @@ const config = {
       ignore: [/^\/api\/oauth-test\/callback(?:\?|$)/],
     },
   },
+  // The /new page ships two photographs; AVIF first, WebP for the rest.
+  images: { formats: ["image/avif", "image/webp"] },
   // The repository root, not the nearest lockfile Next infers: a worktree sits
   // inside the main checkout, and Tailwind scans from this root.
   turbopack: { root: fileURLToPath(new URL("../..", import.meta.url)) },
