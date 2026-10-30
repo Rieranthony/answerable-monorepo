@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next"
 import { Public_Sans } from "next/font/google"
 
 import "../globals.css"
-import { FRAME_SCRIPT } from "@/components/new/image-column"
+import { FRAME_SCRIPT } from "@/components/new/frame-script"
 import { Splash, SPLASH_COLOUR_SCRIPT } from "@/components/new/splash"
 import { createMetadata, SITE } from "@/lib/metadata"
 import { cn } from "@answerable/ui/lib/utils"

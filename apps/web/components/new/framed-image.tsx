@@ -1,10 +1,12 @@
-import Image from "next/image"
+import Image, { type StaticImageData } from "next/image"
 
-import { FRAMINGS, type FramingKey } from "@/components/new/framings"
 import { cn } from "@answerable/ui/lib/utils"
 
 type FramedImageProps = {
-  framing: FramingKey
+  image: StaticImageData
+  /** Focal point: `object-position` x, in percent. */
+  x: number
+  alt: string
   eager?: boolean
   /** Empty alt text for a frame a screen reader should skip. */
   decorative?: boolean
@@ -12,17 +14,18 @@ type FramedImageProps = {
 }
 
 /**
- * One framing of one photograph, filling its positioned parent. `sizes` is the
+ * One crop of one photograph, filling its positioned parent. `sizes` is the
  * same everywhere, so every use asks for the same URL and the browser fetches
- * each file once, however many framings show it.
+ * each file once, however many crops show it.
  */
 export function FramedImage({
-  framing,
+  image,
+  x,
+  alt,
   eager = false,
   decorative = false,
   className,
 }: FramedImageProps) {
-  const { image, x, alt } = FRAMINGS[framing]
   return (
     <Image
       src={image}

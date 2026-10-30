@@ -1,8 +1,10 @@
 import { BulletSquare } from "@/components/bullet-square"
 import { ExpandableSection } from "@/components/expandable-sections"
 import { Landing } from "@/components/new/landing"
+import { GridFrame } from "@/components/new/grid-frame"
 import { Lockup } from "@/components/new/lockup"
-import { PanelImage } from "@/components/new/panel-image"
+import { SectionPanel } from "@/components/new/panel"
+import { VALUES } from "@/components/new/panels"
 import { RegisterLink } from "@/components/new/register-link"
 import { WaitlistForm } from "@/components/waitlist-form"
 import { createMetadata, SITE } from "@/lib/metadata"
@@ -43,15 +45,6 @@ const ACCREDITATION_BENEFITS = [
   },
 ]
 
-const VALUES = [
-  "We hold ourselves answerable for our work.",
-  "We use AI only where we are competent to do so.",
-  "We are honest about how we use AI.",
-  "We respect the intellectual and creative work of others.",
-  "We protect the information entrusted to us.",
-  "We use AI to strengthen our professions, not to diminish them.",
-]
-
 const BODY = "text-base/6"
 
 export default function Page() {
@@ -71,18 +64,12 @@ export default function Page() {
           </header>
         }
         hero={
-          <div>
-            <h1 className="text-[2rem]/[1.05] font-black tracking-[-1px] text-balance lg:text-[2.5rem]/[1.05]">
-              For everything you put your name to.
-            </h1>
-            <p className={`${BODY} text-muted-foreground mt-4`}>
-              The people who change a practice aren’t always the first to try
-              something new. They’re the ones who make it worthwhile for
-              everyone else. AI needs that kind of leadership: grounded in the
-              work, generous with colleagues, and clear about what good looks
-              like.
-            </p>
-          </div>
+          <p className={`${BODY} text-muted-foreground`}>
+            The people who change a practice aren’t always the first to try
+            something new. They’re the ones who make it worthwhile for everyone
+            else. AI needs that kind of leadership: grounded in the work,
+            generous with colleagues, and clear about what good looks like.
+          </p>
         }
         join={
           <section
@@ -90,9 +77,17 @@ export default function Page() {
             id="join"
             className="scroll-mt-8"
           >
-            <h2 id="accreditation-heading" className="text-lg/6 font-bold">
-              Join the founding cohort
-            </h2>
+            {/* From lg the sub-brand sits on the heading's line, so it costs
+                the form no height on the first screen; its frame overhangs the
+                line. On phones it sits above the heading. */}
+            <div className="flex flex-col-reverse items-start gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
+              <h2 id="accreditation-heading" className="text-lg/6 font-bold">
+                Join the founding cohort
+              </h2>
+              <GridFrame className="shrink-0 text-sm font-bold lg:-my-2">
+                Answerable AP
+              </GridFrame>
+            </div>
             <p className={`${BODY} text-muted-foreground mt-2`}>
               Be among the first to earn the Answerable AP credential and join a
               professional community that continues beyond the programme.
@@ -119,7 +114,7 @@ export default function Page() {
         }
       >
         <ExpandableSection value="ai-lead" title="The AI Lead role" size="lg">
-          <PanelImage framing="ai-lead" />
+          <SectionPanel panelKey="ai-lead" />
           <p className={BODY}>
             When a client asks how your practice uses AI, the answer should give
             them another reason to choose you.
@@ -142,7 +137,7 @@ export default function Page() {
           title="Built upon six core values"
           size="lg"
         >
-          <PanelImage framing="core-values" />
+          <SectionPanel panelKey="core-values" />
           <p className={BODY}>
             Everything we teach, assess, and work towards together is rooted in
             six commitments. They connect the principles that make our work
@@ -168,7 +163,7 @@ export default function Page() {
           title="The people behind the programme"
           size="lg"
         >
-          <PanelImage framing="people" />
+          <SectionPanel panelKey="people" />
           <p className={BODY}>
             Keir Regan-Alexander has spent the past three years helping more
             than 100 AEC firms develop their approach to AI. He has worked
@@ -195,7 +190,7 @@ export default function Page() {
           title="Become an Answerable Accredited Professional"
           size="lg"
         >
-          <PanelImage framing="accredited-professional" />
+          <SectionPanel panelKey="accredited-professional" />
           <p className={BODY}>
             The founding cohort is a structured programme for professionals
             stepping into the AI Lead role. You’ll get:

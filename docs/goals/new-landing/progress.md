@@ -21,3 +21,16 @@
 - Owner: the frame was wider on the right on large screens. When the whole page fits the window, `clientWidth` reports no gutter although `scrollbar-gutter: stable` keeps one, so the right side was 16 + 15 px. `FRAME_SCRIPT` now reads `innerWidth - body width`. Measured top / bottom / right = 15 / 15 / 15 at 1440×800, 1440×1300, 1920×1080 and 2560×1440.
 - Owner: the same frame around the splash. The colour field now sits inside a white frame as wide as the gutter (15 px top, left and bottom; on the right the gutter, which is outside the fixed overlay). The frame is a border on a transparent box, not a white backdrop, so the comma's hole still shows the page; it fades over 2000–2200 ms as the comma finishes opening, when it lines up with the image column's own frame. Measured 15 / 15 / 15 / 15 at 1440×900.
 - Owner approved. Build 0 (`/new` static); landed on main.
+
+## 2026-10-29, round 2
+
+- Team feedback on the live `/new` (four points, quoted in `round-2/task_plan.md`) and Laura's six examples (`round-2/laura-examples.webp`). Worktree `.claude/worktrees/new-landing-r2`, branch `claude/new-landing-r2`, from 80adc027.
+- Measured Laura's marks (3.5 % of a tile), the live page's form position at four window sizes, three probed layouts (edited live in the browser), the phone banner at 4:3, 2:1 and 5:2, and white-text contrast over the current image with and without a scrim (`round-2/findings.md`).
+- Wrote the design with decisions R1–R6 (`round-2/design.md`). Report next; no code before the owner's answers.
+- Report published: https://claude.ai/artifact/J77ySnQK2QoYB4GYTcqRbb (mock-ups of the five panels, contrast and form-position tables, R1–R6). Waiting for the owner's answers.
+- Owner answered R1–R4 with the recommendations (panel per state, gradient scrim, option A, AP lockup on the panel and above the form). R5 (3.5 % marks) and R6 (2:1 phone banner) on the recommendation, to confirm with the go-ahead.
+- Owner: go ahead, R5 3.5 % marks, R6 2:1 phone banner.
+- C1 (Sonnet 5.5) built the panel system: `panels.ts`, `panel.tsx` (image, statement, window; `column`, `banner`, `responsive` shapes), `grid-frame.tsx`, `frame-script.ts`; deleted `framings.ts`, `panel-image.tsx`, `image-column.tsx`. One `<h1>` in the built HTML.
+- Coordinator fixes after review: the Answerable AP lockup above the form cost 45 px and pushed the button to 904 px, so from lg it sits on the heading's line (button back to 860 px); on phones it stays above the heading. Phone section panels drop their title (`bare`), which the accordion shows right above.
+- Measured in the Browser pane: button bottom 860 px at 1280, 1440 and 1920 wide; marks 22 / 25 / 33 px (3.5 % of 633 / 713 / 953 px panels); headline 40.6 px at 1440, 48 px at 1920, 24 px on a phone; phone banner 188 px, sections at 530 px, join at 754 px; one `h1`; no sideways scroll at 375; all five panels render. The pane sometimes captured the hero image unpainted on first load below lg and at 1920; a plain reload painted it, and hiding the other panels showed it was a missed repaint in the pane, not layout. Gates: typecheck 0, lint 0, 117 tests, Prettier clean, knip no new findings.
+- Owner approved round two. Build 0 (`/new` static, one `h1`); landed on main.
