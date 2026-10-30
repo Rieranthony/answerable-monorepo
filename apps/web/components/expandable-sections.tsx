@@ -8,6 +8,12 @@ import { scrollTargetForOpeningHeader } from "@/lib/expand-scroll"
 
 const HEADER_TOP_MARGIN = 16
 
+/** Room above an opening header: the margin, plus any sticky page header. */
+function topMargin() {
+  const sticky = document.querySelector("[data-sticky-header]")
+  return HEADER_TOP_MARGIN + (sticky?.getBoundingClientRect().height ?? 0)
+}
+
 type ExpandableSectionsProps = {
   children: ReactNode
   /** Called with the values of the open sections; at most one is open. */
@@ -39,7 +45,7 @@ function keepHeaderOnScreen(event: MouseEvent<HTMLButtonElement>) {
     headerTop,
     collapsingHeightAbove,
     scrollY: window.scrollY,
-    margin: HEADER_TOP_MARGIN,
+    margin: topMargin(),
   })
   if (top === null) return
 

@@ -8,6 +8,7 @@ import {
   type Panel as PanelData,
   type PanelKey,
 } from "@/components/new/panels"
+import { CredentialMark } from "@/components/new/credential-mark"
 import { COMMA_PATH, COMMA_VIEW_BOX } from "@answerable/ui/lib/logo"
 import { cn } from "@answerable/ui/lib/utils"
 
@@ -207,7 +208,7 @@ function PanelText({
 
   if (text.style === "headline" && heading) {
     return (
-      <h1 className={cn(TEXT_BOX, type)} style={style}>
+      <h1 className={cn(TEXT_BOX, type, "lg:max-w-[10em]")} style={style}>
         {text.value}
       </h1>
     )
@@ -292,7 +293,7 @@ function WindowPanel({
         className={cn(TEXT_BOX, "font-bold tracking-[-0.02em]")}
         style={TEXT_STYLES.label}
       >
-        <GridFrame>Answerable AP</GridFrame>
+        <CredentialMark />
       </div>
       <div
         className={cn("absolute aspect-[48.21/72.002]", SHAPES.window[shape])}

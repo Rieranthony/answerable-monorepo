@@ -14,9 +14,12 @@ const initialState: WaitlistState = { status: "idle" }
 
 export function WaitlistForm({
   autoFocus = true,
+  inline = false,
 }: {
   /** Focus the email field on mount. Off where something else is playing, such as a splash. */
   autoFocus?: boolean
+  /** Email and country side by side from `sm`, the country narrower, across the full width. */
+  inline?: boolean
 }) {
   const [state, formAction, pending] = useActionState(
     joinWaitlist,
@@ -44,30 +47,40 @@ export function WaitlistForm({
     <Form
       action={formAction}
       errors={state.status === "error" ? state.errors : undefined}
-      className="w-full max-w-sm"
+      // The inline form sits under a sticky header on phones; the margin keeps it clear.
+      className={inline ? "w-full scroll-mt-24 gap-3" : "w-full max-w-sm"}
     >
-      <Field name="email">
-        <FieldLabel>Email</FieldLabel>
-        <Input
-          ref={inputRef}
-          type="text"
-          inputMode="email"
-          name="email"
-          autoComplete="email"
-          placeholder="you@practice.com"
-        />
-        <FieldError />
-      </Field>
-      <Field name="country">
-        <FieldLabel nativeLabel={false}>Country</FieldLabel>
-        <CountrySelect name="country" />
-        <FieldError />
-      </Field>
+      <div
+        className={
+          inline ? "grid gap-3 sm:grid-cols-[3fr_2fr]" : "flex flex-col gap-4"
+        }
+      >
+        <Field name="email">
+          <FieldLabel>Email</FieldLabel>
+          <Input
+            ref={inputRef}
+            type="text"
+            inputMode="email"
+            name="email"
+            autoComplete="email"
+            placeholder="you@practice.com"
+          />
+          <FieldError />
+        </Field>
+        <Field name="country">
+          <FieldLabel nativeLabel={false}>Country</FieldLabel>
+          <CountrySelect
+            name="country"
+            placeholder={inline ? "Select" : undefined}
+          />
+          <FieldError />
+        </Field>
+      </div>
       <Button type="submit" disabled={pending} className="w-full gap-1.5">
         {pending ? "Registering…" : "Register your interest"}
         <span
           aria-hidden="true"
-          className="font-system text-primary-foreground/60"
+          className="font-system text-primary-foreground"
         >
           ⏎
         </span>

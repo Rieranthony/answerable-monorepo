@@ -12,6 +12,29 @@ import {
 } from "@/components/new/panels"
 import { cn } from "@answerable/ui/lib/utils"
 
+// The accordion panel's height transition, plus a frame.
+const PANEL_SETTLE_MS = 220
+
+/**
+ * From lg the form shares the first screen with the sections, so after one
+ * opens or closes and its height settles, bring the form back into view: the
+ * least scroll that shows it whole, after the header-on-screen scroll.
+ */
+function keepFormInView() {
+  if (!window.matchMedia("(min-width: 64rem)").matches) return
+  const reduceMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)",
+  ).matches
+  window.setTimeout(
+    () =>
+      document.querySelector("#join form")?.scrollIntoView({
+        block: "nearest",
+        behavior: reduceMotion ? "instant" : "smooth",
+      }),
+    reduceMotion ? 0 : PANEL_SETTLE_MS,
+  )
+}
+
 type LandingProps = {
   header: ReactNode
   hero: ReactNode
@@ -41,7 +64,13 @@ export function Landing({
 
   return (
     <div className="grid min-h-svh grid-cols-1 grid-rows-[auto_auto_1fr] lg:grid-cols-2 lg:grid-rows-[auto_1fr]">
-      <div className="px-6 lg:col-start-1 lg:row-start-1 lg:px-12">
+      {/* The header stays on top while the page scrolls; from lg it spans the
+          copy column only. `data-sticky-header` lets the sections scroll a
+          header they open clear of it. */}
+      <div
+        data-sticky-header
+        className="bg-background sticky top-0 z-30 px-6 lg:col-start-1 lg:row-start-1 lg:px-12"
+      >
         <div className="mx-auto w-full max-w-[560px]">{header}</div>
       </div>
 
@@ -93,6 +122,7 @@ export function Landing({
                   onValueChange={(value) => {
                     const open = value[0]
                     setActive(isPanelKey(open) ? open : "hero")
+                    keepFormInView()
                   }}
                 >
                   {children}

@@ -1,7 +1,7 @@
 import { BulletSquare } from "@/components/bullet-square"
 import { ExpandableSection } from "@/components/expandable-sections"
+import { CredentialMark } from "@/components/new/credential-mark"
 import { Landing } from "@/components/new/landing"
-import { GridFrame } from "@/components/new/grid-frame"
 import { Lockup } from "@/components/new/lockup"
 import { SectionPanel } from "@/components/new/panel"
 import { VALUES } from "@/components/new/panels"
@@ -75,19 +75,15 @@ export default function Page() {
           <section
             aria-labelledby="accreditation-heading"
             id="join"
-            className="scroll-mt-8"
+            className="scroll-mt-24 lg:scroll-mt-28"
           >
-            {/* From lg the sub-brand sits on the heading's line, so it costs
-                the form no height on the first screen; its frame overhangs the
-                line. On phones it sits above the heading. */}
-            <div className="flex flex-col-reverse items-start gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
-              <h2 id="accreditation-heading" className="text-lg/6 font-bold">
-                Join the founding cohort
-              </h2>
-              <GridFrame className="shrink-0 text-sm font-bold lg:-my-2">
-                Answerable AP
-              </GridFrame>
+            {/* The credential's mark, inverted; the copy below names it. */}
+            <div aria-hidden="true" className="mb-4">
+              <CredentialMark className="bg-black text-base text-white" />
             </div>
+            <h2 id="accreditation-heading" className="text-lg/6 font-bold">
+              Join the founding cohort
+            </h2>
             <p className={`${BODY} text-muted-foreground mt-2`}>
               Be among the first to earn the Answerable AP credential and join a
               professional community that continues beyond the programme.
@@ -99,7 +95,7 @@ export default function Page() {
               enrolment opens.
             </p>
             <div className="mt-4">
-              <WaitlistForm autoFocus={false} />
+              <WaitlistForm autoFocus={false} inline />
             </div>
             <p className="text-muted-foreground mt-2 text-sm/6">
               Registering interest does not reserve a place or commit you to
@@ -114,7 +110,6 @@ export default function Page() {
         }
       >
         <ExpandableSection value="ai-lead" title="The AI Lead role" size="lg">
-          <SectionPanel panelKey="ai-lead" />
           <p className={BODY}>
             When a client asks how your practice uses AI, the answer should give
             them another reason to choose you.
@@ -143,7 +138,10 @@ export default function Page() {
             six commitments. They connect the principles that make our work
             professional with the decisions we face when using AI.
           </p>
-          <ol className="flex list-none flex-col gap-4">
+          {/* From lg the panel beside the copy shows the six values, so the
+              list is only for screen readers there; phones have no room for
+              them on the banner, so it shows. */}
+          <ol className="flex list-none flex-col gap-4 lg:sr-only">
             {VALUES.map((value, index) => (
               <li key={value} className="flex items-baseline gap-4">
                 <span
