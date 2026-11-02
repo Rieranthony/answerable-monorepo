@@ -59,7 +59,7 @@ const platformIssuer = (value: unknown) => value === "https://accounts.google.co
  *
  * Staff set a service up through the admin API: `rootSecret` is a bearer that works as a platform administrator's until `lockRoot(true)`, or until a
  * member joins the platform organisation's `platform-admins` group without `breakGlass`, after which ID answers it `403 root_locked`; `staffToken`
- * makes another bearer one. `POST /resources` and `POST /clients` create a resource or a client (a `client_secret_basic` client's secret is
+ * makes another bearer one. `POST /resources` and `POST /clients` create a resource or a client (a `client_secret_basic` or `client_secret_post` client's secret is
  * answered once, and `rotate-secret` answers another); a created client gets a `client_credentials` token for an audience it is linked to and
  * holds a capability for, on ID's own admin resource without registration. Without `microsoft`, ID has no Microsoft platform application, and an
  * Entra SSO provider with platform credentials is `409 platform_application_missing`. A command's `Idempotency-Key` is its caller's, as ID keys
@@ -406,7 +406,8 @@ export function createFakeId({
     if (rotation) {
       const refusedMethod = unsupported(request, "POST")
       if (refusedMethod) return refusedMethod
-      if (!secrets.has(rotation[1]!)) return notFound()
+      if (!clients.has(rotation[1]!)) return notFound()
+      if (!secrets.has(rotation[1]!)) return problem(409, "client_has_no_secret", "Client does not use a shared secret")
       const rotated = `rotated-${crypto.randomUUID()}`
       secrets.set(rotation[1]!, rotated)
       changes++
@@ -550,13 +551,13 @@ export function createFakeId({
     resources.set(identifier, row)
     return row
   }
-  // A client with every optional field unset; `fields` set the ones it was registered with. A client_secret_basic client has a secret, which the creation shows once.
+  // A client with every optional field unset; `fields` set the ones it was registered with. Basic and POST clients have a secret, which creation shows once.
   function addClient(id: string, fields: Record<string, unknown> = {}) {
     if (clients.has(id)) return undefined
     const unset = Object.fromEntries(["organizationId", "uri", "tokenEndpointAuthMethod", "jwks", "jwksUri", "grantTypes", "scopes", "clientCredentialsScopes", "skipConsent"].map(field => [field, null]))
-    const secret = fields.tokenEndpointAuthMethod === "client_secret_basic" ? `secret-${crypto.randomUUID()}` : undefined
+    const secret = fields.tokenEndpointAuthMethod === "client_secret_basic" || fields.tokenEndpointAuthMethod === "client_secret_post" ? `secret-${crypto.randomUUID()}` : undefined
     const row = {
-      ...unset, id: crypto.randomUUID(), name: id, revision: 1, authorizationVersion: 1, hasClientSecret: true, redirectUris: [] as unknown,
+      ...unset, id: crypto.randomUUID(), name: id, revision: 1, authorizationVersion: 1, hasClientSecret: secret !== undefined, redirectUris: [] as unknown,
       disabled: false, createdAt: now(), updatedAt: now(), ...fields, clientId: id,
     }
     clients.set(id, row)

@@ -218,9 +218,10 @@ async function start(
   target: string | null = resource,
   acceptJson = false,
   claims?: string,
+  flowClientId = clientId,
 ) {
   const query = new URLSearchParams({
-    client_id: clientId,
+    client_id: flowClientId,
     response_type: "code",
     redirect_uri: redirect,
     scope,
@@ -258,8 +259,12 @@ async function select(
   return new URL((await selected.json()).url);
 }
 
-async function authorize(scope?: string, target?: string | null) {
-  const selection = await start(scope, target);
+async function authorize(
+  scope?: string,
+  target?: string | null,
+  flowClientId = clientId,
+) {
+  const selection = await start(scope, target, false, undefined, flowClientId);
   const consent = await select(selection);
   const accepted = await request("/oauth2/consent", {
     oauth_query: consent.search.slice(1),
@@ -319,6 +324,143 @@ test("registered public clients still need the native PKCE proof", async () => {
     );
   expect((await redeem("wrong".repeat(16))).status).toBe(400);
   expect((await redeem(verifier)).status).toBe(200);
+});
+
+test("an administratively registered POST client completes PKCE login, UserInfo and method-bound refresh", async () => {
+  const postClientId = "librechat-staging";
+  const scopes = ["openid", "email", "offline_access"];
+  const headers = fixture.headers("platformAdmin");
+  headers.set("content-type", "application/json");
+  const registered = await fixture.app.request("/api/admin/v1/clients", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      clientId: postClientId,
+      name: "LibreChat staging",
+      tokenEndpointAuthMethod: "client_secret_post",
+      grantTypes: ["authorization_code", "refresh_token"],
+      redirectUris: [redirect],
+      scopes,
+    }),
+  });
+  expect(registered.status).toBe(201);
+  const client = await registered.json();
+  expect(client.tokenEndpointAuthMethod).toBe("client_secret_post");
+  expect(client.hasClientSecret).toBe(true);
+  expect(client.clientSecret).toBeString();
+  await inPlatformWrite(fixture.db, async (context) => {
+    for (const grantKind of ["authorization_code", "refresh_token"] as const)
+      await createCapability(context, fixture.tenant.organizationId, {
+        clientId: postClientId,
+        resource: null,
+        grantKind,
+        scopes,
+      });
+  });
+  await fixture.db.insert(entitlements).values({
+    id: createId(),
+    organizationId: fixture.tenant.organizationId,
+    clientId: postClientId,
+    scopes,
+  });
+  const post = (
+    body: Record<string, string>,
+    credentials: Record<string, string> = {
+      client_id: postClientId,
+      client_secret: client.clientSecret as string,
+    },
+    authorization?: string,
+  ) =>
+    auth.handler(
+      new Request(`${fixture.environment.betterAuthUrl}/auth/oauth2/token`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          ...(authorization ? { authorization } : {}),
+        },
+        body: new URLSearchParams({ ...body, ...credentials }),
+      }),
+    );
+  const basic = `Basic ${Buffer.from(`${postClientId}:${client.clientSecret}`).toString("base64")}`;
+  const code = await authorize(scopes.join(" "), null, postClientId);
+  const grant = {
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: redirect,
+    code_verifier: verifier,
+  };
+  const wrongMethod = await post(grant, {}, basic);
+  expect(wrongMethod.status).toBe(401);
+  expect(wrongMethod.headers.get("www-authenticate")).toBe("Basic");
+  expect(await wrongMethod.json()).toMatchObject({ error: "invalid_client" });
+  const wrongProof = await post({
+    ...grant,
+    code_verifier: "wrong".repeat(16),
+  });
+  expect(wrongProof.status).toBe(400);
+  expect(await wrongProof.json()).toMatchObject({ error: "invalid_grant" });
+  const response = await post(grant);
+  expect(response.status).toBe(200);
+  const issued = await response.json();
+  expect(issued.access_token.split(".")).toHaveLength(1);
+  expect(issued.refresh_token).toBeString();
+  const claims = decodeJwt(issued.id_token);
+  expect(claims).toMatchObject({
+    iss: fixture.environment.betterAuthUrl,
+    aud: postClientId,
+    sub: fixture.principals.tenantAdmin.userId,
+    nonce: "client-nonce",
+  });
+  const info = await auth.handler(
+    new Request(`${fixture.environment.betterAuthUrl}/auth/oauth2/userinfo`, {
+      headers: { authorization: `Bearer ${issued.access_token}` },
+    }),
+  );
+  expect(info.status).toBe(200);
+  expect(await info.json()).toMatchObject({
+    sub: claims.sub,
+    membership_id: fixture.principals.tenantAdmin.memberId,
+  });
+  const refreshGrant = {
+    grant_type: "refresh_token",
+    refresh_token: issued.refresh_token as string,
+  };
+  for (const [rejected, status] of [
+    [await post(refreshGrant, {}, basic), 401],
+    [
+      await post(refreshGrant, {
+        client_id: postClientId,
+        client_secret: "wrong-secret",
+      }),
+      400,
+    ],
+  ] as const) {
+    expect(rejected.status).toBe(status);
+    if (status === 401)
+      expect(rejected.headers.get("www-authenticate")).toBe("Basic");
+    expect(await rejected.json()).toMatchObject({ error: "invalid_client" });
+  }
+  const refreshed = await post(refreshGrant);
+  expect(refreshed.status).toBe(200);
+  const renewed = await refreshed.json();
+  expect(renewed.refresh_token).toBeString();
+  expect(renewed.refresh_token).not.toBe(issued.refresh_token);
+  expect(decodeJwt(renewed.id_token)).toMatchObject({
+    aud: postClientId,
+    sub: claims.sub,
+  });
+  expect(decodeJwt(renewed.id_token).nonce).toBeUndefined();
+
+  const basicIssued = await issue("openid email offline_access", null);
+  const basicRefresh = await post(
+    {
+      grant_type: "refresh_token",
+      refresh_token: basicIssued.refresh_token,
+    },
+    { client_id: clientId, client_secret: secret },
+  );
+  expect(basicRefresh.status).toBe(400);
+  expect(await basicRefresh.json()).toMatchObject({ error: "invalid_client" });
 });
 
 test("private-key authentication stays consumed when a production code exchange rolls back", async () => {

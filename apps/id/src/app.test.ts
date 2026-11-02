@@ -184,6 +184,233 @@ describe("unit: Hono application", () => {
     expect(untrusted.headers.get("access-control-allow-origin")).toBeNull();
   });
 
+  test("exposes identical public discovery to credential-free GET and HEAD callers", async () => {
+    const auth = stubAuth();
+    const metadata = {
+      issuer: "http://localhost:47300",
+      authorization_endpoint: "http://localhost:47300/auth/oauth2/authorize",
+      token_endpoint: "http://localhost:47300/auth/oauth2/token",
+      userinfo_endpoint: "http://localhost:47300/auth/oauth2/userinfo",
+      jwks_uri: "http://localhost:47300/auth/jwks",
+      id_token_signing_alg_values_supported: ["EdDSA"],
+      code_challenge_methods_supported: ["S256"],
+    };
+    Object.assign(auth.api, { getOpenIdConfig: async () => metadata });
+    const app = createApp({
+      auth,
+      db: stubDatabase(),
+      environment: testEnvironment({
+        trustedOrigins: ["https://chat.example.com"],
+      }),
+    });
+
+    for (const path of [
+      "/.well-known/openid-configuration",
+      "/.well-known/oauth-authorization-server",
+    ]) {
+      const baseline = await app.request(path);
+      const document = await baseline.json();
+      expect(document).toMatchObject(metadata);
+      expect(baseline.headers.get("cache-control")).toContain("public");
+      for (const origin of [
+        undefined,
+        "https://chat.example.com",
+        "https://unregistered.example.com",
+        "null",
+      ]) {
+        for (const method of ["GET", "HEAD"]) {
+          const response = await app.request(path, {
+            method,
+            headers: origin ? { Origin: origin } : {},
+          });
+          expect(response.status).toBe(200);
+          expect(response.headers.get("access-control-allow-origin")).toBe("*");
+          expect(
+            response.headers.get("access-control-allow-credentials"),
+          ).toBeNull();
+          expect(response.headers.get("set-cookie")).toBeNull();
+          expect(response.headers.get("content-type")).toBe(
+            baseline.headers.get("content-type"),
+          );
+          expect(response.headers.get("cache-control")).toBe(
+            baseline.headers.get("cache-control"),
+          );
+          expect(response.headers.get("vary")).toBeNull();
+          if (method === "HEAD") expect(await response.text()).toBe("");
+          else expect(await response.json()).toEqual(document);
+        }
+      }
+    }
+  });
+
+  test("discovery preflights advertise only reads and vary on reflected request headers", async () => {
+    let metadataCalls = 0;
+    const auth = stubAuth();
+    Object.assign(auth.api, {
+      getOpenIdConfig: async () => {
+        metadataCalls += 1;
+        return {};
+      },
+    });
+    const app = createApp({
+      auth,
+      db: stubDatabase(),
+      environment: testEnvironment(),
+    });
+
+    for (const path of [
+      "/.well-known/openid-configuration",
+      "/.well-known/oauth-authorization-server",
+    ]) {
+      for (const method of ["GET", "HEAD", "POST"]) {
+        for (const requestedHeaders of [
+          undefined,
+          "X-Request-Id, Cache-Control",
+        ]) {
+          const response = await app.request(path, {
+            method: "OPTIONS",
+            headers: {
+              Origin: "https://unregistered.example.com",
+              "Access-Control-Request-Method": method,
+              ...(requestedHeaders
+                ? { "Access-Control-Request-Headers": requestedHeaders }
+                : {}),
+            },
+          });
+          expect(response.status).toBe(204);
+          expect(response.headers.get("access-control-allow-origin")).toBe("*");
+          expect(
+            response.headers.get("access-control-allow-credentials"),
+          ).toBeNull();
+          expect(response.headers.get("access-control-allow-methods")).toBe(
+            "GET,HEAD",
+          );
+          expect(response.headers.get("access-control-allow-headers")).toBe(
+            requestedHeaders ? "X-Request-Id,Cache-Control" : null,
+          );
+          expect(response.headers.get("vary")).toBe(
+            requestedHeaders ? "Access-Control-Request-Headers" : null,
+          );
+          expect(await response.text()).toBe("");
+        }
+      }
+    }
+    expect(metadataCalls).toBe(0);
+  });
+
+  test("discovery writes and neighbouring paths gain no public CORS", async () => {
+    const app = createApp({
+      auth: stubAuth(),
+      db: stubDatabase(),
+      environment: testEnvironment(),
+    });
+
+    for (const path of [
+      "/.well-known/openid-configuration",
+      "/.well-known/oauth-authorization-server",
+    ]) {
+      for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+        const response = await app.request(path, {
+          method,
+          headers: { Origin: "https://unregistered.example.com" },
+        });
+        expect(response.status).toBe(404);
+        expect(response.headers.get("access-control-allow-origin")).toBeNull();
+        expect(
+          response.headers.get("access-control-allow-credentials"),
+        ).toBeNull();
+      }
+      for (const method of ["GET", "OPTIONS"]) {
+        const response = await app.request(`${path}/private`, {
+          method,
+          headers: {
+            Origin: "https://unregistered.example.com",
+            "Access-Control-Request-Method": "GET",
+          },
+        });
+        expect(response.status).toBe(404);
+        expect(response.headers.get("access-control-allow-origin")).toBeNull();
+      }
+    }
+  });
+
+  test("public discovery leaves auth CORS on its existing trusted-origin policy", async () => {
+    const app = createApp({
+      auth: stubAuth(),
+      db: stubDatabase(),
+      environment: testEnvironment({
+        trustedOrigins: ["https://chat.example.com"],
+      }),
+    });
+
+    for (const [path, method] of [
+      ["/auth/oauth2/token", "POST"],
+      ["/auth/oauth2/userinfo", "GET"],
+      ["/auth/oauth2/userinfo", "POST"],
+      ["/auth/jwks", "GET"],
+      ["/auth/get-session", "GET"],
+      ["/auth/oauth2/authorize", "GET"],
+      ["/auth/oauth2/consent", "POST"],
+    ] as const) {
+      for (const origin of [
+        "https://chat.example.com",
+        "https://unregistered.example.com",
+      ]) {
+        for (const requestMethod of [method, "OPTIONS"]) {
+          const response = await app.request(path, {
+            method: requestMethod,
+            headers: {
+              Origin: origin,
+              "Access-Control-Request-Method": method,
+            },
+          });
+          expect(response.status).toBe(requestMethod === "OPTIONS" ? 204 : 200);
+          expect(response.headers.get("access-control-allow-origin")).toBe(
+            origin === "https://chat.example.com" ? origin : null,
+          );
+          expect(response.headers.get("access-control-allow-credentials")).toBe(
+            "true",
+          );
+          expect(response.headers.get("vary")).toContain("Origin");
+        }
+      }
+    }
+  });
+
+  test("private browser and admin routes gain no discovery CORS", async () => {
+    const app = createApp({
+      auth: { ...stubAuth(), handler: async () => Response.json(null) },
+      db: stubDatabase(),
+      environment: testEnvironment(),
+    });
+
+    for (const path of [
+      "/api/admin/v1/unknown",
+      "/api/admin/openapi.json",
+      "/authorize",
+      "/consent",
+      "/login",
+      "/security",
+      "/openapi.json",
+      "/healthz",
+    ]) {
+      for (const method of ["GET", "OPTIONS"]) {
+        const response = await app.request(path, {
+          method,
+          headers: {
+            Origin: "https://unregistered.example.com",
+            "Access-Control-Request-Method": "GET",
+          },
+        });
+        expect(response.status, `${method} ${path}`).toBeLessThan(500);
+        expect(response.headers.get("access-control-allow-origin")).toBeNull();
+        expect(
+          response.headers.get("access-control-allow-credentials"),
+        ).toBeNull();
+      }
+    }
+  });
+
   test("blocks every unapproved SSO and OAuth provider endpoint", async () => {
     const app = createApp({
       auth: stubAuth(),

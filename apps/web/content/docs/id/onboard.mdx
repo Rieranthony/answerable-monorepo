@@ -214,15 +214,15 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provider/tes
 
 [testSsoProvider](/docs/id/admin-api/diagnostics/testSsoProvider) runs discovery as sign-in runs it, then fetches JWKS, without sending credentials or changing state. It reports reachability, exact issuer equality, as at sign-in, key count and elapsed time, and stops at the first problem, as sign-in does. It requires current `platform:read` when reading the endpoint configuration and returns `Cache-Control: no-store`. Network requests run after that read transaction closes, so the result describes the captured endpoints even if configuration changes during the probe. It does not prove client credentials, consent, a usable signing key or a person's ability to sign in; complete a real sign-in for those checks.
 
-| Problem code            | Meaning                                                                              | What to do                                                |
-| ----------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------- |
-| `insecure_issuer`       | The issuer or discovery URL is not an absolute HTTP or HTTPS URL.                    | Correct the configured URLs.                              |
-| `discovery_unreachable` | Discovery failed, timed out or returned a non-success status; redirects are refused. | Check the discovery URL and connectivity.                 |
-| `discovery_invalid`     | Discovery JSON is missing required URLs.                                             | Correct the provider's discovery document.                |
-| `untrusted_origin` | The discovery URL's origin, or a discovered endpoint's, is missing from `BETTER_AUTH_TRUSTED_ORIGINS`. | Ask Answerable staff to add its exact trusted origin and check outbound HTTPS, then rerun the test. |
-| `issuer_mismatch`       | Discovery issuer differs from the configured issuer.                                 | Use the exact tenant issuer.                              |
-| `jwks_unreachable`      | JWKS failed, timed out or returned a non-success status; redirects are refused.      | Check the discovery document's JWKS URL and connectivity. |
-| `jwks_invalid`          | JWKS is not a JSON array of keys.                                                    | Correct the provider's key document.                      |
+| Problem code            | Meaning                                                                                                | What to do                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `insecure_issuer`       | The issuer or discovery URL is not an absolute HTTP or HTTPS URL.                                      | Correct the configured URLs.                                                                        |
+| `discovery_unreachable` | Discovery failed, timed out or returned a non-success status; redirects are refused.                   | Check the discovery URL and connectivity.                                                           |
+| `discovery_invalid`     | Discovery JSON is missing required URLs.                                                               | Correct the provider's discovery document.                                                          |
+| `untrusted_origin`      | The discovery URL's origin, or a discovered endpoint's, is missing from `BETTER_AUTH_TRUSTED_ORIGINS`. | Ask Answerable staff to add its exact trusted origin and check outbound HTTPS, then rerun the test. |
+| `issuer_mismatch`       | Discovery issuer differs from the configured issuer.                                                   | Use the exact tenant issuer.                                                                        |
+| `jwks_unreachable`      | JWKS failed, timed out or returned a non-success status; redirects are refused.                        | Check the discovery document's JWKS URL and connectivity.                                           |
+| `jwks_invalid`          | JWKS is not a JSON array of keys.                                                                      | Correct the provider's key document.                                                                |
 
 No provider returns HTTP `404 provider_not_found`; configure it first. Other failed checks appear in `problems` on a successful HTTP response.
 
@@ -278,11 +278,11 @@ curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provi
 
 **Platform credentials are the default.** Omit `oidc`, as above, or send `oidc: {"credentials":"platform"}`. Google and Entra use Answerable's single application for that directory. Staff configure its client ID and secret together in the service environment; the row stores no secret. Every provider returns to `https://id.answerable.org/auth/sso/callback` (local: `http://localhost:47300/auth/sso/callback`).
 
-| Directory | `issuer` | What is pinned | What the organisation's IT does |
-| --- | --- | --- | --- |
-| Microsoft Entra | `https://login.microsoftonline.com/<directory-id>/v2.0` | The directory ID; guests and other directories refuse | Use the admin consent link below, or an admin signs in first and grants organisation-wide consent. |
-| Google Workspace | `https://accounts.google.com` | The hosted domain; personal accounts refuse | If third-party apps are restricted, mark Answerable's client ID Trusted in Workspace App access control. |
-| Generic OIDC | The directory's exact issuer URL | Issuer and verified email/domain | Register the callback URL and send own client credentials to Answerable staff. |
+| Directory        | `issuer`                                                | What is pinned                                        | What the organisation's IT does                                                                          |
+| ---------------- | ------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Microsoft Entra  | `https://login.microsoftonline.com/<directory-id>/v2.0` | The directory ID; guests and other directories refuse | Use the admin consent link below, or an admin signs in first and grants organisation-wide consent.       |
+| Google Workspace | `https://accounts.google.com`                           | The hosted domain; personal accounts refuse           | If third-party apps are restricted, mark Answerable's client ID Trusted in Workspace App access control. |
+| Generic OIDC     | The directory's exact issuer URL                        | Issuer and verified email/domain                      | Register the callback URL and send own client credentials to Answerable staff.                           |
 
 **Entra consent.** Send IT `https://login.microsoftonline.com/<tenant-id>/v2.0/adminconsent?client_id=<MICROSOFT_CLIENT_ID>&scope=openid%20profile%20email&redirect_uri=https%3A%2F%2Fid.answerable.org%2Flogin&state=<slug>`. It returns `admin_consent=True&tenant=<GUID>`. Alternatively, a Global Administrator signs in first and ticks **consent on behalf of your organisation** (only Privileged Role Administrators see it). Default tenant policy blocks ordinary users from consenting to unverified multi-tenant apps.
 
@@ -338,13 +338,16 @@ curl https://id.answerable.org/api/admin/v1/clients \
     "clientId": "omnichat-contoso",
     "name": "OmniChat Contoso",
     "organizationId": "'"$ORG"'",
-    "tokenEndpointAuthMethod": "private_key_jwt",
+    "tokenEndpointAuthMethod": "client_secret_post",
     "grantTypes": ["authorization_code", "refresh_token"],
     "scopes": ["openid", "profile", "email", "offline_access", "tutor:read"],
-    "redirectUris": ["https://contoso.omnichat.example/oauth/callback"],
-    "jwksUri": "https://contoso.omnichat.example/.well-known/jwks.json"
+    "redirectUris": ["https://contoso.omnichat.example/oauth/openid/callback"]
   }'
 ```
+
+**LibreChat / OmniChat.** The example registers a server client using `client_secret_post`; every sign-in still requires S256 PKCE. Save the returned `clientSecret` once in the application's secret store. A replay returns a receipt without the secret; if the first response is lost, rotate the secret with a new operation key. Public clients (`none`) and key-based clients (`private_key_jwt`) receive no shared secret. See [LibreChat settings](/docs/id/oauth#configure-librechat-sign-in) before enabling sign-in.
+
+**Trusted applications.** Set `skipConsent: true` only for an explicitly approved Answerable-operated application. It bypasses the consent screen; it does not grant access. Register a separate client for each isolated deployment and environment, owned by the organisation it serves, then approve capabilities and assign scopes below.
 
 **Links.** A client may only request tokens for resources it is linked to: `PUT /clients/{clientId}/resources/{resource}` with the resource URL encoded. A registering client can never link itself. Registered applications can use [OIDC sign-in](/docs/id/oauth).
 
@@ -485,25 +488,25 @@ Every write, every denied attempt, every sign-in success, rejection and sign-out
 
 ## Errors
 
-| Code                      | Meaning                                                       | What to do                                                              |
-| ------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `platform_credentials_unsupported` | HTTP 400: platform credentials requested for an issuer other than Google or Entra. | Supply own OIDC credentials or use the correct Google/Entra issuer. |
-| `platform_application_missing` | HTTP 409 on PUT: the platform application is absent from the service environment. | Configure both client ID and secret, restart the service and retry. A later disappearance gives HTTP 503 JSON at sign-in; see [sign-in errors](/docs/id/sign-in#when-sign-in-is-refused). |
-| `root_locked`             | Root is locked because a human platform administrator exists. | Use your own credentials, or enable break-glass for emergency recovery. |
-| `client_has_entitlements` | Entitlements still reference the client.                      | Remove all referencing entitlements before erasure.                     |
+| Code                               | Meaning                                                                            | What to do                                                                                                                                                                                |
+| ---------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `platform_credentials_unsupported` | HTTP 400: platform credentials requested for an issuer other than Google or Entra. | Supply own OIDC credentials or use the correct Google/Entra issuer.                                                                                                                       |
+| `platform_application_missing`     | HTTP 409 on PUT: the platform application is absent from the service environment.  | Configure both client ID and secret, restart the service and retry. A later disappearance gives HTTP 503 JSON at sign-in; see [sign-in errors](/docs/id/sign-in#when-sign-in-is-refused). |
+| `root_locked`                      | Root is locked because a human platform administrator exists.                      | Use your own credentials, or enable break-glass for emergency recovery.                                                                                                                   |
+| `client_has_entitlements`          | Entitlements still reference the client.                                           | Remove all referencing entitlements before erasure.                                                                                                                                       |
 
 See [all admin error codes](/docs/id/manage#errors), including confirmation and lifecycle errors. SSO test problems and sign-in verdicts are listed above.
 
 ## Not yet
 
-| Capability                                | Plan                                |
-| ----------------------------------------- | ----------------------------------- |
+| Capability                                      | Plan                                |
+| ----------------------------------------------- | ----------------------------------- |
 | Certificate credential on the Entra application | [Not yet.](/docs/id#today-and-next) |
-| Domain verification by DNS                | [Not yet.](/docs/id#today-and-next) |
-| Organisations configuring their own SSO   | [Not yet.](/docs/id#today-and-next) |
-| Guest accounts, opted in per organisation | [Not yet.](/docs/id#today-and-next) |
-| Bulk import of existing users             | [Not yet.](/docs/id#today-and-next) |
-| SCIM provisioning                         | [Not yet.](/docs/id#today-and-next) |
+| Domain verification by DNS                      | [Not yet.](/docs/id#today-and-next) |
+| Organisations configuring their own SSO         | [Not yet.](/docs/id#today-and-next) |
+| Guest accounts, opted in per organisation       | [Not yet.](/docs/id#today-and-next) |
+| Bulk import of existing users                   | [Not yet.](/docs/id#today-and-next) |
+| SCIM provisioning                               | [Not yet.](/docs/id#today-and-next) |
 
 **Group operation keys.** Set `GROUP_CREATE_KEY` and `GROUP_MEMBER_KEY` once for their respective creation and membership commands, and reuse it with identical input after a lost response. Use a different key for each separate command. Group PATCH accepts the optional current getGroup ETag in If-Match. Membership PUT accepts optional If-Match from getGroupMember; omitted preconditions use the current row. Keep the original precondition when retrying a key.
 

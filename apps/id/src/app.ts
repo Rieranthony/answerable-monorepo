@@ -71,9 +71,9 @@ export function createApp(services: AppServices) {
 
   app.use("*", limitRequestBody);
 
-  // Only Better Auth's routes answer cross-origin browser calls. The admin API
-  // has no browser client yet, so it sends no CORS headers; its principal
-  // still checks a cookie caller's Origin.
+  // Better Auth's browser calls keep the configured, credentialed origin policy.
+  // The admin API sends no CORS headers; its principal still checks a cookie
+  // caller's Origin.
   app.use(
     "/auth/*",
     cors({ origin: services.environment.trustedOrigins, credentials: true }),
@@ -82,10 +82,22 @@ export function createApp(services: AppServices) {
   app.route("/api/admin/v1", createAdminApp(services));
   app.route("/", createPagesApp());
 
+  const discoveryCors = cors({ origin: "*", allowMethods: ["GET", "HEAD"] });
   for (const [path, operationId] of [
     ["/.well-known/openid-configuration", "getOpenIdConfiguration"],
     ["/.well-known/oauth-authorization-server", "getOAuthAuthorizationServer"],
-  ] as const)
+  ] as const) {
+    // Discovery is public and independent of Origin. Limit this credential-free
+    // policy to reads and their preflights on these two exact paths.
+    app.use(path, (context, next) => {
+      if (
+        context.req.method === "GET" ||
+        context.req.method === "HEAD" ||
+        context.req.method === "OPTIONS"
+      )
+        return discoveryCors(context, next);
+      return next();
+    });
     app.get(
       path,
       describeRoute({
@@ -106,6 +118,7 @@ export function createApp(services: AppServices) {
       }),
       (context) => publicOAuthMetadata(services.auth, context.req.raw),
     );
+  }
 
   app.get(
     "/healthz",

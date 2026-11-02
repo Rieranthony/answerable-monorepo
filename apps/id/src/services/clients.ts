@@ -24,7 +24,8 @@ export type CreateClientInput = {
   clientId?: string;
   name: string;
   organizationId?: string;
-  tokenEndpointAuthMethod: "client_secret_basic" | "private_key_jwt" | "none";
+  tokenEndpointAuthMethod:
+    "client_secret_basic" | "client_secret_post" | "private_key_jwt" | "none";
   grantTypes: ("client_credentials" | "authorization_code" | "refresh_token")[];
   redirectUris: string[];
   clientCredentialsScopes?: string[];
@@ -231,7 +232,8 @@ export async function createClient(
     input.clientId ??
     `client_${Buffer.from(crypto.getRandomValues(new Uint8Array(8))).toString("hex")}`;
   const clientSecret =
-    input.tokenEndpointAuthMethod === "client_secret_basic"
+    input.tokenEndpointAuthMethod === "client_secret_basic" ||
+    input.tokenEndpointAuthMethod === "client_secret_post"
       ? generateClientSecret()
       : undefined;
   const row = await queries.createClient(context, {
@@ -361,7 +363,10 @@ export async function rotateSecret(
     await queries.lockClientForCommand(context, clientId),
     notFound,
   );
-  if (existing.tokenEndpointAuthMethod !== "client_secret_basic")
+  if (
+    existing.tokenEndpointAuthMethod !== "client_secret_basic" &&
+    existing.tokenEndpointAuthMethod !== "client_secret_post"
+  )
     throw new ProblemError(
       409,
       "client_has_no_secret",

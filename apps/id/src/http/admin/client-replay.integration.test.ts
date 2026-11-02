@@ -92,104 +92,113 @@ test("transactional authority rejects stale admitted users, root and machine cre
   ).rejects.toMatchObject({ code: "invalid_token" });
 });
 
-test("rotation replay returns its receipt without revoking grants established afterwards", async () => {
-  const f = await createAdminFixture(
-    { databasePoolMax: 1 },
-    { restrictedRole: true },
-  );
-  try {
-    const post = (path: string, key: string, body?: unknown) => {
-      const headers = f.headers("platformAdmin");
-      headers.set("Idempotency-Key", key);
-      if (body !== undefined) headers.set("Content-Type", "application/json");
-      return f.app.request(`/api/admin/v1/clients${path}`, {
-        method: "POST",
-        headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
-      });
-    };
-    const createdResponse = await post("", "context-client", {
-      clientId: "rotation-context-client",
-      name: "Rotation",
-      organizationId: f.tenant.organizationId,
-      tokenEndpointAuthMethod: "client_secret_basic",
-      grantTypes: ["authorization_code", "refresh_token"],
-      redirectUris: ["https://client.example/callback"],
-      scopes: ["read"],
-    });
-    expect(createdResponse.status).toBe(201);
-    const client = await createdResponse.json();
-    const principal = f.principals.tenantAdmin;
-    const session = await insertOriginSession(f.db, {
-      userId: principal.userId,
-      organizationId: f.tenant.organizationId,
-    });
-    const grant = () =>
-      insertGrantContext(f.db, {
-        id: createId(),
+for (const tokenEndpointAuthMethod of [
+  "client_secret_basic",
+  "client_secret_post",
+] as const)
+  test(`${tokenEndpointAuthMethod} creation and rotation replay return receipts without revoking later grants`, async () => {
+    const f = await createAdminFixture(
+      { databasePoolMax: 1 },
+      { restrictedRole: true },
+    );
+    try {
+      const post = (path: string, key: string, body?: unknown) => {
+        const headers = f.headers("platformAdmin");
+        headers.set("Idempotency-Key", key);
+        if (body !== undefined) headers.set("Content-Type", "application/json");
+        return f.app.request(`/api/admin/v1/clients${path}`, {
+          method: "POST",
+          headers,
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+      };
+      const creation = {
+        clientId: "rotation-context-client",
+        name: "Rotation",
         organizationId: f.tenant.organizationId,
-        memberId: principal.memberId,
+        tokenEndpointAuthMethod,
+        grantTypes: ["authorization_code", "refresh_token"],
+        redirectUris: ["https://client.example/callback"],
+        scopes: ["read"],
+      };
+      const createdResponse = await post("", "context-client", creation);
+      expect(createdResponse.status).toBe(201);
+      const client = await createdResponse.json();
+      expect(client.clientSecret).toBeString();
+      const createdAgain = await post("", "context-client", creation);
+      expect(createdAgain.status).toBe(201);
+      await expectReceipt(f.db, createdAgain);
+      const principal = f.principals.tenantAdmin;
+      const session = await insertOriginSession(f.db, {
         userId: principal.userId,
-        clientInstanceId: client.id,
-        authenticationSessionId: session.id,
-        requestedScopes: ["read"],
-        expiresAt: new Date(Date.now() + 60000),
+        organizationId: f.tenant.organizationId,
       });
-    const original = await grant();
-    const first = await post(
-      `/${client.clientId}/rotate-secret`,
-      "rotate-context-key",
-    );
-    expect(first.status).toBe(200);
-    expect((await first.json()).clientSecret).toBeString();
-    const [old] = await f.db
-      .select()
-      .from(grantContexts)
-      .where(eq(grantContexts.id, original.id));
-    expect(old!.revokedAt).not.toBeNull();
-    const fresh = await grant();
-    const before = await f.db
-      .select()
-      .from(oauthClients)
-      .where(eq(oauthClients.id, client.id));
-    const replay = await post(
-      `/${client.clientId}/rotate-secret`,
-      "rotate-context-key",
-    );
-    expect(replay.status).toBe(200);
-    await expectReceipt(f.db, replay);
-    expect(
-      await f.db
+      const grant = () =>
+        insertGrantContext(f.db, {
+          id: createId(),
+          organizationId: f.tenant.organizationId,
+          memberId: principal.memberId,
+          userId: principal.userId,
+          clientInstanceId: client.id,
+          authenticationSessionId: session.id,
+          requestedScopes: ["read"],
+          expiresAt: new Date(Date.now() + 60000),
+        });
+      const original = await grant();
+      const first = await post(
+        `/${client.clientId}/rotate-secret`,
+        "rotate-context-key",
+      );
+      expect(first.status).toBe(200);
+      expect((await first.json()).clientSecret).toBeString();
+      const [old] = await f.db
         .select()
         .from(grantContexts)
-        .where(eq(grantContexts.id, fresh.id)),
-    ).toEqual([fresh]);
-    expect(
-      await f.db
+        .where(eq(grantContexts.id, original.id));
+      expect(old!.revokedAt).not.toBeNull();
+      const fresh = await grant();
+      const before = await f.db
         .select()
         .from(oauthClients)
-        .where(eq(oauthClients.id, client.id)),
-    ).toEqual(before);
-    const effects = await f.db
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.operationId, first.headers.get("Operation-Id")!));
-    expect(effects).toHaveLength(2);
-    expect(effects.map((row) => row.action).sort()).toEqual([
-      "client.grants_revoked",
-      "client.secret_rotated",
-    ]);
-    expect(
-      effects.find((row) => row.action === "client.grants_revoked")!.data!
-        .grantContexts,
-    ).toEqual([
-      {
-        id: original.id,
-        organizationId: original.organizationId,
-        userId: original.userId,
-      },
-    ]);
-  } finally {
-    await f.close();
-  }
-});
+        .where(eq(oauthClients.id, client.id));
+      const replay = await post(
+        `/${client.clientId}/rotate-secret`,
+        "rotate-context-key",
+      );
+      expect(replay.status).toBe(200);
+      await expectReceipt(f.db, replay);
+      expect(
+        await f.db
+          .select()
+          .from(grantContexts)
+          .where(eq(grantContexts.id, fresh.id)),
+      ).toEqual([fresh]);
+      expect(
+        await f.db
+          .select()
+          .from(oauthClients)
+          .where(eq(oauthClients.id, client.id)),
+      ).toEqual(before);
+      const effects = await f.db
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.operationId, first.headers.get("Operation-Id")!));
+      expect(effects).toHaveLength(2);
+      expect(effects.map((row) => row.action).sort()).toEqual([
+        "client.grants_revoked",
+        "client.secret_rotated",
+      ]);
+      expect(
+        effects.find((row) => row.action === "client.grants_revoked")!.data!
+          .grantContexts,
+      ).toEqual([
+        {
+          id: original.id,
+          organizationId: original.organizationId,
+          userId: original.userId,
+        },
+      ]);
+    } finally {
+      await f.close();
+    }
+  });

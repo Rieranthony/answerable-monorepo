@@ -56,6 +56,7 @@ const createSchema = z.object({
   organizationId: z.uuid().optional(),
   tokenEndpointAuthMethod: z.enum([
     "client_secret_basic",
+    "client_secret_post",
     "private_key_jwt",
     "none",
   ]),

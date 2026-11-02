@@ -87,119 +87,123 @@ afterAll(async () => {
   await connection.close();
 });
 
-test("client lifecycle hides digests, returns secrets once, revokes tokens and audits every change", async () => {
-  const db = connection.db;
-  const input = machineInput();
-  const created = await service.createClient(db, actor, input);
-  expect(created.clientSecret).toBeString();
-  expect(created.hasClientSecret).toBe(true);
-  const originalDigest = hashClientSecret(created.clientSecret!);
-  expect((await queries.lockClient(db, created.clientId))?.clientSecret).toBe(
-    originalDigest,
-  );
-  const read = await service.getClient(db, created.clientId);
-  expect(read).not.toHaveProperty("clientSecret");
-  const page = await service.listClients(db, { limit: 10 });
-  const { resources, ...listed } = read;
-  expect(resources).toEqual([]);
-  expect(page).toEqual({ items: [listed], nextCursor: null });
-  const patch = {
-    name: "Changed",
-    uri: "https://app.example",
-    redirectUris: [],
-    scopes: ["openid"],
-    clientCredentialsScopes: ["read", "write"],
-    skipConsent: true,
-  };
-  const updated = await service.updateClient(
-    db,
-    actor,
-    created.clientId,
-    patch,
-  );
-  expect(updated).toMatchObject(patch);
-  expect(updated).not.toHaveProperty("clientSecret");
-  const rotated = await service.rotateSecret(db, actor, created.clientId);
-  expect(rotated.clientSecret).not.toBe(created.clientSecret);
-  expect((await queries.lockClient(db, created.clientId))?.clientSecret).toBe(
-    hashClientSecret(rotated.clientSecret),
-  );
-  expect(hashClientSecret(rotated.clientSecret)).not.toBe(originalDigest);
-  const userId = createId();
-  await db.insert(users).values({
-    id: userId,
-    name: "User",
-    email: "user@example.com",
-    status: "active",
-  });
-  const token = {
-    id: createId(),
-    token: createId(),
-    clientId: created.clientId,
-    userId,
-    scopes: ["read"],
-    expiresAt: new Date(Date.now() + 60000),
-  };
-  await db.insert(oauthAccessTokens).values(token);
-  await db.insert(oauthRefreshTokens).values({ ...token, id: createId() });
-  expect(await service.enableClient(db, actor, created.clientId)).toMatchObject(
-    { changed: false, row: { disabled: false } },
-  );
-  expect(
-    await service.disableClient(db, actor, created.clientId),
-  ).toMatchObject({ changed: true, row: { disabled: true } });
-  expect(
-    await service.disableClient(db, actor, created.clientId),
-  ).toMatchObject({ changed: false, row: { disabled: true } });
-  for (const table of [oauthAccessTokens, oauthRefreshTokens])
-    expect((await db.select().from(table))[0]?.revoked).toBeInstanceOf(Date);
-  expect(await service.enableClient(db, actor, created.clientId)).toMatchObject(
-    { changed: true, row: { disabled: false } },
-  );
-  expect(
-    await service.linkResource(db, actor, created.clientId, resource),
-  ).toEqual({ created: true });
-  expect(
-    await service.linkResource(db, actor, created.clientId, resource),
-  ).toEqual({ created: false });
-  await service.unlinkResource(db, actor, created.clientId, resource);
-  // The unchanged enable, disable and link record no event.
-  const events = await db.select().from(auditEvents).orderBy(auditEvents.id);
-  expect(events.map((e) => e.action)).toEqual([
-    "client.created",
-    "client.updated",
-    "client.secret_rotated",
-    "client.grants_revoked",
-    "client.disabled",
-    "client.enabled",
-    "client.resource_linked",
-    "client.resource_unlinked",
-  ]);
-  for (const event of events)
-    expect(event).toMatchObject({
-      ...actor,
-      targetType: "client",
-      targetId: created.clientId,
-      outcome: "success",
+for (const tokenEndpointAuthMethod of [
+  "client_secret_basic",
+  "client_secret_post",
+] as const)
+  test(`${tokenEndpointAuthMethod} lifecycle hides digests, returns secrets once, revokes tokens and audits every change`, async () => {
+    const db = connection.db;
+    const input = { ...machineInput(), tokenEndpointAuthMethod };
+    const created = await service.createClient(db, actor, input);
+    expect(created.clientSecret).toBeString();
+    expect(created.hasClientSecret).toBe(true);
+    const originalDigest = hashClientSecret(created.clientSecret!);
+    expect((await queries.lockClient(db, created.clientId))?.clientSecret).toBe(
+      originalDigest,
+    );
+    const read = await service.getClient(db, created.clientId);
+    expect(read).not.toHaveProperty("clientSecret");
+    const page = await service.listClients(db, { limit: 10 });
+    const { resources, ...listed } = read;
+    expect(resources).toEqual([]);
+    expect(page).toEqual({ items: [listed], nextCursor: null });
+    const patch = {
+      name: "Changed",
+      uri: "https://app.example",
+      redirectUris: [],
+      scopes: ["openid"],
+      clientCredentialsScopes: ["read", "write"],
+      skipConsent: true,
+    };
+    const updated = await service.updateClient(
+      db,
+      actor,
+      created.clientId,
+      patch,
+    );
+    expect(updated).toMatchObject(patch);
+    expect(updated).not.toHaveProperty("clientSecret");
+    const rotated = await service.rotateSecret(db, actor, created.clientId);
+    expect(rotated.clientSecret).not.toBe(created.clientSecret);
+    expect((await queries.lockClient(db, created.clientId))?.clientSecret).toBe(
+      hashClientSecret(rotated.clientSecret),
+    );
+    expect(hashClientSecret(rotated.clientSecret)).not.toBe(originalDigest);
+    const userId = createId();
+    await db.insert(users).values({
+      id: userId,
+      name: "User",
+      email: "user@example.com",
+      status: "active",
     });
-  expect(events[1]?.data).toMatchObject({
-    requestedFields: Object.keys(patch).sort(),
-    before: { name: "Machine", clientCredentialsScopes: ["read"] },
-    after: { name: "Changed", clientCredentialsScopes: ["read", "write"] },
+    const token = {
+      id: createId(),
+      token: createId(),
+      clientId: created.clientId,
+      userId,
+      scopes: ["read"],
+      expiresAt: new Date(Date.now() + 60000),
+    };
+    await db.insert(oauthAccessTokens).values(token);
+    await db.insert(oauthRefreshTokens).values({ ...token, id: createId() });
+    expect(
+      await service.enableClient(db, actor, created.clientId),
+    ).toMatchObject({ changed: false, row: { disabled: false } });
+    expect(
+      await service.disableClient(db, actor, created.clientId),
+    ).toMatchObject({ changed: true, row: { disabled: true } });
+    expect(
+      await service.disableClient(db, actor, created.clientId),
+    ).toMatchObject({ changed: false, row: { disabled: true } });
+    for (const table of [oauthAccessTokens, oauthRefreshTokens])
+      expect((await db.select().from(table))[0]?.revoked).toBeInstanceOf(Date);
+    expect(
+      await service.enableClient(db, actor, created.clientId),
+    ).toMatchObject({ changed: true, row: { disabled: false } });
+    expect(
+      await service.linkResource(db, actor, created.clientId, resource),
+    ).toEqual({ created: true });
+    expect(
+      await service.linkResource(db, actor, created.clientId, resource),
+    ).toEqual({ created: false });
+    await service.unlinkResource(db, actor, created.clientId, resource);
+    // The unchanged enable, disable and link record no event.
+    const events = await db.select().from(auditEvents).orderBy(auditEvents.id);
+    expect(events.map((e) => e.action)).toEqual([
+      "client.created",
+      "client.updated",
+      "client.secret_rotated",
+      "client.grants_revoked",
+      "client.disabled",
+      "client.enabled",
+      "client.resource_linked",
+      "client.resource_unlinked",
+    ]);
+    for (const event of events)
+      expect(event).toMatchObject({
+        ...actor,
+        targetType: "client",
+        targetId: created.clientId,
+        outcome: "success",
+      });
+    expect(events[1]?.data).toMatchObject({
+      requestedFields: Object.keys(patch).sort(),
+      before: { name: "Machine", clientCredentialsScopes: ["read"] },
+      after: { name: "Changed", clientCredentialsScopes: ["read", "write"] },
+    });
+    expect(
+      events.find((event) => event.action === "client.disabled")?.data,
+    ).toMatchObject({ effects: { accessTokens: 1, refreshTokens: 1 } });
+    const serialised = JSON.stringify(events);
+    for (const secret of [
+      created.clientSecret!,
+      rotated.clientSecret,
+      originalDigest,
+      hashClientSecret(rotated.clientSecret),
+      "clientSecret",
+    ])
+      expect(serialised).not.toContain(secret);
   });
-  expect(
-    events.find((event) => event.action === "client.disabled")?.data,
-  ).toMatchObject({ effects: { accessTokens: 1, refreshTokens: 1 } });
-  const serialised = JSON.stringify(events);
-  for (const secret of [
-    created.clientSecret!,
-    rotated.clientSecret,
-    originalDigest,
-    hashClientSecret(rotated.clientSecret),
-    "clientSecret",
-  ])
-    expect(serialised).not.toContain(secret);
-});
 test("public and private key clients have no secret; generated IDs are server owned", async () => {
   const db = connection.db;
   const browser = await service.createClient(db, actor, publicInput);

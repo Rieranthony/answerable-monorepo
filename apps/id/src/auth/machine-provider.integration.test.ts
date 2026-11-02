@@ -1,4 +1,5 @@
 import { approveMachineCapability } from "../__tests__/capabilities.ts";
+import { inPlatformWrite } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { machineIdentity } from "./machine-identity.ts";
 import { answerableSchema } from "./answerable-schema.ts";
@@ -17,6 +18,7 @@ import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import * as schema from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
 import { hashClientSecret } from "../services/client-secrets.ts";
+import { createClient, linkResource } from "../services/clients.ts";
 import { machineOAuthProvider } from "./machine-provider.ts";
 
 let connection: DatabaseConnection;
@@ -24,6 +26,8 @@ const environment = testEnvironment();
 const organizationId = createId();
 const clientId = "transaction-proof";
 const secret = "transaction-proof-secret";
+const postClientId = "post-transaction-proof";
+let postSecret: string;
 const resource = "https://resource.example/proof";
 
 beforeAll(async () => {
@@ -57,6 +61,27 @@ beforeAll(async () => {
   await approveMachineCapability(connection.db, {
     organizationId,
     clientId,
+    resource,
+    scopes: ["proof:read"],
+  });
+  const postClient = await inPlatformWrite(connection.db, async (context) => {
+    const client = await createClient(context, {
+      clientId: postClientId,
+      organizationId,
+      name: "POST transaction proof",
+      redirectUris: [],
+      grantTypes: ["client_credentials"],
+      tokenEndpointAuthMethod: "client_secret_post",
+      clientCredentialsScopes: ["proof:read"],
+    });
+    await linkResource(context, client.clientId, resource);
+    return client;
+  });
+  expect(postClient.clientSecret).toBeString();
+  postSecret = postClient.clientSecret!;
+  await approveMachineCapability(connection.db, {
+    organizationId,
+    clientId: postClientId,
     resource,
     scopes: ["proof:read"],
   });
@@ -243,59 +268,127 @@ test("client assertions remain consumed when issuance fails", async () => {
   expect(evaluations).toBe(1);
 });
 
-test("machine policy rejects other grants, missing or repeated audiences and excessive scopes", async () => {
-  const auth = testAuth();
-  for (const [entries, code] of [
-    [[["grant_type", "refresh_token"]], "unsupported_grant_type"],
-    [[["grant_type", "client_credentials"]], "invalid_target"],
-    [
-      [
-        ["grant_type", "client_credentials"],
-        ["resource", resource],
-        ["resource", resource],
-      ],
-      "invalid_target",
-    ],
-    [
-      [
-        ["grant_type", "client_credentials"],
-        ["resource", resource],
-        ["scope", "other:read"],
-      ],
-      "invalid_scope",
-    ],
-    [
-      [
-        ["grant_type", "client_credentials"],
-        ["resource", resource],
-        ["scope", ""],
-      ],
-      "invalid_scope",
-    ],
-  ] as const) {
-    const response = await auth.handler(
+test("registered POST machine clients accept only their registered authentication method", async () => {
+  let evaluations = 0;
+  const auth = testAuth(async ({ client }) => {
+    evaluations++;
+    expect(client.clientId).toBe(postClientId);
+    return { proof_client: client.clientId };
+  });
+  const token = (body: Record<string, string>, authorization?: string) =>
+    auth.handler(
       new Request(`${environment.betterAuthUrl}/auth/oauth2/token`, {
         method: "POST",
         headers: {
-          Authorization: `Basic ${Buffer.from(`${clientId}:${secret}`).toString("base64")}`,
           "Content-Type": "application/x-www-form-urlencoded",
+          ...(authorization ? { authorization } : {}),
         },
-        body: new URLSearchParams(entries.map(([key, value]) => [key, value])),
+        body: new URLSearchParams({
+          grant_type: "client_credentials",
+          resource,
+          scope: "proof:read",
+          ...body,
+        }),
       }),
     );
-    expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({ error: code });
+  for (const [response, status] of [
+    [
+      await token(
+        {},
+        `Basic ${Buffer.from(`${postClientId}:${postSecret}`).toString("base64")}`,
+      ),
+      401,
+    ],
+    [await token({ client_id: clientId, client_secret: secret }), 400],
+    [
+      await token({ client_id: postClientId, client_secret: "wrong-secret" }),
+      400,
+    ],
+  ] as const) {
+    expect(response.status).toBe(status);
+    if (status === 401)
+      expect(response.headers.get("www-authenticate")).toBe("Basic");
+    expect(await response.json()).toMatchObject({ error: "invalid_client" });
+  }
+  expect(evaluations).toBe(0);
+  const granted = await token({
+    client_id: postClientId,
+    client_secret: postSecret,
+  });
+  expect(granted.status).toBe(200);
+  expect(decodeJwt((await granted.json()).access_token)).toMatchObject({
+    sub: postClientId,
+    aud: resource,
+    organization_id: organizationId,
+    scope: "proof:read",
+    proof_client: postClientId,
+  });
+  expect(evaluations).toBe(1);
+});
+
+test("machine policy rejects other grants, missing or repeated audiences and excessive scopes", async () => {
+  const auth = testAuth();
+  for (const method of ["client_secret_basic", "client_secret_post"] as const) {
+    for (const [entries, code] of [
+      [[["grant_type", "refresh_token"]], "unsupported_grant_type"],
+      [[["grant_type", "client_credentials"]], "invalid_target"],
+      [
+        [
+          ["grant_type", "client_credentials"],
+          ["resource", resource],
+          ["resource", resource],
+        ],
+        "invalid_target",
+      ],
+      [
+        [
+          ["grant_type", "client_credentials"],
+          ["resource", resource],
+          ["scope", "other:read"],
+        ],
+        "invalid_scope",
+      ],
+      [
+        [
+          ["grant_type", "client_credentials"],
+          ["resource", resource],
+          ["scope", ""],
+        ],
+        "invalid_scope",
+      ],
+    ] as const) {
+      const response = await auth.handler(
+        new Request(`${environment.betterAuthUrl}/auth/oauth2/token`, {
+          method: "POST",
+          headers: {
+            ...(method === "client_secret_basic"
+              ? {
+                  Authorization: `Basic ${Buffer.from(`${clientId}:${secret}`).toString("base64")}`,
+                }
+              : {}),
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams([
+            ...entries.map(([key, value]) => [key, value]),
+            ...(method === "client_secret_post"
+              ? [
+                  ["client_id", postClientId],
+                  ["client_secret", postSecret],
+                ]
+              : []),
+          ]),
+        }),
+      );
+      expect(response.status, method).toBe(400);
+      expect(await response.json(), method).toMatchObject({ error: code });
+    }
   }
   // Server-side callers share the policy without an HTTP request object.
-  await connection.db
-    .update(schema.oauthClients)
-    .set({ tokenEndpointAuthMethod: "client_secret_post" })
-    .where(eq(schema.oauthClients.clientId, clientId));
   const body = {
     grant_type: "client_credentials",
     resource,
-    client_id: clientId,
-    client_secret: secret,
+    client_id: postClientId,
+    client_secret: postSecret,
   };
   try {
     const granted = await auth.api.oauth2Token({ body });
@@ -303,7 +396,7 @@ test("machine policy rejects other grants, missing or repeated audiences and exc
     await connection.db
       .update(schema.oauthClients)
       .set({ clientCredentialsScopes: ["openid"] })
-      .where(eq(schema.oauthClients.clientId, clientId));
+      .where(eq(schema.oauthClients.clientId, postClientId));
     await expect(auth.api.oauth2Token({ body })).rejects.toMatchObject({
       body: { error: "invalid_scope" },
     });
@@ -311,10 +404,9 @@ test("machine policy rejects other grants, missing or repeated audiences and exc
     await connection.db
       .update(schema.oauthClients)
       .set({
-        tokenEndpointAuthMethod: "client_secret_basic",
         clientCredentialsScopes: ["proof:read"],
       })
-      .where(eq(schema.oauthClients.clientId, clientId));
+      .where(eq(schema.oauthClients.clientId, postClientId));
   }
 });
 

@@ -48,183 +48,254 @@ async function request(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
-function mint(clientId: string, secret: string, resource: string) {
+function mint(
+  clientId: string,
+  secret: string,
+  resource: string,
+  tokenEndpointAuthMethod: "client_secret_basic" | "client_secret_post",
+) {
   return fixture.app.request("/auth/oauth2/token", {
     method: "POST",
     headers: {
-      Authorization: `Basic ${Buffer.from(`${clientId}:${secret}`).toString("base64")}`,
+      ...(tokenEndpointAuthMethod === "client_secret_basic"
+        ? {
+            Authorization: `Basic ${Buffer.from(`${clientId}:${secret}`).toString("base64")}`,
+          }
+        : {}),
       "content-type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams({
       grant_type: "client_credentials",
       resource,
       scope: "tutor:read",
+      ...(tokenEndpointAuthMethod === "client_secret_post"
+        ? { client_id: clientId, client_secret: secret }
+        : {}),
     }),
   });
 }
-for (const machine of [false, true])
-  test(`${machine ? "machine" : "platformAdmin"} manages a client through real token minting, rotation and revocation`, async () => {
-    const kind = machine
-      ? { bearer: await fixture.mintMachineToken() }
-      : "platformAdmin";
-    const resource = `https://${machine ? "machine" : "human"}.clients.example/mcp`;
-    const headers = fixture.headers(kind);
-    headers.set("content-type", "application/json");
-    expect(
-      (
-        await fixture.app.request("/api/admin/v1/resources", {
+for (const tokenEndpointAuthMethod of [
+  "client_secret_basic",
+  "client_secret_post",
+] as const)
+  for (const machine of [false, true])
+    test(`${machine ? "machine" : "platformAdmin"} manages a ${tokenEndpointAuthMethod} client through real token minting, rotation and revocation`, async () => {
+      const kind = machine
+        ? { bearer: await fixture.mintMachineToken() }
+        : "platformAdmin";
+      const suffix =
+        tokenEndpointAuthMethod === "client_secret_basic" ? "basic" : "post";
+      const invalidClientStatus =
+        tokenEndpointAuthMethod === "client_secret_basic" ? 401 : 400;
+      const resource = `https://${machine ? "machine" : "human"}-${suffix}.clients.example/mcp`;
+      const headers = fixture.headers(kind);
+      headers.set("content-type", "application/json");
+      expect(
+        (
+          await fixture.app.request("/api/admin/v1/resources", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              identifier: resource,
+              name: "MCP",
+              allowedScopes: ["tutor:read"],
+            }),
+          })
+        ).status,
+      ).toBe(201);
+      const created = await request(
+        "",
+        "POST",
+        {
+          clientId: `${machine ? "machine" : "human"}-http-${suffix}`,
+          name: "Example cell",
+          tokenEndpointAuthMethod,
+          grantTypes: ["client_credentials"],
+          clientCredentialsScopes: ["tutor:read"],
+          organizationId: fixture.tenant.organizationId,
+        },
+        kind,
+      );
+      expect(created.status).toBe(201);
+      const body = await created.json();
+      const client = clientSchema.parse(body);
+      expect(client.hasClientSecret).toBe(true);
+      const secret = body.clientSecret as string;
+      expect(secret).toBeString();
+      const path = "/" + client.clientId;
+      const link = path + "/resources/" + encodeURIComponent(resource);
+      const get = await request(path, "GET", undefined, kind);
+      expect(get.status).toBe(200);
+      expect(await get.json()).not.toHaveProperty("clientSecret");
+      const pageResponse = await request(
+        `?q=${client.clientId}&organizationId=${fixture.tenant.organizationId}&disabled=false`,
+        "GET",
+        undefined,
+        kind,
+      );
+      expect(pageResponse.status).toBe(200);
+      const page = await pageResponse.json();
+      expect(page.items).toHaveLength(1);
+      expect(page.items[0]).not.toHaveProperty("clientSecret");
+      expect(
+        (await request(path, "PATCH", { name: "Renamed" }, kind)).status,
+      ).toBe(200);
+      expect((await request(link, "PUT", undefined, kind)).status).toBe(201);
+      const existingLink = await request(link, "PUT", undefined, kind);
+      expect(existingLink.status).toBe(200);
+      expect(await existingLink.json()).toEqual({ created: false });
+      const approval = await fixture.app.request(
+        `/api/admin/v1/organizations/${fixture.tenant.organizationId}/capabilities`,
+        {
           method: "POST",
           headers,
           body: JSON.stringify({
-            identifier: resource,
-            name: "MCP",
-            allowedScopes: ["tutor:read"],
+            clientId: client.clientId,
+            resource,
+            grantKind: "client_credentials",
+            scopes: ["tutor:read"],
           }),
-        })
-      ).status,
-    ).toBe(201);
-    const created = await request(
-      "",
-      "POST",
-      {
-        clientId: machine ? "machine-http" : "human-http",
-        name: "Example cell",
-        tokenEndpointAuthMethod: "client_secret_basic",
-        grantTypes: ["client_credentials"],
-        clientCredentialsScopes: ["tutor:read"],
-        organizationId: fixture.tenant.organizationId,
-      },
-      kind,
-    );
-    expect(created.status).toBe(201);
-    const body = await created.json();
-    const client = clientSchema.parse(body);
-    expect(client.hasClientSecret).toBe(true);
-    const secret = body.clientSecret as string;
-    expect(secret).toBeString();
-    const path = "/" + client.clientId;
-    const link = path + "/resources/" + encodeURIComponent(resource);
-    const get = await request(path, "GET", undefined, kind);
-    expect(get.status).toBe(200);
-    expect(await get.json()).not.toHaveProperty("clientSecret");
-    const pageResponse = await request(
-      `?q=${client.clientId}&organizationId=${fixture.tenant.organizationId}&disabled=false`,
-      "GET",
-      undefined,
-      kind,
-    );
-    expect(pageResponse.status).toBe(200);
-    const page = await pageResponse.json();
-    expect(page.items).toHaveLength(1);
-    expect(page.items[0]).not.toHaveProperty("clientSecret");
-    expect(
-      (await request(path, "PATCH", { name: "Renamed" }, kind)).status,
-    ).toBe(200);
-    expect((await request(link, "PUT", undefined, kind)).status).toBe(201);
-    const existingLink = await request(link, "PUT", undefined, kind);
-    expect(existingLink.status).toBe(200);
-    expect(await existingLink.json()).toEqual({ created: false });
-    const approval = await fixture.app.request(
-      `/api/admin/v1/organizations/${fixture.tenant.organizationId}/capabilities`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          clientId: client.clientId,
-          resource,
-          grantKind: "client_credentials",
-          scopes: ["tutor:read"],
-        }),
-      },
-    );
-    expect(approval.status).toBe(201);
-    const minted = await mint(client.clientId, secret, resource);
-    expect(minted.status).toBe(200);
-    expect(decodeJwt((await minted.json()).access_token).aud).toBe(resource);
-    const rotated = await request(
-      path + "/rotate-secret",
-      "POST",
-      undefined,
-      kind,
-    );
-    expect(rotated.status).toBe(200);
-    const newSecret = (await rotated.json()).clientSecret as string;
-    expect(newSecret).not.toBe(secret);
-    const old = await mint(client.clientId, secret, resource);
-    expect(old.status).toBe(401);
-    expect(await old.json()).toMatchObject({ error: "invalid_client" });
-    expect((await mint(client.clientId, newSecret, resource)).status).toBe(200);
-    // JWT issuance need not persist an access row; seed an opaque token to prove revocation.
-    const tokenId = createId();
-    await fixture.db.insert(oauthAccessTokens).values({
-      id: tokenId,
-      token: createId(),
-      clientId: client.clientId,
-      scopes: ["tutor:read"],
-      expiresAt: new Date(Date.now() + 60000),
-    });
-    expect(
-      (await request(path + "/disable", "POST", undefined, kind)).status,
-    ).toBe(200);
-    expect((await mint(client.clientId, newSecret, resource)).status).toBe(401);
-    expect(
-      (
-        await fixture.db
-          .select()
-          .from(oauthAccessTokens)
-          .where(eq(oauthAccessTokens.id, tokenId))
-      )[0]?.revoked,
-    ).toBeInstanceOf(Date);
-    expect(
-      (await request(path + "/enable", "POST", undefined, kind)).status,
-    ).toBe(200);
-    expect((await mint(client.clientId, newSecret, resource)).status).toBe(200);
-    expect((await request(link, "DELETE", undefined, kind)).status).toBe(204);
-    const unlinked = await mint(client.clientId, newSecret, resource);
-    expect(unlinked.status).toBeGreaterThanOrEqual(400);
-    expect(unlinked.status).toBeLessThan(500);
-    expect((await unlinked.json()).error).toBeString();
-    expect((await request(link, "PUT", undefined, kind)).status).toBe(201);
-    expect((await mint(client.clientId, newSecret, resource)).status).toBe(200);
-    const events = await fixture.db
-      .select()
-      .from(auditEvents)
-      .where(
-        and(
-          eq(auditEvents.targetType, "client"),
-          eq(auditEvents.targetId, client.clientId),
-        ),
-      )
-      .orderBy(auditEvents.id);
-    // The repeated link changed nothing and records no event.
-    expect(events.map((e) => e.action)).toEqual([
-      "client.created",
-      "client.updated",
-      "client.resource_linked",
-      "client.secret_rotated",
-      "client.grants_revoked",
-      "client.disabled",
-      "client.enabled",
-      "client.resource_unlinked",
-      "client.resource_linked",
-    ]);
-    for (const event of events)
-      expect(event).toMatchObject({
-        actorType: machine ? "client" : "user",
-        actorId: machine
-          ? fixture.platform.client.clientId
-          : fixture.principals.platformAdmin.userId,
-        requestId: "clients-http-test",
+        },
+      );
+      expect(approval.status).toBe(201);
+      const minted = await mint(
+        client.clientId,
+        secret,
+        resource,
+        tokenEndpointAuthMethod,
+      );
+      expect(minted.status).toBe(200);
+      expect(decodeJwt((await minted.json()).access_token).aud).toBe(resource);
+      const rotated = await request(
+        path + "/rotate-secret",
+        "POST",
+        undefined,
+        kind,
+      );
+      expect(rotated.status).toBe(200);
+      const newSecret = (await rotated.json()).clientSecret as string;
+      expect(newSecret).not.toBe(secret);
+      const old = await mint(
+        client.clientId,
+        secret,
+        resource,
+        tokenEndpointAuthMethod,
+      );
+      expect(old.status).toBe(invalidClientStatus);
+      expect(await old.json()).toMatchObject({ error: "invalid_client" });
+      expect(
+        (
+          await mint(
+            client.clientId,
+            newSecret,
+            resource,
+            tokenEndpointAuthMethod,
+          )
+        ).status,
+      ).toBe(200);
+      // JWT issuance need not persist an access row; seed an opaque token to prove revocation.
+      const tokenId = createId();
+      await fixture.db.insert(oauthAccessTokens).values({
+        id: tokenId,
+        token: createId(),
+        clientId: client.clientId,
+        scopes: ["tutor:read"],
+        expiresAt: new Date(Date.now() + 60000),
       });
-    for (const value of [
-      secret,
-      newSecret,
-      hashClientSecret(secret),
-      hashClientSecret(newSecret),
-      "clientSecret",
-    ])
-      expect(JSON.stringify(events)).not.toContain(value);
-  });
+      expect(
+        (await request(path + "/disable", "POST", undefined, kind)).status,
+      ).toBe(200);
+      expect(
+        (
+          await mint(
+            client.clientId,
+            newSecret,
+            resource,
+            tokenEndpointAuthMethod,
+          )
+        ).status,
+      ).toBe(invalidClientStatus);
+      expect(
+        (
+          await fixture.db
+            .select()
+            .from(oauthAccessTokens)
+            .where(eq(oauthAccessTokens.id, tokenId))
+        )[0]?.revoked,
+      ).toBeInstanceOf(Date);
+      expect(
+        (await request(path + "/enable", "POST", undefined, kind)).status,
+      ).toBe(200);
+      expect(
+        (
+          await mint(
+            client.clientId,
+            newSecret,
+            resource,
+            tokenEndpointAuthMethod,
+          )
+        ).status,
+      ).toBe(200);
+      expect((await request(link, "DELETE", undefined, kind)).status).toBe(204);
+      const unlinked = await mint(
+        client.clientId,
+        newSecret,
+        resource,
+        tokenEndpointAuthMethod,
+      );
+      expect(unlinked.status).toBeGreaterThanOrEqual(400);
+      expect(unlinked.status).toBeLessThan(500);
+      expect((await unlinked.json()).error).toBeString();
+      expect((await request(link, "PUT", undefined, kind)).status).toBe(201);
+      expect(
+        (
+          await mint(
+            client.clientId,
+            newSecret,
+            resource,
+            tokenEndpointAuthMethod,
+          )
+        ).status,
+      ).toBe(200);
+      const events = await fixture.db
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.targetType, "client"),
+            eq(auditEvents.targetId, client.clientId),
+          ),
+        )
+        .orderBy(auditEvents.id);
+      // The repeated link changed nothing and records no event.
+      expect(events.map((e) => e.action)).toEqual([
+        "client.created",
+        "client.updated",
+        "client.resource_linked",
+        "client.secret_rotated",
+        "client.grants_revoked",
+        "client.disabled",
+        "client.enabled",
+        "client.resource_unlinked",
+        "client.resource_linked",
+      ]);
+      for (const event of events)
+        expect(event).toMatchObject({
+          actorType: machine ? "client" : "user",
+          actorId: machine
+            ? fixture.platform.client.clientId
+            : fixture.principals.platformAdmin.userId,
+          requestId: "clients-http-test",
+        });
+      for (const value of [
+        secret,
+        newSecret,
+        hashClientSecret(secret),
+        hashClientSecret(newSecret),
+        "clientSecret",
+      ])
+        expect(JSON.stringify(events)).not.toContain(value);
+    });
 test("private key and public clients work through both admin credentials", async () => {
   for (const kind of [
     "platformAdmin",

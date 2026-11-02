@@ -284,6 +284,75 @@ test("a client created through the API is shown its secret once and gets a token
   expect(id.clientOf("nobody")).toBeUndefined()
 })
 
+for (const method of ["client_secret_basic", "client_secret_post"] as const) {
+  test(`${method} client creation and rotation show the secret once; retries return receipts without changing the active secret`, async () => {
+    const id = createFakeId({ rootSecret: "root-secret" })
+    const send = (verb: string, path: string, key: string, body?: unknown) => id.config.fetch(`https://id.test/api/admin/v1${path}`, {
+      method: verb,
+      headers: { Authorization: "Bearer root-secret", "Idempotency-Key": key, ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+    const registration = {
+      clientId: "app", name: "App", organizationId: id.organizationId, tokenEndpointAuthMethod: method,
+      grantTypes: ["authorization_code", "refresh_token"], scopes: ["openid", "profile", "email", "offline_access"], redirectUris: ["https://app.test/oauth/openid/callback"],
+    }
+    const created = await send("POST", "/clients", "create-app", registration)
+    expect(created.status).toBe(201)
+    const first = await created.json()
+    expect(first).toMatchObject({ clientId: "app", tokenEndpointAuthMethod: method, hasClientSecret: true })
+    expect(first.clientSecret).toMatch(/^secret-/)
+    expect(id.clientOf("app")?.secret).toBe(first.clientSecret)
+
+    const replayedCreation = await send("POST", "/clients", "create-app", registration)
+    expect(replayedCreation.headers.get("Idempotency-Replayed")).toBe("true")
+    const creationReceipt = await replayedCreation.json()
+    expect(creationReceipt).toMatchObject({ outcome: "applied", resultReference: { type: "client", id: first.id } })
+    expect(creationReceipt).not.toHaveProperty("clientSecret")
+    expect(id.clientOf("app")?.secret).toBe(first.clientSecret)
+    expect(await (await send("GET", "/clients/app", "read-app")).json()).not.toHaveProperty("clientSecret")
+
+    const rotated = await send("POST", "/clients/app/rotate-secret", "rotate-app")
+    expect(rotated.status).toBe(200)
+    const replacement = await rotated.json()
+    expect(replacement.clientId).toBe("app")
+    expect(replacement.clientSecret).toMatch(/^rotated-/)
+    expect(replacement.clientSecret).not.toBe(first.clientSecret)
+    expect(id.clientOf("app")?.secret).toBe(replacement.clientSecret)
+
+    const replayedRotation = await send("POST", "/clients/app/rotate-secret", "rotate-app")
+    expect(replayedRotation.headers.get("Idempotency-Replayed")).toBe("true")
+    const rotationReceipt = await replayedRotation.json()
+    expect(rotationReceipt).toMatchObject({ outcome: "applied", resultReference: { type: "client", id: "app" } })
+    expect(rotationReceipt).not.toHaveProperty("clientSecret")
+    expect(id.clientOf("app")?.secret).toBe(replacement.clientSecret)
+  })
+}
+
+test("public and private-key registrations have no shared secret to return or rotate", async () => {
+  const id = createFakeId({ rootSecret: "root-secret" })
+  for (const method of ["none", "private_key_jwt"] as const) {
+    const send = (verb: string, path: string, body?: unknown) => id.config.fetch(`https://id.test/api/admin/v1${path}`, {
+      method: verb,
+      headers: { Authorization: "Bearer root-secret", "Idempotency-Key": crypto.randomUUID(), ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+    const created = await send("POST", "/clients", { clientId: method, name: method, tokenEndpointAuthMethod: method, grantTypes: ["authorization_code"], redirectUris: ["https://app.test/callback"] })
+    expect(created.status).toBe(201)
+    const registration = await created.json()
+    expect(registration).toMatchObject({ tokenEndpointAuthMethod: method, hasClientSecret: false })
+    expect(registration).not.toHaveProperty("clientSecret")
+    const read = await send("GET", `/clients/${method}`)
+    expect(read.status).toBe(200)
+    expect(await read.json()).toMatchObject({ tokenEndpointAuthMethod: method, hasClientSecret: false })
+    expect(id.clientOf(method)?.secret).toBeUndefined()
+    const rotation = await send("POST", `/clients/${method}/rotate-secret`)
+    expect(rotation.status).toBe(409)
+    expect(await rotation.json()).toMatchObject({ code: "client_has_no_secret" })
+    expect(id.clientOf(method)?.secret).toBeUndefined()
+    expect((await send("POST", "/clients/missing/rotate-secret")).status).toBe(404)
+  }
+})
+
 test("as the ops Jobs meet it: each caller keeps its own keys, a route can be made to fail, an Entra provider needs ID's Microsoft application, and joining platform-admins locks the root secret unless break glass keeps it", async () => {
   const send = (id: ReturnType<typeof createFakeId>, method: string, path: string, { body, key = crypto.randomUUID(), bearer = "root-secret", ifNoneMatch = false }: { body?: unknown; key?: string; bearer?: string; ifNoneMatch?: boolean } = {}) =>
     id.config.fetch(`https://id.test/api/admin/v1${path}`, {

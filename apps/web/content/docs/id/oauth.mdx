@@ -13,6 +13,8 @@ Use the returned issuer, authorisation endpoint, token endpoint and public signi
 
 **Register the application.** Answerable staff register its client ID, redirect URI, authentication method, scopes and `authorization_code` grant. Add `refresh_token` if the application needs renewal. Every authorisation uses S256 PKCE, including confidential clients.
 
+**Choose the authentication method.** Server applications can register `client_secret_basic` (HTTP Basic) or `client_secret_post` (form fields). Creation returns a shared secret once; rotation replaces it. Keep it on the application server. Public browser and native clients register `none`; key-based server clients register `private_key_jwt`. These methods receive no shared secret. A client must use its registered method at the token endpoint: Basic and POST are not interchangeable. See [app registration](/docs/id/onboard#register-what-they-may-use).
+
 **Approve each organisation.** A client-only `authorization_code` capability and assignment approve login identity scopes. Access to a service also requires a capability and assignment for the exact client/resource pair. Renewal needs a separate `refresh_token` capability for the same target: null resource for login-only access, or the exact service URL. Registration and a client/resource compatibility link confer no permission. See [user capabilities](/docs/id/manage#approve-user-capabilities).
 
 **Authenticate the selected organisation.** Membership in two organisations does not establish trust between them. Each requires its own current company sign-in. A person can [connect another independently verified work identity](/docs/id/sign-in#connect-another-work-account) to the same global account. Email never merges identities.
@@ -112,6 +114,35 @@ curl "$ID_URL/auth/oauth2/revoke" \
 Refresh revocation closes that authorisation family. Another authorisation for the same user/client remains independent. Opaque access-token revocation removes that token. Unknown or foreign tokens produce an empty success without changing another client's grants.
 
 **Offline JWTs.** Revocation does not remove an already-issued JWT from a resource server. The server must verify its signature, issuer, audience, expiry, user subject and tenant claims, and enforce its own current-authority contract. Native JWT revocation returns `unsupported_token_type`. Consumer integration and first deployment require separate acceptance; local provider tests do not certify an external application or resource server.
+
+## Configure LibreChat sign-in
+
+**Use confidential POST authentication with S256 PKCE.** LibreChat's OpenID strategy uses `client_secret_post` when supplied with a secret. Register that method in ID and use the exact server origin plus `/oauth/openid/callback` as the redirect URI. The [registration example](/docs/id/onboard#register-what-they-may-use) uses that callback.
+
+| LibreChat setting                 | Value                                                             |
+| --------------------------------- | ----------------------------------------------------------------- |
+| `OPENID_ISSUER`                   | Exact ID issuer; staging uses `https://id.answerable-staging.uk`  |
+| `OPENID_CLIENT_ID`                | Registered client ID for this deployment                          |
+| `OPENID_CLIENT_SECRET`            | Secret returned by ID; retain it in the deployment's secret store |
+| `DOMAIN_SERVER`                   | Public LibreChat server origin, without a trailing slash          |
+| `DOMAIN_CLIENT`                   | Public LibreChat browser origin                                   |
+| `OPENID_SESSION_SECRET`           | Deployment-managed random secret, shared by replicas              |
+| `OPENID_CALLBACK_URL`             | `/oauth/openid/callback`                                          |
+| `OPENID_USE_PKCE`                 | `true`                                                            |
+| `OPENID_GENERATE_NONCE`           | `true`                                                            |
+| `OPENID_SCOPE`                    | `openid profile email` for login-only access                      |
+| `ALLOW_SOCIAL_LOGIN`              | `true` to show federated sign-in                                  |
+| `OPENID_BUTTON_LABEL`             | `Continue with Answerable ID`                                     |
+| `OPENID_REUSE_TOKENS`             | `false` to use LibreChat's local session                          |
+| `OPENID_USE_END_SESSION_ENDPOINT` | `false`; ID publishes no OIDC logout endpoint                     |
+
+Approve and assign the login scopes before testing. Add `offline_access`, a registered refresh grant and its capability only when the application needs ID token renewal and correctly serialises refreshes. Do not set `OPENID_AUDIENCE` for login-only access; it does not send ID's `resource` parameter.
+
+**First sign-in creates the local account.** ID signs the person in through the organisation's company directory. LibreChat must permit OpenID account creation and retain ID's issuer and `sub`; email is not an identity key. Registration in ID does not itself create a LibreChat user.
+
+**Trust and sessions are separate.** An Answerable-operated client can explicitly set `skipConsent` to bypass repeated consent. It still requires capabilities and assignments. Revoking ID access prevents new grants and renewal; LibreChat's existing local session needs its own expiry or revocation control.
+
+**Fork acceptance: [Not yet](/docs/id#today-and-next).** These settings follow the [audited upstream strategy](https://github.com/LibreChat-AI/LibreChat/blob/8d3da9bbb220a0a96be9330a2e1cbd385fb786d5/api/strategies/openidStrategy.js). Complete real-fork sign-in, denial, refresh and session checks before rollout. Provider tests alone do not prove the deployed application.
 
 ## Errors
 

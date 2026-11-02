@@ -1,6 +1,6 @@
 # Answerable acceptance
 
-The kit and the journeys that run real Answerable ID, a real browser and the official MCP OAuth client against an MCP. Development and test only.
+The kit and the journeys that run real Answerable ID and a real browser, using the official MCP OAuth client against MCPs and a pinned OpenID client for application sign-in. Development and test only.
 
 ```sh
 bun install
@@ -22,6 +22,7 @@ Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL 17 in a Compose proj
 | `src/toolbox.ts` | `prepareToolbox`: the Toolbox's machine client and database (migrated as the owner, served as the runtime login), and `start(origin)`, a Toolbox on fresh pools serving its generated list in its hub and at `<origin>/<name>/mcp`, with its poller; the e2e journeys start from it. `startToolboxStack`: that, with the Toolbox's resources, host clients and a staff client registered in ID; the Toolbox, MCP and CLI journeys and the host lane start from it |
 | `src/admin-mcp.ts` | `startAdminStack`: the admin MCP and the Toolbox registered in ID as the admin MCP's setup page shows, with a database each (migrated as the owner, served as the runtime login) and the Toolbox's poller; the admin journeys and the admin lane start from it |
 | `src/journeys/e2e.journeys.test.ts` | The e2e MCP at its path, which the Toolbox serves alone: sign-in, tokens, J4 agent-class mutation, isolation, refresh, revocation |
+| `src/journeys/app-sign-in.journeys.test.ts` | Application OIDC using `openid-client` 6.5.0, the version pinned in the audited LibreChat source: confidential POST registration through the admin API, denied login before permission, browser login/organisation selection/consent, S256 PKCE, state/nonce and signed ID-token checks, subject-bound UserInfo, refresh and secret rotation. Chromium also reads both discovery documents across origins with credentials omitted. The callback uses `47603`. |
 | `src/journeys/mcp-cli.journeys.test.ts` | The CLI's registrations in real ID (`bun mcp setup` and `bun mcp dev`, from `scripts/mcp`): mcp-dev, the Toolbox's host client, e2e's resource and client, and each organisation's access; then who is calling, from ID, in `example`'s tool, `example` in the Toolbox and e2e at its path, and widening what ID holds |
 | `src/journeys/scaffold.journeys.test.ts` | `bun mcp` end to end, as a coding agent runs it, in a copy of the working tree with its own install: `new`, `check`, `add tool` for a read and a mutation, `list` and a refused second `new`, against the development Postgres on 47432; no ID |
 | `src/journeys/admin.journeys.test.ts` | The admin MCP on port `47606` and the Toolbox: A1 roles without re-authorisation (`staff_grant` and `staff_revoke` against real ID), A2 onboarding through the tools, A3 the Toolbox outcome, A8 tool-level access (a grant string naming one capability, to a group and to a member), A4 refusals, A5 idempotency, A6 freshness (Verify sign-in) and A7 evidence |
@@ -29,4 +30,6 @@ Requires Bun 1.3.1 and Docker Compose. It starts PostgreSQL 17 in a Compose proj
 
 [Test MCPs against real ID](../../apps/web/content/docs/mcp/local-testing.mdx) lists the ports, every kit function, how to write a journey, and the errors you can hit.
 
-The lanes keep ID and the servers up for Claude Code by hand: `bun packages/acceptance/scripts/host-lane.ts` (the Toolbox, with LibreChat) and `bun packages/acceptance/scripts/admin-lane.ts` (the admin MCP and the Toolbox, with the new organisation's person). They start from the same code as the journeys, which are their proof. Neither runs beside the journeys.
+The application journey proves ID's browser and library contract. It does not run the LibreChat, OpenCloud or Euro-Office forks, their account creation or their session management. Those integrations still need acceptance against their actual pinned builds. Its HTTP allowance applies only to the disposable loopback fixture; deployed consumers use HTTPS.
+
+The lanes keep ID and the servers up for Claude Code by hand: `bun packages/acceptance/scripts/host-lane.ts` (the Toolbox, with LibreChat) and `bun packages/acceptance/scripts/admin-lane.ts` (the admin MCP and the Toolbox, with the new organisation's person). They start from the same MCP code as the journeys. The host lane uses LibreChat's local credential login; it does not certify LibreChat sign-in through ID. Neither lane runs beside the journeys.
