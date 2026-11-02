@@ -10,6 +10,8 @@ type FramedImageProps = {
   eager?: boolean
   /** Empty alt text for a frame a screen reader should skip. */
   decorative?: boolean
+  /** Scales the crop up towards its focal point. */
+  zoom?: number
   className?: string
 }
 
@@ -24,6 +26,7 @@ export function FramedImage({
   alt,
   eager = false,
   decorative = false,
+  zoom,
   className,
 }: FramedImageProps) {
   return (
@@ -36,7 +39,10 @@ export function FramedImage({
       loading={eager ? "eager" : "lazy"}
       fetchPriority={eager ? "high" : undefined}
       className={cn("object-cover", className)}
-      style={{ objectPosition: `${x}% 50%` }}
+      style={{
+        objectPosition: `${x}% 50%`,
+        ...(zoom && { scale: zoom, transformOrigin: `${x}% 50%` }),
+      }}
     />
   )
 }

@@ -1,10 +1,8 @@
 import { BulletSquare } from "@/components/bullet-square"
-import { ExpandableSection } from "@/components/expandable-sections"
-import { CredentialMark } from "@/components/new/credential-mark"
+import { GridFrame } from "@/components/new/grid-frame"
 import { Landing } from "@/components/new/landing"
 import { Lockup } from "@/components/new/lockup"
-import { SectionPanel } from "@/components/new/panel"
-import { VALUES } from "@/components/new/panels"
+import { LandingSection } from "@/components/new/panel"
 import { RegisterLink } from "@/components/new/register-link"
 import { WaitlistForm } from "@/components/waitlist-form"
 import { createMetadata, SITE } from "@/lib/metadata"
@@ -25,6 +23,15 @@ const structuredData = {
     description: SITE.description,
   })),
 }
+
+const VALUES = [
+  "We hold ourselves answerable for our work.",
+  "We use AI only where we are competent to do so.",
+  "We are honest about how we use AI.",
+  "We respect the intellectual and creative work of others.",
+  "We protect the information entrusted to us.",
+  "We use AI to strengthen our professions, not to diminish them.",
+]
 
 const ACCREDITATION_BENEFITS = [
   {
@@ -77,25 +84,28 @@ export default function Page() {
             id="join"
             className="scroll-mt-24 lg:scroll-mt-28"
           >
-            {/* The credential's mark, inverted; the copy below names it. */}
-            <div aria-hidden="true" className="mb-4">
-              <CredentialMark className="bg-black text-base text-white" />
+            {/* From lg the sub-brand sits on the heading's line, its frame
+                overhanging the line. On phones it sits above the heading. */}
+            <div className="flex flex-col-reverse items-start gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
+              <h2 id="accreditation-heading" className="text-lg/6 font-bold">
+                Join the founding cohort
+              </h2>
+              <GridFrame className="shrink-0 text-sm font-bold lg:-my-2">
+                Answerable AP
+              </GridFrame>
             </div>
-            <h2 id="accreditation-heading" className="text-lg/6 font-bold">
-              Join the founding cohort
-            </h2>
             <p className={`${BODY} text-muted-foreground mt-2`}>
               Be among the first to earn the Answerable AP credential and join a
               professional community that continues beyond the programme.
             </p>
             <p className={`${BODY} text-muted-foreground mt-4`}>
               We’re limiting the founding cohort to give participants the
-              support and assessment the programme requires. Leave your email
+              support and assessment the programme requires. Leave your details
               and we’ll send you programme details and let you know when
               enrolment opens.
             </p>
             <div className="mt-4">
-              <WaitlistForm autoFocus={false} inline />
+              <WaitlistForm autoFocus={false} cohort />
             </div>
             <p className="text-muted-foreground mt-2 text-sm/6">
               Registering interest does not reserve a place or commit you to
@@ -109,7 +119,7 @@ export default function Page() {
           </footer>
         }
       >
-        <ExpandableSection value="ai-lead" title="The AI Lead role" size="lg">
+        <LandingSection panelKey="ai-lead" title="The AI Lead role">
           <p className={BODY}>
             When a client asks how your practice uses AI, the answer should give
             them another reason to choose you.
@@ -125,23 +135,18 @@ export default function Page() {
             future. And they help make the care behind the work visible to the
             people commissioning it.
           </p>
-        </ExpandableSection>
+        </LandingSection>
 
-        <ExpandableSection
-          value="core-values"
+        <LandingSection
+          panelKey="core-values"
           title="Built upon six core values"
-          size="lg"
         >
-          <SectionPanel panelKey="core-values" />
           <p className={BODY}>
             Everything we teach, assess, and work towards together is rooted in
             six commitments. They connect the principles that make our work
             professional with the decisions we face when using AI.
           </p>
-          {/* From lg the panel beside the copy shows the six values, so the
-              list is only for screen readers there; phones have no room for
-              them on the banner, so it shows. */}
-          <ol className="flex list-none flex-col gap-4 lg:sr-only">
+          <ol className="flex list-none flex-col gap-4">
             {VALUES.map((value, index) => (
               <li key={value} className="flex items-baseline gap-4">
                 <span
@@ -154,14 +159,12 @@ export default function Page() {
               </li>
             ))}
           </ol>
-        </ExpandableSection>
+        </LandingSection>
 
-        <ExpandableSection
-          value="people"
+        <LandingSection
+          panelKey="people"
           title="The people behind the programme"
-          size="lg"
         >
-          <SectionPanel panelKey="people" />
           <p className={BODY}>
             Keir Regan-Alexander has spent the past three years helping more
             than 100 AEC firms develop their approach to AI. He has worked
@@ -181,14 +184,12 @@ export default function Page() {
             Together, they are developing a programme for professionals who want
             to take an active part in that future.
           </p>
-        </ExpandableSection>
+        </LandingSection>
 
-        <ExpandableSection
-          value="accredited-professional"
+        <LandingSection
+          panelKey="accredited-professional"
           title="Become an Answerable Accredited Professional"
-          size="lg"
         >
-          <SectionPanel panelKey="accredited-professional" />
           <p className={BODY}>
             The founding cohort is a structured programme for professionals
             stepping into the AI Lead role. You’ll get:
@@ -208,7 +209,7 @@ export default function Page() {
             You’ll develop an approach you can apply across whichever AI tools
             your practice uses, now and in the future.
           </p>
-        </ExpandableSection>
+        </LandingSection>
       </Landing>
     </>
   )

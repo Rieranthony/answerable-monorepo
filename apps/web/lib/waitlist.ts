@@ -1,12 +1,20 @@
 import { findCountry } from "@answerable/countries"
+import { isHeadcount } from "./headcounts"
 import {
   createSheetsClient,
   parseSheetsConfig,
   type SheetsDeps,
 } from "./sheets"
 
-export type WaitlistInput = { email: string; country: string }
-type WaitlistErrors = Partial<Record<"email" | "country", string>>
+export type WaitlistInput = {
+  email: string
+  country: string
+  /** Required where the form asks for it, the founding cohort's. */
+  business?: { name: string; headcount: string }
+}
+type WaitlistErrors = Partial<
+  Record<"email" | "country" | "businessName" | "businessHeadcount", string>
+>
 
 export type WaitlistState =
   | { status: "idle" }
@@ -15,6 +23,9 @@ export type WaitlistState =
 
 export const MESSAGES = {
   country: "Please select your country.",
+  businessName: "Please enter your business name.",
+  businessNameLong: "Please shorten your business name to 200 characters.",
+  businessHeadcount: "Please select your business headcount.",
   empty: "Please enter your email address.",
   invalid: "That doesn't look like a valid email address.",
   failed: "Something went wrong on our side. Please try again in a moment.",
@@ -22,6 +33,7 @@ export const MESSAGES = {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const EMAIL_MAX_LENGTH = 254
+const BUSINESS_NAME_MAX_LENGTH = 200
 const ERROR_MESSAGE_LIMIT = 500
 
 export type WaitlistDeps = SheetsDeps & {
@@ -50,6 +62,16 @@ export async function submitWaitlist(
   }
   const country = findCountry(input.country)
   if (!country) errors.country = MESSAGES.country
+  const businessName = input.business?.name.trim()
+  if (input.business) {
+    if (!businessName) errors.businessName = MESSAGES.businessName
+    else if (businessName.length > BUSINESS_NAME_MAX_LENGTH) {
+      errors.businessName = MESSAGES.businessNameLong
+    }
+    if (!isHeadcount(input.business.headcount)) {
+      errors.businessHeadcount = MESSAGES.businessHeadcount
+    }
+  }
   if (Object.keys(errors).length || !country) return { status: "error", errors }
 
   const config = parseSheetsConfig(env)
@@ -67,6 +89,8 @@ export async function submitWaitlist(
       email,
       countryCode: country.code,
       countryName: country.name,
+      businessName,
+      businessHeadcount: input.business?.headcount,
     })
     if (result.headerCreated) log.info(line("sheets_header_created", { email }))
     if (result.columnsAdded.length) {

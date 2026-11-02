@@ -17,9 +17,11 @@ export const COLUMNS = [
   "country_code",
   "country_name",
   "contacted",
+  "business_name",
+  "business_headcount",
 ] as const
 /** The columns the client writes; the rest belong to whoever reads the sheet. */
-const WRITTEN = COLUMNS.slice(0, 5)
+const WRITTEN = COLUMNS.filter((column) => column !== "contacted")
 
 export type SheetsConfig = {
   spreadsheetId: string
@@ -49,8 +51,11 @@ export type Row = {
   readonly rowNumber: number
 }
 
-/** The slice of GoogleSpreadsheetCell the upsert needs. */
-export type Cell = { value: unknown }
+/**
+ * The slice of GoogleSpreadsheetCell the upsert needs. Never its `value`, which
+ * runs a string starting with "=" as a formula; a business name is free text.
+ */
+export type Cell = { stringValue: string | undefined }
 
 export type GridRange = {
   startRowIndex?: number
@@ -110,15 +115,31 @@ export function createSheetsClient(
     email: string
     countryCode: string
     countryName: string
+    /** Left out by a signup that does not ask, which keeps what the row holds. */
+    businessName?: string
+    businessHeadcount?: string
   }): Promise<UpsertResult>
 } {
   const openSheet = deps.openSheet ?? openGoogleSheet
   const now = deps.now ?? (() => new Date())
   return {
-    async upsert({ email, countryCode, countryName }) {
+    async upsert({
+      email,
+      countryCode,
+      countryName,
+      businessName,
+      businessHeadcount,
+    }) {
       const { sheet, timeZone } = await openSheet(config)
       const header = await ensureHeader(sheet)
       const at = formatTimestamp(now(), timeZone)
+      const business: Record<string, string> =
+        businessName !== undefined && businessHeadcount !== undefined
+          ? {
+              business_name: businessName,
+              business_headcount: businessHeadcount,
+            }
+          : {}
       const rows = await sheet.getRows()
       const existing = rows.find(
         (row) =>
@@ -132,13 +153,14 @@ export function createSheetsClient(
           ["last_seen_at", at],
           ["country_code", countryCode],
           ["country_name", countryName],
+          ...Object.entries(business),
         ].map(([column, value]) => ({
           address: `${columnLetter(sheet.headerValues.indexOf(column))}${existing.rowNumber}`,
           value,
         }))
         await sheet.loadCells(updates.map(({ address }) => address))
         for (const { address, value } of updates) {
-          sheet.getCellByA1(address).value = value
+          sheet.getCellByA1(address).stringValue = value
         }
         await sheet.saveUpdatedCells()
         return { outcome: "updated", ...header }
@@ -150,6 +172,7 @@ export function createSheetsClient(
           last_seen_at: at,
           country_code: countryCode,
           country_name: countryName,
+          ...business,
         },
         { raw: true },
       )

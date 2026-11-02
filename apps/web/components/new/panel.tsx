@@ -4,64 +4,52 @@ import { FramedImage } from "@/components/new/framed-image"
 import { GridFrame } from "@/components/new/grid-frame"
 import {
   PANELS,
-  VALUES,
   type Panel as PanelData,
   type PanelKey,
 } from "@/components/new/panels"
-import { CredentialMark } from "@/components/new/credential-mark"
 import { COMMA_PATH, COMMA_VIEW_BOX } from "@answerable/ui/lib/logo"
 import { cn } from "@answerable/ui/lib/utils"
 
 /**
- * `column` is the desktop sticky column, `banner` the 2:1 phone banner, and
- * `responsive` is a banner below `lg` and a column from it, so the stack is
- * rendered once and the page keeps one `h1`.
+ * `banner` is the 2:1 phone banner, and `responsive` is a banner below `lg` and
+ * the desktop sticky column from it, so the stack is rendered once and the page
+ * keeps one `h1`.
  */
-type Shape = "column" | "banner" | "responsive"
+type Shape = "banner" | "responsive"
 
 /**
  * What differs between the two shapes, as literal classes so Tailwind finds
  * them. Everything is in `cqw`, the panel's own width, so one rule holds at
  * every size.
  */
+const BANNER_BAND =
+  "[background-image:linear-gradient(to_bottom,transparent_4%,rgba(0,0,0,var(--scrim))_30%,rgba(0,0,0,var(--scrim))_70%,transparent_96%)]"
 const SHAPES = {
-  // Gradient height: half the column, all of a banner.
-  scrim: {
-    column: "h-1/2",
-    banner: "h-full",
-    responsive: "h-full lg:h-1/2",
+  // The band behind the words: it holds its strength across the words' height.
+  band: {
+    banner: BANNER_BAND,
+    responsive: `${BANNER_BAND} lg:[background-image:linear-gradient(to_bottom,transparent_20%,rgba(0,0,0,var(--scrim))_38%,rgba(0,0,0,var(--scrim))_62%,transparent_80%)]`,
   },
-  // The six values fit a column; a banner shows only the title.
-  list: {
-    column: "flex",
-    banner: "hidden",
-    responsive: "hidden lg:flex",
-  },
-  title: {
-    column: "hidden",
-    banner: "block",
-    responsive: "block lg:hidden",
-  },
+  // Small enough on a banner to stay clear of the words in the middle.
   comma: {
-    column: "right-[8cqw] bottom-[8cqw] w-[22cqw]",
-    banner: "right-[6cqw] bottom-[6cqw] w-[14cqw]",
+    banner: "right-[6cqw] bottom-[6cqw] w-[9cqw]",
     responsive:
-      "right-[6cqw] bottom-[6cqw] w-[14cqw] lg:right-[8cqw] lg:bottom-[8cqw] lg:w-[22cqw]",
+      "right-[6cqw] bottom-[6cqw] w-[9cqw] lg:right-[8cqw] lg:bottom-[8cqw] lg:w-[22cqw]",
   },
   // The window: centred near the bottom of a column, at the right of a banner.
   window: {
-    column: "bottom-[10cqw] left-1/2 h-[62%] -translate-x-1/2",
     banner: "top-[8%] right-[6cqw] h-[84%]",
     responsive:
       "top-[8%] right-[6cqw] h-[84%] lg:top-auto lg:right-auto lg:bottom-[10cqw] lg:left-1/2 lg:h-[62%] lg:-translate-x-1/2",
   },
 } satisfies Record<string, Record<Shape, string>>
 
-const TEXT_STYLES = {
-  headline: { fontSize: "clamp(24px, 5.7cqw, 48px)", lineHeight: 1.1 },
-  title: { fontSize: "clamp(20px, 4cqw, 34px)", lineHeight: 1.15 },
-  label: { fontSize: "clamp(16px, 3.2cqw, 26px)", lineHeight: 1.15 },
-} satisfies Record<string, CSSProperties>
+const WORDS_STYLE: CSSProperties = {
+  fontSize: "clamp(24px, 5.7cqw, 48px)",
+  lineHeight: 1.1,
+}
+const WORDS =
+  "absolute inset-0 z-10 flex items-center justify-center px-[10cqw] text-center font-bold tracking-[-0.02em] text-balance text-white"
 
 // The comma as a CSS mask, so an image can show through its shape.
 const COMMA_MASK = `url("data:image/svg+xml,${encodeURIComponent(
@@ -75,26 +63,21 @@ const COMMA_WINDOW: CSSProperties = {
   maskPosition: "center",
 }
 
-// Top left, 7cqw in: the corner marks' inset plus their size.
-const TEXT_BOX = "absolute top-[7cqw] right-[12cqw] left-[7cqw] z-10 text-white"
-
 type PanelProps = {
   panel: PanelData
   shape: Shape
   /** Whether the panel is showing; an inactive image is decorative. */
   active: boolean
-  /** Renders the headline as the page's `h1`. Only the hero panel has one. */
+  /** Renders the words as the page's `h1`. Only the hero panel has one. */
   heading?: boolean
   /** Loads the image at once, for the panel the page opens on. */
   eager?: boolean
-  /** Leaves the title off, where the accordion shows it right above. */
-  bare?: boolean
 }
 
 /**
  * One panel, filling its positioned parent. It is a size container, so
- * everything inside scales with the panel's width. The text on it is
- * `aria-hidden`, because the accordion carries the titles, except the headline
+ * everything inside scales with the panel's width. The words on it are
+ * `aria-hidden`, because the sections carry the titles, except the headline
  * when it is the page's `h1`.
  */
 export function Panel({
@@ -103,7 +86,6 @@ export function Panel({
   active,
   heading = false,
   eager = false,
-  bare = false,
 }: PanelProps) {
   return (
     <div
@@ -119,11 +101,10 @@ export function Panel({
           active={active}
           heading={heading}
           eager={eager}
-          bare={bare}
         />
       )}
       {panel.kind === "statement" && (
-        <StatementPanel panel={panel} shape={shape} bare={bare} />
+        <StatementPanel panel={panel} shape={shape} />
       )}
       {panel.kind === "window" && (
         <WindowPanel
@@ -143,17 +124,13 @@ function ImagePanel({
   active,
   heading,
   eager,
-  bare,
 }: {
   panel: Extract<PanelData, { kind: "image" }>
   shape: Shape
   active: boolean
   heading: boolean
   eager: boolean
-  bare: boolean
 }) {
-  const text = bare ? undefined : panel.text
-  const { scrim } = panel
   const mark = "pointer-events-none absolute z-10 size-[3.5cqw] bg-white"
 
   return (
@@ -164,20 +141,27 @@ function ImagePanel({
         alt={panel.alt}
         eager={eager}
         decorative={!active}
+        zoom={shape === "banner" ? panel.bannerZoom : undefined}
       />
-      {text && scrim > 0 && (
+      {panel.scrim > 0 && (
         <div
           aria-hidden="true"
           className={cn(
-            "pointer-events-none absolute inset-x-0 top-0",
-            SHAPES.scrim[shape],
+            "pointer-events-none absolute inset-0",
+            SHAPES.band[shape],
           )}
-          style={{
-            backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,${scrim}), rgba(0,0,0,0))`,
-          }}
+          style={{ "--scrim": panel.scrim } as CSSProperties}
         />
       )}
-      {text && <PanelText text={text} heading={heading} />}
+      {heading ? (
+        <h1 className={WORDS} style={WORDS_STYLE}>
+          {panel.words}
+        </h1>
+      ) : (
+        <div aria-hidden="true" className={WORDS} style={WORDS_STYLE}>
+          {panel.words}
+        </div>
+      )}
       {/* The old logotype's corner marks, once: three squares and the comma. */}
       <span
         aria-hidden="true"
@@ -196,80 +180,18 @@ function ImagePanel({
   )
 }
 
-function PanelText({
-  text,
-  heading,
-}: {
-  text: NonNullable<Extract<PanelData, { kind: "image" }>["text"]>
-  heading: boolean
-}) {
-  const style = TEXT_STYLES[text.style]
-  const type = "font-bold tracking-[-0.02em] text-balance"
-
-  if (text.style === "headline" && heading) {
-    return (
-      <h1 className={cn(TEXT_BOX, type, "lg:max-w-[10em]")} style={style}>
-        {text.value}
-      </h1>
-    )
-  }
-  return (
-    <div aria-hidden="true" className={cn(TEXT_BOX, type)} style={style}>
-      {text.style === "label" ? (
-        <GridFrame>{text.value}</GridFrame>
-      ) : (
-        text.value
-      )}
-    </div>
-  )
-}
-
 function StatementPanel({
   panel,
   shape,
-  bare,
 }: {
   panel: Extract<PanelData, { kind: "statement" }>
   shape: Shape
-  bare: boolean
 }) {
   return (
     <>
-      <ol
-        aria-hidden="true"
-        className={cn(
-          TEXT_BOX,
-          "list-none flex-col font-bold",
-          SHAPES.list[shape],
-        )}
-        style={{
-          fontSize: "clamp(14px, 2.6cqw, 22px)",
-          lineHeight: 1.25,
-          gap: "2.2cqw",
-        }}
-      >
-        {VALUES.map((value, index) => (
-          <li key={value} className="flex gap-[1.2em]">
-            <span className="w-[1ch] shrink-0 font-black tabular-nums">
-              {index + 1}
-            </span>
-            <span>{value}</span>
-          </li>
-        ))}
-      </ol>
-      {!bare && (
-        <div
-          aria-hidden="true"
-          className={cn(
-            TEXT_BOX,
-            "font-bold tracking-[-0.02em] text-balance",
-            SHAPES.title[shape],
-          )}
-          style={TEXT_STYLES.title}
-        >
-          {panel.title}
-        </div>
-      )}
+      <div aria-hidden="true" className={WORDS} style={WORDS_STYLE}>
+        {panel.words}
+      </div>
       <Comma className={cn("absolute", SHAPES.comma[shape])} />
     </>
   )
@@ -290,10 +212,10 @@ function WindowPanel({
     <>
       <div
         aria-hidden="true"
-        className={cn(TEXT_BOX, "font-bold tracking-[-0.02em]")}
-        style={TEXT_STYLES.label}
+        className="absolute top-[7cqw] left-[7cqw] z-10 font-bold tracking-[-0.02em] text-white"
+        style={{ fontSize: "clamp(16px, 3.2cqw, 26px)", lineHeight: 1.15 }}
       >
-        <CredentialMark />
+        <GridFrame>Answerable AP</GridFrame>
       </div>
       <div
         className={cn("absolute aspect-[48.21/72.002]", SHAPES.window[shape])}
@@ -324,19 +246,35 @@ function Comma({ className }: { className: string }): ReactNode {
 }
 
 /**
- * A section's panel at the top of its accordion panel on phones: a 2:1 banner,
- * always showing, without the title the accordion shows right above it. From
- * lg the sticky column shows it instead; the lazy image inside a hidden box
- * never loads.
+ * A section of the copy, which the sticky column follows from lg through
+ * `data-panel`. Below lg the section's own panel sits above it, edge to edge;
+ * from lg it is hidden and its lazy image never loads. A panel with words on it
+ * shows the title there, so the heading is for screen readers only below lg.
  */
-export function SectionPanel({
+export function LandingSection({
   panelKey,
+  title,
+  children,
 }: {
   panelKey: Exclude<PanelKey, "hero">
+  title: string
+  children: ReactNode
 }) {
+  const panel = PANELS[panelKey]
   return (
-    <div className="relative aspect-[2/1] w-full lg:hidden">
-      <Panel panel={PANELS[panelKey]} shape="banner" active bare />
-    </div>
+    <section data-panel={panelKey} className="flex flex-col gap-4">
+      <div className="relative -mx-6 aspect-[2/1] lg:hidden">
+        <Panel panel={panel} shape="banner" active />
+      </div>
+      <h2
+        className={cn(
+          "text-lg/6 font-bold",
+          panel.kind !== "window" && "sr-only lg:not-sr-only",
+        )}
+      >
+        {title}
+      </h2>
+      {children}
+    </section>
   )
 }

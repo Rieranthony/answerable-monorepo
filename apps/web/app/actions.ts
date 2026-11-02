@@ -11,3 +11,17 @@ export async function joinWaitlist(
     country: String(formData.get("country") ?? ""),
   })
 }
+
+export async function joinFoundingCohort(
+  _previous: WaitlistState,
+  formData: FormData,
+): Promise<WaitlistState> {
+  return submitWaitlist({
+    email: String(formData.get("email") ?? ""),
+    country: String(formData.get("country") ?? ""),
+    business: {
+      name: String(formData.get("businessName") ?? ""),
+      headcount: String(formData.get("businessHeadcount") ?? ""),
+    },
+  })
+}

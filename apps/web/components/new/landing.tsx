@@ -1,8 +1,7 @@
 "use client"
 
-import { useState, type ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 
-import { ExpandableSections } from "@/components/expandable-sections"
 import { Panel } from "@/components/new/panel"
 import {
   isPanelKey,
@@ -10,44 +9,36 @@ import {
   PANELS,
   type PanelKey,
 } from "@/components/new/panels"
+import { activeSectionIndex } from "@/lib/scroll-panel"
 import { cn } from "@answerable/ui/lib/utils"
 
-// The accordion panel's height transition, plus a frame.
-const PANEL_SETTLE_MS = 220
-
-/**
- * From lg the form shares the first screen with the sections, so after one
- * opens or closes and its height settles, bring the form back into view: the
- * least scroll that shows it whole, after the header-on-screen scroll.
- */
-function keepFormInView() {
-  if (!window.matchMedia("(min-width: 64rem)").matches) return
-  const reduceMotion = window.matchMedia(
-    "(prefers-reduced-motion: reduce)",
-  ).matches
-  window.setTimeout(
-    () =>
-      document.querySelector("#join form")?.scrollIntoView({
-        block: "nearest",
-        behavior: reduceMotion ? "instant" : "smooth",
-      }),
-    reduceMotion ? 0 : PANEL_SETTLE_MS,
-  )
+/** The panel the scroll position calls for; below lg the page has only the hero. */
+function currentPanel(): PanelKey {
+  if (!window.matchMedia("(min-width: 64rem)").matches) return "hero"
+  const sections = [...document.querySelectorAll<HTMLElement>("[data-panel]")]
+  const index = activeSectionIndex({
+    tops: sections.map((section) => section.getBoundingClientRect().top),
+    scrollY: window.scrollY,
+    maxScroll: document.documentElement.scrollHeight - window.innerHeight,
+    viewportHeight: window.innerHeight,
+  })
+  const key = sections[index]?.dataset.panel
+  return isPanelKey(key) ? key : "hero"
 }
 
 type LandingProps = {
   header: ReactNode
   hero: ReactNode
-  /** The `ExpandableSection`s; their values are panel keys. */
+  /** The `LandingSection`s; their keys are panel keys. */
   children: ReactNode
   join: ReactNode
   footer: ReactNode
 }
 
 /**
- * Owns which section is open, because the panel follows it. The copy arrives
- * as server-rendered props; only the open value lives here. Nothing open shows
- * the hero panel.
+ * Owns which panel shows, which follows the scroll. The copy arrives as
+ * server-rendered props; only the active key lives here. Without JS the hero
+ * panel stays.
  *
  * The panel stack is rendered once and a grid places it: a 2:1 banner under
  * the header below lg, and from lg the sticky column beside the copy. So the
@@ -62,15 +53,22 @@ export function Landing({
 }: LandingProps) {
   const [active, setActive] = useState<PanelKey>("hero")
 
+  useEffect(() => {
+    const update = () => setActive(currentPanel())
+    update()
+    window.addEventListener("scroll", update, { passive: true })
+    window.addEventListener("resize", update)
+    return () => {
+      window.removeEventListener("scroll", update)
+      window.removeEventListener("resize", update)
+    }
+  }, [])
+
   return (
     <div className="grid min-h-svh grid-cols-1 grid-rows-[auto_auto_1fr] lg:grid-cols-2 lg:grid-rows-[auto_1fr]">
       {/* The header stays on top while the page scrolls; from lg it spans the
-          copy column only. `data-sticky-header` lets the sections scroll a
-          header they open clear of it. */}
-      <div
-        data-sticky-header
-        className="bg-background sticky top-0 z-30 px-6 lg:col-start-1 lg:row-start-1 lg:px-12"
-      >
+          copy column only. */}
+      <div className="bg-background sticky top-0 z-30 px-6 lg:col-start-1 lg:row-start-1 lg:px-12">
         <div className="mx-auto w-full max-w-[560px]">{header}</div>
       </div>
 
@@ -113,22 +111,7 @@ export function Landing({
         <div className="mx-auto flex w-full max-w-[560px] grow flex-col">
           <main className="mt-8 flex flex-col gap-12">
             {hero}
-            <div>
-              <p className="text-muted-foreground text-sm/6">
-                Click to expand below:
-              </p>
-              <div className="mt-2">
-                <ExpandableSections
-                  onValueChange={(value) => {
-                    const open = value[0]
-                    setActive(isPanelKey(open) ? open : "hero")
-                    keepFormInView()
-                  }}
-                >
-                  {children}
-                </ExpandableSections>
-              </div>
-            </div>
+            {children}
             {join}
           </main>
 

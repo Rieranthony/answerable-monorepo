@@ -20,9 +20,13 @@ function harness(
     info: mock<(line: string) => void>(() => {}),
   }
   const opened: SheetsConfig[] = []
-  const submit = (email: string, country = "GB") =>
+  const submit = (
+    email: string,
+    country = "GB",
+    business?: { name: string; headcount: string },
+  ) =>
     submitWaitlist(
-      { email, country },
+      { email, country, business },
       {
         env,
         log,
@@ -38,6 +42,7 @@ function harness(
   return { ...fake, log, opened, submit, lines }
 }
 const success = { status: "success", email: "a@b.com" } as const
+const acme = { name: "Acme Architects", headcount: "11–50" }
 const failed = { status: "error", message: MESSAGES.failed } as const
 
 describe("unit: waitlist", () => {
@@ -77,6 +82,63 @@ describe("unit: waitlist", () => {
     })
     expect(h.opened).toEqual([])
   })
+  test("requires both business fields where the form asks for them", async () => {
+    const h = harness()
+    expect(
+      await h.submit("a@b.com", "GB", { name: "  ", headcount: "" }),
+    ).toEqual({
+      status: "error",
+      errors: {
+        businessName: MESSAGES.businessName,
+        businessHeadcount: MESSAGES.businessHeadcount,
+      },
+    })
+    expect(h.opened).toEqual([])
+  })
+  test("rejects a headcount outside the bands", async () => {
+    const h = harness()
+    for (const headcount of ["12", "1-10", "=1+1"]) {
+      expect(await h.submit("a@b.com", "GB", { ...acme, headcount })).toEqual({
+        status: "error",
+        errors: { businessHeadcount: MESSAGES.businessHeadcount },
+      })
+    }
+    expect(h.opened).toEqual([])
+  })
+  test("takes a 200-character business name and rejects 201", async () => {
+    const h = harness()
+    expect(
+      await h.submit("a@b.com", "GB", { ...acme, name: "x".repeat(201) }),
+    ).toEqual({
+      status: "error",
+      errors: { businessName: MESSAGES.businessNameLong },
+    })
+    expect(h.opened).toEqual([])
+    expect(
+      await h.submit("a@b.com", "GB", { ...acme, name: "x".repeat(200) }),
+    ).toEqual(success)
+  })
+  test("stores the trimmed business name and the band", async () => {
+    const h = harness()
+    expect(
+      await h.submit("a@b.com", "GB", { ...acme, name: "  Acme Architects " }),
+    ).toEqual(success)
+    expect(h.rows[0].business_name).toBe("Acme Architects")
+    expect(h.rows[0].business_headcount).toBe("11–50")
+  })
+  test("a signup that does not ask keeps the business cells", async () => {
+    const h = harness()
+    await h.submit("a@b.com", "GB", acme)
+    expect(await h.submit("a@b.com", "FR")).toEqual(success)
+    expect(h.rows[0].country_code).toBe("FR")
+    expect(h.rows[0].business_name).toBe("Acme Architects")
+    expect(h.rows[0].business_headcount).toBe("11–50")
+  })
+  test("never logs the business name", async () => {
+    const h = harness({ fail: { loadHeaderRow: new Error("boom") } })
+    expect(await h.submit("a@b.com", "GB", acme)).toEqual(failed)
+    expect(h.lines("error").join()).not.toContain("Acme")
+  })
   test("normalises the country and stores its name", async () => {
     const h = harness()
     expect(await h.submit("a@b.com", " gb ")).toEqual(success)
@@ -89,7 +151,7 @@ describe("unit: waitlist", () => {
     })
     expect(await h.submit("a@b.com")).toEqual(success)
     expect(h.lines("info")).toEqual([
-      '[waitlist] sheets_header_extended {"email":"a@b.com","columns":"country_code,country_name"}',
+      '[waitlist] sheets_header_extended {"email":"a@b.com","columns":"country_code,country_name,business_name,business_headcount"}',
     ])
   })
   test("stores trimmed lowercase addresses", async () => {

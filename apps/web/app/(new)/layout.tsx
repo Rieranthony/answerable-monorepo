@@ -28,7 +28,7 @@ export default function NewLayout({
   return (
     // The scripts below set `--splash`, `--gutter` and `--frame` on <html>
     // before first paint, which the server HTML cannot match. The scrollbar's gutter is always kept, so
-    // opening a section that makes the page scroll never narrows the columns.
+    // the columns never narrow when the scrollbar appears.
     <html
       lang="en"
       className={cn(
