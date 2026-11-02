@@ -119,7 +119,7 @@ export default function Page() {
           </footer>
         }
       >
-        <LandingSection panelKey="ai-lead" title="The AI Lead role">
+        <LandingSection title="The AI Lead role">
           <p className={BODY}>
             When a client asks how your practice uses AI, the answer should give
             them another reason to choose you.

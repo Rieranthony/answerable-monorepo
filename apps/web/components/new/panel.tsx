@@ -141,7 +141,6 @@ function ImagePanel({
         alt={panel.alt}
         eager={eager}
         decorative={!active}
-        zoom={shape === "banner" ? panel.bannerZoom : undefined}
       />
       {panel.scrim > 0 && (
         <div
@@ -246,30 +245,32 @@ function Comma({ className }: { className: string }): ReactNode {
 }
 
 /**
- * A section of the copy, which the sticky column follows from lg through
- * `data-panel`. Below lg the section's own panel sits above it, edge to edge;
- * from lg it is hidden and its lazy image never loads. A panel with words on it
- * shows the title there, so the heading is for screen readers only below lg.
+ * A section of the copy. With a panel, the sticky column follows it from lg
+ * through `data-panel`. Below lg that panel sits above it, edge to edge; from
+ * lg it is hidden and its lazy image never loads. A panel with words on it shows
+ * the title there, so the heading is for screen readers only below lg.
  */
 export function LandingSection({
   panelKey,
   title,
   children,
 }: {
-  panelKey: Exclude<PanelKey, "hero">
+  panelKey?: Exclude<PanelKey, "hero">
   title: string
   children: ReactNode
 }) {
-  const panel = PANELS[panelKey]
+  const panel = panelKey && PANELS[panelKey]
   return (
     <section data-panel={panelKey} className="flex flex-col gap-4">
-      <div className="relative -mx-6 aspect-[2/1] lg:hidden">
-        <Panel panel={panel} shape="banner" active />
-      </div>
+      {panel && (
+        <div className="relative -mx-6 aspect-[2/1] lg:hidden">
+          <Panel panel={panel} shape="banner" active />
+        </div>
+      )}
       <h2
         className={cn(
           "text-lg/6 font-bold",
-          panel.kind !== "window" && "sr-only lg:not-sr-only",
+          panel && panel.kind !== "window" && "sr-only lg:not-sr-only",
         )}
       >
         {title}

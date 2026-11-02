@@ -14,8 +14,6 @@ export type Panel =
       words: string
       /** How black the band behind the words is, at its strongest. */
       scrim: number
-      /** Zooms a phone banner towards `x`, where 2:1 leaves no room to crop. */
-      bannerZoom?: number
     }
   /** Words on black, the big comma below them. */
   | { kind: "statement"; words: string }
@@ -23,8 +21,8 @@ export type Panel =
   | { kind: "window"; image: StaticImageData; x: number; alt: string }
 
 /**
- * One panel per state of the page: the sections' panels, plus `hero` above the
- * first section. A panel is a crop, not a file: two photographs are placeholders
+ * One panel per state of the page: the sections' panels, plus `hero` until the
+ * first section with one. A panel is a crop, not a file: two photographs are placeholders
  * until Laura's images arrive, so the browser fetches each once.
  *
  * A new image from Laura is one file in `assets/new/` and one line here.
@@ -38,15 +36,6 @@ export const PANELS = {
     alt: "A speaker on a stage presents a building to a seated audience in an open hall full of plants and trees.",
     words: "For everything you put your name to.",
     scrim: 0.5,
-  },
-  "ai-lead": {
-    kind: "image",
-    image: forumStage,
-    x: 0,
-    alt: "People stand and talk under a tree at the back of a talk, the stage beyond them.",
-    words: "The AI Lead role",
-    scrim: 0.5,
-    bannerZoom: 1.8,
   },
   "core-values": { kind: "statement", words: "Built upon six core values" },
   people: {

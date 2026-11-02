@@ -47,3 +47,4 @@
 - Found on the build: at 2:1 a 3:2 image has no room to crop, so the AI Lead banner was the hero's picture again. Added `bannerZoom` (1.8) for that panel on phones.
 - Gates: typecheck 0, lint 0, web test 0, Prettier clean, `next build` 0 with `/new` static. Not covered: the live Google Sheet; the formula fix rests on the library probe (`stringValue`) and the `Cell` type, which no longer has `value`.
 - Owner approved. Landed on main, only this work: local main's four unpushed commits stay local.
+- Owner: remove the AI Lead illustration on desktop and phones, "it's too much". The panel, its phone banner and `bannerZoom` are gone; the section keeps its visible heading, and the hero panel stays until the values section.

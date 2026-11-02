@@ -29,7 +29,7 @@ function currentPanel(): PanelKey {
 type LandingProps = {
   header: ReactNode
   hero: ReactNode
-  /** The `LandingSection`s; their keys are panel keys. */
+  /** The `LandingSection`s. */
   children: ReactNode
   join: ReactNode
   footer: ReactNode

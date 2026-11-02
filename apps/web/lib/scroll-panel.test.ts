@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { activeSectionIndex } from "./scroll-panel"
 
-// Measured on /new with every section showing: each section's top on the page.
-const PAGE_TOPS = [262, 598, 1046, 1454]
+// Measured on /new: the top on the page of each section with a panel.
+const PAGE_TOPS = [598, 1046, 1454]
 const CONTENT_HEIGHT = 2555
 
 function walk(viewportHeight: number) {
@@ -39,13 +39,13 @@ describe("unit: scroll panel", () => {
         maxScroll: 1115,
         viewportHeight: 1440,
       }),
-    ).toBe(3)
+    ).toBe(2)
   })
   for (const viewportHeight of [720, 900, 1080, 1440]) {
     test(`gives every panel room at a ${viewportHeight}px window`, () => {
       const scroll = walk(viewportHeight)
       expect(scroll.get(-1) ?? 0).toBeGreaterThanOrEqual(30)
-      for (const index of [0, 1, 2, 3]) {
+      for (const index of [0, 1, 2]) {
         expect(scroll.get(index) ?? 0).toBeGreaterThanOrEqual(150)
       }
     })
