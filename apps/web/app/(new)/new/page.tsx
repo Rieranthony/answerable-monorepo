@@ -84,15 +84,11 @@ export default function Page() {
             id="join"
             className="scroll-mt-24 lg:scroll-mt-28"
           >
-            {/* From lg the sub-brand sits on the heading's line, its frame
-                overhanging the line. On phones it sits above the heading. */}
-            <div className="flex flex-col-reverse items-start gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
+            <div className="flex flex-col items-start gap-3">
+              <GridFrame className="text-sm font-bold">Answerable AP</GridFrame>
               <h2 id="accreditation-heading" className="text-lg/6 font-bold">
                 Join the founding cohort
               </h2>
-              <GridFrame className="shrink-0 text-sm font-bold lg:-my-2">
-                Answerable AP
-              </GridFrame>
             </div>
             <p className={`${BODY} text-muted-foreground mt-2`}>
               Be among the first to earn the Answerable AP credential and join a

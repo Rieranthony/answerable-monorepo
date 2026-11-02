@@ -48,3 +48,4 @@
 - Gates: typecheck 0, lint 0, web test 0, Prettier clean, `next build` 0 with `/new` static. Not covered: the live Google Sheet; the formula fix rests on the library probe (`stringValue`) and the `Cell` type, which no longer has `value`.
 - Owner approved. Landed on main, only this work: local main's four unpushed commits stay local.
 - Owner: remove the AI Lead illustration on desktop and phones, "it's too much". The panel, its phone banner and `bannerZoom` are gone; the section keeps its visible heading, and the hero panel stays until the values section.
+- Owner: the Answerable AP stamp goes above "Join the founding cohort" at every width, not on its line from lg.
