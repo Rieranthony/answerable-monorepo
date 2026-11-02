@@ -3,7 +3,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**", "dist/**"]
     },
     "web#build": {
       "dependsOn": ["^build"],
@@ -23,7 +23,7 @@
         "../../mcps/*/package.json",
         "../../scripts/mcp/**"
       ],
-      "outputs": [".next/**", "!.next/cache/**"]
+      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
     },
     "web#test": {
       "dependsOn": ["^build"],
