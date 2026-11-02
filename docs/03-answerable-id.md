@@ -1,6 +1,6 @@
 # Answerable ID: design document
 
-Answerable ID is a Bun/TypeScript identity broker and OAuth provider built on Hono, Better Auth 1.7.2 and Postgres. It has never shipped to production. The integrated foundation is implemented; real tenant, consumer and deployment acceptance remains open in the [release decision](../reports/answerable-id-release-decision-plan.md).
+Answerable ID is a Bun/TypeScript identity broker and OAuth provider built on Hono, Better Auth 1.7.15 and Postgres. It has never shipped to production. The integrated foundation is implemented; real tenant, consumer and deployment acceptance remains open in the [release decision](../reports/answerable-id-release-decision-plan.md).
 
 This is the current design. The [schema](04-answerable-id-schema.md) defines storage, the [foundation specification](05-id-enterprise-foundation.md) defines invariants, and the [build plan](02-plan.md) separates implementation from rollout.
 

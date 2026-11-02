@@ -49,6 +49,7 @@ type UserRow = {
 type AccountRow = {
   deletedAt?: Date | null;
   id: string;
+  providerId: string;
   userId: string;
   directoryId?: string | null;
   directoryUserId?: string | null;
@@ -211,6 +212,10 @@ export async function resolveFederatedUser(
     }
     if (await membershipRevoked(database, provider.organizationId, owner.id))
       return reject("membership_revoked", "Organisation membership is revoked");
+    // Better Auth finds the account by provider and subject, so it would not
+    // find this one and would try to create another user.
+    if (exactAccount.providerId !== input.providerId)
+      return reject("identity_conflict", "Identity is already bound");
     return { action: "continue" };
   }
 

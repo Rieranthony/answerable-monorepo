@@ -74,11 +74,11 @@ test("uses the configured discovery URL", async () => {
   expect(requested[0]).toBe(custom);
 });
 
-test("an issuer with a trailing slash passes, as sign-in accepts it", async () => {
-  const result = await run([Response.json(discovery), keys()], trusted, {
+test("an issuer with a trailing slash fails, as sign-in refuses it", async () => {
+  const result = await run([Response.json(discovery)], trusted, {
     issuer: `${issuer}/`,
   });
-  expect(result.problems).toEqual([]);
+  expect(codes(result)).toEqual(["issuer_mismatch"]);
   expect(result.discovery.url).toBe(
     `${issuer}/.well-known/openid-configuration`,
   );

@@ -2,7 +2,6 @@ import { authDatabaseAdapter } from "./auth/database-adapter.ts";
 import { userOAuthProvider } from "./auth/user-provider.ts";
 import { sso } from "@better-auth/sso";
 import { betterAuth } from "better-auth";
-import { APIError, isAPIError } from "better-auth/api";
 import { openAPI } from "better-auth/plugins";
 import { jwt } from "better-auth/plugins/jwt";
 
@@ -40,20 +39,14 @@ export function createAuth(db: Database, environment: Environment) {
     organizationProvisioning: { disabled: true },
     resolveUser: ssoOrigin.resolveUser,
   });
-  return betterAuth({
+  const auth = betterAuth({
     appName: "Answerable ID",
     onAPIError: {
       errorURL: `${environment.betterAuthUrl}/error`,
-      onError(error) {
-        if (isAPIError(error)) return;
-
-        logEvent("auth", "provider_diagnostic", errorFields(error));
-        // Throw a safe protocol error so the native router cannot log the raw exception.
-        throw new APIError("INTERNAL_SERVER_ERROR", {
-          code: "authentication_unavailable",
-          message: "Authentication is temporarily unavailable",
-        });
-      },
+      // The native router prints the raw exception of an unexpected error it
+      // answers itself, and ignores what a hook throws. Rethrown, the exception
+      // reaches the handler below without passing through that log.
+      throw: true,
     },
     // Provider diagnostics may contain SQL parameters, tokens or upstream bodies.
     // Preserve a severity signal, never free-form messages or argument objects.
@@ -133,6 +126,13 @@ export function createAuth(db: Database, environment: Environment) {
           required: false,
           input: false,
           returned: false,
+        },
+        // ID keys a federated account on issuer and subject. The provider's
+        // own key since 1.7.3 is provider and subject, so this column is ID's.
+        issuer: {
+          type: "string",
+          required: true,
+          input: false,
         },
         directoryId: {
           type: "string",
@@ -216,6 +216,23 @@ export function createAuth(db: Database, environment: Environment) {
       openAPI({ disableDefaultReference: true }),
     ],
   });
+  return {
+    ...auth,
+    async handler(request: Request) {
+      try {
+        return await auth.handler(request);
+      } catch (error) {
+        logEvent("auth", "provider_diagnostic", errorFields(error));
+        return Response.json(
+          {
+            code: "authentication_unavailable",
+            message: "Authentication is temporarily unavailable",
+          },
+          { status: 500 },
+        );
+      }
+    },
+  };
 }
 
 export type Auth = ReturnType<typeof createAuth>;

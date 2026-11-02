@@ -31,7 +31,7 @@ import {
   userStatuses,
 } from "./vocabulary.ts";
 
-// Tables in this file are owned by Better Auth 1.7.2 (core and the
+// Tables in this file are owned by Better Auth 1.7.15 (core and the
 // organization plugin). Columns beyond its field set are Answerable's
 // additional fields, declared again in `src/auth.ts`.
 
@@ -148,6 +148,7 @@ export const accounts = pgTable(
   {
     ...softDeletion(),
     id: id(),
+    /** ID's identity key with `accountId`; Better Auth's own key is `providerId` and `accountId`. */
     issuer: text("issuer").notNull(),
     accountId: text("account_id").notNull(),
     directoryId: text("directory_id"),

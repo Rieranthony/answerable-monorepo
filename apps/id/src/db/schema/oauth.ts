@@ -24,7 +24,7 @@ import {
 import { resourceClassifications } from "./vocabulary.ts";
 
 // Tables in this file are owned by Better Auth's JWT plugin and by
-// @better-auth/oauth-provider 1.7.2. Property names are the plugins' own field
+// @better-auth/oauth-provider 1.7.15. Property names are the plugins' own field
 // names; only the physical names follow Answerable's conventions.
 
 /** Token-signing keys, published at the JWKS endpoint. The row id is the `kid`. */

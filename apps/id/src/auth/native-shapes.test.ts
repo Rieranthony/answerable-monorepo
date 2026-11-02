@@ -9,7 +9,7 @@ const directory = new URL(
 // A failure means the adapter interceptors must be re-verified before upgrading Better Auth.
 test("the pinned native provider retains the query shapes intercepted by grant boundaries", async () => {
   const files = [
-    ...new Bun.Glob("introspect-*.mjs").scanSync(directory.pathname),
+    ...new Bun.Glob("authorize-*.mjs").scanSync(directory.pathname),
   ];
   expect(files).toHaveLength(1);
   const source = await Bun.file(new URL(files[0]!, directory)).text();

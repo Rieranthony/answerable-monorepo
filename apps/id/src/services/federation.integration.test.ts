@@ -987,6 +987,25 @@ describe("integration: federated sign-in", () => {
       expect(await connection.db.select().from(table)).toHaveLength(0);
   });
 
+  test("refuses an identity bound through another provider at the same issuer", async () => {
+    await seedProvider();
+    await seedProvider({ slug: "fabrikam", domain: "fabrikam.com" });
+    issuer.enqueue(entraClaims());
+    expect((await signIn()).location).toBe(callbackURL);
+
+    issuer.enqueue(entraClaims({ email: "person@fabrikam.com" }));
+    const refused = await signIn("fabrikam");
+
+    expect(errorCode(refused.location)).toBe("identity_conflict");
+    expect(
+      await connection.db
+        .select({ providerId: accounts.providerId })
+        .from(accounts),
+    ).toEqual([{ providerId: "contoso" }]);
+    expect(await connection.db.select().from(users)).toHaveLength(1);
+    expect(await connection.db.select().from(sessions)).toHaveLength(1);
+  });
+
   test("does not borrow another organization's active domain", async () => {
     await seedProvider({ domain: "first.example.com" });
     const [other] = await connection.db

@@ -1108,7 +1108,9 @@ test("a concurrent native state read still allows only one purpose claim and bin
         input.where?.some(
           (condition) =>
             condition.field === "identifier" &&
-            condition.value === callback.searchParams.get("state"),
+            String(condition.value).endsWith(
+              `:${callback.searchParams.get("state")}`,
+            ),
         )
       ) {
         if (++reads === 2) bothRead.resolve();

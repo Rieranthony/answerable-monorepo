@@ -317,7 +317,7 @@ test("registered public clients still need the native PKCE proof", async () => {
         }),
       }),
     );
-  expect((await redeem("wrong".repeat(16))).status).toBe(401);
+  expect((await redeem("wrong".repeat(16))).status).toBe(400);
   expect((await redeem(verifier)).status).toBe(200);
 });
 
@@ -368,7 +368,7 @@ test("private-key authentication stays consumed when a production code exchange 
       }),
     );
   const proof = await assertion();
-  expect((await redeem(proof, "wrong".repeat(16))).status).toBe(401);
+  expect((await redeem(proof, "wrong".repeat(16))).status).toBe(400);
   expect((await redeem(proof, verifier)).status).toBeGreaterThanOrEqual(400);
   expect(
     await fixture.db.$count(
