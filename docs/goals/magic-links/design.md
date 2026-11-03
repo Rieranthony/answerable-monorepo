@@ -163,9 +163,11 @@ This works whether magic links are on or off, since it never signs in from mail 
 
 ## Emails
 
-`packages/emails` (`@answerable/emails`) holds every email: React Email components, one shared dead-simple layout, per-email templates. A generator precompiles each template to committed `*.generated.ts` strings for HTML and text, with escaped holes. A drift test fails when they differ. ID imports only the generated strings, so React stays out of its production bundle: +9.8 KB against +1.36 MB, and no per-render memory growth. Each `.tsx` carries `/** @jsxImportSource react */`. A script writes previews to disk.
+`packages/emails` (`@answerable/emails`) holds every email: React Email components, one shared dead-simple layout, per-email templates. Three today: `magic-link`, `access-removed` and `mailbox-code`. A generator precompiles each template to committed `*.generated.ts` strings for HTML and text, with escaped holes. A drift test fails when they differ. ID imports only the generated strings, so React stays out of its production bundle: 28 KB for the three emails and the transport, against +1.36 MB measured for rendering one email at run time, and no per-render memory growth. Each `.tsx` carries `/** @jsxImportSource react */`. A script writes previews to disk.
 
-The transport lives in the same package: a thin `fetch` client for Postmark with a 10-second timeout and one retry on 429, 5xx or a timeout, plus a memory transport for tests. `TrackOpens: false`, `TrackLinks: "None"`. Nothing secret in `Tag` or `Metadata`. Local development prints the link. Production refuses to start without the token.
+The type is calm: `heading-h2` (24 px Bold) rather than `heading-h1`, `body-sm` for the text, and the code at 24 px Bold.
+
+The transport lives in the same package: a thin `fetch` client for Postmark with a 10-second timeout and one retry on 429, 5xx, a network error or a timeout, plus a log transport for local development and a memory transport for tests. A send returns a result, never throws on Postmark's answer, and carries numbers only, so neither a link nor a token reaches a log. `TrackOpens: false`, `TrackLinks: "None"`. Nothing secret in `Tag` or `Metadata`. Local development prints the link. Production refuses to start without the token.
 
 ## Admin
 
