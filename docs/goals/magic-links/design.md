@@ -52,10 +52,10 @@ Sessions and grants already name a provider row and revision, so turning the opt
 
 Old code reads `sso_providers` with `limit(1)` and native SSO reads by organisation, so a magic-link row breaks the previous image. Measured: directory sign-in answered `Invalid SSO provider` once the row came first.
 
-- **Release N:** `kind`, the new index and every filter. No magic-link rows exist.
+- **Release N:** `kind`, the new index, every filter, and the refusals that only matter once rows exist: no admin authority from a magic-link session, and `/auth/sso/link` and `/reauthenticate` refused by kind. No magic-link rows exist. N is the previous image during N+1's rollout and after a tag back, so it must be safe on N+1's data.
 - **Release N+1:** the trigger, the backfill and the feature.
 
-Also, `runMigrations` must accept a database ahead of its image, or a tag back fails.
+Also, `runMigrations` must accept a database ahead of its image, or a tag back fails. That landed in W0. An image from before W0 refuses a newer database, so the first tag should be a commit with W0 and no migration.
 
 ## States
 

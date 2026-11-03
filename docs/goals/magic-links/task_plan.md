@@ -28,7 +28,7 @@ An organisation can sign its people in with an emailed link, sent through Postma
 6. [complete] Throwaway end-to-end prototype of the sign-in core, in a worktree. Rerun by the coordinator: 1,543 pass, 0 fail.
 7. [complete] Independent attack on the design and prototype. Design rewritten: `design.md`.
 8. [complete] Report with decisions, published privately. The owner decided D1 to D6: `decisions.md`.
-9. [in_progress] The steps below. W0 and W1 landed on main on 3 November 2026.
+9. [in_progress] The steps below. W0, W1 and W2 landed on main on 3 November 2026.
 
 ## Build order, after approval
 
@@ -36,10 +36,10 @@ An organisation can sign its people in with an emailed link, sent through Postma
 | --- | --- | --- |
 | W0 | Fix what exists: bound the login address before any pattern, origin check on `POST /login`, body cap on the sign-in routes, client address from `cf-connecting-ip`, edge rate rule, `runMigrations` accepts a newer database, delete `db:regenerate`. A disabled person keeps their address until staff retire it. Admin MCP `users.disable`, `users.enable`, `users.retireemail`, `members.remove`, `members.reinstate`, with `platform:users` for its machine client | Sonnet 5.5 |
 | W1 | `packages/emails`: templates, generator, drift test, Postmark transport, and a test that fails when an image misses a COPY | Sonnet 5.5 |
-| W2 | Release N: `kind`, index, filters, rollout test. Tag staging | Opus 5.5 |
+| W2 | Release N: `kind`, index, filters, the refusals by kind, rollout test | Opus 5.5 |
 | W3 | Release N+1: provider row, trigger, backfill, toggle, admin API, fake, OpenAPI | Opus 5.5 |
 | W4 | Issue: requests table, limits, queue, sending, drain, sweep. ID first imports `@answerable/emails` here: its dependency under `dependencies`, `COPY packages/emails packages/emails` in the Dockerfile, the package in `apps/id/bunfig.toml`'s coverage ignore | Opus 5.5 |
-| W5 | Link, code, confirm, pages, authority, session cap, `authentication_method` | Opus 5.5 |
+| W5 | Link, code, confirm, pages, authority, session cap, `authentication_method`. The member access view (`queries/access.ts`) must stop reporting admin for a magic-link member; `/security` hides directory actions | Opus 5.5 |
 | W6 | Import, admission setting, DNS proof of domains, admin MCP tools, manifest | Sonnet 5.5 |
 | W7 | Both methods for one person: choice page, two-proof first Entra sign-in, mailbox proof for Entra-first people, directory commands end directory grants only | Opus 5.5 |
 | W8 | Deployment: sixth secret, Terraform mail records, kind stack, docs | Sonnet 5.5 |
@@ -51,7 +51,7 @@ The coordinator reviews every change and runs the gates. The owner pushes tags.
 **No staging release yet (owner, 3 November 2026).** Work lands on `main` and nothing is tagged. W0 is not deployed.
 
 - **First tag:** `CLOUDFLARE_API_TOKEN` needs Zone > Zone WAF > Edit on the zone first, or Terraform fails at the rate limit.
-- **W2 and W3:** when releases start, tag W2's commit and let it finish before tagging W3's. The previous image breaks on a magic-link row, so one tag across both would break directory sign-in.
+- **Order:** when releases start, tag W1's commit first (`d838e071`): it carries W0 and no migration, so tag back works from then on. Then W2's commit, and let it finish. Then W3's. The image before W2 breaks on a magic-link row, so one tag across W2 and W3 would break directory sign-in.
 - **W8:** `POSTMARK_SERVER_TOKEN` must be in the GitHub environment before the first tag that requires it.
 - **W10:** needs a release to staging, so it waits for the owner.
 
