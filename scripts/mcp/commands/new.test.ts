@@ -136,7 +136,7 @@ test("it writes the templates, then the generated list, the install, the migrati
     "Making acme in mcps/acme: it runs in the Toolbox; its first tool is notes.list.",
     "Database: schema acme in answerable_mcps (shared). Pass --database own for a database of its own.",
   ])
-  expect(lines.slice(2, 8).map(line => line.replace(/ \(\d+ ms\)$/, ""))).toEqual([
+  expect(lines.slice(2, 8).map(line => line.replace(/ \(\d+(\.\d+)? m?s\)$/, ""))).toEqual([
     "ok      write      mcps/acme: 11 files",
     "ok      generate   rewrote charts/answerable/mcps.json",
     "ok      install    bun install",
@@ -161,7 +161,7 @@ test("an MCP of its own database says where its schema is", async () => {
 test("a failed step stops the run, says why and gives the commands that finish the job, and exits 1 with the files kept", async () => {
   const { code, stdout, stderr } = await run(full("acme"), { migrate: migrations("the development Postgres does not answer on localhost:47432; start it with bun run env:up from the main checkout").migrate })
   expect(code).toBe(1)
-  expect(stdout()).toMatch(/failed {2}database {3}\(\d+ ms\)\n$/)
+  expect(stdout()).toMatch(/failed {2}database {3}\(\d+(\.\d+)? m?s\)\n$/)
   expect(stderr()).toBe(`database failed: the development Postgres does not answer on localhost:47432; start it with bun run env:up from the main checkout
 
 Finish the job with:

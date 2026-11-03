@@ -84,7 +84,7 @@ test("it writes the tool and its test, adds the import and the entry above the m
   expect(ran.map(({ command }) => command.slice(1).join(" ").replace(/^\S*cli\.ts/, "cli.ts"))).toEqual([
     "cli.ts db acme generate --name notes", "run typecheck", "run lint", "run test", "scripts/env-inventory.ts",
   ])
-  expect(stdout().split("\n").map(line => line.replace(/ \(\d+ ms\)$/, ""))).toEqual([
+  expect(stdout().split("\n").map(line => line.replace(/ \(\d+(\.\d+)? m?s\)$/, ""))).toEqual([
     "ok      write      src/tools/notes-list.ts, src/tools/notes-list.test.ts, src/provider.ts, the notes table in src/db/schema.ts",
     "ok      migration  drizzle/0001_notes.sql",
     "ok      check      guard 7 files; none names answerable.organisation_id; typecheck 7 files; lint 7 files; test 4 pass, 0 fail; manifest current; generated current; budget no MCP has a database of its own",

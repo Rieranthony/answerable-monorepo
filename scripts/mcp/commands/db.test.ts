@@ -29,7 +29,7 @@ const run = async (argv: string[]) => {
   const io = testIo(["db", ...argv], repository.root, { exec: spawn, migrate: migrateLocal })
   return { ...io, code: await main(io.io) }
 }
-const lines = (text: string) => text.split("\n").map(line => line.replace(/ \(\d+ ms\)$/, ""))
+const lines = (text: string) => text.split("\n").map(line => line.replace(/ \(\d+(\.\d+)? m?s\)$/, ""))
 const file = (name: string, path: string) => Bun.file(join(repository.root, "mcps", name, path))
 
 test("generate writes the first migration without drizzle-kit's schema line, then the next for a new table, then nothing", async () => {

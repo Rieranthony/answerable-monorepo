@@ -21,7 +21,7 @@ const run = async (argv: string[], exec = recorder(() => ({ code: 0, output: pas
   const io = testIo(["check", ...argv], cwd, { exec })
   return { ...io, code: await main(io.io) }
 }
-const lines = (text: string) => text.split("\n").map(line => line.replace(/ \(\d+ ms\)$/, ""))
+const lines = (text: string) => text.split("\n").map(line => line.replace(/ \(\d+(\.\d+)? m?s\)$/, ""))
 
 test("it runs the guard, the typecheck, lint and tests in the workspace, the manifest, the generated files and the budget, one line each with counts", async () => {
   const { exec, ran } = recorder(() => ({ code: 0, output: passing }))
