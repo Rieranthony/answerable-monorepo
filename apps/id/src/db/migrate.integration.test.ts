@@ -184,7 +184,12 @@ test("migrating a database at 0001 leaves its provider rows as they were, as dir
     // The same tuples: nothing wrote to a row, so no trigger saw one, and a session
     // naming a revision still names the current one.
     expect((await rows()).filter((row) => row.kind === "oidc")).toEqual(
-      before.map((row) => ({ ...row, kind: "oidc", enabled: true })),
+      before.map((row) => ({
+        ...row,
+        kind: "oidc",
+        enabled: true,
+        admission: "listed",
+      })),
     );
     expect(await scratch.db.$count(sql`drizzle.__drizzle_migrations`)).toBe(
       committedCount,
@@ -239,6 +244,20 @@ async function deployedDatabase() {
     async migrateBeforeMagicLinks() {
       await editJournal(folder, (entries) => {
         entries.splice(4);
+      });
+      await runMigrations(schemaOwner.db, folder);
+    },
+    /** Migrate only as far as the release before admission and domain proofs. */
+    async migrateBeforeAdmission() {
+      await editJournal(folder, (entries) => {
+        entries.splice(9);
+      });
+      await runMigrations(schemaOwner.db, folder);
+    },
+    /** Migrate only as far as the release before the budget for new addresses. */
+    async migrateBeforeNewAddresses() {
+      await editJournal(folder, (entries) => {
+        entries.splice(11);
       });
       await runMigrations(schemaOwner.db, folder);
     },
@@ -304,7 +323,7 @@ test("migrating from the previous release as the schema owner gives each live or
 
     // The directories' tuples are the same, so a session naming a revision still does.
     expect(await directories()).toEqual(
-      before.map((row) => ({ ...row, enabled: true })),
+      before.map((row) => ({ ...row, enabled: true, admission: "listed" })),
     );
     const { rows } = await deployed.owner.pool.query<{
       id: string;
@@ -418,7 +437,12 @@ test("migrating real rows from the release before requests touches them, and the
     expect(missing).toEqual([{ found: null }]);
 
     expect(await runMigrations(deployed.owner.db)).toEqual({ ahead: false });
-    expect(await tuples()).toEqual(before);
+    // A domain row is written once, by Postgres and not by a command, for its own token: a
+    // volatile default rewrites the table, nothing names a domain row's tuple, and it has no
+    // revision. Every row a session or grant names is untouched.
+    const notDomains = (rows: Record<string, unknown>[]) =>
+      rows.filter((row) => row.source !== "domains");
+    expect(notDomains(await tuples())).toEqual(notDomains(before));
     await configureRuntimeRole(deployed.owner.db, deployed.runtimeRole);
 
     const { rows: providers } = await deployed.owner.pool.query<{
@@ -486,8 +510,9 @@ test("migrating real rows from the release before requests touches them, and the
     }
 
     // A repeated run has nothing to do, and the grants stay.
+    const migrated = await tuples();
     expect(await runMigrations(deployed.owner.db)).toEqual({ ahead: false });
-    expect(await tuples()).toEqual(before);
+    expect(await tuples()).toEqual(migrated);
   } finally {
     await deployed.close();
   }
@@ -544,6 +569,109 @@ test("an organisation being created while the migration runs gets its row", asyn
     expect(rows).toEqual([{ enabled: true }]);
   } finally {
     creating.release();
+    await deployed.close();
+  }
+}, 30_000);
+
+test("migrating real rows from the release before admission: every domain gets a token of its own and no proof, every provider row stays listed at its revision, and the previous image's insert still works", async () => {
+  const deployed = await deployedDatabase();
+  const providers = async () =>
+    (
+      await deployed.owner.pool.query<Record<string, unknown>>(
+        "select id, kind, revision, xmin::text as tuple_writer from sso_providers order by id",
+      )
+    ).rows;
+  try {
+    await deployed.migrateBeforeAdmission();
+    await deployed.owner.pool.query(`
+      insert into organizations (id, slug, name) values ('${id(1)}', 'one', 'One');
+      insert into organization_domains (id, organization_id, domain) values
+        ('${id(2)}', '${id(1)}', 'one.example.com'),
+        ('${id(3)}', '${id(1)}', 'two.example.com');
+      insert into sso_providers (id, organization_id, provider_id, issuer, domain, oidc_config) values
+        ('${id(4)}', '${id(1)}', 'one', 'https://idp.example', 'one.example.com', '{}');
+    `);
+    const before = await providers();
+    expect(before).toHaveLength(2);
+    const { rows: columns } = await deployed.owner.pool.query(
+      "select column_name from information_schema.columns where table_name = 'organization_domains' and column_name in ('verification_token', 'verified_at')",
+    );
+    expect(columns).toEqual([]);
+
+    expect(await runMigrations(deployed.owner.db)).toEqual({ ahead: false });
+
+    // The tuples of the provider rows are the same: a session naming a revision still does.
+    expect(await providers()).toEqual(before);
+    const { rows: admissions } = await deployed.owner.pool.query(
+      "select distinct admission from sso_providers",
+    );
+    expect(admissions).toEqual([{ admission: "listed" }]);
+    const { rows: domains } = await deployed.owner.pool.query<{
+      verification_token: string;
+      verified_at: Date | null;
+    }>(
+      "select verification_token, verified_at from organization_domains order by id",
+    );
+    expect(domains.map((row) => row.verified_at)).toEqual([null, null]);
+    expect(domains[0]!.verification_token).toMatch(/^[0-9a-f]{32}$/);
+    expect(domains[1]!.verification_token).toMatch(/^[0-9a-f]{32}$/);
+    expect(domains[0]!.verification_token).not.toBe(
+      domains[1]!.verification_token,
+    );
+
+    // The previous image names neither column, and its insert gets a token and no proof.
+    await deployed.owner.pool.query(
+      `insert into organization_domains (id, organization_id, domain) values ('${id(5)}', '${id(1)}', 'three.example.com')`,
+    );
+    const { rows: added } = await deployed.owner.pool.query<{
+      verification_token: string;
+      verified_at: Date | null;
+    }>(
+      `select verification_token, verified_at from organization_domains where id = '${id(5)}'`,
+    );
+    expect(added[0]!.verification_token).toMatch(/^[0-9a-f]{32}$/);
+    expect(added[0]!.verified_at).toBeNull();
+    // And its update of a magic-link row's `enabled` still moves the revision, as it did.
+    const { rows: moved } = await deployed.owner.pool.query<{
+      revision: number;
+    }>(
+      `update sso_providers set enabled = false where organization_id = '${id(1)}' and kind = 'magic_link' returning revision`,
+    );
+    expect(moved).toEqual([{ revision: 2 }]);
+  } finally {
+    await deployed.close();
+  }
+}, 30_000);
+
+test("migrating real requests from the release before the budget: they stay as they were and count as no new address, and the previous image's insert gets false", async () => {
+  const deployed = await deployedDatabase();
+  const insert = (request: number, email: string) =>
+    `insert into magic_link_requests (id, organization_id, provider_id, provider_revision, purpose, email, client_hash, expires_at)
+     values ('${id(request)}', '${id(1)}', (select id from sso_providers where organization_id = '${id(1)}' and kind = 'magic_link'), 1, 'access_removed', '${email}', 'client', now())`;
+  const requests = async () =>
+    (
+      await deployed.owner.pool.query<Record<string, unknown>>(
+        "select id, xmin::text as tuple_writer from magic_link_requests order by id",
+      )
+    ).rows;
+  try {
+    await deployed.migrateBeforeNewAddresses();
+    await deployed.owner.pool.query(
+      `insert into organizations (id, slug, name) values ('${id(1)}', 'one', 'One')`,
+    );
+    await deployed.owner.pool.query(insert(2, "person@one.example.com"));
+    const before = await requests();
+    expect(before).toHaveLength(1);
+
+    expect(await runMigrations(deployed.owner.db)).toEqual({ ahead: false });
+
+    expect(await requests()).toEqual(before);
+    await deployed.owner.pool.query(insert(3, "other@one.example.com"));
+    const { rows } = await deployed.owner.pool.query(
+      "select new_address from magic_link_requests order by id",
+    );
+    expect(rows).toEqual([{ new_address: false }, { new_address: false }]);
+  } finally {
     await deployed.close();
   }
 }, 30_000);

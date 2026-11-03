@@ -64,8 +64,8 @@ export function createCalls(id: IdAdmin) {
    * A write with the intent's idempotency key and the call's execution id. When ID does not answer, or answers with a 5xx, it is sent once more with
    * the same key, which ID replays if the first one was applied; when it still fails, or ID answers that a write with the key is still running,
    * `UPSTREAM_UNAVAILABLE` says the outcome is unknown. ID refusing a stale `If-Match` answers `INTENT_STALE`. Returns the `Operation-Id` ID sends with
-   * every command (`apps/id/src/http/admin/command.ts`), throwing when it is missing, and the id of the row it made or changed, which a replayed
-   * answer carries in its receipt; a `204` has none.
+   * every command (`apps/id/src/http/admin/command.ts`), throwing when it is missing; the id of the row it made or changed, which a replayed
+   * answer carries in its receipt, and a `204` has none; ID's answer; and whether that answer is a replayed receipt rather than the row.
    */
   async function write(method: "POST" | "PATCH" | "PUT" | "DELETE", path: string, { body, ifMatch, ifNoneMatch, key, scope }: Write, { executionId }: ToolContext) {
     const send = () => id.manage(method, path, { body, ifMatch, ifNoneMatch, idempotencyKey: key, requestId: executionId, scope })
@@ -76,7 +76,7 @@ export function createCalls(id: IdAdmin) {
       })
       if (answer.operationId === null) throw new Error(`Answerable ID applied ${method} ${path} but answered without an Operation-Id, which the receipt needs`)
       const row = answer.body as { id?: string; resultReference?: { id: string } } | null
-      return { operationId: answer.operationId, id: (answer.replayed ? row?.resultReference?.id : row?.id) as string }
+      return { operationId: answer.operationId, id: (answer.replayed ? row?.resultReference?.id : row?.id) as string, body: answer.body, replayed: answer.replayed }
     } catch (error) {
       if (error instanceof IdError && error.status === 412) {
         throw new ToolError("INTENT_STALE", `Answerable ID refused the write because ${path} changed after the commit checked it; prepare it again`, {
@@ -90,7 +90,13 @@ export function createCalls(id: IdAdmin) {
       return upstream(error)
     }
   }
-  return { read, need, list, all, version, versioned, write }
+  /** A POST that changes nothing, with `platform:read`, for a list that does not fit a query; ID's 404 is `NOT_FOUND`, saying what is missing. */
+  async function ask<T>(path: string, body: unknown, { executionId }: ToolContext, missing: string) {
+    const answer = await found(id.manage("POST", path, { body, requestId: executionId, scope: "read" })).catch(upstream)
+    if (answer === undefined) throw new ToolError("NOT_FOUND", missing)
+    return answer.body as T
+  }
+  return { read, need, list, all, version, versioned, write, ask }
 }
 /** ID's admin API as the tools call it. */
 export type Calls = ReturnType<typeof createCalls>

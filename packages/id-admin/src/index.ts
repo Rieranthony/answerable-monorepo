@@ -34,10 +34,11 @@ export type IdWriteOptions = IdCallOptions & {
   idempotencyKey?: string
   /**
    * The scope of the token the write is sent with. `write` (the default): `platform:read platform:write`. `users`: `platform:read platform:users`, which
-   * ID's commands on a user or a membership check (disabling, enabling and retiring a user; removing and reinstating a member) and `platform:write` does
-   * not include. The machine client needs a capability for ID's admin resource that covers it.
+   * ID's commands on a user or a membership check (disabling, enabling and retiring a user; removing and reinstating a member; importing members) and
+   * `platform:write` does not include. `read`: `platform:read` alone, for a POST that changes nothing because its input does not fit a query. The machine
+   * client needs a capability for ID's admin resource that covers it.
    */
-  scope?: "write" | "users"
+  scope?: "write" | "users" | "read"
 }
 
 /**
@@ -174,7 +175,7 @@ export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, f
       return { body: await response.json(), etag: response.headers.get("ETag") }
     },
     /**
-     * Call the admin API with `platform:read` and `platform:write` (`platform:read` and `platform:users` for `scope: "users"`): a JSON `body`, an
+     * Call the admin API with `platform:read` and `platform:write` (`platform:read` and `platform:users` for `scope: "users"`, `platform:read` alone for `scope: "read"`): a JSON `body`, an
      * `If-Match` or `If-None-Match` precondition, an `Idempotency-Key` on every write (a random one unless `idempotencyKey` names it) and an
      * `x-request-id`. Returns the JSON (`null` for `204`), the response's
      * `ETag`, its `Operation-Id`, the id of the operation ID recorded for a write, and whether ID replayed an earlier answer to the same key
@@ -182,7 +183,8 @@ export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, f
      * when ID sent none.
      */
     async manage(method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", path: string, options?: IdWriteOptions): Promise<{ body: unknown; etag: string | null; operationId: string | null; replayed: boolean }> {
-      const response = await call(options?.scope === "users" ? users : write, method, path, options)
+      const scope = options?.scope === "users" ? users : options?.scope === "read" ? read : write
+      const response = await call(scope, method, path, options)
       return {
         body: response.status === 204 ? null : await response.json(), etag: response.headers.get("ETag"),
         operationId: response.headers.get("Operation-Id"), replayed: response.headers.get("Idempotency-Replayed") === "true",

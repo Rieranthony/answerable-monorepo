@@ -17,6 +17,7 @@ import type { Database, Executor } from "../db/client.ts";
 import { withDatabaseScope } from "../db/isolation.ts";
 import { lockOrganization, lockUser } from "../db/locks.ts";
 import { recordAuditEvent, type AuditAction } from "../db/queries/audit.ts";
+import { provisionMembership } from "../db/queries/members.ts";
 import {
   accounts,
   magicLinkRequests,
@@ -28,9 +29,11 @@ import { errorFields } from "../http/problem.ts";
 import { createId } from "../lib/id.ts";
 import { logEvent } from "../lib/log.ts";
 import { boundedUserAgent } from "../lib/user-agent.ts";
+import { newUserFields } from "../services/federation.ts";
 import {
   admitMagicLink,
   parseMagicLinkAddress,
+  type AdmittedPerson,
 } from "../services/magic-link-admission.ts";
 import { lockMagicLinkAddress } from "../services/magic-link-requests.ts";
 import { activeTransaction, grantTransaction } from "./database-adapter.ts";
@@ -215,6 +218,32 @@ async function ensureAccount(
 }
 
 /**
+ * The person a domain-mode sign-in has admitted, made here if they are new to the firm or to
+ * ID: the fields a directory's first sign-in writes, and its membership. Its audit row is the
+ * sign-in's own, as a directory's is.
+ */
+async function ensurePerson(
+  adapter: DBTransactionAdapter,
+  tx: Executor,
+  person: AdmittedPerson,
+  email: string,
+  organizationId: string,
+) {
+  if (person.kind === "member") return person.userId;
+  const userId =
+    person.kind === "user"
+      ? person.userId
+      : (
+          await adapter.create<{ id: string }>({
+            model: "user",
+            data: newUserFields({ email }),
+          })
+        ).id;
+  await provisionMembership(tx, organizationId, userId);
+  return userId;
+}
+
+/**
  * A magic-link sign-in, in one transaction, reached only from the pages. It answers
  * `{ url }` once signed in, or `{ refused }`: `removed` for a person whose access ended, who
  * has proved their mailbox, and `invalid` for every other refusal.
@@ -353,17 +382,30 @@ export function magicLinkConfirmation(
                 if (admission.outcome === "stranger")
                   throw new Refusal("not_admitted", row);
                 // A link issued before a firm was switched off stays dead after it is
-                // switched on, and a domain that moved firms takes no link with it.
+                // switched on, and a domain that moved firms takes no link with it. A holder
+                // who appeared after the lock above was taken has no lock here: ask again.
+                const { person, organizationId } = admission;
                 if (
                   admission.providerId !== row.providerId ||
                   admission.providerRevision !== row.providerRevision ||
-                  admission.userId !== holder?.id
+                  (person.kind === "new" ? undefined : person.userId) !==
+                    holder?.id
                 )
                   throw new Refusal("provider_changed", row);
+                // The admission above is the authority: it read the switch, the domain's
+                // proof and the person under these locks, so a switch to listed, a proof
+                // lost or a removal between issue and now has already refused.
+                const userId = await ensurePerson(
+                  adapter,
+                  tx,
+                  person,
+                  row.email,
+                  organizationId,
+                );
                 const accountId = await ensureAccount(
                   tx,
                   row,
-                  admission,
+                  { userId, organizationId },
                   provider!,
                   requestId,
                 );
@@ -375,7 +417,7 @@ export function magicLinkConfirmation(
                   // The column means a directory sign-in. Null keeps sensitive admin
                   // commands and POST /auth/sso/link closed.
                   upstreamAuthTime: null,
-                  userId: admission.userId,
+                  userId,
                   lifetimeSeconds: magicLinkSessionLifetimeSeconds,
                 });
                 const consumed =
@@ -383,9 +425,8 @@ export function magicLinkConfirmation(
                     identifier,
                   );
                 if (!consumed) throw new Refusal("token_consumed", row);
-                const session = await ctx.context.internalAdapter.createSession(
-                  admission.userId,
-                );
+                const session =
+                  await ctx.context.internalAdapter.createSession(userId);
                 // Either proof ends both. A right code is not a wrong code, so it takes
                 // back the attempt it counted, for the failure budgets.
                 await tx
@@ -397,7 +438,7 @@ export function magicLinkConfirmation(
                       : {}),
                   })
                   .where(eq(magicLinkRequests.id, row.id));
-                return { session, userId: admission.userId };
+                return { session, userId };
               },
             );
           } catch (error) {

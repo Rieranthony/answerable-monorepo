@@ -1,4 +1,4 @@
-import { and, eq, exists, isNull, not, sql } from "drizzle-orm";
+import { and, eq, exists, inArray, isNull, not, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import type { Executor } from "../db/client.ts";
@@ -13,6 +13,7 @@ import {
   users,
 } from "../db/schema/index.ts";
 import { maxLoginAddressLength } from "../http/pages/login-routing.ts";
+import { isPublicMailDomain } from "../lib/public-mail-domains.ts";
 
 /** An address as `users.email` holds it, and its domain. */
 export type MagicLinkAddress = { email: string; domain: string };
@@ -37,14 +38,49 @@ type MagicLinkFirm = {
 };
 
 /**
- * Whether this address may have a link at this moment. `admit` is a person the firm lists;
- * `removed` is one whose access ended, who is told so by mail and gets no token; `stranger`
- * is everyone else, and nothing is sent or written.
+ * Who a link would sign in: a member; in domain mode, a user with no membership here yet, or
+ * an address no user holds yet. Only the first two have a `userId` to read.
+ */
+export type AdmittedPerson =
+  | { kind: "member"; userId: string; memberId: string }
+  | { kind: "user"; userId: string }
+  | { kind: "new" };
+
+/**
+ * Whether this address may have a link at this moment. `admit` is a person the firm lists, or
+ * anyone at a proved domain of a firm in domain mode; `removed` is one whose access ended, who
+ * is told so by mail and gets no token; `stranger` is everyone else, and nothing is sent or
+ * written.
  */
 export type MagicLinkAdmission =
   | { outcome: "stranger" }
   | ({ outcome: "removed" } & MagicLinkFirm)
-  | ({ outcome: "admit"; userId: string; memberId: string } & MagicLinkFirm);
+  | ({ outcome: "admit"; person: AdmittedPerson } & MagicLinkFirm);
+
+/**
+ * Of these users, those holding an account whose provider row is another firm's, or that no
+ * row names. A firm's own provider rows stay in the table after they are removed, so one of
+ * its directory's accounts never counts. `(issuer, account_id)` is unique, so an account with
+ * another firm's magic-link row could never sign in here either.
+ */
+export async function usersWithForeignAccounts(
+  tx: Executor,
+  userIds: string[],
+  organizationId: string,
+) {
+  const rows = await tx
+    .selectDistinct({ userId: accounts.userId })
+    .from(accounts)
+    .leftJoin(ssoProviders, eq(ssoProviders.providerId, accounts.providerId))
+    .where(
+      and(
+        inArray(accounts.userId, userIds),
+        isNull(accounts.deletedAt),
+        sql`${ssoProviders.organizationId} is distinct from ${organizationId}`,
+      ),
+    );
+  return new Set(rows.map(({ userId }) => userId));
+}
 
 /**
  * The one admission check, read from current state in the caller's transaction, which
@@ -55,12 +91,16 @@ export async function admitMagicLink(
   tx: Executor,
   { email, domain }: MagicLinkAddress,
 ): Promise<MagicLinkAdmission> {
-  const [firm] = await tx
+  // Before any row: an old domain row fails closed when the list grows, in either mode.
+  if (isPublicMailDomain(domain)) return { outcome: "stranger" };
+  const [row] = await tx
     .select({
       organizationId: organizations.id,
       firmName: organizations.name,
       providerId: ssoProviders.id,
       providerRevision: ssoProviders.revision,
+      admission: ssoProviders.admission,
+      domainProvedAt: organizationDomains.verifiedAt,
     })
     .from(organizationDomains)
     .innerJoin(
@@ -93,7 +133,10 @@ export async function admitMagicLink(
         ),
       ),
     );
-  if (!firm) return { outcome: "stranger" };
+  if (!row) return { outcome: "stranger" };
+  const { admission, domainProvedAt, ...firm } = row;
+  // Per address: a domain added after the switch, not yet proved, admits nobody new.
+  const openToAnyone = admission === "domain" && domainProvedAt !== null;
 
   const [user] = await tx
     .select({
@@ -103,7 +146,11 @@ export async function admitMagicLink(
     })
     .from(users)
     .where(and(eq(users.email, email), isNull(users.deletedAt)));
-  if (!user || user.retiredEmail !== null) return { outcome: "stranger" };
+  if (!user)
+    return openToAnyone
+      ? { outcome: "admit", person: { kind: "new" }, ...firm }
+      : { outcome: "stranger" };
+  if (user.retiredEmail !== null) return { outcome: "stranger" };
   if (user.status !== "active") return { outcome: "removed", ...firm };
 
   const [member] = await tx
@@ -119,27 +166,21 @@ export async function admitMagicLink(
         eq(members.userId, user.id),
       ),
     );
-  if (!member) return { outcome: "stranger" };
-  if (member.status === "revoked") return { outcome: "removed", ...firm };
-  if (!member.effective) return { outcome: "stranger" };
+  if (!member && !openToAnyone) return { outcome: "stranger" };
+  if (member?.status === "revoked") return { outcome: "removed", ...firm };
+  if (member && !member.effective) return { outcome: "stranger" };
+  const foreign = await usersWithForeignAccounts(
+    tx,
+    [user.id],
+    firm.organizationId,
+  );
+  if (foreign.size) return { outcome: "stranger" };
 
-  // An account whose provider row is another firm's, or that no row names. A firm's own
-  // provider rows stay in the table after they are removed, so one of its directory's
-  // accounts never counts. `(issuer, account_id)` is unique, so an account with another
-  // firm's magic-link row could never sign in here either.
-  const [foreign] = await tx
-    .select({ id: accounts.id })
-    .from(accounts)
-    .leftJoin(ssoProviders, eq(ssoProviders.providerId, accounts.providerId))
-    .where(
-      and(
-        eq(accounts.userId, user.id),
-        isNull(accounts.deletedAt),
-        sql`${ssoProviders.organizationId} is distinct from ${firm.organizationId}`,
-      ),
-    )
-    .limit(1);
-  if (foreign) return { outcome: "stranger" };
-
-  return { outcome: "admit", userId: user.id, memberId: member.id, ...firm };
+  return {
+    outcome: "admit",
+    person: member
+      ? { kind: "member", userId: user.id, memberId: member.id }
+      : { kind: "user", userId: user.id },
+    ...firm,
+  };
 }

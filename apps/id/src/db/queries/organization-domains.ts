@@ -191,6 +191,48 @@ export async function setOrganizationDomainStatus(
   return row ?? null;
 }
 
+/** The proof is the time a record was seen; a stale `verified_at` is never left behind. */
+export async function setOrganizationDomainProof(
+  context: PlatformWriteContext,
+  organizationId: string,
+  domainId: string,
+  proved: boolean,
+) {
+  const { tx: executor } = context;
+  const [row] = await executor
+    .update(organizationDomains)
+    .set({ verifiedAt: proved ? sql`statement_timestamp()` : null })
+    .where(
+      and(
+        isNull(organizationDomains.deletedAt),
+        eq(organizationDomains.organizationId, organizationId),
+        eq(organizationDomains.id, domainId),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+/** The firm's active domains, for a command that holds the organisation at least in share. */
+export async function activeOrganizationDomains(
+  tx: Executor,
+  organizationId: string,
+) {
+  return tx
+    .select({
+      domain: organizationDomains.domain,
+      verifiedAt: organizationDomains.verifiedAt,
+    })
+    .from(organizationDomains)
+    .where(
+      and(
+        isNull(organizationDomains.deletedAt),
+        eq(organizationDomains.organizationId, organizationId),
+        eq(organizationDomains.status, "active"),
+      ),
+    );
+}
+
 export async function deleteOrganizationDomain(
   context: PlatformWriteContext,
   organizationId: string,

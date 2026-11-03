@@ -115,7 +115,11 @@ test("an organisation made through the admin API holds its row, on", async () =>
   });
   expect(response.status).toBe(201);
   const body = await response.json();
-  expect(body.magicLink).toEqual({ enabled: true });
+  expect(body.magicLink).toEqual({
+    enabled: true,
+    admission: "listed",
+    listed: 0,
+  });
 
   const row = await magicLinkRowOf(body.id);
   expect(row).toMatchObject({
@@ -174,7 +178,9 @@ test("every organisation read and command answer shows the setting, and organisa
   ).json();
   const { id } = created;
   const path = `/organizations/${id}`;
-  const expected = { magicLink: { enabled: true } };
+  const expected = {
+    magicLink: { enabled: true, admission: "listed" },
+  };
   expect(created).toMatchObject(expected);
   expect(await shown(await admin(path))).toMatchObject(expected);
 
@@ -206,7 +212,7 @@ test("every organisation read and command answer shows the setting, and organisa
   // The setting is a read of its row, not a constant.
   await set(id, "disable");
   expect(await shown(await admin(path))).toMatchObject({
-    magicLink: { enabled: false },
+    magicLink: { enabled: false, admission: "listed", listed: 0 },
   });
   expect(
     await shown(await admin(`${path}/disable`, { method: "POST" })),

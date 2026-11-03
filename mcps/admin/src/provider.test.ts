@@ -87,6 +87,15 @@ assertProviderConformance(world.provider, {
     "users.retireemail": () => ({ userId: human({ status: "disabled" }).userId }),
     "members.remove": () => ({ organizationId: newco.id, memberId: person() }),
     "members.reinstate": () => ({ organizationId: newco.id, memberId: human({ membershipStatus: "revoked", effective: false }).id }),
+    "magiclink.enable": () => ({ organizationId: organisation({ magicLink: { enabled: false, admission: "listed" } }) }),
+    "magiclink.disable": () => ({ organizationId: organisation() }),
+    "magiclink.admission": () => ({ organizationId: organisation({ magicLink: { enabled: true, admission: "domain" } }), admission: "listed" }),
+    "members.import": () => ({ organizationId: newco.id, addresses: [`${unique()}@newco.example`] }),
+    "domains.verify": () => {
+      const domain = `${unique()}.newco.example`
+      ids.publish(String(ids.domain(newco.id, domain).id))
+      return { organizationId: newco.id, domain }
+    },
   },
   moveTarget: target => ids.revise(target.resource_id),
 })
@@ -132,7 +141,9 @@ test("each read sends its filters to ID as the query string and answers ID's row
     ["organisations_list", { q: "NEWCO", status: "active" }, [at("/organizations?q=NEWCO&status=active&limit=20")], page([{ id: newco.id, slug: "newco", name: "Newco", status: "active", createdAt: newco.createdAt }])],
     ["organisations_get", { organizationId: newco.id }, [at(`/organizations/${newco.id}`), at(`/organizations/${newco.id}/domains?limit=200`), at(`/organizations/${newco.id}/sso-provider`)], {
       id: newco.id, slug: "newco", name: "Newco", status: "active", disabledAt: null, createdAt: newco.createdAt, updatedAt: newco.updatedAt,
-      domains: [{ id: domain.id, domain: "newco.example", status: "active" }], sso: { issuer: entraIssuer, domain: "newco.example", oidc: { credentials: "platform", hasClientSecret: false } },
+      domains: [{ id: domain.id, domain: "newco.example", status: "active", verifiedAt: null, verificationRecord: domain.verificationRecord }],
+      magicLink: { enabled: true, admission: "listed", listed: 1 },
+      sso: { issuer: entraIssuer, domain: "newco.example", oidc: { credentials: "platform", hasClientSecret: false } },
     }],
     ["organisations_get", { organizationId: bare }, [at(`/organizations/${bare}`), at(`/organizations/${bare}/domains?limit=200`), at(`/organizations/${bare}/sso-provider`)], expect.objectContaining({ domains: [], sso: null })],
     ["members_list", { organizationId: newco.id, q: "hopper", effective: false, limit: 5 }, [at(`/organizations/${newco.id}/members?q=hopper&effective=false&limit=5`)], page([person(grace)])],

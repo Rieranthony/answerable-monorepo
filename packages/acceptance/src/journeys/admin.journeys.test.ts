@@ -1,7 +1,7 @@
 // Real Answerable ID, a real browser and the official MCP OAuth client against the admin MCP, with the Toolbox beside it: Answerable staff onboard a client
 // organisation through the tools, and its person uses the Toolbox. The registrations are the ones the admin MCP's setup page shows (`startAdminStack`).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { createEvidence } from "@answerable/mcp-postgres"
+import { connect as connectDatabase, createEvidence } from "@answerable/mcp-postgres"
 import { rowsOf } from "@answerable/mcp-postgres/testing"
 import { errorOf } from "@answerable/mcp/testing"
 import type { Client } from "@modelcontextprotocol/client"
@@ -24,8 +24,8 @@ const freshSeconds = 10
 
 const reads = ["access_list", "audit_list", "groups_list", "members_get", "members_list", "organisations_get", "organisations_list", "sso_test", "staff_list"]
 const ordinary = [
-  "access_enable", "access_grant", "access_revoke", "domains_add", "groups_addmember", "groups_create", "groups_dropmember", "members_reinstate", "members_remove", "organisations_create", "organisations_update",
-  "sso_set", "standalone_enable", "toolbox_enable", "users_disable", "users_enable",
+  "access_enable", "access_grant", "access_revoke", "domains_add", "domains_verify", "groups_addmember", "groups_create", "groups_dropmember", "magiclink_admission", "magiclink_disable", "magiclink_enable",
+  "members_import", "members_reinstate", "members_remove", "organisations_create", "organisations_update", "sso_set", "standalone_enable", "toolbox_enable", "users_disable", "users_enable",
 ]
 const critical = ["organisations_disable", "organisations_enable", "staff_grant", "staff_revoke", "users_retireemail"]
 const commits = ["admin_commit", "admin_commit_confirmed"]
@@ -556,6 +556,110 @@ describe("A9 stopping someone", () => {
   })
 })
 
+// Magic links and who may ask for one, with the machine client's real scopes against real ID: an admin's writes go with platform:write, an import with platform:users, and the import's
+// preview with platform:read. Before A6, for the same reason as A9. ID's own suite proves a record found, with a resolver its tests inject; here ID runs the system's resolver, on a name
+// nobody publishes, so a domain is proved by writing what that leaves. The admin MCP cannot tell the difference: it reads the answer.
+describe("A10 magic links", () => {
+  const firm = "links-firm"
+  const domain = "links-firm.example.test"
+  const organizationRow = z.object({ magicLink: z.object({ enabled: z.boolean(), admission: z.enum(["listed", "domain"]), listed: z.number() }) })
+  const domainRow = z.object({ id: z.uuid(), domain: z.string(), verifiedAt: z.string().nullable(), verificationRecord: z.object({ type: z.string(), name: z.string(), value: z.string() }) })
+  const getRow = z.object({ magicLink: organizationRow.shape.magicLink, domains: z.array(domainRow), sso: z.unknown().nullable() })
+  let organizationId: string
+  const read = async () => organizationRow.parse(await id.admin("GET", `/organizations/${organizationId}`)).magicLink
+  // ID's database, the disposable one: what a record seen in DNS leaves behind.
+  async function proved(value: boolean) {
+    const database = connectDatabase("postgres://answerable:answerable@127.0.0.1:47532/answerable_id_test", { max: 1 })
+    try {
+      await database.$client.query("update organization_domains set verified_at = case when $1::boolean then now() end where domain = $2", [value, domain])
+    } finally {
+      await database.$client.end()
+    }
+  }
+
+  test("organisations_get shows magic links and the directory side by side, and domains_add gives the record that proves the domain; a public mail domain is ID's refusal", async () => {
+    const created = await change(colleagueClient, "organisations_create", { slug: firm, name: "Links Firm" })
+    organizationId = z.uuid().parse(created.receipt.results.organizationId)
+    const added = await change(colleagueClient, "domains_add", { organizationId, domain })
+    expect(added.receipt.results.verificationRecord).toEqual({ type: "TXT", name: `_answerable-challenge.${domain}`, value: expect.stringMatching(/^answerable-domain-verification=[0-9a-f]{32}$/) })
+    const shown = getRow.parse(await tool(colleagueClient, "organisations_get", { organizationId }))
+    expect(shown).toMatchObject({ magicLink: { enabled: true, admission: "listed", listed: 0 }, sso: null, domains: [{ domain, verifiedAt: null, verificationRecord: added.receipt.results.verificationRecord }] })
+    const publicMail = await prepare(colleagueClient, "domains_add", { organizationId, domain: "gmail.com" })
+    expect(errorOf(await colleagueClient.callTool({ name: "admin_commit_confirmed", arguments: { intent_id: publicMail.intent_id, commit_token: publicMail.commit_token, preview_summary: publicMail.preview.summary } }))).toMatchObject({
+      code: "UPSTREAM_REJECTED", details: { upstream: { status: 409, code: "public_mail_domain" } },
+    })
+  })
+
+  test("domains_verify, by an admin, asks the system's resolver for a record nobody published: it says what to publish, and on a proved domain takes the proof away, audited", async () => {
+    const intent = await prepare(colleagueClient, "domains_verify", { organizationId, domain })
+    const expected = getRow.parse(await tool(colleagueClient, "organisations_get", { organizationId })).domains[0]!.verificationRecord
+    expect(intent.preview.warnings[0]).toContain(`${expected.name} with the value ${expected.value}`)
+    const refused = await colleagueClient.callTool({ name: "admin_commit_confirmed", arguments: { intent_id: intent.intent_id, commit_token: intent.commit_token, preview_summary: intent.preview.summary } })
+    expect(errorOf(refused)).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining(`Answerable ID did not find the TXT record at ${expected.name}`) })
+    expect(getRow.parse(await tool(colleagueClient, "organisations_get", { organizationId })).domains[0]!.verifiedAt).toBeNull()
+    await proved(true)
+    const recheck = await prepare(colleagueClient, "domains_verify", { organizationId, domain })
+    expect(recheck.preview.warnings[1]).toContain("is proved now")
+    const failed = await colleagueClient.callTool({ name: "admin_commit_confirmed", arguments: { intent_id: recheck.intent_id, commit_token: recheck.commit_token, preview_summary: recheck.preview.summary } })
+    expect(errorOf(failed)).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("is no longer proved") })
+    expect(getRow.parse(await tool(colleagueClient, "organisations_get", { organizationId })).domains[0]!.verifiedAt).toBeNull()
+    const lost = auditPage.parse(await id.admin("GET", `/audit-events?organizationId=${organizationId}&action=domain.verification_lost`)).items
+    expect(lost).toEqual([expect.objectContaining({ actorType: "client", actorId: "admin-mcp", outcome: "success" })])
+    step("domains_verify: the system's resolver found nothing, the tool named the record to publish, and a proof went with an audit row")
+  })
+
+  test("magiclink_admission: an admin may not open the firm, ID refuses it unproved, and an owner opens it once proved; an admin narrows it again, and neither moves a session's revision", async () => {
+    expect(await refusal(colleagueClient, "magiclink_admission", { organizationId, admission: "domain" })).toMatchObject({ code: "PERMISSION_DENIED", message: expect.stringContaining("an owner's") })
+    expect(await refusal(staffClient, "magiclink_admission", { organizationId, admission: "domain" })).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining(`Every active domain must be proved first: ${domain}`) })
+    await proved(true)
+    const opened = await change(staffClient, "magiclink_admission", { organizationId, admission: "domain" })
+    expect(opened.intent.preview.warnings.join(" ")).toContain("An alias of a removed person is a different address")
+    expect((await audited(staffClient, opened.receipt)).action).toBe("organization.magic_link_admission_changed")
+    expect(await read()).toMatchObject({ enabled: true, admission: "domain" })
+    const narrowed = await change(colleagueClient, "magiclink_admission", { organizationId, admission: "listed" })
+    await audited(colleagueClient, narrowed.receipt)
+    expect(await read()).toMatchObject({ admission: "listed" })
+    expect((await refusal(staffClient, "magiclink_admission", { organizationId: platformOrganization(), admission: "domain" })).message).toContain("can never use magic links")
+    step("magiclink_admission: refused to an admin and when unproved; opened by an owner and narrowed by an admin, one ID audit row each")
+  })
+
+  test("members_import, by an admin with the machine client's platform:users: the preview's counts are ID's own, and each address has its answer", async () => {
+    const addresses = ["ada@links-firm.example.test", "ADA@links-firm.example.test", "grace@links-firm.example.test", "someone@gmail.com", "someone@elsewhere.example.test", "nonsense"]
+    const before = await read()
+    const intent = await prepare(colleagueClient, "members_import", { organizationId, addresses })
+    expect(intent.preview.summary).toBe("List 2 people in organisation “Links Firm” (links-firm): 2 new, 0 existing users added; 0 already members, 3 refused")
+    expect(await read()).toEqual(before)
+    const receipt = await confirm(colleagueClient, intent)
+    expect(receipt.results).toMatchObject({
+      counts: { created: 2, added: 0, alreadyMember: 0, refused: 3 },
+      refused: [{ address: "someone@gmail.com", reason: "public_mail" }, { address: "someone@elsewhere.example.test", reason: "outside_domains" }, { address: "nonsense", reason: "invalid" }],
+    })
+    expect(await read()).toMatchObject({ listed: 2 })
+    const operationId = z.uuid().parse(receipt.results.operationId)
+    const events = auditPage.parse(await id.admin("GET", `/audit-events?operationId=${operationId}`)).items
+    expect(events.map(event => event.action)).toEqual(["member.imported", "member.imported"])
+    expect(events[0]).toMatchObject({ actorType: "client", actorId: "admin-mcp", outcome: "success" })
+    const members = z.object({ items: z.array(z.object({ email: z.string(), userId: z.uuid(), effective: z.boolean() })) }).parse(await id.admin("GET", `/organizations/${organizationId}/members`))
+    expect(members.items.map(item => [item.email, item.effective]).toSorted()).toEqual([["ada@links-firm.example.test", true], ["grace@links-firm.example.test", true]])
+    expect(await refusal(colleagueClient, "members_import", { organizationId, addresses: ["ada@links-firm.example.test"] })).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("would change nothing") })
+    step("members_import: 2 people made through the machine client's platform:users, 3 addresses refused one by one, one ID audit row per membership")
+  })
+
+  test("magiclink_disable and magiclink_enable, by an admin: the preview says what is not touched, each one ID audit row; the platform organisation can never turn them on", async () => {
+    const off = await change(colleagueClient, "magiclink_disable", { organizationId })
+    expect(off.intent.preview.warnings).toContain("Ends every magic-link session and grant at this organisation. It does not touch directory sign-ins, sessions or grants.")
+    expect(off.intent.preview.warnings).toContain("A service token already issued lives to its expiry.")
+    expect((await audited(colleagueClient, off.receipt)).action).toBe("organization.magic_link_disabled")
+    expect(await read()).toMatchObject({ enabled: false })
+    const on = await change(colleagueClient, "magiclink_enable", { organizationId })
+    expect((await audited(colleagueClient, on.receipt)).action).toBe("organization.magic_link_enabled")
+    expect(await read()).toMatchObject({ enabled: true })
+    expect(await refusal(colleagueClient, "magiclink_enable", { organizationId: platformOrganization() })).toMatchObject({ code: "PERMISSION_DENIED" })
+    expect(await refusal(staffClient, "magiclink_enable", { organizationId: platformOrganization() })).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("can never use magic links") })
+    step("magiclink_disable and magiclink_enable: one ID audit row each; the platform organisation refused to an admin and, by the tool, to an owner")
+  })
+})
+
 describe("A6 freshness", () => {
   let fresh: OAuthSession
 
@@ -608,9 +712,13 @@ describe("A7 evidence", () => {
     for (const kind of ["capability.completed", "capability.denied", "intent.prepared", "intent.committed", "receipt.issued", "intent.stale"]) expect(kinds[kind], kind).toBeGreaterThan(0)
     step(`evidence: ${rows.length} events on the platform organisation's chain, verified; ${Object.entries(kinds).map(([kind, count]) => `${kind} ${count}`).join(", ")}`)
     // Every write ID audited for the machine client names the execution id of a commit that succeeded (its token requests are audited too, with ids of their own).
-    const audit = auditPage.parse(await id.admin("GET", "/audit-events?actorId=admin-mcp&limit=200")).items.filter(event => !event.action.startsWith("oauth."))
+    const auditRows = auditPage.parse(await id.admin("GET", "/audit-events?actorId=admin-mcp&limit=200")).items.filter(event => !event.action.startsWith("oauth."))
+    // The one write a refused commit makes: a re-check that fails takes the proof away and answers the refusal, so ID's row names a commit evidence holds as failed.
+    const audit = auditRows.filter(event => event.action !== "domain.verification_lost")
     const commitsDone = new Set(rows.filter(row => row.kind === "capability.completed" && row.capability_identity === "admin/commit_confirmed" && row.outcome === "success").map(row => row.execution_id))
+    const commitsRefused = new Set(rows.filter(row => row.kind === "capability.completed" && row.capability_identity === "admin/commit_confirmed" && row.outcome !== "success").map(row => row.execution_id))
     for (const event of audit) expect(commitsDone.has(event.requestId), `${event.action} ${event.requestId}`).toBe(true)
+    for (const event of auditRows.filter(row => row.action === "domain.verification_lost")) expect(commitsRefused.has(event.requestId), `${event.action} ${event.requestId}`).toBe(true)
     // Each committed intent that wrote to ID wrote once: the Toolbox's enable is the Toolbox's own writes, under its own client.
     const [{ n }] = await rowsOf(stack.database)<{ n: number }>`select count(*)::int as n from intents where status = 'committed' and capability_identity <> 'admin/toolbox.enable'`
     expect(new Set(audit.map(event => event.requestId)).size).toBe(n)

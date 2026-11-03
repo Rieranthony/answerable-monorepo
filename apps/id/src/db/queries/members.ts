@@ -1,4 +1,6 @@
 import { and, desc, eq, not, sql, isNull } from "drizzle-orm";
+import type { Executor } from "../client.ts";
+import { createId } from "../../lib/id.ts";
 import type {
   TenantMemberContext,
   TenantReadContext,
@@ -36,6 +38,23 @@ const selection = {
   createdAt: members.createdAt,
   effective: sql<boolean>`(${isEffective(members)})`,
 };
+/**
+ * A first sign-in's active membership, on either method, in the sign-in's transaction. An
+ * existing row is left as it is: whoever got here has already refused an ineffective one.
+ */
+export async function provisionMembership(
+  tx: Executor,
+  organizationId: string,
+  userId: string,
+) {
+  await tx
+    .insert(members)
+    .values({ id: createId(), organizationId, userId })
+    .onConflictDoNothing({
+      target: [members.organizationId, members.userId],
+    });
+}
+
 /** A membership's state and window: the evidence erasure events carry. */
 export const memberEvidence = {
   id: members.id,

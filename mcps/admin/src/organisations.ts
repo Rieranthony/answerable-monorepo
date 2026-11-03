@@ -18,7 +18,7 @@ export function organisationWrites(writes: Writes) {
 
   const create = role("admin", defineMutation({
     name: "organisations.create", risk: "normal", scopes, effects: ["publication"],
-    description: `Prepare creating an organisation in Answerable ID with a unique slug and a name. ${commitWith} It starts with no domain, SSO provider or access: then domains_add, sso_set, toolbox_enable and access_grant.`,
+    description: `Prepare creating an organisation in Answerable ID with a unique slug and a name. ${commitWith} It starts with no domain, directory, member or access, and with magic links on for its members: then domains_add, members_import or sso_set, toolbox_enable and access_grant. A directory is one way in, not the only one.`,
     input: z.object({
       slug: slug.describe("Unique in Answerable ID: lowercase letters and digits, words joined by single hyphens, such as newco"),
       name: name.describe("The organisation's name, 1 to 200 characters"),
@@ -107,9 +107,12 @@ export function organisationWrites(writes: Writes) {
 
   const domainsAdd = role("admin", defineMutation({
     name: "domains.add", risk: "normal", scopes, errors,
-    description: `Prepare routing an email domain to an organisation in Answerable ID, so that people with that domain are sent to its sign-in. ${commitWith} A domain belongs to one organisation; set its SSO provider with sso_set.`,
+    description: `Prepare routing an email domain to an organisation in Answerable ID, so that people with that domain are sent to its sign-in: a magic link, its directory, or the choice of both. ${commitWith} A domain belongs to one organisation, and a public mail domain is refused. The result gives the DNS record that proves it, which domains_verify checks; sso_set connects a directory, if it has one.`,
     input: z.object({ organizationId, domain: domain.describe("The email domain, such as newco.example") }),
-    output: z.object({ domainId: z.uuid(), domain: z.string(), operationId: z.uuid() }),
+    output: z.object({
+      domainId: z.uuid(), domain: z.string(), operationId: z.uuid(),
+      verificationRecord: z.object({ type: z.string(), name: z.string(), value: z.string() }).nullable().describe("The TXT record that proves the domain; null when ID replayed the write, and organisations_get shows it"),
+    }),
     async prepare({ organizationId: id, domain: added }, context) {
       const { organisation: row, target: version } = await organisation(id, context)
       const held = (await calls.all<{ domain: string }>(`/organizations/${id}/domains`, context, missingOrganisation(id))).map(item => item.domain).sort()
@@ -119,21 +122,27 @@ export function organisationWrites(writes: Writes) {
         preview: {
           summary: `Route email domain ${added} to organisation ${named(row)}`,
           changes: [{ path: `organizations[${id}].domains`, from: held, to: [...held, added].sort() }],
-          warnings: [`If another organisation holds ${added}, Answerable ID refuses the write with 409 conflict.`, noPrecondition("adding a domain")],
+          warnings: [
+            `If another organisation holds ${added}, Answerable ID refuses the write with 409 conflict; if anyone can get an address there, with 409 public_mail_domain.`,
+            "Until its DNS record is proved with domains_verify, it admits nobody new, whatever the organisation's admission says.",
+            noPrecondition("adding a domain"),
+          ],
         },
         plan: { domain: added },
       }
     },
     async commit({ intent_id, targets: [version], plan: { domain: added }, preview }, context) {
       const done = await calls.write("POST", `/organizations/${version.resource_id}/domains`, { body: { domain: added }, key: intent_id }, context)
-      return { results: { domainId: done.id, domain: added, operationId: done.operationId }, applied_changes: preview.changes, effects_performed: [] }
+      // A replay answers ID's receipt, which holds no record.
+      const { verificationRecord = null } = done.body as { verificationRecord?: { type: string; name: string; value: string } }
+      return { results: { domainId: done.id, domain: added, operationId: done.operationId, verificationRecord }, applied_changes: preview.changes, effects_performed: [] }
     },
   }))
 
   type Provider = { id: string; issuer: string; domain: string; oidc: { credentials: "platform" | "own" } }
   const ssoSet = role("admin", defineMutation({
     name: "sso.set", risk: "normal", scopes, errors, effects: ["permission_change"],
-    description: `Prepare setting or replacing an organisation's SSO provider in Answerable ID, through Answerable's own Microsoft or Google application: a Microsoft Entra issuer https://login.microsoftonline.com/<tenant id>/v2.0 or https://accounts.google.com. ${commitWith} A directory with its own credentials needs a client secret, which no tool takes.`,
+    description: `Prepare setting or replacing an organisation's SSO provider in Answerable ID, through Answerable's own Microsoft or Google application: a Microsoft Entra issuer https://login.microsoftonline.com/<tenant id>/v2.0 or https://accounts.google.com. ${commitWith} A directory with its own credentials needs a client secret, which no tool takes. Magic links stay as they are.`,
     input: z.object({
       organizationId,
       issuer: z.url().describe("https://login.microsoftonline.com/<tenant id>/v2.0 for Microsoft Entra, or https://accounts.google.com"),
@@ -158,7 +167,10 @@ export function organisationWrites(writes: Writes) {
             : `Set the SSO provider of organisation ${named(row)}: ${issuer} for ${signIn}, ${via}`,
           changes: [{ path: `organizations[${id}].ssoProvider`, from: now ?? null, to: { issuer, domain: signIn, credentials: "platform" } }],
           effects: ["permission_change" as const],
-          warnings: ["When the provider changes, including when it is first set, Answerable ID revokes every grant of the organisation: its people sign in to each application again."],
+          warnings: [
+            "When the provider changes, including when it is first set, Answerable ID revokes every grant of the organisation, magic-link grants included: its people sign in to each application again.",
+            "The organisation's magic-link setting stays as it is: magiclink_disable is how an organisation requires its directory only.",
+          ],
         },
         plan: { organizationId: id, issuer, domain: signIn },
       }

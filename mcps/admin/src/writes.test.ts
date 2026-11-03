@@ -130,9 +130,16 @@ test("domains_add previews the organisation's domains from and to, and refuses o
   expect(intent.preview).toMatchObject({
     summary: "Route email domain mail.newco.example to organisation “Newco” (newco)",
     changes: [{ path: `organizations[${newco.id}].domains`, from: ["newco.example"], to: ["mail.newco.example", "newco.example"] }],
-    warnings: ["If another organisation holds mail.newco.example, Answerable ID refuses the write with 409 conflict.", noPrecondition("adding a domain")],
+    warnings: [
+      "If another organisation holds mail.newco.example, Answerable ID refuses the write with 409 conflict; if anyone can get an address there, with 409 public_mail_domain.",
+      "Until its DNS record is proved with domains_verify, it admits nobody new, whatever the organisation's admission says.",
+      noPrecondition("adding a domain"),
+    ],
   })
-  expect((await committed(intent)).results).toEqual({ domainId: expect.any(String), domain: "mail.newco.example", operationId: expect.any(String) })
+  expect((await committed(intent)).results).toEqual({
+    domainId: expect.any(String), domain: "mail.newco.example", operationId: expect.any(String),
+    verificationRecord: { type: "TXT", name: "_answerable-challenge.mail.newco.example", value: expect.stringMatching(/^answerable-domain-verification=[0-9a-f]{32}$/) },
+  })
   expect(writes()).toEqual([expect.objectContaining({ request: `POST /api/admin/v1/organizations/${newco.id}/domains` })])
   expect(await refusal("domains_add", { organizationId: newco.id, domain: "newco.example" })).toMatchObject({ code: "PRECONDITION_FAILED", message: "newco.example is already routed to organisation “Newco” (newco)" })
   expect((await refusal("domains_add", { organizationId: newco.id, domain: "not a domain" })).code).toBe("INVALID_INPUT")
@@ -146,7 +153,10 @@ test("sso_set sets a Microsoft or Google provider through Answerable's applicati
     summary: `Set the SSO provider of organisation “Newco” (newco): ${entraIssuer} for newco.example, through Answerable's Microsoft application`,
     changes: [{ path: `organizations[${newco.id}].ssoProvider`, from: null, to: { issuer: entraIssuer, domain: "newco.example", credentials: "platform" } }],
     effects: ["permission_change"],
-    warnings: ["When the provider changes, including when it is first set, Answerable ID revokes every grant of the organisation: its people sign in to each application again."],
+    warnings: [
+      "When the provider changes, including when it is first set, Answerable ID revokes every grant of the organisation, magic-link grants included: its people sign in to each application again.",
+      "The organisation's magic-link setting stays as it is: magiclink_disable is how an organisation requires its directory only.",
+    ],
     quantities: [],
   })
   const created = await committed(first)

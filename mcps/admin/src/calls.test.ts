@@ -62,7 +62,7 @@ test("ID asking to be asked again answers UPSTREAM_UNAVAILABLE after its Retry-A
     running.slow(50)
     const calls = createCalls(createIdAdmin(running.config))
     const [first, second] = await Promise.all([create(calls), create(calls)])
-    expect(first).toEqual({ operationId: expect.any(String), id: expect.any(String) })
+    expect(first).toEqual({ operationId: expect.any(String), id: expect.any(String), body: expect.objectContaining({ slug: "acme" }), replayed: false })
     expect(second).toMatchObject({ code: "UPSTREAM_UNAVAILABLE", message: expect.stringContaining("or is still applying it"), retry: { policy: "after_delay", after_ms: 1000 } })
     expect(running.received.filter(({ request }) => request === "POST /api/admin/v1/organizations")).toHaveLength(2)
   } finally { log.mockRestore() }

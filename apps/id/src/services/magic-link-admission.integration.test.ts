@@ -469,8 +469,7 @@ describe("what admission answers", () => {
     const provider = (await liveMagicLinkRow(fixture.owner.db, firm.id))!;
     expect(await admission(email)).toEqual({
       outcome: "admit",
-      userId,
-      memberId,
+      person: { kind: "member", userId, memberId },
       organizationId: firm.id,
       firmName: firm.name,
       providerId: provider.id,

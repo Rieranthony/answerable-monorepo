@@ -4,6 +4,7 @@ import { z } from "zod"
 import { accessWrites } from "./access"
 import { createCalls } from "./calls"
 import { requireFresh } from "./fresh"
+import { magicLinkWrites } from "./magiclinks"
 import { organisationWrites } from "./organisations"
 import { roleOf, roles, type Role, type Roles } from "./roles"
 import { staffWrites } from "./staff"
@@ -98,11 +99,19 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
 
   const organisationsGet = role("team", defineTool({
     name: "organisations.get",
-    description: "Read one organisation from Answerable ID: its slug, name and status, every email domain routed to it, and its SSO provider: issuer, domain, whether it signs in through Answerable's platform application or its own credentials, and whether a client secret is set. sso is null when it has none. Changes nothing.",
+    description: "Read one organisation from Answerable ID: its slug, name and status, and its two ways in side by side, each with its own state. magicLink: whether links are on, who may ask for one and how many effective members it lists. sso: its directory, issuer, domain, whether it signs in through Answerable's platform application or its own credentials and whether a client secret is set, null when it has none. Also every email domain routed to it, each with when it was proved and the DNS record that proves it. Changes nothing.",
     scopes,
     input: z.object({ organizationId }),
     output: organisation.extend({
-      domains: z.array(z.object({ id: z.uuid(), domain: z.string(), status })).describe("Every email domain routed to the organisation"),
+      domains: z.array(z.object({
+        id: z.uuid(), domain: z.string(), status,
+        verifiedAt: time.nullable().describe("When its DNS record was last seen; null until domains_verify finds it"),
+        verificationRecord: z.object({ type: z.string(), name: z.string(), value: z.string() }).describe("What the organisation publishes in DNS to prove the domain"),
+      })).describe("Every email domain routed to the organisation"),
+      magicLink: z.object({
+        enabled: z.boolean(), admission: z.enum(["listed", "domain"]).describe("Who may ask for a link: listed, its effective members; domain, also anyone at a proved domain"),
+        listed: z.number().int().describe("Its effective members"),
+      }).describe("Sign-in by emailed link; independent of the directory"),
       sso: z.object({
         issuer: z.string(), domain: z.string(),
         oidc: z.object({ credentials: z.enum(["platform", "own"]).describe("platform: Answerable's Google or Microsoft application; own: the organisation's"), hasClientSecret: z.boolean() }),
@@ -110,8 +119,8 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
     }),
     async execute({ organizationId }, context) {
       const path = `/organizations/${organizationId}`
-      const row = await need<z.input<typeof organisation>>(path, context, missingOrganisation(organizationId))
-      const domains = await all<{ id: string; domain: string; status: "active" | "disabled" }>(`${path}/domains`, context, missingOrganisation(organizationId))
+      const row = await need<z.input<typeof organisation> & { magicLink: { enabled: boolean; admission: "listed" | "domain"; listed: number } }>(path, context, missingOrganisation(organizationId))
+      const domains = await all<{ id: string; domain: string; status: "active" | "disabled"; verifiedAt: string | null; verificationRecord: { type: string; name: string; value: string } }>(`${path}/domains`, context, missingOrganisation(organizationId))
       const sso = await read<{ issuer: string; domain: string; oidc: { credentials: "platform" | "own"; hasClientSecret: boolean } }>(`${path}/sso-provider`, context)
       return { ...row, domains, sso: sso ?? null }
     },
@@ -119,7 +128,7 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
 
   const membersList = role("team", defineTool({
     name: "members.list",
-    description: "List the members of an organisation, newest first, 20 per page by default and at most 100: member id, user id, email, name, status and whether the membership is in force now. A person becomes a member at their first sign-in. Filter by exact email, by q, text in the email or name, and by effective. When has_more is true, pass next_cursor as cursor. Changes nothing.",
+    description: "List the members of an organisation, newest first, 20 per page by default and at most 100: member id, user id, email, name, status and whether the membership is in force now. A person becomes a member at their first sign-in, or when members_import lists them. Filter by exact email, by q, text in the email or name, and by effective. When has_more is true, pass next_cursor as cursor. Changes nothing.",
     scopes,
     input: z.object({
       organizationId, email: z.email().optional().describe("Exactly this email address"), q: z.string().trim().min(1).max(100).optional().describe("Text to find in the email or name"),
@@ -231,7 +240,7 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
     description: "Answerable's staff-only admin MCP: organisations, users and members (including stopping someone), groups, access, single sign-on, the audit log, the Toolbox and standalone MCPs in Answerable ID, each tool behind a staff role.",
     tools: [
       whoami, organisationsList, organisationsGet, membersList, membersGet, groupsList, accessList, auditList, ssoTest, staffList,
-      ...organisationWrites(writes), ...accessWrites(writes, standaloneOrigin), ...toolboxWrites(writes, toolbox), ...standaloneWrites(writes, standaloneOrigin), ...staffWrites(writes), ...userWrites(writes),
+      ...organisationWrites(writes), ...accessWrites(writes, standaloneOrigin), ...toolboxWrites(writes, toolbox), ...standaloneWrites(writes, standaloneOrigin), ...staffWrites(writes), ...userWrites(writes), ...magicLinkWrites(writes),
     ],
   })
   /** The least role a tool needs; null: any member of the platform organisation. */

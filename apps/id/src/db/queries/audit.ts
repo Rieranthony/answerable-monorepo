@@ -38,6 +38,8 @@ export const auditActions = [
   "domain.deleted",
   "domain.disabled",
   "domain.enabled",
+  "domain.verification_lost",
+  "domain.verified",
   "entitlement.created",
   "entitlement.disabled",
   "entitlement.enabled",
@@ -52,6 +54,7 @@ export const auditActions = [
   "group_member.removed",
   "group_member.updated",
   "identity.linked",
+  "member.imported",
   "member.reinstated",
   "member.removed",
   "member.updated",
@@ -65,6 +68,7 @@ export const auditActions = [
   "organization.disabled",
   "organization.enabled",
   "organization.erased",
+  "organization.magic_link_admission_changed",
   "organization.magic_link_disabled",
   "organization.magic_link_enabled",
   "organization.updated",
@@ -126,6 +130,29 @@ export async function recordAuditEvent(
   };
   await executor.insert(auditEvents).values(row);
   return row;
+}
+
+/** Many events of one command in one statement, each as `recordAuditEvent` would write it. */
+export async function recordAuditEvents(
+  executor: Executor,
+  events: AuditEventInput[],
+) {
+  if (!events.length) return;
+  await executor.insert(auditEvents).values(
+    events.map((event) => ({
+      ...event,
+      id: createId(),
+      schemaVersion: 1,
+      organizationId: event.organizationId ?? null,
+      targetId: event.targetId ?? null,
+      reason: event.reason ?? null,
+      requestId: event.requestId ?? null,
+      ip: event.ip ?? null,
+      userAgent: event.userAgent ?? null,
+      data: event.data ?? null,
+      operationId: event.operationId ?? null,
+    })),
+  );
 }
 
 export type AuditEventFilters = {

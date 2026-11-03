@@ -6,14 +6,19 @@ import {
   auditEvents,
   magicLinkRequests,
   members,
+  organizationDomains,
   sessions,
   users,
   verifications,
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
+import { domainVerificationRecord } from "../services/domain-verification.ts";
+import { proveDomain } from "../services/domains.ts";
+import { setMagicLinkAdmission } from "../services/organizations.ts";
 import type { AdminFixture } from "./admin.ts";
 import { magicLinkFirms } from "./magic-link.ts";
 import { codeIn, tokenIn } from "./magic-link-requests.ts";
+import { inPlatformWrite } from "./platform-context.ts";
 
 export const cookieOf = (setCookies: string[]) =>
   setCookies.map((value) => value.split(";", 1)[0]).join("; ");
@@ -44,6 +49,29 @@ export function magicLinkFlow(fixture: AdminFixture) {
       userId,
     });
     return { email, userId, memberId };
+  }
+
+  /** Prove this domain as its record in DNS would, through the real command. */
+  async function proveDomainOf(organizationId: string, domain: string) {
+    const [row] = await fixture.db
+      .select()
+      .from(organizationDomains)
+      .where(eq(organizationDomains.domain, domain));
+    await inPlatformWrite(fixture.db, (context) =>
+      proveDomain(context, organizationId, row!.id, [
+        [domainVerificationRecord(row!).value],
+      ]),
+    );
+    return row!.id;
+  }
+
+  /** A firm's one domain proved and the firm in domain mode, through the real commands. */
+  async function openToDomain(organization: { id: string; domain: string }) {
+    const domainId = await proveDomainOf(organization.id, organization.domain);
+    await inPlatformWrite(fixture.db, (context) =>
+      setMagicLinkAdmission(context, organization.id, "domain"),
+    );
+    return domainId;
   }
 
   // Every test here comes from one machine, which the per-client budgets would see as one
@@ -158,6 +186,8 @@ export function magicLinkFlow(fixture: AdminFixture) {
   return {
     ...firms,
     listed,
+    proveDomainOf,
+    openToDomain,
     post,
     ask,
     open,

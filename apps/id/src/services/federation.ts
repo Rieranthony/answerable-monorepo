@@ -92,6 +92,24 @@ async function membershipRevoked(
   return member?.status === "revoked" || Boolean(member?.deletedAt);
 }
 
+/**
+ * A person ID has not met, on any method: a directory's first sign-in, a magic link's in domain
+ * mode, and staff importing an address. The same fields, so `sub`, which is the id these rows
+ * get, and everything that reads them work alike. Whichever made the row has seen the mailbox
+ * proved, or will before any token: no token exists for an imported person until they sign in.
+ */
+export const newUserFields = (person: {
+  email: string;
+  name?: string | null;
+  image?: string | null;
+}) => ({
+  name: person.name || person.email,
+  email: person.email,
+  image: person.image,
+  emailVerified: true,
+  status: "active" as const,
+});
+
 export async function resolveFederatedUser(
   input: SSOUserResolutionInput,
   database: DBTransactionAdapter,
@@ -234,13 +252,11 @@ export async function resolveFederatedUser(
 
   const user = await database.create<{ id: string }>({
     model: "user",
-    data: {
-      name: input.providerUser.name || email,
+    data: newUserFields({
       email,
+      name: input.providerUser.name,
       image: input.providerUser.image,
-      emailVerified: true,
-      status: "active",
-    },
+    }),
   });
   await database.create({
     model: "account",

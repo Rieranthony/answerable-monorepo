@@ -64,6 +64,27 @@
       "when": 1793730072318,
       "tag": "0008_magic_link_origin_on",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793738318338,
+      "tag": "0009_magic_link_admission",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793738318706,
+      "tag": "0010_sso_provider_admission_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793744646459,
+      "tag": "0011_magic_link_new_address",
+      "breakpoints": true
     }
   ]
 }

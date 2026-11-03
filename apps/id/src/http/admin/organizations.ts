@@ -19,7 +19,10 @@ import {
 import type { Hono } from "hono";
 import { z } from "zod";
 import { slugPattern } from "../../db/schema/columns.ts";
-import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
+import {
+  lifecycleStatuses,
+  magicLinkAdmissions,
+} from "../../db/schema/vocabulary.ts";
 import { platformCommand } from "./command.ts";
 import {
   listOrganizations,
@@ -32,7 +35,7 @@ import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 
-const organizationSchema = z.object({
+const listedOrganizationSchema = z.object({
   id: z.uuid(),
   revision: z.number().int().positive(),
   name: z.string(),
@@ -42,7 +45,24 @@ const organizationSchema = z.object({
   disabledAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
-  magicLink: z.object({ enabled: z.boolean() }),
+  magicLink: z.object({
+    enabled: z.boolean(),
+    admission: z.enum(magicLinkAdmissions).meta({
+      description:
+        "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates.",
+    }),
+  }),
+});
+const organizationSchema = listedOrganizationSchema.extend({
+  magicLink: listedOrganizationSchema.shape.magicLink.extend({
+    listed: z.number().int().nonnegative().meta({
+      description:
+        "The organisation's effective members. A list leaves this out, since it counts them.",
+    }),
+  }),
+});
+const magicLinkPatchSchema = z.object({
+  admission: z.enum(magicLinkAdmissions),
 });
 const querySchema = pageQuerySchema.extend({
   q: z.string().trim().min(1).max(100).optional(),
@@ -86,7 +106,7 @@ export const routes = {
     responses: {
       200: {
         description: "Organisations",
-        content: json(pageSchema(organizationSchema)),
+        content: json(pageSchema(listedOrganizationSchema)),
       },
       ...problemResponses(400),
     },
@@ -226,6 +246,27 @@ export const routes = {
         content: commandJson(organizationSchema),
       },
       ...problemResponses(404),
+    },
+  },
+  setMagicLinkAdmission: {
+    method: "patch",
+    path: "/organizations/:organizationId/magic-link",
+    operationId: "setMagicLinkAdmission",
+    summary: "Set who may ask for a magic link",
+    description: `Set who may ask an organisation's magic-link row for a link and return the updated organisation. listed: its effective members. domain: also anyone with an address at one of its proved domains, whom a first sign-in creates, with any organisation-wide entitlement at once; a domain added later admits nobody new until it is proved, and an address no user holds gets no mail past 100 an hour from one client or 500 a day for the organisation, so a firm-wide start uses importMembers first. Removed members and disabled users are refused in both. domain_not_verified refuses domain unless every active domain is proved and none is a public mail domain, and at least one exists, naming those in details; platform_magic_link refuses it on the platform organisation. listed is always allowed. Changing it ends no session and no grant, and existing members stay members. ${magicLinkAnyTime} not_found means the organisation is missing and the same value returns a noop.`,
+    tag: "Organizations",
+    platformScope: "platform:write",
+    kind: "write",
+    freshAuthentication: true,
+    parameters: parameters,
+    requestBody: body(magicLinkPatchSchema),
+    example: { body: { admission: "domain" } },
+    responses: {
+      200: {
+        ...success[200],
+        content: commandJson(organizationSchema),
+      },
+      ...problemResponses(404, 409),
     },
   },
   eraseOrganization: {
@@ -395,6 +436,36 @@ export function register(app: Hono<AppEnvironment>) {
         );
       },
     );
+  registerRoute(
+    app,
+    routes.setMagicLinkAdmission,
+    validate("param", paramSchema),
+    validate("json", magicLinkPatchSchema),
+    async (context) => {
+      const organizationId = context.req.param("organizationId")!;
+      const { admission } = magicLinkPatchSchema.parse(
+        await context.req.json(),
+      );
+      return platformCommand(
+        context,
+        "write",
+        { organizationId, admission },
+        200,
+        async (platform) => {
+          const result = await service.setMagicLinkAdmission(
+            platform,
+            organizationId,
+            admission,
+          );
+          return {
+            body: result.row,
+            changed: result.changed,
+            resultReference: { type: "organization", id: organizationId },
+          };
+        },
+      );
+    },
+  );
   registerRoute(
     app,
     routes.eraseOrganization,

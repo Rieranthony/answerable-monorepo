@@ -17342,6 +17342,827 @@
         }
       }
     },
+    "/api/admin/v1/organizations/{organizationId}/members/import/preview": {
+      "post": {
+        "operationId": "previewMemberImport",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "addresses": {
+                    "minItems": 1,
+                    "maxItems": 1000,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "addresses"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "addresses": [
+                  "ada@acme.example.com",
+                  "grace@acme.example.com"
+                ]
+              }
+            }
+          }
+        },
+        "summary": "Preview a member import",
+        "description": "Answer what importMembers would answer for these addresses now, changing nothing and recording nothing: a POST only because a list of up to 1,000 addresses does not fit a query. Use it to show a person the counts before importMembers; validation_failed rejects a malformed or oversized list and not_found means the organisation is unavailable.",
+        "tags": [
+          "Members"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "created": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "added": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "alreadyMember": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "refused": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "created",
+                        "added",
+                        "alreadyMember",
+                        "refused"
+                      ]
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "address": {
+                            "type": "string"
+                          },
+                          "outcome": {
+                            "type": "string",
+                            "enum": [
+                              "created",
+                              "added",
+                              "alreadyMember",
+                              "refused"
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "invalid",
+                              "outside_domains",
+                              "public_mail",
+                              "disabled",
+                              "removed",
+                              "other_firm"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "address",
+                          "outcome"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "counts",
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The principal is not allowed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response."
+          },
+          "413": {
+            "description": "The request body exceeds 262144 bytes (256 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response."
+          },
+          "503": {
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "For database_busy or authentication_unavailable, seconds to wait before retrying the same command.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-kind": "read",
+        "x-fresh-authentication": false,
+        "x-scopes": {
+          "platform": "platform:read"
+        }
+      }
+    },
+    "/api/admin/v1/organizations/{organizationId}/members/import": {
+      "post": {
+        "operationId": "importMembers",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "description": "A new key for this logical command. Reuse it with identical input to retry after a lost response; never to repeat the command later."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "addresses": {
+                    "minItems": 1,
+                    "maxItems": 1000,
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "addresses"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "addresses": [
+                  "ada@acme.example.com",
+                  "grace@acme.example.com"
+                ]
+              }
+            }
+          }
+        },
+        "summary": "Import organisation members",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Create up to 1,000 people before their first sign-in, so that their sub exists first: a user and an active membership at once, and no account, which the first sign-in makes. Addresses are normalised and de-duplicated. One transaction, answering per address and never all or nothing: created; added, an existing user gains a membership; alreadyMember; or refused with a reason: invalid; outside_domains, not one of this organisation's active domains; public_mail; disabled, an existing disabled user; removed, a revoked member, whom only reinstateMember brings back; other_firm, an account from another organisation's directory or magic-link row. Works with magic links off and with a directory connected. A replay with the same Idempotency-Key answers the receipt, not the per-address answers; member.imported is audited per membership made. Until a person connects their directory, their directory sign-in answers email_conflict: Not yet. validation_failed rejects a malformed or oversized list and not_found means the organisation is missing.",
+        "tags": [
+          "Members"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "counts": {
+                          "type": "object",
+                          "properties": {
+                            "created": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "added": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "alreadyMember": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "refused": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "created",
+                            "added",
+                            "alreadyMember",
+                            "refused"
+                          ]
+                        },
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "address": {
+                                "type": "string"
+                              },
+                              "outcome": {
+                                "type": "string",
+                                "enum": [
+                                  "created",
+                                  "added",
+                                  "alreadyMember",
+                                  "refused"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "invalid",
+                                  "outside_domains",
+                                  "public_mail",
+                                  "disabled",
+                                  "removed",
+                                  "other_firm"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "address",
+                              "outcome"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "counts",
+                        "items"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "operationId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "applied",
+                            "noop"
+                          ]
+                        },
+                        "statusCode": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "resultReference": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string"
+                            },
+                            "id": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "operationId",
+                        "outcome",
+                        "statusCode",
+                        "resultReference"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "Operation-Id": {
+                "description": "Immutable logical operation ID",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "Whether this response was recovered from the journal",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The principal is not allowed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response."
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body exceeds 262144 bytes (256 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response."
+          },
+          "503": {
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "For database_busy or authentication_unavailable, seconds to wait before retrying the same command.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-kind": "write",
+        "x-fresh-authentication": true,
+        "x-scopes": {
+          "platform": "platform:users"
+        }
+      }
+    },
     "/api/admin/v1/organizations/{organizationId}/members/{memberId}/reinstate": {
       "post": {
         "operationId": "reinstateMember",
@@ -27753,6 +28574,40 @@
                               "disabled"
                             ]
                           },
+                          "verifiedAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "When the DNS record was last seen; null until then, and again once a re-check fails."
+                          },
+                          "verificationRecord": {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "const": "TXT"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "name",
+                              "value"
+                            ],
+                            "description": "What the firm publishes in its DNS to prove the domain. No secret: DNS is public."
+                          },
                           "createdAt": {
                             "type": "string",
                             "format": "date-time",
@@ -27769,6 +28624,8 @@
                           "organizationId",
                           "domain",
                           "status",
+                          "verifiedAt",
+                          "verificationRecord",
                           "createdAt",
                           "updatedAt"
                         ]
@@ -28064,7 +28921,7 @@
           }
         },
         "summary": "Create an organisation domain",
-        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Add an email domain to an organisation and return the created domain, enabling domain-based sign-in discovery. Prefer listOrganizationDomains to inspect existing assignments; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict means the domain is already assigned.",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Add an email domain to an organisation and return the created domain with the DNS record that proves it, enabling domain-based sign-in discovery. Prefer listOrganizationDomains to inspect existing assignments; validation_failed rejects malformed input, not_found means the organisation is missing, conflict means the domain is already assigned and public_mail_domain means anyone can get an address there.",
         "tags": [
           "Domains"
         ],
@@ -28098,6 +28955,40 @@
                             "disabled"
                           ]
                         },
+                        "verifiedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "When the DNS record was last seen; null until then, and again once a re-check fails."
+                        },
+                        "verificationRecord": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "TXT"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "name",
+                            "value"
+                          ],
+                          "description": "What the firm publishes in its DNS to prove the domain. No secret: DNS is public."
+                        },
                         "createdAt": {
                           "type": "string",
                           "format": "date-time",
@@ -28114,6 +29005,8 @@
                         "organizationId",
                         "domain",
                         "status",
+                        "verifiedAt",
+                        "verificationRecord",
                         "createdAt",
                         "updatedAt"
                       ]
@@ -28512,6 +29405,40 @@
                             "disabled"
                           ]
                         },
+                        "verifiedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "When the DNS record was last seen; null until then, and again once a re-check fails."
+                        },
+                        "verificationRecord": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "TXT"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "name",
+                            "value"
+                          ],
+                          "description": "What the firm publishes in its DNS to prove the domain. No secret: DNS is public."
+                        },
                         "createdAt": {
                           "type": "string",
                           "format": "date-time",
@@ -28528,6 +29455,8 @@
                         "organizationId",
                         "domain",
                         "status",
+                        "verifiedAt",
+                        "verificationRecord",
                         "createdAt",
                         "updatedAt"
                       ]
@@ -28892,7 +29821,7 @@
           }
         ],
         "summary": "Enable an organisation domain",
-        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Enable an organisation domain and return the updated record. Prefer disableOrganizationDomain for the opposite transition; not_found means the target is missing and an already active assignment returns unchanged state and records a noop.",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Enable an organisation domain and return the updated record. Prefer disableOrganizationDomain for the opposite transition; not_found means the target is missing, public_mail_domain means the domain has joined the public mail list, and an already active assignment returns unchanged state and records a noop.",
         "tags": [
           "Domains"
         ],
@@ -28926,6 +29855,40 @@
                             "disabled"
                           ]
                         },
+                        "verifiedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "When the DNS record was last seen; null until then, and again once a re-check fails."
+                        },
+                        "verificationRecord": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "TXT"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "name",
+                            "value"
+                          ],
+                          "description": "What the firm publishes in its DNS to prove the domain. No secret: DNS is public."
+                        },
                         "createdAt": {
                           "type": "string",
                           "format": "date-time",
@@ -28942,6 +29905,458 @@
                         "organizationId",
                         "domain",
                         "status",
+                        "verifiedAt",
+                        "verificationRecord",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "operationId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "applied",
+                            "noop"
+                          ]
+                        },
+                        "statusCode": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "resultReference": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string"
+                            },
+                            "id": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "operationId",
+                        "outcome",
+                        "statusCode",
+                        "resultReference"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "Operation-Id": {
+                "description": "Immutable logical operation ID",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "Whether this response was recovered from the journal",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The principal is not allowed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response."
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body exceeds 262144 bytes (256 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response."
+          },
+          "503": {
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "For database_busy or authentication_unavailable, seconds to wait before retrying the same command.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-kind": "write",
+        "x-fresh-authentication": true,
+        "x-scopes": {
+          "platform": "platform:write"
+        }
+      }
+    },
+    "/api/admin/v1/organizations/{organizationId}/domains/{domainId}/verify": {
+      "post": {
+        "operationId": "verifyOrganizationDomain",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "domainId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "description": "A new key for this logical command. Reuse it with identical input to retry after a lost response; never to repeat the command later."
+          }
+        ],
+        "summary": "Verify an organisation domain",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Look up the domain's verificationRecord in DNS, at most 5 seconds outside any transaction, and return the domain with verifiedAt set. Any one TXT record with that value is enough, and a value split into several strings counts. Already proved, the record still there, returns unchanged state and records a noop. domain_verification_failed means the record was not found and names the record expected; on a domain already proved it also clears verifiedAt, audited as domain.verification_lost, so that the domain fails closed and this answer's Operation-Id names that change. The same Idempotency-Key may ask again after a refusal. Nothing re-checks a proof on a schedule: Not yet. not_found means the organisation or domain is missing.",
+        "tags": [
+          "Domains"
+        ],
+        "responses": {
+          "200": {
+            "description": "Domain",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "organizationId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "domain": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "disabled"
+                          ]
+                        },
+                        "verifiedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "When the DNS record was last seen; null until then, and again once a re-check fails."
+                        },
+                        "verificationRecord": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "TXT"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "name",
+                            "value"
+                          ],
+                          "description": "What the firm publishes in its DNS to prove the domain. No secret: DNS is public."
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "organizationId",
+                        "domain",
+                        "status",
+                        "verifiedAt",
+                        "verificationRecord",
                         "createdAt",
                         "updatedAt"
                       ]
@@ -31268,10 +32683,19 @@
                             "properties": {
                               "enabled": {
                                 "type": "boolean"
+                              },
+                              "admission": {
+                                "type": "string",
+                                "enum": [
+                                  "listed",
+                                  "domain"
+                                ],
+                                "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
                               }
                             },
                             "required": [
-                              "enabled"
+                              "enabled",
+                              "admission"
                             ]
                           }
                         },
@@ -31594,10 +33018,26 @@
                           "properties": {
                             "enabled": {
                               "type": "boolean"
+                            },
+                            "admission": {
+                              "type": "string",
+                              "enum": [
+                                "listed",
+                                "domain"
+                              ],
+                              "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
+                            },
+                            "listed": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "The organisation's effective members. A list leaves this out, since it counts them."
                             }
                           },
                           "required": [
-                            "enabled"
+                            "enabled",
+                            "admission",
+                            "listed"
                           ]
                         }
                       },
@@ -31996,10 +33436,26 @@
                       "properties": {
                         "enabled": {
                           "type": "boolean"
+                        },
+                        "admission": {
+                          "type": "string",
+                          "enum": [
+                            "listed",
+                            "domain"
+                          ],
+                          "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
+                        },
+                        "listed": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991,
+                          "description": "The organisation's effective members. A list leaves this out, since it counts them."
                         }
                       },
                       "required": [
-                        "enabled"
+                        "enabled",
+                        "admission",
+                        "listed"
                       ]
                     }
                   },
@@ -32372,10 +33828,26 @@
                           "properties": {
                             "enabled": {
                               "type": "boolean"
+                            },
+                            "admission": {
+                              "type": "string",
+                              "enum": [
+                                "listed",
+                                "domain"
+                              ],
+                              "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
+                            },
+                            "listed": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "The organisation's effective members. A list leaves this out, since it counts them."
                             }
                           },
                           "required": [
-                            "enabled"
+                            "enabled",
+                            "admission",
+                            "listed"
                           ]
                         }
                       },
@@ -33178,10 +34650,26 @@
                           "properties": {
                             "enabled": {
                               "type": "boolean"
+                            },
+                            "admission": {
+                              "type": "string",
+                              "enum": [
+                                "listed",
+                                "domain"
+                              ],
+                              "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
+                            },
+                            "listed": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "The organisation's effective members. A list leaves this out, since it counts them."
                             }
                           },
                           "required": [
-                            "enabled"
+                            "enabled",
+                            "admission",
+                            "listed"
                           ]
                         }
                       },
@@ -33618,10 +35106,26 @@
                           "properties": {
                             "enabled": {
                               "type": "boolean"
+                            },
+                            "admission": {
+                              "type": "string",
+                              "enum": [
+                                "listed",
+                                "domain"
+                              ],
+                              "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
+                            },
+                            "listed": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "The organisation's effective members. A list leaves this out, since it counts them."
                             }
                           },
                           "required": [
-                            "enabled"
+                            "enabled",
+                            "admission",
+                            "listed"
                           ]
                         }
                       },
@@ -34058,10 +35562,26 @@
                           "properties": {
                             "enabled": {
                               "type": "boolean"
+                            },
+                            "admission": {
+                              "type": "string",
+                              "enum": [
+                                "listed",
+                                "domain"
+                              ],
+                              "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
+                            },
+                            "listed": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "The organisation's effective members. A list leaves this out, since it counts them."
                             }
                           },
                           "required": [
-                            "enabled"
+                            "enabled",
+                            "admission",
+                            "listed"
                           ]
                         }
                       },
@@ -34498,10 +36018,509 @@
                           "properties": {
                             "enabled": {
                               "type": "boolean"
+                            },
+                            "admission": {
+                              "type": "string",
+                              "enum": [
+                                "listed",
+                                "domain"
+                              ],
+                              "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
+                            },
+                            "listed": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "The organisation's effective members. A list leaves this out, since it counts them."
                             }
                           },
                           "required": [
-                            "enabled"
+                            "enabled",
+                            "admission",
+                            "listed"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "revision",
+                        "name",
+                        "slug",
+                        "status",
+                        "authorizationVersion",
+                        "disabledAt",
+                        "createdAt",
+                        "updatedAt",
+                        "magicLink"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "operationId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "applied",
+                            "noop"
+                          ]
+                        },
+                        "statusCode": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "resultReference": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string"
+                            },
+                            "id": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "operationId",
+                        "outcome",
+                        "statusCode",
+                        "resultReference"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "Operation-Id": {
+                "description": "Immutable logical operation ID",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "Whether this response was recovered from the journal",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The principal is not allowed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response."
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body exceeds 262144 bytes (256 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response."
+          },
+          "503": {
+            "description": "Service unavailable",
+            "headers": {
+              "Retry-After": {
+                "description": "For database_busy or authentication_unavailable, seconds to wait before retrying the same command.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "number"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "request_id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-kind": "write",
+        "x-fresh-authentication": true,
+        "x-scopes": {
+          "platform": "platform:write"
+        }
+      }
+    },
+    "/api/admin/v1/organizations/{organizationId}/magic-link": {
+      "patch": {
+        "operationId": "setMagicLinkAdmission",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "description": "A new key for this logical command. Reuse it with identical input to retry after a lost response; never to repeat the command later."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "admission": {
+                    "type": "string",
+                    "enum": [
+                      "listed",
+                      "domain"
+                    ]
+                  }
+                },
+                "required": [
+                  "admission"
+                ],
+                "additionalProperties": false
+              },
+              "example": {
+                "admission": "domain"
+              }
+            }
+          }
+        },
+        "summary": "Set who may ask for a magic link",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Set who may ask an organisation's magic-link row for a link and return the updated organisation. listed: its effective members. domain: also anyone with an address at one of its proved domains, whom a first sign-in creates, with any organisation-wide entitlement at once; a domain added later admits nobody new until it is proved, and an address no user holds gets no mail past 100 an hour from one client or 500 a day for the organisation, so a firm-wide start uses importMembers first. Removed members and disabled users are refused in both. domain_not_verified refuses domain unless every active domain is proved and none is a public mail domain, and at least one exists, naming those in details; platform_magic_link refuses it on the platform organisation. listed is always allowed. Changing it ends no session and no grant, and existing members stay members. Works whether or not a directory is connected and on a disabled organisation. not_found means the organisation is missing and the same value returns a noop.",
+        "tags": [
+          "Organizations"
+        ],
+        "responses": {
+          "200": {
+            "description": "Organisation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "revision": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "disabled"
+                          ]
+                        },
+                        "authorizationVersion": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "disabledAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "magicLink": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "admission": {
+                              "type": "string",
+                              "enum": [
+                                "listed",
+                                "domain"
+                              ],
+                              "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
+                            },
+                            "listed": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "The organisation's effective members. A list leaves this out, since it counts them."
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "admission",
+                            "listed"
                           ]
                         }
                       },

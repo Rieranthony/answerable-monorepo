@@ -10,7 +10,7 @@ import {
 import { tenantRead } from "./tenant-read.ts";
 import type { Hono } from "hono";
 import { z } from "zod";
-import { platformCommand } from "./command.ts";
+import { platformCommand, platformCommandRead } from "./command.ts";
 import type { AppEnvironment } from "../context.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
@@ -18,7 +18,14 @@ import { registerRoute, type AdminRoute } from "./route-table.ts";
 import { lifecycleStatuses } from "../../db/schema/vocabulary.ts";
 import { hostnamePattern } from "../../db/schema/columns.ts";
 import { pageQuerySchema } from "../pagination.ts";
-import { listOrganizationDomains } from "../../db/queries/organization-domains.ts";
+import {
+  findOrganizationDomainForCommand,
+  listOrganizationDomains,
+} from "../../db/queries/organization-domains.ts";
+import {
+  domainVerificationRecord,
+  lookupTxtRecords,
+} from "../../services/domain-verification.ts";
 import * as service from "../../services/domains.ts";
 
 export const hostSchema = z
@@ -31,6 +38,20 @@ const domainSchema = z.object({
   organizationId: z.uuid(),
   domain: z.string(),
   status: z.enum(lifecycleStatuses),
+  verifiedAt: z.iso.datetime().nullable().meta({
+    description:
+      "When the DNS record was last seen; null until then, and again once a re-check fails.",
+  }),
+  verificationRecord: z
+    .object({
+      type: z.literal("TXT"),
+      name: z.string(),
+      value: z.string(),
+    })
+    .meta({
+      description:
+        "What the firm publishes in its DNS to prove the domain. No secret: DNS is public.",
+    }),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -91,7 +112,7 @@ export const routes = {
     operationId: "createOrganizationDomain",
     summary: "Create an organisation domain",
     description:
-      "Add an email domain to an organisation and return the created domain, enabling domain-based sign-in discovery. Prefer listOrganizationDomains to inspect existing assignments; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict means the domain is already assigned.",
+      "Add an email domain to an organisation and return the created domain with the DNS record that proves it, enabling domain-based sign-in discovery. Prefer listOrganizationDomains to inspect existing assignments; validation_failed rejects malformed input, not_found means the organisation is missing, conflict means the domain is already assigned and public_mail_domain means anyone can get an address there.",
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
@@ -133,7 +154,7 @@ export const routes = {
     operationId: "enableOrganizationDomain",
     summary: "Enable an organisation domain",
     description:
-      "Enable an organisation domain and return the updated record. Prefer disableOrganizationDomain for the opposite transition; not_found means the target is missing and an already active assignment returns unchanged state and records a noop.",
+      "Enable an organisation domain and return the updated record. Prefer disableOrganizationDomain for the opposite transition; not_found means the target is missing, public_mail_domain means the domain has joined the public mail list, and an already active assignment returns unchanged state and records a noop.",
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
@@ -145,6 +166,26 @@ export const routes = {
         content: commandJson(domainSchema),
       },
       ...problemResponses(404),
+    },
+  },
+  verifyOrganizationDomain: {
+    method: "post",
+    path: "/organizations/:organizationId/domains/:domainId/verify",
+    operationId: "verifyOrganizationDomain",
+    summary: "Verify an organisation domain",
+    description:
+      "Look up the domain's verificationRecord in DNS, at most 5 seconds outside any transaction, and return the domain with verifiedAt set. Any one TXT record with that value is enough, and a value split into several strings counts. Already proved, the record still there, returns unchanged state and records a noop. domain_verification_failed means the record was not found and names the record expected; on a domain already proved it also clears verifiedAt, audited as domain.verification_lost, so that the domain fails closed and this answer's Operation-Id names that change. The same Idempotency-Key may ask again after a refusal. Nothing re-checks a proof on a schedule: Not yet. not_found means the organisation or domain is missing.",
+    tag: "Domains",
+    platformScope: "platform:write",
+    kind: "write",
+    freshAuthentication: true,
+    parameters: domainParameters,
+    responses: {
+      200: {
+        description: "Domain",
+        content: commandJson(domainSchema),
+      },
+      ...problemResponses(404, 409),
     },
   },
 } satisfies Record<string, AdminRoute>;
@@ -183,12 +224,13 @@ export function register(app: Hono<AppEnvironment>) {
     validate("query", querySchema),
     async (context) =>
       context.json(
-        await tenantRead(context, "directory", (tenant) =>
-          listOrganizationDomains(
+        await tenantRead(context, "directory", async (tenant) => {
+          const page = await listOrganizationDomains(
             tenant,
             querySchema.parse(context.req.query()),
-          ),
-        ),
+          );
+          return { ...page, items: page.items.map(service.shownDomain) };
+        }),
       ),
   );
   registerRoute(
@@ -267,6 +309,72 @@ export function register(app: Hono<AppEnvironment>) {
           };
         },
       );
+    },
+  );
+  registerRoute(
+    app,
+    routes.verifyOrganizationDomain,
+    validate("param", domainParams),
+    async (context) => {
+      const organizationId = context.req.param("organizationId")!;
+      const domainId = context.req.param("domainId")!;
+      const input = { organizationId, domainId };
+      // No network work belongs in a command's transaction. Look only for a caller the
+      // command would admit; a missing row answers there, after any replay of its receipt.
+      const domain = await platformCommandRead(context, "write", (platform) =>
+        findOrganizationDomainForCommand(platform, organizationId, domainId),
+      );
+      const records = domain
+        ? await lookupTxtRecords(
+            context.get("txtResolver"),
+            domainVerificationRecord(domain).name,
+          )
+        : [];
+      try {
+        return await platformCommand(
+          context,
+          "write",
+          input,
+          200,
+          async (platform) => {
+            const result = await service.proveDomain(
+              platform,
+              organizationId,
+              domainId,
+              records,
+            );
+            return {
+              body: result.row,
+              changed: result.changed,
+              resultReference: { type: "domain", id: domainId },
+            };
+          },
+        );
+      } catch (refusal) {
+        // A refusal keeps the caller's key free, to ask again once the record is published.
+        // What it found still has to commit, under a key of its own.
+        if (refusal instanceof service.DomainProofFailed && refusal.wasProved)
+          await platformCommand(
+            context,
+            "write",
+            input,
+            200,
+            async (platform) => {
+              const { changed } = await service.endDomainProof(
+                platform,
+                organizationId,
+                domainId,
+              );
+              return {
+                body: null,
+                changed,
+                resultReference: { type: "domain", id: domainId },
+              };
+            },
+            { serverKey: true },
+          );
+        throw refusal;
+      }
     },
   );
 }

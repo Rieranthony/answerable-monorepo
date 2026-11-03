@@ -5,6 +5,9 @@ import { recordCommandEvent, evidence } from "./audit.ts";
 import { revokeOrganizationMachineTokens } from "../db/queries/oauth-tokens.ts";
 import { found, ProblemError } from "../http/problem.ts";
 import { assertRevision } from "../http/admin/revision.ts";
+import { activeOrganizationDomains } from "../db/queries/organization-domains.ts";
+import type { MagicLinkAdmissionMode } from "../db/schema/vocabulary.ts";
+import { isPublicMailDomain } from "../lib/public-mail-domains.ts";
 
 const notFound = "Organisation not found";
 
@@ -174,6 +177,74 @@ export function enableMagicLink(context: PlatformWriteContext, id: string) {
 
 export function disableMagicLink(context: PlatformWriteContext, id: string) {
   return setMagicLink(context, id, false);
+}
+
+/**
+ * Opening a firm to anyone at its domains needs every active domain proved and none of them
+ * public, and at least one. Admission still checks each address's own domain, so a domain
+ * added afterwards admits nobody new until it is proved.
+ */
+async function refuseUnprovedDomains(
+  context: PlatformWriteContext,
+  organizationId: string,
+) {
+  const domains = await activeOrganizationDomains(context.tx, organizationId);
+  const unverified = domains
+    .filter(({ verifiedAt }) => verifiedAt === null)
+    .map(({ domain }) => domain);
+  const publicMail = domains
+    .filter(({ domain }) => isPublicMailDomain(domain))
+    .map(({ domain }) => domain);
+  if (!domains.length || unverified.length || publicMail.length)
+    throw new ProblemError(
+      409,
+      "domain_not_verified",
+      "Every active domain must be proved before anyone at them may ask for a link",
+      domains.length
+        ? "Verify each domain named here, or remove it, then ask again."
+        : "The organisation has no active domain. Add one and verify it, then ask again.",
+      { details: { unverified, publicMail } },
+    );
+}
+
+/** Who may ask for a link. Sessions and grants name the row's revision, which this does not
+ * move: narrowing it leaves members as members, so it ends nothing. */
+export async function setMagicLinkAdmission(
+  context: PlatformWriteContext,
+  id: string,
+  admission: MagicLinkAdmissionMode,
+) {
+  found(await queries.lockOrganizationForCommand(context, id), notFound);
+  const before = await queries.lockMagicLinkForCommand(context, id);
+  const changed = before.admission !== admission;
+  if (changed && admission === "domain") {
+    if (await queries.isPlatformOrganization(context, id))
+      throw new ProblemError(
+        409,
+        "platform_magic_link",
+        "The platform organisation cannot use magic links",
+      );
+    await refuseUnprovedDomains(context, id);
+  }
+  // An unchanged command's receipt is its record; it writes no audit event.
+  if (changed) {
+    const after = await queries.setMagicLinkAdmission(
+      context,
+      before.id,
+      admission,
+    );
+    await recordCommandEvent(context, {
+      organizationId: id,
+      targetType: "organization",
+      targetId: id,
+      action: "organization.magic_link_admission_changed",
+      data: {
+        before: { admission: before.admission, revision: before.revision },
+        after: { admission: after.admission, revision: after.revision },
+      },
+    });
+  }
+  return { row: await queries.answerOrganization(context, id), changed };
 }
 
 export async function eraseOrganization(

@@ -122,6 +122,13 @@ export async function createAdminFixture(
       requests,
       settled: () => Promise.all(running.splice(0)),
     };
+    // No test opens a network: what a domain's DNS holds is what a test says here.
+    const dns = {
+      records: new Map<string, string[][]>(),
+      lookups: [] as string[],
+      /** What every lookup answers instead, for a resolver that fails or hangs. */
+      answer: undefined as (() => Promise<string[][]>) | undefined,
+    };
     const app = createApp({
       auth,
       db: appDb,
@@ -131,6 +138,15 @@ export async function createAdminFixture(
           running.push(requests.process(request));
           return true;
         },
+      },
+      txtResolver: async (name) => {
+        dns.lookups.push(name);
+        if (dns.answer) return dns.answer();
+        const records = dns.records.get(name);
+        if (records) return records;
+        throw Object.assign(new Error(`queryTxt ENOTFOUND ${name}`), {
+          code: "ENOTFOUND",
+        });
       },
     });
     const bootstrapped = await bootstrap(db, systemActor("fixture"), {
@@ -354,6 +370,7 @@ export async function createAdminFixture(
     }
     return {
       mail,
+      dns,
       auth,
       app,
       db,

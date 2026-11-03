@@ -26,7 +26,7 @@ export const memberId = z.uuid().describe("The member's id, from members_list")
 export const slug = z.string().max(100).regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Lowercase letters and digits, words joined by single hyphens")
 
 /** ID's rows, as far as the mutations read them. */
-export type Organisation = { id: string; slug: string; name: string; status: "active" | "disabled" }
+export type Organisation = { id: string; slug: string; name: string; status: "active" | "disabled"; magicLink: { enabled: boolean; admission: "listed" | "domain"; listed: number } }
 export type Group = { id: string; slug: string; name: string; status: "active" | "disabled" }
 export type Member = { id: string; userId: string; email: string; name: string; status: "active" | "disabled"; effective: boolean; membershipStatus: "active" | "revoked" }
 export type Entitlement = { id: string; memberId: string | null; groupId: string | null; clientId: string | null; resource: string | null; scopes: string[]; status: "active" | "disabled" }
@@ -73,11 +73,13 @@ export function createOrganisations({ calls, authority, platform, fresh }: { cal
       throw new ToolError("PERMISSION_DENIED", `${user.email} is Answerable staff, and acting on staff is an owner's critical operation: staff.revoke is owner only, so an admin could otherwise cut off an owner`)
     }
   }
+  /** Whether this caller is an owner, for a tool whose minimum depends on what it is asked to do. */
+  const isOwner = async ({ principal }: ToolContext) => await authority.role(principal) === "owner"
   /** The organisation with its ETag, as a target; guarded when it is the platform organisation. */
   async function organisation(organizationId: string, context: ToolContext) {
     await guard(organizationId, context)
     const { body, etag } = await calls.versioned<Organisation>(`/organizations/${organizationId}`, context, missingOrganisation(organizationId))
     return { organisation: body, target: target("organization", organizationId, named(body), etag) }
   }
-  return { guard, organisation, protectStaff }
+  return { guard, organisation, protectStaff, isOwner }
 }

@@ -1026,7 +1026,7 @@
       "name": "domains_add",
       "version": "2026-10-01",
       "kind": "mutate",
-      "description": "Prepare routing an email domain to an organisation in Answerable ID, so that people with that domain are sent to its sign-in. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. A domain belongs to one organisation; set its SSO provider with sso_set.",
+      "description": "Prepare routing an email domain to an organisation in Answerable ID, so that people with that domain are sent to its sign-in: a magic link, its directory, or the choice of both. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. A domain belongs to one organisation, and a public mail domain is refused. The result gives the DNS record that proves it, which domains_verify checks; sso_set connects a directory, if it has one.",
       "scopes": [
         "admin"
       ],
@@ -1080,11 +1080,125 @@
             "type": "string",
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "verificationRecord": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "name",
+                  "value"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The TXT record that proves the domain; null when ID replayed the write, and organisations_get shows it"
           }
         },
         "required": [
           "domainId",
           "domain",
+          "operationId",
+          "verificationRecord"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "identity": "admin/domains.verify",
+      "name": "domains_verify",
+      "version": "2026-10-01",
+      "kind": "mutate",
+      "description": "Prepare checking an organisation's email domain in DNS with Answerable ID: a TXT record at _answerable-challenge.<domain> with the value domains_add and organisations_get give. Found, the domain is proved. Not found on a domain already proved, the proof is cleared, so that it fails closed. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. magiclink_admission needs every active domain proved before anyone at them may ask for a link.",
+      "scopes": [
+        "admin"
+      ],
+      "errors": [
+        "ADMIN_REAUTHENTICATION_REQUIRED"
+      ],
+      "risk": "normal",
+      "effects": [
+        "permission_change"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "The organisation's id in Answerable ID, from organisations_list"
+          },
+          "domain": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "description": "The email domain, as organisations_get shows it"
+          }
+        },
+        "required": [
+          "organizationId",
+          "domain"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "domainId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "verifiedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the record was seen; null when ID replayed the write, and organisations_get shows it"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "domainId",
+          "domain",
+          "verifiedAt",
           "operationId"
         ],
         "additionalProperties": false
@@ -1447,6 +1561,211 @@
       }
     },
     {
+      "identity": "admin/magiclink.admission",
+      "name": "magiclink_admission",
+      "version": "2026-10-01",
+      "kind": "mutate",
+      "description": "Prepare setting who may ask an organisation for a magic link in Answerable ID. listed: its effective members. domain: also anyone with an address at a domain that has passed domains_verify, whom a first sign-in creates; that needs the owner role, and every active domain proved. Removed members and disabled people are refused in both. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. It ends no session and no grant, and existing members stay members.",
+      "scopes": [
+        "admin"
+      ],
+      "errors": [
+        "ADMIN_REAUTHENTICATION_REQUIRED"
+      ],
+      "risk": "normal",
+      "effects": [
+        "permission_change"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "The organisation's id in Answerable ID, from organisations_list"
+          },
+          "admission": {
+            "type": "string",
+            "enum": [
+              "listed",
+              "domain"
+            ],
+            "description": "listed: the organisation's effective members; domain: also anyone at one of its proved domains"
+          }
+        },
+        "required": [
+          "organizationId",
+          "admission"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "admission": {
+            "type": "string",
+            "enum": [
+              "listed",
+              "domain"
+            ]
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "organizationId",
+          "admission",
+          "operationId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "identity": "admin/magiclink.disable",
+      "name": "magiclink_disable",
+      "version": "2026-10-01",
+      "kind": "mutate",
+      "description": "Prepare turning sign-in by emailed link off for an organisation in Answerable ID: its magic-link sessions and grants end, and directory sign-ins, sessions and grants are not touched. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. This is how an organisation requires its directory only. magiclink_enable reverses the setting, not what it ended.",
+      "scopes": [
+        "admin"
+      ],
+      "errors": [
+        "ADMIN_REAUTHENTICATION_REQUIRED"
+      ],
+      "risk": "normal",
+      "effects": [
+        "permission_change"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "The organisation's id in Answerable ID, from organisations_list"
+          }
+        },
+        "required": [
+          "organizationId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "organizationId",
+          "enabled",
+          "operationId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "identity": "admin/magiclink.enable",
+      "name": "magiclink_enable",
+      "version": "2026-10-01",
+      "kind": "mutate",
+      "description": "Prepare turning sign-in by emailed link on for an organisation in Answerable ID, whether or not it has a directory. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. magiclink_admission says who may ask for a link; the platform organisation can never use them.",
+      "scopes": [
+        "admin"
+      ],
+      "errors": [
+        "ADMIN_REAUTHENTICATION_REQUIRED"
+      ],
+      "risk": "normal",
+      "effects": [
+        "permission_change"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "The organisation's id in Answerable ID, from organisations_list"
+          }
+        },
+        "required": [
+          "organizationId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "organizationId",
+          "enabled",
+          "operationId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "identity": "admin/members.get",
       "name": "members_get",
       "version": "2026-10-01",
@@ -1700,11 +2019,146 @@
       }
     },
     {
+      "identity": "admin/members.import",
+      "name": "members_import",
+      "version": "2026-10-01",
+      "kind": "mutate",
+      "description": "Prepare listing people in an organisation in Answerable ID before their first sign-in, so that their sub exists first: a user and an active membership for each address, at most 1,000, and no account, which the first sign-in makes. Each address has its own answer, and one refused does not stop the rest: refused when invalid, outside the organisation's active domains, public mail, a disabled person, a removed member, whom only members_reinstate brings back, or an account of another organisation. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. It sends no mail, and works with magic links off and with a directory connected.",
+      "scopes": [
+        "admin"
+      ],
+      "errors": [
+        "ADMIN_REAUTHENTICATION_REQUIRED"
+      ],
+      "risk": "normal",
+      "effects": [
+        "permission_change"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "The organisation's id in Answerable ID, from organisations_list"
+          },
+          "addresses": {
+            "minItems": 1,
+            "maxItems": 1000,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000,
+              "description": "An email address, in any case"
+            },
+            "description": "The addresses to list, at most 1,000; repeats count once"
+          }
+        },
+        "required": [
+          "organizationId",
+          "addresses"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "counts": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "created": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "added": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "alreadyMember": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "refused": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "created",
+                  "added",
+                  "alreadyMember",
+                  "refused"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many had each outcome; null when ID replayed the write, and audit_list by operationId shows who it made"
+          },
+          "refused": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "address",
+                "reason"
+              ],
+              "additionalProperties": false
+            },
+            "description": "The refused addresses and why, the first 20"
+          }
+        },
+        "required": [
+          "organizationId",
+          "operationId",
+          "counts",
+          "refused"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "identity": "admin/members.list",
       "name": "members_list",
       "version": "2026-10-01",
       "kind": "read",
-      "description": "List the members of an organisation, newest first, 20 per page by default and at most 100: member id, user id, email, name, status and whether the membership is in force now. A person becomes a member at their first sign-in. Filter by exact email, by q, text in the email or name, and by effective. When has_more is true, pass next_cursor as cursor. Changes nothing.",
+      "description": "List the members of an organisation, newest first, 20 per page by default and at most 100: member id, user id, email, name, status and whether the membership is in force now. A person becomes a member at their first sign-in, or when members_import lists them. Filter by exact email, by q, text in the email or name, and by effective. When has_more is true, pass next_cursor as cursor. Changes nothing.",
       "scopes": [
         "admin"
       ],
@@ -2001,7 +2455,7 @@
       "name": "organisations_create",
       "version": "2026-10-01",
       "kind": "mutate",
-      "description": "Prepare creating an organisation in Answerable ID with a unique slug and a name. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. It starts with no domain, SSO provider or access: then domains_add, sso_set, toolbox_enable and access_grant.",
+      "description": "Prepare creating an organisation in Answerable ID with a unique slug and a name. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. It starts with no domain, directory, member or access, and with magic links on for its members: then domains_add, members_import or sso_set, toolbox_enable and access_grant. A directory is one way in, not the only one.",
       "scopes": [
         "admin"
       ],
@@ -2203,7 +2657,7 @@
       "name": "organisations_get",
       "version": "2026-10-01",
       "kind": "read",
-      "description": "Read one organisation from Answerable ID: its slug, name and status, every email domain routed to it, and its SSO provider: issuer, domain, whether it signs in through Answerable's platform application or its own credentials, and whether a client secret is set. sso is null when it has none. Changes nothing.",
+      "description": "Read one organisation from Answerable ID: its slug, name and status, and its two ways in side by side, each with its own state. magicLink: whether links are on, who may ask for one and how many effective members it lists. sso: its directory, issuer, domain, whether it signs in through Answerable's platform application or its own credentials and whether a client secret is set, null when it has none. Also every email domain routed to it, each with when it was proved and the DNS record that proves it. Changes nothing.",
       "scopes": [
         "admin"
       ],
@@ -2292,16 +2746,81 @@
                     "active",
                     "disabled"
                   ]
+                },
+                "verifiedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "When its DNS record was last seen; null until domains_verify finds it"
+                },
+                "verificationRecord": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "name",
+                    "value"
+                  ],
+                  "additionalProperties": false,
+                  "description": "What the organisation publishes in DNS to prove the domain"
                 }
               },
               "required": [
                 "id",
                 "domain",
-                "status"
+                "status",
+                "verifiedAt",
+                "verificationRecord"
               ],
               "additionalProperties": false
             },
             "description": "Every email domain routed to the organisation"
+          },
+          "magicLink": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "admission": {
+                "type": "string",
+                "enum": [
+                  "listed",
+                  "domain"
+                ],
+                "description": "Who may ask for a link: listed, its effective members; domain, also anyone at a proved domain"
+              },
+              "listed": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991,
+                "description": "Its effective members"
+              }
+            },
+            "required": [
+              "enabled",
+              "admission",
+              "listed"
+            ],
+            "additionalProperties": false,
+            "description": "Sign-in by emailed link; independent of the directory"
           },
           "sso": {
             "anyOf": [
@@ -2358,6 +2877,7 @@
           "createdAt",
           "updatedAt",
           "domains",
+          "magicLink",
           "sso"
         ],
         "additionalProperties": false
@@ -2548,7 +3068,7 @@
       "name": "sso_set",
       "version": "2026-10-01",
       "kind": "mutate",
-      "description": "Prepare setting or replacing an organisation's SSO provider in Answerable ID, through Answerable's own Microsoft or Google application: a Microsoft Entra issuer https://login.microsoftonline.com/<tenant id>/v2.0 or https://accounts.google.com. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. A directory with its own credentials needs a client secret, which no tool takes.",
+      "description": "Prepare setting or replacing an organisation's SSO provider in Answerable ID, through Answerable's own Microsoft or Google application: a Microsoft Entra issuer https://login.microsoftonline.com/<tenant id>/v2.0 or https://accounts.google.com. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. A directory with its own credentials needs a client secret, which no tool takes. Magic links stay as they are.",
       "scopes": [
         "admin"
       ],

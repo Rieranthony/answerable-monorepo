@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   index,
   integer,
@@ -42,6 +43,9 @@ export const magicLinkRequests = pgTable(
      * since eight digits reverse at once from a plain hash. */
     codeHmac: text("code_hmac"),
     attempts: integer("attempts").default(0).notNull(),
+    /** No user held this address when it was asked for, which only domain mode admits. Made-up
+     * addresses count here, so a budget of their own can stop them bouncing. */
+    newAddress: boolean("new_address").default(false).notNull(),
     /** The signed query of the authorisation this sign-in resumes. */
     pendingOauthQuery: text("pending_oauth_query"),
     expiresAt: timestampColumn("expires_at").notNull(),
@@ -100,6 +104,13 @@ export const magicLinkRequests = pgTable(
     index("magic_link_requests_organization_attempted_idx")
       .on(table.organizationId, table.createdAt)
       .where(sql`${table.attempts} > 0`),
+    // What the budgets for addresses nobody holds count, and only those rows are in them.
+    index("magic_link_requests_new_address_organization_idx")
+      .on(table.organizationId, table.createdAt)
+      .where(sql`${table.newAddress} and ${table.sendStatus} <> 'failed'`),
+    index("magic_link_requests_new_address_client_idx")
+      .on(table.clientHash, table.createdAt)
+      .where(sql`${table.newAddress} and ${table.sendStatus} <> 'failed'`),
     index("magic_link_requests_browser_hash_idx").on(table.browserHash),
     index("magic_link_requests_created_at_idx").on(table.createdAt),
   ],

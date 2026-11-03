@@ -42,7 +42,7 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
   const revoked = id.member(organisation, { email: "eve@newco.example", membershipStatus: "revoked", revokedAt: new Date().toISOString() }).id
   const group = id.group(organisation, { slug: "engineers" }).id
   const assignment = id.join(group, member)
-  id.domain(organisation, "newco.example")
+  const domainRow = id.domain(organisation, "newco.example")
   const provider = id.ssoProvider(organisation, { issuer: google, domain: "newco.example" })
   const entitlement = id.entitlement(organisation, { memberId: member, resource: toolbox, scopes: ["e2e"] }).id
   const capability = Bun.randomUUIDv7()
@@ -99,6 +99,49 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
     [200, "POST", `/organizations/${id.organizationId}/magic-link/disable`, { key: "platform-off" }, body => expect(body).toMatchObject({ id: id.organizationId, magicLink: { enabled: false } })],
     [200, "POST", `/organizations/${id.organizationId}/magic-link/disable`, { key: "platform-off" }, receipt("noop", "organization")],
     [403, "POST", at("/magic-link/disable"), { token: "read" }],
+    // Who may ask: listed always, domain with every active domain proved, and never the platform organisation's.
+    [200, "GET", at(""), {}, body => expect(body).toMatchObject({ magicLink: { enabled: true, admission: "listed", listed: expect.any(Number) } })],
+    [200, "GET", "/organizations?q=newco", {}, body => {
+      const [row] = (body as { items: { magicLink: Record<string, unknown> }[] }).items
+      expect(row!.magicLink).toEqual({ enabled: true, admission: "listed" })
+    }],
+    [200, "GET", at("/domains"), {}, body => expect((body as { items: unknown[] }).items[0]).toMatchObject({
+      domain: "newco.example", verifiedAt: null, verificationRecord: { type: "TXT", name: "_answerable-challenge.newco.example", value: expect.stringMatching(/^answerable-domain-verification=[0-9a-f]{32}$/) },
+    })],
+    [409, "PATCH", at("/magic-link"), { body: { admission: "domain" } }, body => expect(body).toMatchObject({ code: "domain_not_verified", details: { unverified: ["newco.example"], publicMail: [] } })],
+    [409, "PATCH", `/organizations/${bare}/magic-link`, { body: { admission: "domain" } }, body => expect(body).toMatchObject({ code: "domain_not_verified", details: { unverified: [], publicMail: [] } })],
+    [409, "PATCH", `/organizations/${id.organizationId}/magic-link`, { body: { admission: "domain" } }, body => expect(body).toMatchObject({ code: "platform_magic_link" })],
+    [400, "PATCH", at("/magic-link"), { body: { admission: "anyone" } }],
+    [403, "PATCH", at("/magic-link"), { token: "read", body: { admission: "listed" } }],
+    [403, "PATCH", at("/magic-link"), { token: "users", body: { admission: "listed" } }],
+    [200, "PATCH", at("/magic-link"), { key: "listed-noop", body: { admission: "listed" } }, body => expect(body).toMatchObject({ magicLink: { admission: "listed" } })],
+    [200, "PATCH", at("/magic-link"), { key: "listed-noop", body: { admission: "listed" } }, receipt("noop", "organization")],
+    [405, "GET", at("/magic-link")],
+    // A domain's proof: what DNS holds, which a failure takes away.
+    [409, "POST", at(`/domains/${domainRow.id}/verify`), {}, body => expect(body).toMatchObject({ code: "domain_verification_failed", expected: { type: "TXT", name: "_answerable-challenge.newco.example" } })],
+    [404, "POST", at(`/domains/${missing}/verify`)],
+    [403, "POST", at(`/domains/${domainRow.id}/verify`), { token: "read" }],
+    [403, "POST", at(`/domains/${domainRow.id}/verify`), { token: "users" }],
+    [405, "GET", at(`/domains/${domainRow.id}/verify`)],
+    [409, "POST", at("/domains"), { body: { domain: "gmail.com" } }, body => expect(body).toMatchObject({ code: "public_mail_domain" })],
+    // An import: each address its own answer, with platform:users, and its preview with platform:read.
+    [200, "POST", at("/members/import/preview"), { token: "read", body: { addresses: ["Ada@newco.example", "ada@newco.example", "fresh@newco.example", "x@gmail.com", "x@elsewhere.example", "nonsense"] } }, body => expect(body).toEqual({
+      counts: { created: 1, added: 0, alreadyMember: 1, refused: 3 },
+      items: [
+        { address: "ada@newco.example", outcome: "alreadyMember" }, { address: "fresh@newco.example", outcome: "created" }, { address: "x@gmail.com", outcome: "refused", reason: "public_mail" },
+        { address: "x@elsewhere.example", outcome: "refused", reason: "outside_domains" }, { address: "nonsense", outcome: "refused", reason: "invalid" },
+      ],
+    })],
+    [200, "POST", at("/members/import/preview"), { token: "read", body: { addresses: ["fresh@newco.example"] } }, body => expect(body).toMatchObject({ counts: { created: 1 } })],
+    [401, "POST", at("/members/import/preview"), { token: null, body: { addresses: ["a@b.example"] } }],
+    [400, "POST", at("/members/import"), { token: "users", body: { addresses: [] } }],
+    [404, "POST", `/organizations/${missing}/members/import`, { token: "users", body: { addresses: ["a@b.example"] } }],
+    [403, "POST", at("/members/import"), { token: "write", body: { addresses: ["a@b.example"] } }, body => expect(body).toMatchObject({ code: "insufficient_scope" })],
+    [200, "POST", at("/members/import"), { token: "users", key: "import", body: { addresses: ["fresh@newco.example"] } }, body => expect(body).toMatchObject({ counts: { created: 1 }, items: [{ address: "fresh@newco.example", outcome: "created" }] })],
+    [200, "POST", at("/members/import"), { token: "users", key: "import", body: { addresses: ["fresh@newco.example"] } }, receipt("applied", "organization")],
+    [200, "POST", at("/members/import"), { token: "users", key: "import-again", body: { addresses: ["fresh@newco.example"] } }, body => expect(body).toMatchObject({ counts: { alreadyMember: 1 } })],
+    [200, "POST", at("/members/import"), { token: "users", key: "import-again", body: { addresses: ["fresh@newco.example"] } }, receipt("noop", "organization")],
+    [405, "GET", at("/members/import")],
     [404, "POST", `/organizations/${missing}/magic-link/enable`],
     [405, "GET", at("/magic-link/enable")],
     [200, "GET", at("/domains")],
@@ -518,4 +561,18 @@ test("ID answers its liveness check, and a fake that is down answers it 503", as
   expect(await (await id.config.fetch("https://id.test/healthz")).json()).toEqual({ status: "ok" })
   id.outage(true)
   expect((await id.config.fetch("https://id.test/healthz")).status).toBe(503)
+})
+
+test("an import's preview needs platform:read, as ID's does: a token without it is refused", async () => {
+  const id = createFakeId({ resources: { [admin]: ["platform:users"] } })
+  const organisation = id.organisation(Bun.randomUUIDv7(), { name: "Newco" })
+  const issued = await id.config.fetch("https://id.test/auth/oauth2/token", {
+    method: "POST", headers: { Authorization: `Basic ${btoa("toolbox-hub:hub-secret")}` }, body: new URLSearchParams({ grant_type: "client_credentials", resource: admin, scope: "platform:users" }),
+  })
+  const { access_token: token } = await issued.json() as { access_token: string }
+  const answer = await id.config.fetch(`https://id.test/api/admin/v1/organizations/${organisation.id}/members/import/preview`, {
+    method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ addresses: ["a@b.example"] }),
+  })
+  expect(answer.status).toBe(403)
+  expect(await answer.json()).toMatchObject({ code: "insufficient_scope" })
 })

@@ -20,7 +20,7 @@ import {
   timestamps,
   vocabularyCheck,
 } from "./columns.ts";
-import { ssoProviderKinds } from "./vocabulary.ts";
+import { magicLinkAdmissions, ssoProviderKinds } from "./vocabulary.ts";
 
 // Persisted configuration owned by @better-auth/sso. The organization and
 // normalized domain constraints are Answerable's tenant-boundary additions.
@@ -33,6 +33,11 @@ export const ssoProviders = pgTable(
     /** Only a magic-link row can be off: sessions and grants name this row and its
      * revision, so turning it off ends those at once and touches nothing else. */
     enabled: boolean("enabled").default(true).notNull(),
+    /** Who may ask this row for a link. Changing it moves no revision (drizzle/0010): narrowing
+     * it leaves members as members, so it ends no session and no grant. */
+    admission: text("admission", { enum: magicLinkAdmissions })
+      .default("listed")
+      .notNull(),
     issuer: text("issuer").notNull(),
     oidcConfig: text("oidc_config"),
     providerId: text("provider_id").notNull().unique(),
@@ -65,6 +70,15 @@ export const ssoProviders = pgTable(
     check(
       "sso_providers_enabled_check",
       sql`${table.kind} = 'magic_link' or ${table.enabled}`,
+    ),
+    vocabularyCheck(
+      "sso_providers_admission_check",
+      table.admission,
+      magicLinkAdmissions,
+    ),
+    check(
+      "sso_providers_admission_kind_check",
+      sql`${table.kind} = 'magic_link' or ${table.admission} = 'listed'`,
     ),
     uniqueIndex("sso_providers_organization_kind_unique")
       .on(table.organizationId, table.kind)

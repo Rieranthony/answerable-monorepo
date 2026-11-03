@@ -6,12 +6,8 @@ import { getCurrentAdapter, type BetterAuthOptions } from "better-auth";
 import { APIError } from "better-auth/api";
 import { and, isNull, eq } from "drizzle-orm";
 import type { Database } from "../db/client.ts";
-import {
-  accounts,
-  members,
-  sessions,
-  ssoProviders,
-} from "../db/schema/index.ts";
+import { provisionMembership } from "../db/queries/members.ts";
+import { accounts, sessions, ssoProviders } from "../db/schema/index.ts";
 import { resolveFederatedUser } from "../services/federation.ts";
 import { authTransaction, activeTransaction } from "./database-adapter.ts";
 import { magicLinkSessionLifetimeSeconds } from "./magic-link.ts";
@@ -97,16 +93,11 @@ export function createSsoOriginBoundary(
     // A first sign-in or link to an organisation provisions an active membership
     // in this transaction, before the session. An existing row is left as it is;
     // federation and the verified flow have already refused an ineffective one.
-    await authTransaction(database)
-      .insert(members)
-      .values({
-        id: createId(),
-        organizationId: provider.authenticationOrganizationId,
-        userId: account.userId,
-      })
-      .onConflictDoNothing({
-        target: [members.organizationId, members.userId],
-      });
+    await provisionMembership(
+      authTransaction(database),
+      provider.authenticationOrganizationId,
+      account.userId,
+    );
     origins.set(database, {
       ...provider,
       authenticationAccountId: account.id,

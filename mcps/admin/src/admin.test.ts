@@ -29,12 +29,12 @@ const commits = ["admin_commit", "admin_commit_confirmed"]
 // What each role lists, in the provider's order: the ordinary writes for admin, and the critical ones too for owner.
 const adminTools = [
   "admin_whoami", ...reads, "organisations_create", "organisations_update", "domains_add", "sso_set", "groups_create", "groups_addmember", "groups_dropmember", "access_grant", "access_revoke", "access_enable",
-  "toolbox_enable", "standalone_enable", "users_disable", "users_enable", "members_remove", "members_reinstate", ...commits,
+  "toolbox_enable", "standalone_enable", "users_disable", "users_enable", "members_remove", "members_reinstate", "magiclink_enable", "magiclink_disable", "magiclink_admission", "members_import", "domains_verify", ...commits,
 ]
 const ownerTools = [
   "admin_whoami", ...reads, "organisations_create", "organisations_update", "domains_add", "sso_set", "organisations_disable", "organisations_enable",
   "groups_create", "groups_addmember", "groups_dropmember", "access_grant", "access_revoke", "access_enable", "toolbox_enable", "standalone_enable", "staff_grant", "staff_revoke",
-  "users_disable", "users_enable", "users_retireemail", "members_remove", "members_reinstate", ...commits,
+  "users_disable", "users_enable", "users_retireemail", "members_remove", "members_reinstate", "magiclink_enable", "magiclink_disable", "magiclink_admission", "members_import", "domains_verify", ...commits,
 ]
 type Event = Record<"kind" | "outcome" | "actor_id" | "client_id" | "capability_identity" | "capability_version", string> &
   Record<"reason" | "error_code" | "upstream" | "execution_id" | "request_id", string | null> & { data: Record<string, unknown> }
@@ -336,6 +336,11 @@ test("every write to the platform organisation is an owner's critical operation,
     ["standalone_enable", { organizationId: platform, mcp: "acme", everyone: true }],
     ["members_remove", { organizationId: platform, memberId: founder.id }],
     ["members_reinstate", { organizationId: platform, memberId: former.id }],
+    ["magiclink_enable", { organizationId: platform }],
+    ["magiclink_disable", { organizationId: platform }],
+    ["magiclink_admission", { organizationId: platform, admission: "listed" }],
+    ["members_import", { organizationId: platform, addresses: ["someone@answerable.test"] }],
+    ["domains_verify", { organizationId: platform, domain: "answerable.test" }],
     ["organisations_disable", { organizationId: platform }],
     ["organisations_enable", { organizationId: platform }],
   ]

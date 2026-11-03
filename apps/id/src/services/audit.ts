@@ -45,6 +45,24 @@ export function recordCommandEvent(
   });
 }
 
+/** The same for many effects of one command, in one statement. */
+export function recordCommandEvents(
+  context: { tx: Executor; actor: Readonly<Actor> },
+  events: Pick<
+    queries.AuditEventInput,
+    "organizationId" | "targetType" | "targetId" | "action" | "data"
+  >[],
+) {
+  return queries.recordAuditEvents(
+    context.tx,
+    events.map((event) => ({
+      ...context.actor,
+      ...event,
+      outcome: "success",
+    })),
+  );
+}
+
 export async function listOrganizationAuditEvents(
   context: TenantReadContext<"history">,
   filters: Omit<queries.AuditEventFilters, "organizationId">,

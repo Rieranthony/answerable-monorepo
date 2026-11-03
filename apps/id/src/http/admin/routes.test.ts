@@ -90,12 +90,13 @@ test("administrative command contract gaps cannot grow unnoticed", async () => {
         expect(operation.responses, route.operationId).toHaveProperty(status);
     }
     // This PUT ensures one link exists; it does not replace mutable
-    // configuration read by another administrator.
-    const desiredStatePut = route.operationId === "linkClientResource";
-    if (
-      route.method === "patch" ||
-      (route.method === "put" && !desiredStatePut)
-    ) {
+    // configuration read by another administrator. Nor does this PATCH, of one field whose
+    // value the caller names, and which by design moves no revision a precondition could name.
+    const desiredState = [
+      "linkClientResource",
+      "setMagicLinkAdmission",
+    ].includes(route.operationId);
+    if ((route.method === "patch" || route.method === "put") && !desiredState) {
       const conditionalPut = ["putSsoProvider", "putGroupMember"].includes(
         route.operationId,
       );

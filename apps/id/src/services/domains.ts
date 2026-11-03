@@ -3,15 +3,46 @@ import * as queries from "../db/queries/organization-domains.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { endMagicLinkUseOfDomain } from "../db/queries/magic-link-requests.ts";
 import { recordCommandEvent, statusAction, evidence } from "./audit.ts";
-import { found } from "../http/problem.ts";
+import { found, ProblemError } from "../http/problem.ts";
+import { isPublicMailDomain } from "../lib/public-mail-domains.ts";
+import {
+  domainVerificationRecord,
+  txtRecordsHold,
+} from "./domain-verification.ts";
 
 const notFound = "Organisation or domain not found";
+
+/** Anyone can get an address at a public mail domain, so no firm can hold one. */
+function refusePublicMailDomain(domain: string) {
+  if (isPublicMailDomain(domain))
+    throw new ProblemError(
+      409,
+      "public_mail_domain",
+      "This is a public mail domain",
+      `Anyone can get an address at ${domain}, so it cannot belong to an organisation.`,
+    );
+}
+
+/** A domain as an answer shows it: the record to publish, and not the token alone. */
+export function shownDomain<
+  Row extends { domain: string; verificationToken: string },
+>({ verificationToken, ...row }: Row) {
+  return {
+    ...row,
+    verificationRecord: domainVerificationRecord({
+      domain: row.domain,
+      verificationToken,
+    }),
+  };
+}
+
 export async function createDomain(
   context: PlatformWriteContext,
   organizationId: string,
   input: { domain: string },
 ) {
   found(await lockOrganizationForCommand(context, organizationId), notFound);
+  refusePublicMailDomain(input.domain);
   const row = await queries.createOrganizationDomain(context, {
     organizationId,
     ...input,
@@ -27,7 +58,7 @@ export async function createDomain(
       after: evidence(row),
     },
   });
-  return row;
+  return shownDomain(row);
 }
 async function setStatus(
   context: PlatformWriteContext,
@@ -45,6 +76,7 @@ async function setStatus(
     notFound,
   );
   const changed = existing.status !== status;
+  if (changed && status === "active") refusePublicMailDomain(existing.domain);
   const row = changed
     ? await queries.setOrganizationDomainStatus(
         context,
@@ -76,7 +108,7 @@ async function setStatus(
       },
     });
   }
-  return { row: row!, changed };
+  return { row: shownDomain(row!), changed };
 }
 export async function disableDomain(
   context: PlatformWriteContext,
@@ -129,4 +161,101 @@ export async function deleteOrganizationDomain(
       magicLinkEffects,
     },
   });
+}
+
+/** The record was not there. `wasProved` says a proof is now stale, which the route clears
+ * in a command of its own, since this refusal rolls back. */
+export class DomainProofFailed extends ProblemError {
+  constructor(
+    record: ReturnType<typeof domainVerificationRecord>,
+    readonly wasProved: boolean,
+  ) {
+    super(
+      409,
+      "domain_verification_failed",
+      "The domain's DNS record was not found",
+      `Publish a ${record.type} record at ${record.name} with the value ${record.value}, then ask again. A new record can take time to reach every resolver.`,
+      { expected: record },
+    );
+  }
+}
+
+/** What DNS held has been read, outside this transaction; this compares it with the row. */
+export async function proveDomain(
+  context: PlatformWriteContext,
+  organizationId: string,
+  domainId: string,
+  records: string[][],
+) {
+  found(await lockOrganizationForCommand(context, organizationId), notFound);
+  const existing = found(
+    await queries.findOrganizationDomainForCommand(
+      context,
+      organizationId,
+      domainId,
+    ),
+    notFound,
+  );
+  const record = domainVerificationRecord(existing);
+  if (!txtRecordsHold(records, record.value))
+    throw new DomainProofFailed(record, existing.verifiedAt !== null);
+  const changed = existing.verifiedAt === null;
+  // An unchanged command's receipt is its record; it writes no audit event.
+  if (!changed) return { row: shownDomain(existing), changed };
+  const row = await queries.setOrganizationDomainProof(
+    context,
+    organizationId,
+    domainId,
+    true,
+  );
+  await recordCommandEvent(context, {
+    organizationId,
+    targetType: "domain",
+    targetId: domainId,
+    action: "domain.verified",
+    data: {
+      domain: row!.domain,
+      before: evidence(existing),
+      after: evidence(row!),
+    },
+  });
+  return { row: shownDomain(row!), changed };
+}
+
+/** A re-check that failed takes the proof away, so that the domain fails closed. */
+export async function endDomainProof(
+  context: PlatformWriteContext,
+  organizationId: string,
+  domainId: string,
+) {
+  found(await lockOrganizationForCommand(context, organizationId), notFound);
+  const existing = found(
+    await queries.findOrganizationDomainForCommand(
+      context,
+      organizationId,
+      domainId,
+    ),
+    notFound,
+  );
+  const changed = existing.verifiedAt !== null;
+  if (changed) {
+    const row = await queries.setOrganizationDomainProof(
+      context,
+      organizationId,
+      domainId,
+      false,
+    );
+    await recordCommandEvent(context, {
+      organizationId,
+      targetType: "domain",
+      targetId: domainId,
+      action: "domain.verification_lost",
+      data: {
+        domain: row!.domain,
+        before: evidence(existing),
+        after: evidence(row!),
+      },
+    });
+  }
+  return { changed };
 }

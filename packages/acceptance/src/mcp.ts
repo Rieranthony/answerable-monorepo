@@ -23,7 +23,7 @@ export const intentSchema = z.object({
   policy_class: z.string(),
   expires_at: z.iso.datetime(),
   targets: z.array(z.object({ resource_type: z.string(), resource_id: z.string(), version: z.object({ kind: z.string(), value: z.string() }) })),
-  preview: z.object({ summary: z.string(), changes: z.array(z.unknown()) }),
+  preview: z.object({ summary: z.string(), changes: z.array(z.unknown()), warnings: z.array(z.string()) }),
 })
 
 /** Connect the official MCP client to an MCP with an OAuth provider, speaking the `2025` protocol or pinned to `2026-07-28`. It closes when the kit stops. */

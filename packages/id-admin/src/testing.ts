@@ -18,13 +18,14 @@ const unsupported = (request: Request, ...methods: string[]) => methods.includes
   : problem(405, "method_not_allowed", `The fake ID does not implement ${request.method} here`, {}, { Allow: methods.join(", ") })
 // The resource an operation's receipt names (apps/id/src/http/admin/*.ts): its type, and the id of the row or of its owner.
 const references: [RegExp, string][] = [
+  [/^\/organizations\/[^/]+\/members\/import$/, "organization"],
   [/^\/organizations\/[^/]+\/domains/, "domain"], [/^\/organizations\/[^/]+\/sso-provider/, "sso_provider"], [/^\/organizations\/[^/]+\/groups/, "group"],
   [/^\/organizations\/[^/]+\/entitlements/, "entitlement"], [/^\/organizations\/[^/]+\/capabilities/, "capability"], [/^\/organizations\/[^/]+\/members/, "member"],
   [/^\/organizations/, "organization"], [/^\/resources/, "resource"], [/^\/clients/, "client"], [/^\/users/, "user"],
 ]
 function referenceOf(path: string, body: Record<string, unknown> | null) {
   const type = references.find(([pattern]) => pattern.test(path))![1]
-  const owner = /^\/organizations\/[^/]+\/groups\/([^/]+)\/members\//.exec(path)?.[1] ?? /^\/(?:resources|clients|users|organizations\/[^/]+\/members)\/([^/]+)/.exec(path)?.[1]
+  const owner = /^\/organizations\/([^/]+)\/members\/import$/.exec(path)?.[1] ?? /^\/organizations\/[^/]+\/groups\/([^/]+)\/members\//.exec(path)?.[1] ?? /^\/(?:resources|clients|users|organizations\/[^/]+\/members)\/([^/]+)/.exec(path)?.[1]
   return { type, id: owner ? decodeURIComponent(owner) : String(body?.id) }
 }
 // Wait as a slow ID would, and give up as fetch does when the caller's signal aborts.
@@ -52,8 +53,17 @@ const conflict = (constraint: string) => problem(409, "conflict", "Conflict", { 
 // The issuers ID signs in through Answerable's own Google or Microsoft application (services/federation.ts classifyIssuer).
 const platformIssuer = (value: unknown) => value === "https://accounts.google.com" || /^https:\/\/login\.microsoftonline\.com\/[0-9a-f-]{36}\/v2\.0$/.test(String(value))
 // The commands ID guards with platform:users, not platform:write (apps/id/src/http/admin/users.ts, members.ts): a user's disable, enable and email retirement,
-// and a membership's change, removal and reinstatement.
+// and a membership's change, removal and reinstatement, and an import.
 const usersCommand = (path: string) => /^\/users\/[^/]+\/(?:disable|enable|retire-email)$/.test(path) || /^\/organizations\/[^/]+\/members\/[^/]+(?:\/reinstate)?$/.test(path)
+// The POST that changes nothing, because its list does not fit a query (apps/id/src/http/admin/members.ts).
+const importPreview = (path: string) => /^\/organizations\/[^/]+\/members\/import\/preview$/.test(path)
+// A few of ID's public mail domains (apps/id/src/lib/public-mail-domains.generated.ts), for its refusals.
+const publicMail = new Set(["gmail.com", "proton.me", "mailinator.com"])
+// The fields of a domain that prove it: what to publish, and when it was last seen.
+const domainProof = (domain: unknown) => ({
+  verifiedAt: null as string | null,
+  verificationRecord: { type: "TXT", name: `_answerable-challenge.${String(domain)}`, value: `answerable-domain-verification=${crypto.randomUUID().replaceAll("-", "")}` },
+})
 // The address ID gives a user whose email is retired (apps/id/src/db/queries/users.ts retiredEmailFor).
 const retiredAddress = (userId: unknown) => `${String(userId)}@retired.invalid`
 
@@ -64,7 +74,9 @@ const retiredAddress = (userId: unknown) => `${String(userId)}@retired.invalid`
  * `operationInProgress`, a write whose method, path and Idempotency-Key a running write holds answers `409 operation_in_progress`, as ID does;
  * without it, the second write runs after the first. A method the fake does not implement on a route answers `405`.
  *
- * Every organisation holds its magic-link setting, on, and the platform organisation's off, which `POST .../magic-link/enable` answers `409 platform_magic_link`.
+ * Every organisation holds its magic-link setting, on and `listed`, and the platform organisation's off, which `POST .../magic-link/enable` answers `409 platform_magic_link`, as
+ * `PATCH .../magic-link` does for `domain`. `listed` is its effective members, on one organisation's answer and not a list's. A domain's proof is what `publish` says DNS holds:
+ * `POST .../verify` answers `409 domain_verification_failed` without it, and takes a proof it already held. `gmail.com`, `proton.me` and `mailinator.com` are public mail.
  *
  * Staff set a service up through the admin API: `rootSecret` is a bearer that works as a platform administrator's until `lockRoot(true)`, or until a
  * member joins the platform organisation's `platform-admins` group without `breakGlass`, after which ID answers it `403 root_locked`; `staffToken`
@@ -74,7 +86,7 @@ const retiredAddress = (userId: unknown) => `${String(userId)}@retired.invalid`
  * Entra SSO provider with platform credentials is `409 platform_application_missing`. A command's `Idempotency-Key` is its caller's, as ID keys
  * its journal by actor: the root secret, a machine client or a staff token.
  *
- * A user's lifecycle (`disable`, `enable`, `retire-email`) and a membership's removal and reinstatement need a token that carries `platform:users`,
+ * A user's lifecycle (`disable`, `enable`, `retire-email`), a membership's removal and reinstatement and `POST .../members/import` need a token that carries `platform:users`,
  * as in ID, where `platform:write` does not include it: the root secret and a staff token carry both, and a machine client asks for
  * `platform:read platform:users` where `resources` lists that scope.
  */
@@ -111,6 +123,8 @@ export function createFakeId({
   const groups = new Map<string, Stored[]>()
   const providers = new Map<string, Stored>()
   const joined = new Map<string, Map<string, Stored>>()
+  // What DNS holds, by the domain row's id.
+  const published = new Set<string>()
   const journal = new Map<string, Operation>()
   // The commands running now, by method, path and key; and how many changes ID has made, so that a command knows whether it changed anything.
   const running = new Set<string>()
@@ -252,16 +266,47 @@ export function createFakeId({
     if (platform && organisation === organizationId && group.slug === "platform-admins" && !breakGlass) rootLocked = true
     return tagged(row, 201)
   }
+  // One organisation as ID answers it: its row, with how many effective members it lists.
+  const counted = (row: Stored) => ({ ...row, magicLink: { ...(row.magicLink as object), listed: rows(members, row.id).filter(member => member.effective).length } })
+  // Each address's answer to an import, and the people to make, as ID decides them (apps/id/src/services/member-import.ts).
+  function importAnswers(organisation: string, addresses: string[]) {
+    const seen = new Set<string>()
+    const items: Record<string, unknown>[] = []
+    const active = rows(domains, organisation).filter(domain => domain.status === "active").map(domain => domain.domain)
+    for (const raw of addresses) {
+      const email = raw.trim().toLowerCase()
+      const valid = raw.length <= 254 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)
+      const key = valid ? email : raw
+      if (seen.has(key)) continue
+      seen.add(key)
+      const refuse = (reason: string) => items.push({ address: valid ? email : raw, outcome: "refused", reason })
+      if (!valid) { refuse("invalid"); continue }
+      const domain = email.slice(email.indexOf("@") + 1)
+      if (publicMail.has(domain)) { refuse("public_mail"); continue }
+      if (!active.includes(domain)) { refuse("outside_domains"); continue }
+      const holder = [...users.values()].find(user => user.email === email)
+      const member = holder && rows(members, organisation).find(row => row.userId === holder.id)
+      if (!holder) items.push({ address: email, outcome: "created" })
+      else if (holder.status !== "active") refuse("disabled")
+      else if (member?.membershipStatus === "revoked") refuse("removed")
+      else if (member) items.push({ address: email, outcome: "alreadyMember" })
+      else if (holder.otherFirm) refuse("other_firm")
+      else items.push({ address: email, outcome: "added" })
+    }
+    const counts = { created: 0, added: 0, alreadyMember: 0, refused: 0 }
+    for (const { outcome } of items) counts[outcome as keyof typeof counts]++
+    return { counts, items }
+  }
   function organisationRoute(request: Request, url: URL, organisation: string, rest: string, body: Record<string, unknown>) {
     const row = organisations.get(organisation)!
     if (rest === "") {
       const refusedMethod = unsupported(request, "GET", "PATCH")
       if (refusedMethod) return refusedMethod
-      if (request.method === "GET") return tagged(row)
+      if (request.method === "GET") return tagged(counted(row))
       const refused = precondition(request, row)
       if (refused) return refused
       change(row, body)
-      return tagged(row)
+      return tagged(counted(row))
     }
     if (rest === "/disable" || rest === "/enable") {
       const refusedMethod = unsupported(request, "POST")
@@ -272,7 +317,29 @@ export function createFakeId({
         if (status === "disabled") row.authorizationVersion = Number(row.authorizationVersion) + 1
         changes++
       }
-      return Response.json(row)
+      return Response.json(counted(row))
+    }
+    if (rest === "/magic-link") {
+      const refusedMethod = unsupported(request, "PATCH")
+      if (refusedMethod) return refusedMethod
+      const setting = row.magicLink as { enabled: boolean; admission: string }
+      const { admission } = body
+      if (admission !== "listed" && admission !== "domain") return invalid("admission")
+      if (setting.admission !== admission && admission === "domain") {
+        if (platform && organisation === organizationId) return problem(409, "platform_magic_link", "The platform organisation cannot use magic links")
+        const active = rows(domains, organisation).filter(domain => domain.status === "active")
+        const unverified = active.filter(domain => !domain.verifiedAt).map(domain => domain.domain)
+        const held = active.filter(domain => publicMail.has(String(domain.domain))).map(domain => domain.domain)
+        if (!active.length || unverified.length || held.length) {
+          return problem(409, "domain_not_verified", "Every active domain must be proved before anyone at them may ask for a link", { details: { unverified, publicMail: held } })
+        }
+      }
+      // Who may ask moves no revision: it ends no session, in ID.
+      if (setting.admission !== admission) {
+        row.magicLink = { ...setting, admission }
+        changes++
+      }
+      return Response.json(counted(row))
     }
     if (rest === "/magic-link/enable" || rest === "/magic-link/disable") {
       const refusedMethod = unsupported(request, "POST")
@@ -280,11 +347,49 @@ export function createFakeId({
       const enabled = rest === "/magic-link/enable"
       if (enabled && platform && organisation === organizationId) return problem(409, "platform_magic_link", "The platform organisation cannot use magic links")
       // The setting lives on the organisation's magic-link row in ID, so its revision does not move.
-      if ((row.magicLink as { enabled: boolean }).enabled !== enabled) {
-        row.magicLink = { enabled }
+      const setting = row.magicLink as { enabled: boolean }
+      if (setting.enabled !== enabled) {
+        row.magicLink = { ...setting, enabled }
         changes++
       }
-      return Response.json(row)
+      return Response.json(counted(row))
+    }
+    const verify = /^\/domains\/([^/]+)\/verify$/.exec(rest)
+    if (verify) {
+      const refusedMethod = unsupported(request, "POST")
+      if (refusedMethod) return refusedMethod
+      const domain = rows(domains, organisation).find(item => item.id === verify[1])
+      if (!domain) return problem(404, "not_found", "Organisation or domain not found")
+      if (!published.has(domain.id)) {
+        if (domain.verifiedAt) {
+          domain.verifiedAt = null
+          changes++
+        }
+        const expected = domain.verificationRecord as { type: string; name: string; value: string }
+        return problem(409, "domain_verification_failed", "The domain's DNS record was not found", { detail: `Publish a ${expected.type} record at ${expected.name} with the value ${expected.value}, then ask again.`, expected })
+      }
+      if (!domain.verifiedAt) {
+        domain.verifiedAt = now()
+        changes++
+      }
+      return Response.json(domain)
+    }
+    if (rest === "/members/import/preview" || rest === "/members/import") {
+      const refusedMethod = unsupported(request, "POST")
+      if (refusedMethod) return refusedMethod
+      const { addresses } = body as { addresses?: unknown }
+      if (!Array.isArray(addresses) || !addresses.length || addresses.length > 1000) return invalid("addresses")
+      const answer = importAnswers(organisation, addresses as string[])
+      if (rest === "/members/import") {
+        for (const { address, outcome } of answer.items) {
+          if (outcome !== "created" && outcome !== "added") continue
+          const userId = [...users.values()].find(user => user.email === address)?.id
+          add(members, organisation, memberRow(organisation, { email: address, name: address, ...(userId ? { userId } : {}) }))
+          if (!userId) addUser({ id: rows(members, organisation).at(-1)!.userId, email: address, name: address })
+          changes++
+        }
+      }
+      return Response.json(answer)
     }
     if (rest === "/domains") {
       const refusedMethod = unsupported(request, "GET", "POST")
@@ -292,8 +397,9 @@ export function createFakeId({
       if (request.method === "GET") return newest(matching(rows(domains, organisation), url, ["status"]), url)
       const domain = String(body.domain).trim().toLowerCase()
       if (!host.test(domain)) return invalid("domain")
+      if (publicMail.has(domain)) return problem(409, "public_mail_domain", "This is a public mail domain")
       if ([...domains.values()].flat().some(existing => existing.domain === domain)) return conflict("organization_domains_active_domain_idx")
-      const created = { id: Bun.randomUUIDv7(), organizationId: organisation, domain, status: "active", createdAt: now(), updatedAt: now() }
+      const created = { id: Bun.randomUUIDv7(), organizationId: organisation, domain, status: "active", ...domainProof(domain), createdAt: now(), updatedAt: now() }
       rows(domains, organisation).push(created)
       changes++
       return Response.json(created, { status: 201 })
@@ -417,12 +523,13 @@ export function createFakeId({
     const bearer = request.headers.get("Authorization")!.slice(7)
     const token = tokens.get(bearer)!
     if (token.resource !== adminResource) return invalidToken()
-    const write = request.method !== "GET"
+    const write = request.method !== "GET" && !importPreview(path)
+    if (importPreview(path) && !token.scope.split(" ").includes("platform:read")) return problem(403, "insufficient_scope", "Current command authority is required", {}, { "WWW-Authenticate": 'Bearer error="insufficient_scope"' })
     if (write && !token.scope.split(" ").includes(usersCommand(path) ? "platform:users" : "platform:write"))
       return problem(403, "insufficient_scope", "Current command authority is required", {}, { "WWW-Authenticate": 'Bearer error="insufficient_scope"' })
     const fails = failures.get(`${request.method} ${path}`)
     if (fails) return problem(fails.status, fails.code, "The fake ID failed this route")
-    const body = write && request.headers.get("Content-Type") ? await request.json() as Record<string, unknown> : {}
+    const body = request.method !== "GET" && request.headers.get("Content-Type") ? await request.json() as Record<string, unknown> : {}
     if (path === "/me") {
       return unsupported(request, "GET") ?? Response.json({
         principal: { type: "client", clientId, organizationId },
@@ -546,7 +653,7 @@ export function createFakeId({
       if (!slug.test(String(body.slug)) || typeof body.name !== "string" || !body.name || body.name.length > 200) return invalid(slug.test(String(body.slug)) ? "name" : "slug")
       if ([...organisations.values()].some(row => row.slug === body.slug)) return conflict("organizations_slug_unique")
       changes++
-      return Response.json(organisation(Bun.randomUUIDv7(), { slug: body.slug, name: body.name }), { status: 201 })
+      return Response.json(counted(organisation(Bun.randomUUIDv7(), { slug: body.slug, name: body.name })), { status: 201 })
     }
     const organisationTable = /^\/organizations\/([^/]+)\/(capabilities|entitlements)$/.exec(path)
     if (organisationTable) {
@@ -655,6 +762,10 @@ export function createFakeId({
     if (secret) secrets.set(id, secret)
     return { row, secret }
   }
+  const memberRow = (organizationId: string, fields: Record<string, unknown> = {}) => ({
+    id: Bun.randomUUIDv7(), revision: 1, organizationId, userId: crypto.randomUUID(), email: "person@example.test", name: "A person", status: "active",
+    membershipStatus: "active", revokedAt: null, validFrom: null, validUntil: null, createdAt: now(), effective: true, ...fields,
+  })
   function addUser(fields: Record<string, unknown> = {}) {
     const row = {
       id: crypto.randomUUID(), revision: 1, name: "A person", email: "person@example.test", emailVerified: true, image: null, status: "active", disabledAt: null,
@@ -670,11 +781,11 @@ export function createFakeId({
     return row
   }
   const organisation = (id: string, fields: Record<string, unknown> = {}) => {
-    const row = { id, revision: 1, name: "Organisation", slug: `org-${id.slice(0, 8)}`, status: "active", authorizationVersion: 1, disabledAt: null, createdAt: now(), updatedAt: now(), magicLink: { enabled: true }, ...organisations.get(id), ...fields }
+    const row = { id, revision: 1, name: "Organisation", slug: `org-${id.slice(0, 8)}`, status: "active", authorizationVersion: 1, disabledAt: null, createdAt: now(), updatedAt: now(), magicLink: { enabled: true, admission: "listed" }, ...organisations.get(id), ...fields }
     organisations.set(id, row)
     return row
   }
-  organisation(organizationId, platform ? { name: "Answerable", slug: "answerable", magicLink: { enabled: false } } : {})
+  organisation(organizationId, platform ? { name: "Answerable", slug: "answerable", magicLink: { enabled: false, admission: "listed" } } : {})
   if (rootSecret) tokens.set(rootSecret, { scope: "platform:read platform:users platform:write", resource: adminResource })
   return {
     config: { issuer, adminResource, clientId, clientSecret, fetch },
@@ -745,8 +856,13 @@ export function createFakeId({
     domainsOf: (organizationId: string) => rows(domains, organizationId),
     /** Add a domain to an organisation and return its row. */
     domain: (organizationId: string, domain: string, fields: Record<string, unknown> = {}) => add(domains, organizationId, {
-      id: Bun.randomUUIDv7(), organizationId, domain, status: "active", createdAt: now(), updatedAt: now(), ...fields,
+      id: Bun.randomUUIDv7(), organizationId, domain, status: "active", ...domainProof(domain), createdAt: now(), updatedAt: now(), ...fields,
     }),
+    /** Say whether DNS holds this domain row's record, which `POST .../verify` looks up. */
+    publish(domainId: string, value = true) {
+      if (value) published.add(domainId)
+      else published.delete(domainId)
+    },
     /** An organisation's SSO provider, or undefined when it has none. */
     ssoProviderOf: (organizationId: string) => providers.get(organizationId),
     /** Set an organisation's SSO provider, signing in with Answerable's platform application unless `fields` say otherwise, and return its row. */
@@ -760,10 +876,7 @@ export function createFakeId({
      * status, unless `userId` names one that exists: a person is one user with a membership in each organisation.
      */
     member(organizationId: string, fields: Record<string, unknown> = {}) {
-      const row = add(members, organizationId, {
-        id: Bun.randomUUIDv7(), revision: 1, organizationId, userId: crypto.randomUUID(), email: "person@example.test", name: "A person", status: "active",
-        membershipStatus: "active", revokedAt: null, validFrom: null, validUntil: null, createdAt: now(), effective: true, ...fields,
-      })
+      const row = add(members, organizationId, memberRow(organizationId, fields))
       const userId = String(row.userId)
       if (!users.has(userId)) addUser({ id: userId, email: row.email, name: row.name, status: row.status })
       return row

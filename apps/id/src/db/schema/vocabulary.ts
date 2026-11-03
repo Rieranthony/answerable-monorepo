@@ -13,6 +13,11 @@ export type LifecycleStatus = (typeof lifecycleStatuses)[number];
 export const ssoProviderKinds = ["oidc", "magic_link"] as const;
 export type SsoProviderKind = (typeof ssoProviderKinds)[number];
 
+/** Who may ask a firm's magic-link row for a link: its effective members, or also anyone
+ * at one of its domains that has passed a DNS proof. */
+export const magicLinkAdmissions = ["listed", "domain"] as const;
+export type MagicLinkAdmissionMode = (typeof magicLinkAdmissions)[number];
+
 /** What a sign-in request mailed: a link and a code, or word that access was removed. */
 export const magicLinkPurposes = ["link", "access_removed"] as const;
 

@@ -38,11 +38,22 @@ import {
  * The organisation's cap stops a flood of real addresses before it costs every firm its
  * sender's reputation.
  */
-const magicLinkLimits = {
+export const magicLinkLimits = {
   addressClientPerMinute: 1,
   addressClientPerHour: 5,
   addressPerDay: 50,
   organizationPerHour: 5_000,
+  /**
+   * For an address no user holds, which only domain mode admits. Made-up addresses at a real
+   * firm hard-bounce, and Postmark pauses a server past 10%, which would stop sign-in at every
+   * firm; each row also gives three guesses at a code whose hit makes a real member. The limits
+   * above do not reach this, since the addresses rotate: one client at the page's budget reaches
+   * 5,000 in about 14 minutes. An office shares one egress address, hence 100 and not less. The
+   * person sees what any limit shows them, so a firm-wide start imports first. Judgement until
+   * staging measures them.
+   */
+  newAddressClientPerHour: 100,
+  newAddressOrganizationPerDay: 500,
 };
 
 /**
@@ -78,7 +89,9 @@ type LimitName =
   | "address_client_minute"
   | "address_client_hour"
   | "address_day"
-  | "organization_hour";
+  | "organization_hour"
+  | "new_address_client_hour"
+  | "new_address_organization_day";
 
 const unsent: SendResult = {
   status: "failed",
@@ -106,12 +119,30 @@ export const organizationRequestCount = (organizationId: string) => sql`
     limit ${magicLinkLimits.organizationPerHour}
   ) as recent`;
 
-/** The first limit this request would go over. */
+/** What one client has asked for addresses nobody holds, at any firm. It stops at the budget. */
+export const newAddressClientCount = (clientHash: string) => sql`
+  select count(*)::int as hour from (
+    select 1 from ${magicLinkRequests}
+    where client_hash = ${clientHash} and new_address and send_status <> 'failed' and created_at > statement_timestamp() - interval '1 hour'
+    limit ${magicLinkLimits.newAddressClientPerHour}
+  ) as recent`;
+
+/** What one firm has been asked for addresses nobody holds. It stops at the budget. */
+export const newAddressOrganizationCount = (organizationId: string) => sql`
+  select count(*)::int as day from (
+    select 1 from ${magicLinkRequests}
+    where organization_id = ${organizationId} and new_address and send_status <> 'failed' and created_at > statement_timestamp() - interval '1 day'
+    limit ${magicLinkLimits.newAddressOrganizationPerDay}
+  ) as recent`;
+
+/** The first limit this request would go over. A person a firm lists, or a user with no
+ * membership there yet, is never held back by a flood of addresses nobody holds. */
 async function exceededLimit(
   tx: Executor,
   email: string,
   clientHash: string,
   organizationId: string,
+  newAddress: boolean,
 ): Promise<LimitName | undefined> {
   const {
     rows: [address],
@@ -130,6 +161,19 @@ async function exceededLimit(
   );
   if (organization!.hour >= magicLinkLimits.organizationPerHour)
     return "organization_hour";
+  if (!newAddress) return undefined;
+  const {
+    rows: [client],
+  } = await tx.execute<{ hour: number }>(newAddressClientCount(clientHash));
+  if (client!.hour >= magicLinkLimits.newAddressClientPerHour)
+    return "new_address_client_hour";
+  const {
+    rows: [firm],
+  } = await tx.execute<{ day: number }>(
+    newAddressOrganizationCount(organizationId),
+  );
+  if (firm!.day >= magicLinkLimits.newAddressOrganizationPerDay)
+    return "new_address_organization_day";
   return undefined;
 }
 
@@ -182,7 +226,15 @@ export function createMagicLinkRequests({
     const { email } = address;
     await lockMagicLinkAddress(tx, email);
     const clientHash = keys.clientHash(client);
-    const limit = await exceededLimit(tx, email, clientHash, organizationId);
+    const newAddress =
+      admission.outcome === "admit" && admission.person.kind === "new";
+    const limit = await exceededLimit(
+      tx,
+      email,
+      clientHash,
+      organizationId,
+      newAddress,
+    );
     if (limit) return { outcome: "limited", limit, organizationId } as const;
     const row = {
       id: requestId,
@@ -191,6 +243,7 @@ export function createMagicLinkRequests({
       providerRevision,
       email,
       clientHash,
+      newAddress,
       expiresAt: sql`statement_timestamp() + make_interval(mins => ${magicLinkTtlMinutes})`,
     };
     if (admission.outcome === "removed") {

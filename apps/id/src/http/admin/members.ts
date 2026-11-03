@@ -17,8 +17,15 @@ import {
 } from "./revision.ts";
 import { listMembers } from "../../db/queries/members.ts";
 import * as service from "../../services/members.ts";
+import {
+  importMembers,
+  importRefusals,
+  maxImportAddresses,
+  previewImport,
+} from "../../services/member-import.ts";
 import type { Hono } from "hono";
-import { tenantMemberCommand } from "./command.ts";
+import { platformCommand, tenantMemberCommand } from "./command.ts";
+import { platformRead } from "./platform-read.ts";
 import { z } from "zod";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
@@ -66,6 +73,27 @@ const patchSchema = windowSchema.refine(
   "At least one field is required",
 );
 const memberParams = orgParams.extend({ memberId: z.uuid() });
+const importSchema = z.object({
+  addresses: z.array(z.string()).min(1).max(maxImportAddresses),
+});
+const importAnswerSchema = z.object({
+  counts: z.object({
+    created: z.number().int().nonnegative(),
+    added: z.number().int().nonnegative(),
+    alreadyMember: z.number().int().nonnegative(),
+    refused: z.number().int().nonnegative(),
+  }),
+  items: z.array(
+    z.object({
+      address: z.string(),
+      outcome: z.enum(["created", "added", "alreadyMember", "refused"]),
+      reason: z.enum(importRefusals).optional(),
+    }),
+  ),
+});
+const importExample = {
+  body: { addresses: ["ada@acme.example.com", "grace@acme.example.com"] },
+};
 export const routes = {
   listMembers: {
     method: "get",
@@ -138,6 +166,43 @@ export const routes = {
       ...problemResponses(404, 412),
     },
   },
+  previewMemberImport: {
+    method: "post",
+    path: "/organizations/:organizationId/members/import/preview",
+    operationId: "previewMemberImport",
+    summary: "Preview a member import",
+    description:
+      "Answer what importMembers would answer for these addresses now, changing nothing and recording nothing: a POST only because a list of up to 1,000 addresses does not fit a query. Use it to show a person the counts before importMembers; validation_failed rejects a malformed or oversized list and not_found means the organisation is unavailable.",
+    tag: "Members",
+    platformScope: "platform:read",
+    kind: "read",
+    parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
+    requestBody: body(importSchema),
+    example: importExample,
+    responses: {
+      200: { description: "Success", content: json(importAnswerSchema) },
+      ...problemResponses(400, 404),
+    },
+  },
+  importMembers: {
+    method: "post",
+    path: "/organizations/:organizationId/members/import",
+    operationId: "importMembers",
+    summary: "Import organisation members",
+    description:
+      "Create up to 1,000 people before their first sign-in, so that their sub exists first: a user and an active membership at once, and no account, which the first sign-in makes. Addresses are normalised and de-duplicated. One transaction, answering per address and never all or nothing: created; added, an existing user gains a membership; alreadyMember; or refused with a reason: invalid; outside_domains, not one of this organisation's active domains; public_mail; disabled, an existing disabled user; removed, a revoked member, whom only reinstateMember brings back; other_firm, an account from another organisation's directory or magic-link row. Works with magic links off and with a directory connected. A replay with the same Idempotency-Key answers the receipt, not the per-address answers; member.imported is audited per membership made. Until a person connects their directory, their directory sign-in answers email_conflict: Not yet. validation_failed rejects a malformed or oversized list and not_found means the organisation is missing.",
+    tag: "Members",
+    platformScope: "platform:users",
+    kind: "write",
+    freshAuthentication: true,
+    parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
+    requestBody: body(importSchema),
+    example: importExample,
+    responses: {
+      200: { description: "Success", content: commandJson(importAnswerSchema) },
+      ...problemResponses(404),
+    },
+  },
   reinstateMember: {
     method: "post",
     path: "/organizations/:organizationId/members/:memberId/reinstate",
@@ -187,6 +252,46 @@ export const routes = {
   },
 } satisfies Record<string, AdminRoute>;
 export function register(app: Hono<AppEnvironment>) {
+  registerRoute(
+    app,
+    routes.previewMemberImport,
+    validate("param", orgParams),
+    validate("json", importSchema),
+    async (context) => {
+      const { addresses } = importSchema.parse(await context.req.json());
+      const organizationId = context.req.param("organizationId")!;
+      return context.json(
+        await platformRead(context, (platform) =>
+          previewImport(platform, organizationId, addresses),
+        ),
+      );
+    },
+  );
+  registerRoute(
+    app,
+    routes.importMembers,
+    validate("param", orgParams),
+    validate("json", importSchema),
+    async (context) => {
+      const { addresses } = importSchema.parse(await context.req.json());
+      const organizationId = context.req.param("organizationId")!;
+      return platformCommand(
+        context,
+        "users",
+        { organizationId, addresses },
+        200,
+        async (platform) => {
+          const body = await importMembers(platform, organizationId, addresses);
+          const { created, added } = body.counts;
+          return {
+            body,
+            changed: created + added > 0,
+            resultReference: { type: "organization", id: organizationId },
+          };
+        },
+      );
+    },
+  );
   registerRoute(
     app,
     routes.reinstateMember,

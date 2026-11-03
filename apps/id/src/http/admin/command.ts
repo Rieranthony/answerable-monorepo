@@ -34,6 +34,8 @@ type CommandResult = {
 type CommandOptions = {
   /** Send the first response's id and revision as its ETag. */
   etag?: true;
+  /** Journal under a key of the server's, for a change the caller's key does not name. */
+  serverKey?: true;
 };
 
 async function httpCommand<T>(
@@ -49,7 +51,9 @@ async function httpCommand<T>(
 ) {
   // Without a key the command is journalled under one of its own: it keeps
   // its receipt and Operation-Id, and a resend is a new command.
-  const key = context.req.header("Idempotency-Key") ?? `server:${createId()}`;
+  const key =
+    (options.serverKey ? undefined : context.req.header("Idempotency-Key")) ??
+    `server:${createId()}`;
   if (!key || key.length > 256)
     throw new ProblemError(
       400,
@@ -139,6 +143,27 @@ export function platformCommand<Access extends "users" | "write">(
     (_tx, actor, authorized) => authorized.run(mutate, actor),
     options,
   );
+}
+
+/** What a command needs to read before it can start, such as what its network work asks
+ * for, under the authority the command needs and in a transaction of its own. */
+export function platformCommandRead<Access extends "users" | "write", T>(
+  context: Context<AppEnvironment>,
+  access: Access,
+  read: (platform: PlatformMutationContext<Access>) => Promise<T>,
+) {
+  return context.get("db").transaction(async (tx) => {
+    const authorized = await authorizePlatformMutation(
+      tx,
+      {
+        principal: context.get("principal")!,
+        environment: context.get("environment"),
+        claims: context.get("bearerClaims"),
+      },
+      access,
+    );
+    return authorized.run(read, actorFromContext(context));
+  });
 }
 
 export function tenantMemberCommand(

@@ -101,7 +101,8 @@ export async function createAdmin(db: Database, { freshSeconds = 1800, users = t
     const request = new Request(input, init)
     const response = await id.config.fetch(request.clone())
     answers.push({ request: `${request.method} ${new URL(request.url).pathname}`, status: response.status, operationId: response.headers.get("Operation-Id"), replayed: response.headers.get("Idempotency-Replayed") === "true" })
-    if (losing && request.method !== "GET" && new URL(request.url).pathname.startsWith("/api/admin/v1")) {
+    const { pathname } = new URL(request.url)
+    if (losing && request.method !== "GET" && !pathname.endsWith("/preview") && pathname.startsWith("/api/admin/v1")) {
       losing = false
       throw new TypeError("The connection closed before the answer arrived")
     }

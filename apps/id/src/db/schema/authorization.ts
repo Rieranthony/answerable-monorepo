@@ -44,6 +44,14 @@ export const organizationDomains = pgTable(
     status: text("status", { enum: lifecycleStatuses })
       .default("active")
       .notNull(),
+    /** What the firm publishes in DNS to prove the domain. Public by design, and a default
+     * here so that every row gets its own: a moved or re-added domain is a new row, so a new
+     * proof. */
+    verificationToken: text("verification_token")
+      .default(sql`replace(gen_random_uuid()::text, '-', '')`)
+      .notNull(),
+    /** When the record was last seen; null until then, and again once a re-check fails. */
+    verifiedAt: timestampColumn("verified_at"),
     ...timestamps(),
   },
   (table) => [

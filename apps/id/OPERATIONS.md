@@ -38,14 +38,22 @@ rows writes `[id] protocol sweep` with the count per table; expiry records no au
 **Magic-link mail.** Each process sends at most 5 at a time, holds at most 500 waiting
 and drops the rest; no connection is held through a send. Limits hold across replicas,
 in Postgres: per address and client 1 in 60 s and 5 in an hour, per address 50 in a day,
-per organisation 5,000 in an hour. Both sets of numbers are judgement until staging
-measures them: `src/services/magic-link-requests.ts`.
+per organisation 5,000 in an hour. An address no user holds, which only domain mode admits,
+also has a budget of its own: 100 in an hour per client, at any firm, and 500 in a day per
+organisation. Made-up addresses hard-bounce, and Postmark pauses a server past 10%, which
+would stop sign-in at every firm. Members and users with no membership there neither count
+nor are held back. Both sets of numbers are judgement until staging measures them:
+`src/services/magic-link-requests.ts`.
 
 **Magic-link codes.** Three comparisons per request. Wrong codes per client 30 in an hour
 and per organisation 1,000 in an hour, added up from `attempts` in Postgres so that they hold
 across replicas and checked before comparing; at most the ten newest requests of one browser
 are compared per attempt. These too are judgement: `src/services/magic-link-codes.ts`. The
 link does not go through these budgets.
+
+**Domain proofs.** One TXT lookup per `POST .../verify`, at most 5 s, with no connection held through it. It uses the resolver in the pod's `/etc/resolv.conf`, so ID needs DNS egress to answer for a firm's domain.
+
+**Member import.** At most 1,000 addresses a call, one import at a time across ID, since it takes one advisory lock per address and the shared lock table is `max_locks_per_transaction` times `max_connections`. Measured against a firm of 1,000 members in a database of 500,000 people: 256 to 320 ms for 1,000 new people, the longest statement 88 ms. A second import waits at most the lock wait, then answers `503 database_busy`, which the same key may retry.
 
 **Shutdown.** On `SIGINT` or `SIGTERM` the process stops listening, waits for
 in-flight requests, finishes queued mail for at most 22 s, stops the sweep after its
@@ -70,10 +78,12 @@ or budget is configured here.
 | `SigningKeyCustodyError` at startup                                     | The configured application secrets cannot decrypt the newest signing key: deliver the version that encrypted it; never delete the key       |
 | `[id] mail` `postmark_server_token_missing` at startup                  | Production with no `POSTMARK_SERVER_TOKEN`: ID sends no mail, and every request is a failed send. Deliver the token                          |
 | `[id] magic link` `magic_link_send_failed`                              | `errorCode` and `httpStatus` are Postmark's; 406 is a suppressed address, which staff reactivate in Postmark. The address is in that row of `magic_link_requests`, under its `requestId`, for seven days. No code and no status: Postmark was not reached |
-| `[id] magic link` `magic_link_request`, `outcome` `limited`             | `limit` names which. `organization_hour`, repeated: someone is requesting mail for many real addresses at that firm                        |
+| `[id] magic link` `magic_link_request`, `outcome` `limited`             | `limit` names which. `organization_hour`, repeated: someone is requesting mail for many real addresses at that firm. `new_address_client_hour` or `new_address_organization_day`, repeated: someone guessing addresses, or a big start that needed `members_import` first. The person sees the usual page and gets no mail |
 | `[id] magic link` `magic_link_queue_overflow`, or `magic_link_queue_abandoned` | Requests were told to check their email and got none. `dropped`, `abandoned` and `running` are counts. Compare with Postmark's status and the pool |
 | `[id] magic link` `magic_link_job_failed`                               | A job threw before its row was final; read the class and SQLSTATE. Its row, if any, stays `sending`, which signs nobody in                 |
 | `[id] magic link` `magic_link_code_budget_exhausted`                    | `budget` says which: `client`, repeated from one address, is someone guessing or an office with a bad day; `organization`, with its id, someone trying a firm from many addresses. Codes stop being compared and the person sees the usual refusal; the link still works |
+| `[id] domains` `domain_lookup_failed`                                   | A DNS check got no answer: `code` is the resolver's, `ETIMEOUT` being the 5 s bound. The caller saw `domain_verification_failed`, and a proved domain lost its proof. A domain with no record is not this, and logs nothing. Repeated, check the pod's DNS egress before re-checking any firm |
+| `domain.verification_lost` audit events                                 | A re-check found nothing on a proved domain. In domain mode it admits nobody new until it is proved again; nobody's session ended. Check whether the record was removed, or the resolver failed |
 | `[id] magic link` `magic_link_audit_unavailable`                        | A refused sign-in could not write its audit row; read the class and SQLSTATE. The refusal stands                                            |
 | Rising `auth.magic_link.refused` or `auth.magic_link.code_exhausted` audit events | Refusals that took a real browser cookie and a real request. `reason` says why: `provider_changed`, repeated, follows a firm switched off and on; `code_attempts` someone guessing or mistyping |
 | `protocol_sweep_failed`, repeated                                       | Check database availability and lock waits; expired protocol rows accumulate until a sweep succeeds                                          |
