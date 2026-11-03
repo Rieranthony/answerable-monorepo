@@ -28,7 +28,7 @@ An organisation can sign its people in with an emailed link, sent through Postma
 6. [complete] Throwaway end-to-end prototype of the sign-in core, in a worktree. Rerun by the coordinator: 1,543 pass, 0 fail.
 7. [complete] Independent attack on the design and prototype. Design rewritten: `design.md`.
 8. [complete] Report with decisions, published privately. The owner decided D1 to D6: `decisions.md`.
-9. [in_progress] The steps below. W0 to W5 landed on main on 3 November 2026.
+9. [in_progress] The steps below. W0 to W6 landed on main by 4 November 2026.
 
 ## Build order, after approval
 
@@ -40,7 +40,7 @@ An organisation can sign its people in with an emailed link, sent through Postma
 | W3 | Release N+1: provider row, trigger, backfill, toggle, admin API, fake, OpenAPI | Opus 5.5 |
 | W4 | Issue: requests table, limits, queue, sending, drain, sweep. ID first imports `@answerable/emails` here: its dependency under `dependencies`, `COPY packages/emails packages/emails` in the Dockerfile, the package in `apps/id/bunfig.toml`'s coverage ignore | Opus 5.5 |
 | W5 | Link, code, confirm, pages, authority, session cap, `authentication_method`. The member access view (`queries/access.ts`) must stop reporting admin for a magic-link member; `/security` hides directory actions. Nothing that grants authority reads `enabled` yet: confirm takes the row `FOR SHARE` and refuses when it is off, and the session trigger refuses an origin on an off row. Remove `magicLinkNotYet` from the admin routes | Opus 5.5 |
-| W6 | Import, admission setting, DNS proof of domains, admin MCP tools, manifest. `admission` goes in the revision guard's ignored columns, so changing it ends nobody's session | Sonnet 5.5 |
+| W6 | Import, admission setting, DNS proof of domains, admin MCP tools, manifest. Changing `admission` moves no revision, through a guard of the row's own, so it ends nobody's session | Opus 5.5, since it changes admission and confirm |
 | W7 | Both methods for one person: choice page, two-proof first Entra sign-in, mailbox proof for Entra-first people, directory commands end directory grants only | Opus 5.5 |
 | W8 | Deployment: sixth secret, Terraform mail records, kind stack, docs | Sonnet 5.5 |
 | W9 | Public docs, acceptance journey, `docs/02` register | Sonnet 5.5 |
