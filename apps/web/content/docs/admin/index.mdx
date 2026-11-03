@@ -334,7 +334,7 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | `Set ADMIN_DATABASE_MIGRATION_URL…` from `db:migrate` | The owner's URL is not set | Set it as in [Environment](#environment) |
 | `503 {"status":"unavailable"}` from `/health` | The database does not answer | Check `ADMIN_DATABASE_URL` and Postgres |
 | Log `relation "evidence_events" does not exist`, and every call fails | The database is not migrated | Run `bun --env-file=.env run --filter @answerable/mcp-admin db:migrate` |
-| `db:migrate` fails with `Refusing to migrate: drizzle/<file> is not the migration this database applied…` | An applied migration was edited, regenerated or removed | Restore the file, or recreate a disposable database |
+| `db:migrate` fails with `Refusing to migrate: drizzle/<file> is not the migration this database applied…` | An applied migration was edited, regenerated or removed from before a later one | Restore the file, or recreate a disposable database |
 | `db:migrate` fails with `Refusing to adopt a database the file migrator built: …` | The database was migrated by the previous file migrator with other files than this version adopts | Drop its `public` schema, then run `db:migrate` again |
 | `Refusing to reset <database>; expected answerable_admin_test` | `db:test:migrate` points elsewhere | Point `ADMIN_TEST_DATABASE_URL` at `answerable_admin_test` |
 

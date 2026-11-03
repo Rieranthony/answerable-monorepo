@@ -49,3 +49,44 @@ test("ordinary migration provisions the configured runtime role on the disposabl
     }
   }
 });
+
+test("a migration on a database ahead of the image leaves the runtime role's grants to the newer image", async () => {
+  assertDisposableTestDatabase(
+    "test a migration on a database ahead of the image",
+    testDatabaseUrl,
+  );
+  const connection = createDatabase(testEnvironment());
+  const role = `id_test_migrate_${crypto.randomUUID().replaceAll("-", "")}`;
+  const hash = `newer-image-${crypto.randomUUID()}`;
+  await connection.db.execute(
+    sql`insert into drizzle.__drizzle_migrations (hash, created_at) values (${hash}, ${Date.now()})`,
+  );
+  try {
+    const child = Bun.spawn([process.execPath, "scripts/migrate.ts"], {
+      cwd: import.meta.dir + "/../..",
+      env: {
+        ...process.env,
+        DATABASE_MIGRATION_URL: testDatabaseUrl,
+        DATABASE_RUNTIME_ROLE: role,
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [code, output, diagnostics] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expect({ code, diagnostics }).toEqual({ code: 0, diagnostics: "" });
+    expect(output).toContain("applying nothing");
+    const roles = await connection.db.execute(
+      sql`select 1 from pg_roles where rolname = ${role}`,
+    );
+    expect(roles.rows).toEqual([]);
+  } finally {
+    await connection.db.execute(
+      sql`delete from drizzle.__drizzle_migrations where hash = ${hash}`,
+    );
+    await connection.close();
+  }
+});

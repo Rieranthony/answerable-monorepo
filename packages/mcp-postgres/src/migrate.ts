@@ -63,8 +63,9 @@ async function adopt(db: NodePgDatabase, legacy: LegacyBaseline, files: File[], 
 /**
  * Apply the folder's pending migrations in one transaction, as drizzle's migrator does, after refusing what it would silently mishandle: it records
  * each file's hash and journal time but compares neither, so an applied file that was edited would be ignored and a regenerated one would run again.
- * An applied file that is not the one in the folder refuses the run, naming it. The receipts are drizzle's, in `<schema>.__drizzle_migrations`:
- * `schema` is `drizzle` unless given; an MCP's are in its own schema, which drizzle creates when missing.
+ * An applied file that is not the one in the folder refuses the run, naming it. A receipt past the folder's last file belongs to a newer image, as
+ * when a tag goes back: the database is ahead, the run says so, and drizzle finds nothing newer than the last receipt and applies nothing. The receipts
+ * are drizzle's, in `<schema>.__drizzle_migrations`: `schema` is `drizzle` unless given; an MCP's are in its own schema, which drizzle creates when missing.
  *
  * With `legacy`, a database the file migrator built is adopted first: when `schema_migrations` lists exactly `legacy.records`, drizzle's receipts for the
  * journal's first `legacy.entries` entries are recorded and the table dropped, in one transaction and without DDL, since those files made the same
@@ -78,11 +79,12 @@ export async function migrate(db: NodePgDatabase, { folder, legacy, schema = "dr
     ? (await db.execute<{ hash: string; created_at: string }>(sql`select hash, created_at::text from ${sql.raw(receipts)} order by id`)).rows
     : []
   if (legacy) await adopt(db, legacy, files, (await recorded()).length > 0)
-  for (const [index, receipt] of (await recorded()).entries()) {
-    const file = files[index]
-    if (file?.hash === receipt.hash && String(file.folderMillis) === receipt.created_at) continue
-    const name = entries[index] ? `drizzle/${entries[index].tag}.sql` : `the file applied as migration ${index + 1}`
-    throw new Error(`Refusing to migrate${schema === "drizzle" ? "" : ` ${schema}`}: ${name} is not the migration this database applied. Restore the applied file, or recreate a disposable database.`)
+  const applied = await recorded()
+  for (const [index, receipt] of applied.slice(0, files.length).entries()) {
+    const file = files[index]!
+    if (file.hash === receipt.hash && String(file.folderMillis) === receipt.created_at) continue
+    throw new Error(`Refusing to migrate${schema === "drizzle" ? "" : ` ${schema}`}: drizzle/${entries[index]!.tag}.sql is not the migration this database applied. Restore the applied file, or recreate a disposable database.`)
   }
+  if (applied.length > files.length) console.log(`${schema === "drizzle" ? "The" : `${schema}: the`} database has applied ${applied.length} migrations and this image carries ${files.length}; applying nothing.`)
   await apply(db, { migrationsFolder: folder, migrationsSchema: schema })
 }

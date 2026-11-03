@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, spyOn, test } from "bun:test";
 import {
   appendFile,
   cp,
@@ -53,11 +53,11 @@ test.each([
       }),
   ],
   [
-    "an applied file was removed",
-    "the file applied as migration 2",
+    "an applied file was removed from before a later one",
+    "drizzle/0001_invariants.sql",
     (folder: string) =>
       editJournal(folder, (entries) => {
-        entries.pop();
+        entries.shift();
       }),
   ],
 ])("migration refuses, naming the file, when %s", async (_, file, change) => {
@@ -68,6 +68,65 @@ test.each([
     const applied = await receipts();
     await expect(runMigrations(connection.db, folder)).rejects.toThrow(
       `Refusing to migrate: ${file} is not the migration this database applied`,
+    );
+    expect(await receipts()).toEqual(applied);
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test.each([
+  ["the last migration", 1],
+  ["every migration", 2],
+])(
+  "migration accepts a database that has applied more than the image carries: %s missing",
+  async (_, missing) => {
+    const folder = await mkdtemp(join(tmpdir(), "id-migrations-"));
+    const log = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await cp(committed, folder, { recursive: true });
+      await editJournal(folder, (entries) => {
+        entries.splice(entries.length - missing, missing);
+      });
+      const applied = await receipts();
+      expect(applied).toHaveLength(2);
+      expect(await runMigrations(connection.db, folder)).toEqual({
+        ahead: true,
+      });
+      expect(await receipts()).toEqual(applied);
+      expect(log.mock.calls).toEqual([
+        [
+          `The database has applied 2 migrations and this image carries ${2 - missing}; applying nothing.`,
+        ],
+      ]);
+    } finally {
+      log.mockRestore();
+      await rm(folder, { recursive: true, force: true });
+    }
+  },
+);
+
+test("migration says nothing when the database and the image agree", async () => {
+  const log = spyOn(console, "log").mockImplementation(() => {});
+  try {
+    expect(await runMigrations(connection.db)).toEqual({ ahead: false });
+    expect(log).not.toHaveBeenCalled();
+  } finally {
+    log.mockRestore();
+  }
+});
+
+test("a database that is ahead still refuses a shared file that changed", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "id-migrations-"));
+  try {
+    await cp(committed, folder, { recursive: true });
+    await editJournal(folder, (entries) => {
+      entries.pop();
+    });
+    await appendFile(join(folder, "0000_initial.sql"), "\n-- edited\n");
+    const applied = await receipts();
+    await expect(runMigrations(connection.db, folder)).rejects.toThrow(
+      "Refusing to migrate: drizzle/0000_initial.sql is not the migration this database applied",
     );
     expect(await receipts()).toEqual(applied);
   } finally {

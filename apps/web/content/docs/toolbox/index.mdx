@@ -328,7 +328,7 @@ The admin API's audience is the origin of `TOOLBOX_RESOURCE_URL` and `/admin`, s
 | `Set TOOLBOX_DATABASE_MIGRATION_URL…` from `db:migrate` | The owner's URL is not set | Set it as in [Environment](#environment) |
 | `503 {"status":"unavailable"}` from `/health` | The Toolbox's database does not answer | Check `TOOLBOX_DATABASE_URL` and Postgres |
 | Log `relation "host_clients" does not exist`, or `"intents"`, and every list or call fails | The database lacks this version's migrations | Run `bun --env-file=.env run --filter @answerable/mcp-toolbox db:migrate` |
-| `db:migrate` fails with `Refusing to migrate: drizzle/<file> is not the migration this database applied…` | An applied migration was edited, regenerated or removed | Restore the file, or recreate a disposable database |
+| `db:migrate` fails with `Refusing to migrate: drizzle/<file> is not the migration this database applied…` | An applied migration was edited, regenerated or removed from before a later one | Restore the file, or recreate a disposable database |
 | `db:migrate` fails with `Refusing to adopt a database the file migrator built: …` | The database was migrated by the previous file migrator with other files than this version adopts | Drop its `public` schema, then run `db:migrate` again |
 | `evidence_events is append-only: UPDATE is refused`, or `evidence_payloads only erases a body: UPDATE is refused` | Something tried to change evidence | Evidence is never changed; erase a payload with `erase` instead |
 | `Refusing to reset <database>; expected answerable_toolbox_test` | `db:test:migrate` points elsewhere | Point `TOOLBOX_TEST_DATABASE_URL` at `answerable_toolbox_test` |

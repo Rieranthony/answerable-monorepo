@@ -29,7 +29,8 @@ const lineOf = (text: string, index: number) => text.slice(0, index).split("\n")
 /**
  * Apply the MCP's pending migrations into schema `name` with drizzle's migrator, its journal in `<name>.__drizzle_migrations`, as the schema's
  * owner on `client`: the migrator login in the shared database, an own MCP's owner login in its database. An applied file whose text or journal
- * time changed, or that disappeared, refuses the run before anything is applied, naming the file; a statement that fails names the MCP and its
+ * time changed, or that was removed from before a later one, refuses the run before anything is applied, naming the file; a schema that has
+ * applied more than the folder carries (a tag gone back) applies nothing; a statement that fails names the MCP and its
  * file, and nothing pending is applied. Then the grants, in one transaction: `serving` gets `USAGE` on the schema, `select, insert, update,
  * delete` on every table but the journal, and `USAGE` on the sequences but the journal's; every other privilege on the schema
  * and its objects, `PUBLIC`'s included, is revoked. Running it again with nothing pending changes nothing. `client` is one connection, not a

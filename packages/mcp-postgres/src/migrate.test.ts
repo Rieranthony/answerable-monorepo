@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test"
+import { afterAll, expect, spyOn, test } from "bun:test"
 import { appendFile, cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -80,7 +80,7 @@ async function editJournal(folder: string, edit: (entries: { tag: string; when: 
 test.each([
   ["an applied file was edited", "drizzle/0001_evidence_chain.sql", (folder: string) => appendFile(join(folder, "0001_evidence_chain.sql"), "\n-- edited\n")],
   ["an applied file was regenerated with a new journal time", "drizzle/0000_initial.sql", (folder: string) => editJournal(folder, entries => { entries[0]!.when += 1 })],
-  ["an applied file was removed", "the file applied as migration 2", (folder: string) => editJournal(folder, entries => { entries.pop() })],
+  ["an applied file was removed from before a later one", "drizzle/0001_evidence_chain.sql", (folder: string) => editJournal(folder, entries => { entries.shift() })],
 ])("migration refuses, naming the file, when %s", async (_, file, change) => {
   const folder = await mkdtemp(join(tmpdir(), "mcp-postgres-migrations-"))
   try {
@@ -90,6 +90,44 @@ test.each([
     await expect(migrate(db, { folder })).rejects.toThrow(`Refusing to migrate: ${file} is not the migration this database applied`)
     expect(await receipts()).toEqual(applied)
   } finally {
+    await rm(folder, { recursive: true, force: true })
+  }
+})
+
+test.each([
+  ["the last migration", 1],
+  ["every migration", 2],
+])("a database that has applied more than the folder carries is left as it is, and the run says so: %s missing", async (_, missing) => {
+  const folder = await mkdtemp(join(tmpdir(), "mcp-postgres-migrations-"))
+  const log = spyOn(console, "log").mockImplementation(() => {})
+  try {
+    await cp(migrationsFolder, folder, { recursive: true })
+    await editJournal(folder, entries => { entries.splice(entries.length - missing, missing) })
+    const applied = await receipts()
+    expect(applied).toHaveLength(2)
+    await migrate(db, { folder })
+    expect(await receipts()).toEqual(applied)
+    expect(log.mock.calls).toEqual([[`The database has applied 2 migrations and this image carries ${2 - missing}; applying nothing.`]])
+  } finally {
+    log.mockRestore()
+    await rm(folder, { recursive: true, force: true })
+  }
+})
+
+test("a database that is ahead still refuses a shared file that changed, and one that agrees says nothing", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "mcp-postgres-migrations-"))
+  const log = spyOn(console, "log").mockImplementation(() => {})
+  try {
+    await migrate(db, { folder: migrationsFolder })
+    expect(log).not.toHaveBeenCalled()
+    await cp(migrationsFolder, folder, { recursive: true })
+    await editJournal(folder, entries => { entries.pop() })
+    await appendFile(join(folder, "0000_initial.sql"), "\n-- edited\n")
+    const applied = await receipts()
+    await expect(migrate(db, { folder })).rejects.toThrow("Refusing to migrate: drizzle/0000_initial.sql is not the migration this database applied")
+    expect(await receipts()).toEqual(applied)
+  } finally {
+    log.mockRestore()
     await rm(folder, { recursive: true, force: true })
   }
 })

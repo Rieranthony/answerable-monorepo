@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test"
+import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test"
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -107,9 +107,6 @@ test("a GRANT a migration makes itself is taken back by the grants that follow i
 
 test.each([
   ["an applied file was edited", "drizzle/0000_initial.sql", (folder: string) => writeFile(join(folder, "0000_initial.sql"), "-- edited\n", { flag: "a" })],
-  ["an applied file was removed", "the file applied as migration 1", async (folder: string) => {
-    await writeFile(join(folder, "meta/_journal.json"), JSON.stringify({ version: "7", dialect: "postgresql", entries: [] }))
-  }],
 ])("migration refuses, naming the file, when %s", async (_, file, change) => {
   await migrateMcp({ ...a, client: migrator })
   const folder = await mkdtemp(join(tmpdir(), "mcp-postgres-mcp-migrations-"))
@@ -120,6 +117,22 @@ test.each([
   } finally {
     await rm(folder, { recursive: true, force: true })
   }
+})
+
+test("a schema that has applied more than the folder carries is left as it is, the grants still given, and the run says so", async () => {
+  await withNext("CREATE TABLE \"mpgfixa\".\"later\" (id int);", folder => migrateMcp({ ...a, folder, client: migrator }))
+  const [before, applied] = [await relations(), await receipts()]
+  expect(applied).toHaveLength(2)
+  await admin.query(`grant select on mpgfixa.notes to public`)
+  const log = spyOn(console, "log").mockImplementation(() => {})
+  try {
+    await migrateMcp({ ...a, client: migrator })
+    expect(log.mock.calls).toEqual([["mpgfixa: the database has applied 2 migrations and this image carries 1; applying nothing."]])
+  } finally {
+    log.mockRestore()
+  }
+  expect(await receipts()).toEqual(applied)
+  expect(await relations()).toEqual(before)
 })
 
 test("a statement that fails names the MCP and the file, and leaves nothing behind", async () => {

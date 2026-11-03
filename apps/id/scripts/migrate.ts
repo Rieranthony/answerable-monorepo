@@ -22,8 +22,10 @@ const pool = new Pool({
 
 try {
   const db = drizzle({ client: pool, schema });
-  await runMigrations(db);
-  await configureRuntimeRole(db, runtimeRole);
+  const { ahead } = await runMigrations(db);
+  // A newer image set these grants knowing every table. This image would treat
+  // a table it does not know as an ordinary one.
+  if (!ahead) await configureRuntimeRole(db, runtimeRole);
 } finally {
   await pool.end();
 }
