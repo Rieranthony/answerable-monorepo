@@ -30,6 +30,13 @@ export function createAuth(db: Database, environment: Environment) {
             input: false,
             returned: false,
           },
+          // The adapter's read filter names it (database-adapter.ts).
+          kind: {
+            type: "string",
+            required: false,
+            input: false,
+            returned: false,
+          },
         },
       },
     },

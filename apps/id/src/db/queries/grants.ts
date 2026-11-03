@@ -75,16 +75,17 @@ export async function effectiveGrants(
         )
         .for("share");
       // Native provider/account locks can wait too. Evaluate permission windows
-      // only after the authentication decision has acquired those locks.
-      if (
-        principal.sessionId !== undefined &&
-        !(await tenantAuthentication(tx, {
+      // only after the authentication decision has acquired those locks. Only a
+      // directory sign-in carries administrative authority: a row's kind is
+      // immutable, so what the origin is cannot change after this read.
+      if (principal.sessionId !== undefined) {
+        const authentication = await tenantAuthentication(tx, {
           userId: principal.userId,
           sessionId: principal.sessionId,
           organizationId: authenticationOrganizationId!,
-        }))
-      )
-        return [];
+        });
+        if (authentication?.authenticationProviderKind !== "oidc") return [];
+      }
       const rows = await tx
         .select({
           organizationId: members.organizationId,

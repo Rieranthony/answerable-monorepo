@@ -362,6 +362,7 @@ test("administrative RLS isolates rows, binds tenant routing reads and keeps app
       providerId: organizationId,
       issuer: "https://issuer.example.com",
       domain: `${organizationId}.example.com`,
+      oidcConfig: "{}",
     });
     await recordAuditEvent(runtime.db, {
       organizationId,
@@ -418,6 +419,7 @@ test("administrative RLS isolates rows, binds tenant routing reads and keeps app
         providerId: createId(),
         issuer: "https://issuer.example.com",
         domain: "foreign.example.com",
+        oidcConfig: "{}",
       }),
   ];
   for (const insert of inserts)

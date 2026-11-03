@@ -17,7 +17,9 @@ import {
   softDeletion,
   softDeletionChecks,
   timestamps,
+  vocabularyCheck,
 } from "./columns.ts";
+import { ssoProviderKinds } from "./vocabulary.ts";
 
 // Persisted configuration owned by @better-auth/sso. The organization and
 // normalized domain constraints are Answerable's tenant-boundary additions.
@@ -26,6 +28,7 @@ export const ssoProviders = pgTable(
   {
     ...softDeletion(),
     id: id(),
+    kind: text("kind", { enum: ssoProviderKinds }).default("oidc").notNull(),
     issuer: text("issuer").notNull(),
     oidcConfig: text("oidc_config"),
     providerId: text("provider_id").notNull().unique(),
@@ -49,8 +52,14 @@ export const ssoProviders = pgTable(
       foreignColumns: [organizations.id, organizations.live],
     }).onDelete("cascade"),
     check("sso_providers_revision_check", sql`${table.revision} > 0`),
-    uniqueIndex("sso_providers_organization_id_unique")
-      .on(table.organizationId)
+    vocabularyCheck("sso_providers_kind_check", table.kind, ssoProviderKinds),
+    // A live directory has its configuration; a magic-link row never has one.
+    check(
+      "sso_providers_kind_config_check",
+      sql`(${table.kind} = 'oidc' and (${table.deletedAt} is not null or ${table.oidcConfig} is not null)) or (${table.kind} = 'magic_link' and ${table.oidcConfig} is null)`,
+    ),
+    uniqueIndex("sso_providers_organization_kind_unique")
+      .on(table.organizationId, table.kind)
       .where(sql`${table.deletedAt} is null`),
     hostnameCheck("sso_providers_domain_normalized_check", table.domain),
   ],

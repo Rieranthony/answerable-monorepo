@@ -139,7 +139,7 @@ async function grantFixture(
   if (!withProvider)
     await db
       .update(ssoProviders)
-      .set({ deletedAt: new Date() })
+      .set({ deletedAt: new Date(), oidcConfig: null })
       .where(eq(ssoProviders.organizationId, org.id));
   return { db, org, other, userId, contexts };
 }

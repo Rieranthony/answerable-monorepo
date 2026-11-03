@@ -163,7 +163,7 @@ test("SSO read projections expose only their intended configuration", async () =
   );
   await connection.db
     .update(ssoProviders)
-    .set({ oidcConfig: null })
+    .set({ oidcConfig: "{}" })
     .where(eq(ssoProviders.id, row.id));
   await inPlatformRead(connection.db, async (context) =>
     expect(await productionQueries.readSsoEndpoints(context, org.id)).toEqual({

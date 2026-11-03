@@ -111,16 +111,20 @@ export async function createSsoProvider(
   return provider!;
 }
 
+/** The organisation's directory: its one live row of kind `oidc`, whatever other
+ * kinds it holds. Everything here that takes an organisation means this row. */
+const liveDirectory = (organizationId: string) =>
+  and(
+    isNull(ssoProviders.deletedAt),
+    eq(ssoProviders.organizationId, organizationId),
+    eq(ssoProviders.kind, "oidc"),
+  );
+
 function providerQuery(db: Executor, organizationId: string) {
   return db
     .select()
     .from(ssoProviders)
-    .where(
-      and(
-        isNull(ssoProviders.deletedAt),
-        eq(ssoProviders.organizationId, organizationId),
-      ),
-    )
+    .where(liveDirectory(organizationId))
     .limit(1);
 }
 
@@ -149,12 +153,7 @@ export async function readSsoIssuer(
   const [provider] = await tx
     .select({ issuer: ssoProviders.issuer })
     .from(ssoProviders)
-    .where(
-      and(
-        isNull(ssoProviders.deletedAt),
-        eq(ssoProviders.organizationId, organizationId),
-      ),
-    )
+    .where(liveDirectory(organizationId))
     .limit(1);
   return provider ?? null;
 }
@@ -172,12 +171,7 @@ export async function readSsoEndpoints(
       >`${ssoProviders.oidcConfig}::jsonb ->> 'discoveryEndpoint'`,
     })
     .from(ssoProviders)
-    .where(
-      and(
-        isNull(ssoProviders.deletedAt),
-        eq(ssoProviders.organizationId, organizationId),
-      ),
-    )
+    .where(liveDirectory(organizationId))
     .limit(1);
   return provider
     ? {
@@ -213,12 +207,7 @@ export async function deleteSsoProvider(
   const [row] = await executor
     .update(ssoProviders)
     .set({ deletedAt: sql`now()`, oidcConfig: null })
-    .where(
-      and(
-        isNull(ssoProviders.deletedAt),
-        eq(ssoProviders.organizationId, organizationId),
-      ),
-    )
+    .where(liveDirectory(organizationId))
     .returning();
   return row ?? null;
 }

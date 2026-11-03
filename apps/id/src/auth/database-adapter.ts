@@ -56,6 +56,11 @@ export function authDatabaseAdapter(
             where: [
               ...(input.where ?? []),
               { field: "deletedAt", value: null },
+              // Native SSO reads a provider by organisation, domain or a scan and
+              // means a directory; it never sees another kind.
+              ...(input.model === "ssoProvider"
+                ? [{ field: "kind", value: "oidc" }]
+                : []),
             ],
           }
         : input;

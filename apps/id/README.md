@@ -43,10 +43,11 @@ bun --filter @answerable/id test
 
 **Upstream tokens.** ID stores no upstream token. Sign-in asks a directory for `email openid profile` unless its SSO row names other scopes, so not for `offline_access`, and the account's `refresh_token` column stays null even when a directory returns one (`src/auth/answerable-schema.ts`). The directory re-check `Q-AID-RECHECK` in the [plan](../../docs/02-plan.md#open-register) would need a stored token: Not yet.
 
-**Initial installation.** ID has never shipped to production. Two migrations install the complete schema in one transaction:
+**Initial installation.** ID has never shipped to production. The migrations install the complete schema in one transaction:
 
 - `drizzle/0000_initial.sql` is untouched drizzle-kit output from `src/db/schema/index.ts`: tables, columns, constraints, indexes, policies and RLS.
 - `drizzle/0001_invariants.sql` is reviewed by hand. It holds what drizzle-orm 0.45.2 cannot express: the deferrable audit-to-operation foreign key, `NULLS NOT DISTINCT` on two partial unique indexes, the custom functions and triggers, and the execution grants.
+- Forward migrations follow, generated or reviewed as "Changing the schema" says: `drizzle/0002_sso_provider_kind.sql` is generated and `drizzle/0003_sso_provider_kind_guard.sql` is reviewed.
 
 Bootstrap establishes the platform binding once; repeated migration and startup preserve it. The first start provisions the platform organisation, admin resource, `platform-admins` group, its entitlement and the platform capability. Every later start verifies the binding, refuses a changed admin resource identifier (a changed `BETTER_AUTH_URL`) and restores only the admin resource's name, token lifetime and scopes, which the admin API cannot change; the organisation's name, the group, the entitlement and the capability belong to operators, and a removed capability stays removed. `bootstrap.applied` is recorded only when a start created or changed something. There is no development-database upgrade or binding-import command. Use an empty database for this baseline; non-disposable data requires a separate reviewed recovery plan.
 
@@ -59,9 +60,9 @@ Bootstrap establishes the platform binding once; repeated migration and startup 
 **Migration proofs.**
 
 - `src/db/migrations.test.ts`: the last snapshot matches the schema modules.
-- `src/db/migrations.integration.test.ts`: the committed migrations, and `generateMigration(empty, schema)` followed by `0001_invariants.sql`, each build the schema inside a rolled-back transaction. Postgres' catalogue of the two must match: tables, columns, defaults, constraints, index definitions, functions with their grants, triggers, policies, RLS flags and foreign-key deferral.
+- `src/db/migrations.integration.test.ts`: the committed migrations, and `generateMigration(empty, schema)` followed by every reviewed migration (each one whose snapshot repeats the one before it), each build the schema inside a rolled-back transaction. Postgres' catalogue of the two must match: tables, columns, defaults, constraints, index definitions, functions with their grants, triggers, policies, RLS flags and foreign-key deferral.
 - A fresh install: `db:test:migrate`, which `bun --filter @answerable/id test` runs first, migrates the empty `answerable_id_test` database, and every integration test runs on the result.
-- `src/db/migrate-script.integration.test.ts`: `scripts/migrate.ts` on the migrated test database applies nothing; `src/db/migrate.integration.test.ts`: an edited or regenerated applied file is refused.
+- `src/db/migrate-script.integration.test.ts`: `scripts/migrate.ts` on the migrated test database applies nothing; `src/db/migrate.integration.test.ts`: an edited or regenerated applied file is refused, and a forward migration of a database holding provider rows leaves those rows' tuples as they were.
 
 Coverage thresholds require 100% of application lines and functions. Tests, fixtures, generated output, and the composition-only `src/server.ts` process entry are excluded; its runtime behavior lives in the fully tested `src/runtime.ts`.
 

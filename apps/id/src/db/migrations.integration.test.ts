@@ -12,7 +12,7 @@ import { createDatabase } from "./client.ts";
 const connection = createDatabase(testEnvironment());
 afterAll(() => connection.close());
 
-test("the committed migrations build what the schema modules generate plus the reviewed invariants", async () => {
+test("the committed migrations build what the schema modules generate plus the reviewed migrations", async () => {
   // Each build replaces the public schema inside a transaction that is rolled back.
   assertDisposableTestDatabase("rebuild the schema");
   expect(await buildCatalogue(connection.pool, committedStatements())).toEqual(

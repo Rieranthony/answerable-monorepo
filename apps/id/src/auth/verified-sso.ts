@@ -131,6 +131,8 @@ export function createVerifiedSso(db: Database) {
       !source ||
       !target ||
       !time.rows[0]!.valid ||
+      // Only a directory sign-in can prove an identity to bind or re-verify.
+      source.authenticationProviderKind !== "oidc" ||
       source.authenticationAccountId !== flow.accountId ||
       source.authenticationProviderId !== flow.providerId ||
       source.authenticationProviderRevision !== flow.providerRevision
@@ -308,6 +310,7 @@ export function createVerifiedSso(db: Database) {
               .where(
                 and(
                   isNull(ssoProviders.deletedAt),
+                  eq(ssoProviders.kind, "oidc"),
                   purpose === "link"
                     ? eq(
                         ssoProviders.providerId,

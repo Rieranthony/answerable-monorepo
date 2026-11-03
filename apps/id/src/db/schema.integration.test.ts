@@ -507,7 +507,7 @@ describe("integration: PostgreSQL schema", () => {
     ]);
   });
 
-  test("binds one SSO provider per organization", async () => {
+  test("binds one directory per organization", async () => {
     const first = await insertOrganization("first");
     const second = await insertOrganization("second");
     const firstProvider = await createSsoProvider(connection.db, {
@@ -564,6 +564,7 @@ describe("integration: PostgreSQL schema", () => {
           providerId: "second",
           issuer: "https://issuer.example.com",
           domain: "Bad Domain",
+          oidcConfig: "{}",
         })
         .execute(),
     ).rejects.toThrow();

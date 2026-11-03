@@ -11,13 +11,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sql } from "drizzle-orm";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 
 import { testEnvironment } from "../__tests__/support.ts";
+import { testDatabaseUrl } from "../__tests__/test-database.ts";
 import { createDatabase } from "./client.ts";
 import { runMigrations } from "./migrate.ts";
 
 const connection = createDatabase(testEnvironment());
 const committed = fileURLToPath(new URL("../../drizzle", import.meta.url));
+const committedCount = readMigrationFiles({
+  migrationsFolder: committed,
+}).length;
 afterAll(() => connection.close());
 
 async function editJournal(
@@ -77,7 +82,7 @@ test.each([
 
 test.each([
   ["the last migration", 1],
-  ["every migration", 2],
+  ["every migration", committedCount],
 ])(
   "migration accepts a database that has applied more than the image carries: %s missing",
   async (_, missing) => {
@@ -89,14 +94,14 @@ test.each([
         entries.splice(entries.length - missing, missing);
       });
       const applied = await receipts();
-      expect(applied).toHaveLength(2);
+      expect(applied).toHaveLength(committedCount);
       expect(await runMigrations(connection.db, folder)).toEqual({
         ahead: true,
       });
       expect(await receipts()).toEqual(applied);
       expect(log.mock.calls).toEqual([
         [
-          `The database has applied 2 migrations and this image carries ${2 - missing}; applying nothing.`,
+          `The database has applied ${committedCount} migrations and this image carries ${committedCount - missing}; applying nothing.`,
         ],
       ]);
     } finally {
@@ -130,6 +135,62 @@ test("a database that is ahead still refuses a shared file that changed", async 
     );
     expect(await receipts()).toEqual(applied);
   } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test("migrating a database at 0001 leaves its provider rows as they were, as directories", async () => {
+  const name = `answerable_id_forward_${crypto.randomUUID().replaceAll("-", "")}`;
+  const folder = await mkdtemp(join(tmpdir(), "id-migrations-"));
+  const log = spyOn(console, "log").mockImplementation(() => {});
+  await connection.pool.query(`create database ${name}`);
+  const url = new URL(testDatabaseUrl);
+  url.pathname = `/${name}`;
+  const scratch = createDatabase(
+    testEnvironment({ databaseUrl: url.toString() }),
+  );
+  const rows = async () =>
+    (
+      await scratch.pool.query<Record<string, unknown>>(
+        "select *, xmin::text as tuple_writer from sso_providers order by id",
+      )
+    ).rows;
+  try {
+    await cp(committed, folder, { recursive: true });
+    await editJournal(folder, (entries) => {
+      entries.splice(2);
+    });
+    expect(await runMigrations(scratch.db, folder)).toEqual({ ahead: false });
+    await scratch.pool.query(`
+      insert into organizations (id, slug, name) values
+        ('00000000-0000-7000-8000-000000000001', 'live', 'Live'),
+        ('00000000-0000-7000-8000-000000000002', 'removed', 'Removed');
+      insert into sso_providers (id, organization_id, provider_id, issuer, domain, oidc_config, created_at, updated_at) values
+        ('00000000-0000-7000-8000-000000000003', '00000000-0000-7000-8000-000000000001', 'live', 'https://idp.example', 'live.example.com', '{"pkce":true}', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z'),
+        ('00000000-0000-7000-8000-000000000004', '00000000-0000-7000-8000-000000000002', 'removed', 'https://idp.example', 'removed.example.com', '{"pkce":true}', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z');
+      update sso_providers set domain = 'moved.example.com', updated_at = '2026-01-03T00:00:00Z'
+        where provider_id = 'live';
+      update sso_providers set deleted_at = '2026-01-04T00:00:00Z', oidc_config = null
+        where provider_id = 'removed';
+    `);
+    const before = await rows();
+    expect(before.map((row) => row.revision)).toEqual([2, 2]);
+    expect(before[0]).not.toHaveProperty("kind");
+
+    expect(await runMigrations(scratch.db)).toEqual({ ahead: false });
+
+    // The same tuples: nothing wrote to a row, so no trigger saw one, and a session
+    // naming a revision still names the current one.
+    expect(await rows()).toEqual(
+      before.map((row) => ({ ...row, kind: "oidc" })),
+    );
+    expect(await scratch.db.$count(sql`drizzle.__drizzle_migrations`)).toBe(
+      committedCount,
+    );
+  } finally {
+    log.mockRestore();
+    await scratch.close();
+    await connection.pool.query(`drop database ${name} with (force)`);
     await rm(folder, { recursive: true, force: true });
   }
 });

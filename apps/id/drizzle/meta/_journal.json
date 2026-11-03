@@ -15,6 +15,20 @@
       "when": 1792403281006,
       "tag": "0001_invariants",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793706860297,
+      "tag": "0002_sso_provider_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793706860714,
+      "tag": "0003_sso_provider_kind_guard",
+      "breakpoints": true
     }
   ]
 }

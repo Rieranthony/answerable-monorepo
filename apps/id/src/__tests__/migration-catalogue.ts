@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { generateDrizzleJson, generateMigration } from "drizzle-kit/api";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import type { Pool, PoolClient } from "pg";
@@ -17,18 +18,46 @@ export function committedStatements(): string[] {
   return readMigrationFiles({ migrationsFolder }).flatMap(({ sql }) => sql);
 }
 
-/** What drizzle-kit generates from the schema modules, then the reviewed invariants. */
+const readJson = (path: string) =>
+  JSON.parse(readFileSync(`${migrationsFolder}/${path}`, "utf8"));
+
+/** A snapshot without its own identity: what the schema modules held at that migration. */
+function schemaAt(tag: string): unknown {
+  return {
+    ...readJson(`meta/${tag.split("_")[0]}_snapshot.json`),
+    id: null,
+    prevId: null,
+  };
+}
+
+/**
+ * The migrations reviewed by hand, in order: `db:generate --custom` repeats the schema
+ * modules' snapshot, so each is a migration that describes nothing they hold.
+ */
+function reviewedMigrations(): string[] {
+  const { entries } = readJson("meta/_journal.json") as {
+    entries: { tag: string }[];
+  };
+  return entries
+    .filter(
+      ({ tag }, index) =>
+        index > 0 &&
+        isDeepStrictEqual(schemaAt(tag), schemaAt(entries[index - 1]!.tag)),
+    )
+    .map(({ tag }) => tag);
+}
+
+/** What drizzle-kit generates from the schema modules, then every reviewed migration. */
 export async function generatedStatements(): Promise<string[]> {
   const empty = generateDrizzleJson({});
   const generated = await generateMigration(
     empty,
     generateDrizzleJson(schema, empty.id),
   );
-  const invariants = readFileSync(
-    `${migrationsFolder}/0001_invariants.sql`,
-    "utf8",
-  ).split(breakpoint);
-  return [...generated, ...invariants];
+  const reviewed = reviewedMigrations().flatMap((tag) =>
+    readFileSync(`${migrationsFolder}/${tag}.sql`, "utf8").split(breakpoint),
+  );
+  return [...generated, ...reviewed];
 }
 
 // Postgres' own description of the public schema: every line is deparsed by the server,
@@ -65,9 +94,7 @@ select 'trigger ' || pg_get_triggerdef(t.oid) || ' enabled=' || t.tgenabled::tex
 order by 1`;
 
 /** The catalogue of the database as it stands. */
-async function readCatalogue(
-  client: Pool | PoolClient,
-): Promise<string[]> {
+async function readCatalogue(client: Pool | PoolClient): Promise<string[]> {
   const { rows } = await client.query<{ line: string }>(catalogue);
   return rows.map(({ line }) => line);
 }

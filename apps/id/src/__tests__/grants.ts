@@ -40,6 +40,7 @@ export async function insertOriginSession(
         issuer: `https://${name}.idp.example`,
         providerId: name,
         domain: `${name}.example`,
+        oidcConfig: "{}",
       })
       .returning();
   }

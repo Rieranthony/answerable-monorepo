@@ -10,6 +10,7 @@ import {
   ssoProviders,
   users,
 } from "../db/schema/index.ts";
+import type { SsoProviderKind } from "../db/schema/vocabulary.ts";
 
 /** Immutable evidence for subsequent login/resource-grant persistence.
  * Broker acceptance time is not upstream authentication freshness.
@@ -22,6 +23,9 @@ type TenantAuthentication = Readonly<{
   authenticationOrganizationId: string;
   authenticationProviderId: string;
   authenticationProviderRevision: number;
+  /** This check accepts an origin of either kind. A caller granting what only
+   * a directory sign-in carries reads this. */
+  authenticationProviderKind: SsoProviderKind;
   brokerAuthenticatedAt: Date;
   upstreamAuthTime: Date | null;
 }>;
@@ -69,6 +73,7 @@ export async function tenantAuthentication(
         authenticationOrganizationId: organizations.id,
         authenticationProviderId: ssoProviders.id,
         authenticationProviderRevision: ssoProviders.revision,
+        authenticationProviderKind: ssoProviders.kind,
         brokerAuthenticatedAt: sessions.createdAt,
         upstreamAuthTime: sessions.upstreamAuthTime,
       })
