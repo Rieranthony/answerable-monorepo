@@ -293,6 +293,33 @@ run "caches_nothing_but_assets" {
   }
 }
 
+run "limits_the_sign_in_form_per_client_address_within_the_free_plan" {
+  command = plan
+
+  assert {
+    condition     = cloudflare_ruleset.rate_limit.phase == "http_ratelimit" && cloudflare_ruleset.rate_limit.kind == "zone" && length(cloudflare_ruleset.rate_limit.rules) == 1
+    error_message = "One rate limiting rule in the zone's http_ratelimit phase: the free plan allows no more."
+  }
+
+  assert {
+    condition = (
+      cloudflare_ruleset.rate_limit.rules[0].expression == "(http.request.uri.path eq \"/login\")"
+      && cloudflare_ruleset.rate_limit.rules[0].action == "block"
+    )
+    error_message = "The rule must match ID's sign-in form by path alone, the one field the free plan allows, so that machine clients are never counted."
+  }
+
+  assert {
+    condition = (
+      cloudflare_ruleset.rate_limit.rules[0].ratelimit.characteristics == tolist(["cf.colo.id", "ip.src"])
+      && cloudflare_ruleset.rate_limit.rules[0].ratelimit.period == 10
+      && cloudflare_ruleset.rate_limit.rules[0].ratelimit.mitigation_timeout == 10
+      && cloudflare_ruleset.rate_limit.rules[0].ratelimit.requests_per_period == 60
+    )
+    error_message = "The rule must count per client address over 10 seconds and block for 10 seconds, the free plan's only values."
+  }
+}
+
 run "leaves_production_www_alone" {
   command = plan
 
@@ -311,7 +338,7 @@ run "leaves_production_www_alone" {
     condition = alltrue([
       for text in concat(
         [for record in cloudflare_dns_record.service : record.name],
-        [cloudflare_ruleset.config.rules[0].expression, cloudflare_ruleset.cache.rules[0].expression],
+        [cloudflare_ruleset.config.rules[0].expression, cloudflare_ruleset.cache.rules[0].expression, cloudflare_ruleset.rate_limit.rules[0].expression],
         cloudflare_origin_ca_certificate.this.hostnames,
       ) : !strcontains(text, "www") && text != "answerable.org"
     ])
@@ -319,8 +346,8 @@ run "leaves_production_www_alone" {
   }
 
   assert {
-    condition     = cloudflare_ruleset.config.name == "answerable-production-config" && cloudflare_ruleset.cache.name == "answerable-production-cache"
-    error_message = "The rulesets must be named answerable-<environment>-config and -cache."
+    condition     = cloudflare_ruleset.config.name == "answerable-production-config" && cloudflare_ruleset.cache.name == "answerable-production-cache" && cloudflare_ruleset.rate_limit.name == "answerable-production-rate-limit"
+    error_message = "The rulesets must be named answerable-<environment>-config, -cache and -rate-limit."
   }
 }
 

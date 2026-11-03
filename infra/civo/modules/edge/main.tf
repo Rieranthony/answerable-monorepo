@@ -185,6 +185,34 @@ resource "cloudflare_ruleset" "config" {
   ]
 }
 
+# A brake on ID's sign-in form, per client address, before a request reaches the origin. Machine clients never post it,
+# so they are not counted. The free plan allows one rule, matching the path alone, counted over 10 seconds with a block
+# of 10 seconds; only ID serves this path, and a DNS-only record such as production's www never passes through here.
+# Sixty requests in 10 seconds is 30 sign-ins, a page view and a post each, from one office's address.
+resource "cloudflare_ruleset" "rate_limit" {
+  zone_id     = var.zone_id
+  name        = "${local.prefix}-rate-limit"
+  description = "Answerable ${var.environment}: a limit per client address on the sign-in form"
+  kind        = "zone"
+  phase       = "http_ratelimit"
+
+  rules = [
+    {
+      ref         = "answerable_sign_in_form"
+      description = "The sign-in form: 60 requests per client address in 10 seconds, then a 10-second block"
+      expression  = "(http.request.uri.path eq \"/login\")"
+      action      = "block"
+      ratelimit = {
+        characteristics     = ["cf.colo.id", "ip.src"]
+        period              = 10
+        requests_per_period = 60
+        mitigation_timeout  = 10
+      }
+      enabled = true
+    },
+  ]
+}
+
 # Cloudflare caches nothing from the four hostnames except their static /assets/: tokens, discovery documents and
 # MCP responses must always come from the origin.
 resource "cloudflare_ruleset" "cache" {
