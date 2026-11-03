@@ -11,7 +11,6 @@
     "test": "bun run db:test:migrate && bun run test:coverage",
     "test:coverage": "bun test --timeout 15000",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
-    "db:regenerate": "bun scripts/regenerate-migrations.ts",
     "db:migrate": "bun scripts/migrate.ts",
     "db:test:migrate": "bun scripts/reset-test-database.ts"
   },
