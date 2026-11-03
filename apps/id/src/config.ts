@@ -35,6 +35,9 @@ const applicationSecrets = z.string().transform((value, context) => {
 /** The largest value a Postgres integer setting accepts. */
 const maxInt32 = 2_147_483_647;
 
+/** A value that goes in a mail header: no line break can start another. */
+const headerValue = z.string().regex(/^\P{Cc}+$/u);
+
 /** Every variable the service reads, with its local values; packages/config/inventory.json lists each one. */
 export const idConfig = defineConfig(
   "ID",
@@ -55,7 +58,8 @@ export const idConfig = defineConfig(
     DATABASE_URL: {
       schema: z.url(),
       secret: true,
-      local: "postgres://answerable_id_runtime:answerable@localhost:47432/answerable_id",
+      local:
+        "postgres://answerable_id_runtime:answerable@localhost:47432/answerable_id",
       doc: "ID's Postgres URL as its restricted runtime login, never the schema owner",
       source: "cluster",
     },
@@ -100,6 +104,29 @@ export const idConfig = defineConfig(
       secret: true,
       doc: "The Entra platform application's client secret",
       source: "deploy",
+    },
+    POSTMARK_SERVER_TOKEN: {
+      schema: z.string().optional(),
+      secret: true,
+      doc: "The Postmark server's API token, for sign-in mail. Unset outside production, ID prints each email; unset in production, it sends none and warns at startup",
+      source: "deploy",
+    },
+    MAIL_FROM: {
+      schema: headerValue,
+      fallback: "Answerable ID <sign-in@id.answerable.org>",
+      doc: "Who sign-in mail comes from: a domain Postmark has verified for this server",
+      source: "operator",
+    },
+    MAIL_REPLY_TO: {
+      schema: z.email(),
+      fallback: "support@answerable.org",
+      doc: "Where replies to sign-in mail go",
+      source: "operator",
+    },
+    MAIL_SUBJECT_PREFIX: {
+      schema: headerValue.optional(),
+      doc: "Put before every subject, for an environment that must not read as production: [staging]",
+      source: "operator",
     },
     BETTER_AUTH_TRUSTED_ORIGINS: {
       schema: z.string(),

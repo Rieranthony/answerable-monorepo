@@ -16,6 +16,7 @@ import { logEvent } from "./lib/log.ts";
 import { createSsoOriginBoundary } from "./auth/sso-origin.ts";
 import { createVerifiedSso } from "./auth/verified-sso.ts";
 import { grantLifetimeSeconds } from "./auth/user-oauth-flow.ts";
+import { magicLinkPlugin } from "./auth/magic-link.ts";
 
 export function createAuth(db: Database, environment: Environment) {
   const verifiedSso = createVerifiedSso(db);
@@ -111,6 +112,9 @@ export function createAuth(db: Database, environment: Environment) {
         },
       },
     },
+    // The protocol sweep removes expired rows (operations/protocol-sweep.ts), so no
+    // sign-in deletes them inside its transaction, under its locks.
+    verification: { disableCleanup: true },
     trustedOrigins: environment.trustedOrigins,
     // Production only, per client address per process: replicas multiply these.
     // An office signs in through one egress address; the provider's options
@@ -224,6 +228,8 @@ export function createAuth(db: Database, environment: Environment) {
         },
         `${environment.betterAuthUrl}/authorize`,
       ),
+      // Issues tokens in-process; its routes stay off the allowlist (http/auth-allowlist.ts).
+      magicLinkPlugin(),
       openAPI({ disableDefaultReference: true }),
     ],
   });

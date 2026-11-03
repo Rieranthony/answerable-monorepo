@@ -10,9 +10,13 @@ import {
   oauthClientAssertions,
   oauthClients,
   oauthRefreshTokens,
+  organizations,
   sessions,
+  ssoProviders,
   users,
+  verifications,
 } from "../db/schema/index.ts";
+import { magicLinkRequests } from "../db/schema/magic-link.ts";
 import { createId } from "../lib/id.ts";
 import {
   startProtocolSweep,
@@ -30,6 +34,8 @@ const none = {
   oauth_refresh_tokens: 0,
   oauth_client_assertions: 0,
   sessions: 0,
+  verifications: 0,
+  magic_link_requests: 0,
 };
 
 beforeAll(async () => {
@@ -52,6 +58,7 @@ afterAll(() => roles?.close());
 beforeEach(async () => {
   await owner.db.delete(sessions);
   await owner.db.delete(oauthClientAssertions);
+  await owner.db.delete(verifications);
 });
 
 async function insertSession(expiresAt: Date) {
@@ -134,6 +141,8 @@ test("the runtime role deletes expired protocol rows, keeps live ones and record
     oauth_refresh_tokens: 1,
     oauth_client_assertions: 1,
     sessions: 1,
+    verifications: 0,
+    magic_link_requests: 0,
   });
 
   expect(await remaining(sessions)).toEqual([liveSession]);
@@ -149,6 +158,77 @@ test("the runtime role deletes expired protocol rows, keeps live ones and record
   ]);
   expect(await auditCount()).toBe(audit);
   expect(await sweepExpiredProtocolRows(runtime.db, 1_000)).toEqual(none);
+});
+
+test("expired verifications go, and live ones stay, in batches", async () => {
+  await owner.db.delete(verifications);
+  const row = (id: string, expiresAt: Date) => ({
+    id,
+    identifier: `magic-link:${id}`,
+    value: "{}",
+    expiresAt,
+  });
+  await owner.db
+    .insert(verifications)
+    .values([
+      row("expired-1", hours(-2)),
+      row("expired-2", hours(-1)),
+      row("expired-3", new Date(Date.now() - 1_000)),
+      row("live", new Date(Date.now() + 60_000)),
+    ]);
+  expect(await sweepExpiredProtocolRows(runtime.db, 2)).toEqual({
+    ...none,
+    verifications: 3,
+  });
+  expect(
+    await owner.db.select({ id: verifications.id }).from(verifications),
+  ).toEqual([{ id: "live" }]);
+});
+
+test("a magic-link request goes seven days after it was made, whatever its expiry and status, and not before", async () => {
+  const organizationId = createId();
+  await owner.db
+    .insert(organizations)
+    .values({ id: organizationId, slug: `sweep-${organizationId}`, name: "S" });
+  const [{ id: providerId }] = (await owner.db
+    .select({ id: ssoProviders.id })
+    .from(ssoProviders)
+    .where(sql`${ssoProviders.organizationId} = ${organizationId}`)) as [
+    { id: string },
+  ];
+  const request = (ageSeconds: number, sendStatus: "sent" | "failed") => ({
+    id: createId(),
+    organizationId,
+    providerId,
+    providerRevision: 1,
+    purpose: "access_removed" as const,
+    email: "person@sweep.example.com",
+    clientHash: "client",
+    // Expired long since, which is no reason to remove it: diagnosis reads it.
+    expiresAt: new Date(Date.now() - 86_400_000 * 30),
+    sendStatus,
+    createdAt: new Date(Date.now() - ageSeconds * 1_000),
+  });
+  const week = 7 * 86_400;
+  const old = [request(week + 60, "sent"), request(week + 60, "failed")];
+  const young = [request(week - 60, "sent"), request(60, "failed")];
+  await owner.db.insert(magicLinkRequests).values([...old, ...young]);
+
+  // Under the runtime login's RLS: only the sweep's own scope can see these rows.
+  expect(await sweepExpiredProtocolRows(runtime.db, 1)).toEqual({
+    ...none,
+    magic_link_requests: 2,
+  });
+  const left = await owner.db
+    .select({ id: magicLinkRequests.id })
+    .from(magicLinkRequests);
+  expect(left.map(({ id }) => id).sort()).toEqual(
+    young.map(({ id }) => id).sort(),
+  );
+  await owner.db
+    .delete(organizations)
+    .where(sql`${organizations.id} = ${organizationId}`);
+  expect(await owner.db.$count(magicLinkRequests)).toBe(0);
 });
 
 test("each batch deletes at most the batch size, oldest first, and the sweep loops until a batch is short", async () => {
@@ -244,7 +324,7 @@ test("the timer sweeps on its interval, skips a tick while a sweep runs and logs
       timers[0]!.callback();
       timers[0]!.callback();
       await until(() => log.mock.calls.length > 0);
-      expect(transaction).toHaveBeenCalledTimes(4);
+      expect(transaction).toHaveBeenCalledTimes(6);
     } finally {
       transaction.mockRestore();
     }

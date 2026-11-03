@@ -54,6 +54,25 @@ export function routingPolicies(
   ];
 }
 
+/** A protocol record of one organisation: only protocol scope writes it or reads it for
+ * sign-in, and administrators read it for diagnosis. Without a scope it holds no rows. */
+export function protocolRecordPolicies(organizationId: PgColumn) {
+  const mode = sql`current_setting('answerable.scope', true)`;
+  const protocol = sql`${mode} = 'protocol'`;
+  return [
+    pgPolicy("protocol_write", {
+      for: "all",
+      using: protocol,
+      withCheck: protocol,
+    }),
+    pgPolicy("protocol_read", {
+      for: "select",
+      using: sql`${mode} in ('platform-read', 'platform-write')
+      or (${mode} in ('tenant-read', 'tenant-write') and ${organizationId} = nullif(current_setting('answerable.tenant', true), '')::uuid)`,
+    }),
+  ];
+}
+
 /** Audit insertion is independent of scope; retained evidence has administrative readers. */
 export function auditPolicies(organizationId: PgColumn) {
   const mode = sql`current_setting('answerable.scope', true)`;

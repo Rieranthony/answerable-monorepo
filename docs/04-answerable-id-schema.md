@@ -4,7 +4,7 @@ This is the current storage contract. [Design](03-answerable-id.md) describes be
 
 ## Service contract
 
-Bun, Hono and Better Auth 1.7.15 use Postgres for identity, sessions, protocol state, policy, audit and command recovery. The baseline has 25 tables, 20 custom functions, 40 triggers, 20 policies and ten RLS-enabled tables. The reviewed migrations hold the custom SQL that drizzle-orm cannot express. A [catalogue-equivalence test](../apps/id/src/db/migrations.integration.test.ts) proves the committed migrations build exactly what the schema modules generate plus those files.
+Bun, Hono and Better Auth 1.7.15 use Postgres for identity, sessions, protocol state, policy, audit and command recovery. The baseline has 26 tables, 20 custom functions, 40 triggers, 22 policies and eleven RLS-enabled tables. The reviewed migrations hold the custom SQL that drizzle-orm cannot express. A [catalogue-equivalence test](../apps/id/src/db/migrations.integration.test.ts) proves the committed migrations build exactly what the schema modules generate plus those files.
 
 ## Entity relationship diagram
 
@@ -19,6 +19,7 @@ erDiagram
   members ||--o{ group_members : receives
   organizations ||--o{ entitlements : assigns
   organizations ||--o{ organization_capabilities : bounds
+  organizations ||--o{ magic_link_requests : mails
   members ||--o{ grant_contexts : authorises
   audit_events ||--o{ audit_event_users : concerns
 ```
@@ -54,6 +55,7 @@ Live uniqueness permits replacements only where explicitly defined. Group assign
 - **An organisation's provider rows.** `sso_providers` holds up to one live row per organisation and kind (a partial unique index). `kind` is immutable. A directory is `oidc`, has its configuration while live and is always `enabled` (`sso_providers_enabled_check`). A `magic_link` row never has configuration, and `enabled` is the organisation's magic-link setting, on this row so that it and the row's `revision` cannot disagree: sessions and grants name a provider row and revision, so turning it off ends those at once and touches nothing else, and turning it back on revives neither, since a new revision never matches an old one. Sign-in by link: Not yet.
 - **Every live organisation has its magic-link row.** The trigger `organizations_magic_link_provider` creates it when an organisation is inserted, on, with `provider_id` `magic-link:<organisation id>`, issuer `urn:answerable:magic-link` and domain `magic-link.invalid`; its function is `SECURITY DEFINER`, since bootstrap inserts the platform organisation before it sets a scope and RLS refuses an invoker's insert. An erased organisation's row is soft-deleted with it and nothing recreates it. Reads treat a live organisation with no row as a fault, and answer 500.
 - **The platform organisation can never use magic links.** `sso_providers_platform_magic_link` refuses `enabled = true` on a row whose organisation has a `system_bindings` row, on any connection (`23514`), and `system_bindings_magic_link`, also `SECURITY DEFINER`, turns the row off when the binding is made, because RLS would filter an invoker's update to no rows without an error.
+- **A magic-link request says what was mailed.** `magic_link_requests` holds one row for each email ID tried to send for a sign-in; a stranger writes none. A `link` row always has its token identifier, browser hash and code HMAC; an `access_removed` row never has them, nor a query to resume (`magic_link_requests_purpose_fields_check`). A row is `sending` from before the send until the answer: only `sent` can ever sign in, so a paused Postmark stops guesses as well as mail. A `failed` row holds Postmark's code and status, loses its row in `verifications` in the same commit and counts against no limit. The row names its provider and revision at issue with no key, as a session's origin does, so that an insert takes no lock on a row commands update. The sweep removes it seven days after it was made. Sign-in by link: Not yet.
 - Native transaction/savepoint scope restores on success/failure; pooled connections retain no tenant authority.
 - Successful effects, audit, audit users and command reservations commit together.
 
@@ -127,9 +129,9 @@ Soft-deleted entitlements, group assignments and memberships have one evidence s
 
 ## Runtime database permissions
 
-Schema owner and runtime roles are separate. Runtime cannot DELETE/TRUNCATE product rows or grant contexts, rewrite audit, write audit users, alter reservations, change system binding, rewrite or delete signing keys, rewrite client-assertion replay markers or create temporary tables. Those privileges, not triggers, keep bindings and operation receipts immutable. Besides the two audit triggers, two more functions run as the table owner, for a magic-link row made with its organisation and turned off with the platform binding; both write fixed values, and execution of them, and of the `uuid_v7()` they use, is revoked from `PUBLIC`. Protocol records retain their consumption contract. Startup checks protected privileges, ownership, `TEMP` and required RLS before listening.
+Schema owner and runtime roles are separate. Runtime cannot DELETE/TRUNCATE product rows or grant contexts (it can delete `magic_link_requests`, which are protocol records the sweep removes), rewrite audit, write audit users, alter reservations, change system binding, rewrite or delete signing keys, rewrite client-assertion replay markers or create temporary tables. Those privileges, not triggers, keep bindings and operation receipts immutable. Besides the two audit triggers, two more functions run as the table owner, for a magic-link row made with its organisation and turned off with the platform binding; both write fixed values, and execution of them, and of the `uuid_v7()` they use, is revoked from `PUBLIC`. Protocol records retain their consumption contract. Startup checks protected privileges, ownership, `TEMP` and required RLS before listening.
 
-RLS protects `groups`, `group_members`, `entitlements`, `organization_capabilities`, `grant_contexts`, `members`, `organization_domains`, `sso_providers`, `audit_events` and `audit_event_users`. Routing SELECT and audit INSERT remain available without scope; a tenant scope reads only its own organisation's domains and SSO providers. Seven transaction scopes select the rows: `protocol`, `platform-read`, `platform-write`, `tenant-read`, `tenant-write`, `policy-user` and `grant-client`. Native broker transactions use protocol scope. Grant admission is the user's `policy-user` scope bound to the authenticating session: it inserts only that session's grant for that user. This is targeted protection, not universal RLS. The [isolation inventory](../reports/answerable-id-isolation-inventory.md) records scopes and trusted exceptions.
+RLS protects `groups`, `group_members`, `entitlements`, `organization_capabilities`, `grant_contexts`, `members`, `organization_domains`, `sso_providers`, `magic_link_requests`, `audit_events` and `audit_event_users`. `magic_link_requests` holds addresses, so with no scope it holds no rows: only `protocol` reads and writes it, and platform and tenant scopes read it, a tenant its own organisation's, for diagnosis. Routing SELECT and audit INSERT remain available without scope; a tenant scope reads only its own organisation's domains and SSO providers. Seven transaction scopes select the rows: `protocol`, `platform-read`, `platform-write`, `tenant-read`, `tenant-write`, `policy-user` and `grant-client`. Native broker transactions use protocol scope. Grant admission is the user's `policy-user` scope bound to the authenticating session: it inserts only that session's grant for that user. This is targeted protection, not universal RLS. The [isolation inventory](../reports/answerable-id-isolation-inventory.md) records scopes and trusted exceptions.
 
 ## Completed administrative operations
 
@@ -143,7 +145,7 @@ Reservations are permanent. Replays return receipts at the original status code,
 
 ## Deferred
 
-ID deletes expired sessions, OAuth access and refresh tokens and client assertions on a timer: protocol expiry is not product deletion and records no audit. Physical product purge jobs and their duration remain deferred. No named-identity recovery feature is required. DNS self-verification, guest opt-in, SCIM, external registration and remote logout delivery are outside this baseline; see the [plan](02-plan.md).
+ID deletes expired sessions, OAuth access and refresh tokens, client assertions and verifications on a timer, and magic-link requests seven days after they were made: protocol expiry is not product deletion and records no audit. Better Auth's own clean-up of `verifications` is off, so no sign-in deletes rows under its locks. Physical product purge jobs and their duration remain deferred. No named-identity recovery feature is required. DNS self-verification, guest opt-in, SCIM, external registration and remote logout delivery are outside this baseline; see the [plan](02-plan.md).
 
 ## Client configuration revisions
 

@@ -52,6 +52,10 @@ function toEnvironment(environment: ReturnType<typeof idConfig.read>) {
     betterAuthUrl: environment.BETTER_AUTH_URL,
     betterAuthSecret: environment.BETTER_AUTH_SECRET,
     betterAuthSecrets: environment.BETTER_AUTH_SECRETS,
+    postmarkServerToken: environment.POSTMARK_SERVER_TOKEN,
+    mailFrom: environment.MAIL_FROM,
+    mailReplyTo: environment.MAIL_REPLY_TO,
+    mailSubjectPrefix: environment.MAIL_SUBJECT_PREFIX,
     trustedOrigins: environment.BETTER_AUTH_TRUSTED_ORIGINS.split(",")
       .map((origin) => origin.trim())
       .filter(Boolean),

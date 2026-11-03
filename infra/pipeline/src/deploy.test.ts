@@ -232,11 +232,12 @@ describe("idEnv and idEnvChecksum", () => {
     expect(Object.keys(values)).toEqual([...Object.keys(ID_ENV)].sort())
   })
 
-  test("add the Google pair and BETTER_AUTH_SECRETS when set, and leave out the Microsoft pair when it is not", () => {
+  test("add the Google pair, BETTER_AUTH_SECRETS and POSTMARK_SERVER_TOKEN when set, and leave out the Microsoft pair when it is not", () => {
     const required = { BETTER_AUTH_SECRET: ID_ENV.BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET: ID_ENV.ROOT_ADMIN_SECRET }
-    const values = idEnv({ ...required, GOOGLE_CLIENT_ID: "google-id", GOOGLE_CLIENT_SECRET: "google-secret", BETTER_AUTH_SECRETS: '[{"version":2}]' })
-    expect(Object.keys(values)).toEqual(["BETTER_AUTH_SECRET", "BETTER_AUTH_SECRETS", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "ROOT_ADMIN_SECRET"])
-    expect(idEnv({ ...required, BETTER_AUTH_SECRETS: " " })).toEqual(required)
+    const values = idEnv({ ...required, GOOGLE_CLIENT_ID: "google-id", GOOGLE_CLIENT_SECRET: "google-secret", BETTER_AUTH_SECRETS: '[{"version":2}]', POSTMARK_SERVER_TOKEN: "postmark-token" })
+    expect(Object.keys(values)).toEqual(["BETTER_AUTH_SECRET", "BETTER_AUTH_SECRETS", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "POSTMARK_SERVER_TOKEN", "ROOT_ADMIN_SECRET"])
+    // A secret the environment does not hold reaches the step empty, and id-env leaves it out.
+    expect(idEnv({ ...required, BETTER_AUTH_SECRETS: " ", POSTMARK_SERVER_TOKEN: "" })).toEqual(required)
   })
 
   test("refuse a required secret that is empty, naming every one, and half a pair", () => {

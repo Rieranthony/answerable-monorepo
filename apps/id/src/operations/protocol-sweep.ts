@@ -1,29 +1,45 @@
 import { sql } from "drizzle-orm";
 
 import type { Database } from "../db/client.ts";
+import { setDatabaseScope } from "../db/isolation.ts";
 import { errorFields } from "../http/problem.ts";
 import { logEvent } from "../lib/log.ts";
 
 /**
  * Protocol rows that expire, in sweep order. Access tokens go before refresh
  * tokens so the counts name every expired access row: refresh deletion
- * cascades through `refresh_id` without reporting. Sessions go last: deleting
- * one sets `session_id` to null on the live tokens that still name it.
+ * cascades through `refresh_id` without reporting. Sessions go after the
+ * tokens: deleting one sets `session_id` to null on the live tokens that still
+ * name it. Verifications and magic-link requests name none of these, and no
+ * key joins them to each other.
  */
 const tables = [
   "oauth_access_tokens",
   "oauth_refresh_tokens",
   "oauth_client_assertions",
   "sessions",
+  "verifications",
+  "magic_link_requests",
 ] as const;
 
 type ProtocolSweepCounts = Record<(typeof tables)[number], number>;
 
+/** Which of a table's rows are due, and the indexed column that orders them. */
+function dueRows(table: (typeof tables)[number]) {
+  return table === "magic_link_requests"
+    ? // A request outlives its link so that diagnosis can read it.
+      {
+        order: sql`created_at`,
+        due: sql`created_at < now() - interval '7 days'`,
+      }
+    : { order: sql`expires_at`, due: sql`expires_at < now()` };
+}
+
 /**
- * Delete rows whose `expires_at` has passed, one short transaction per batch.
- * A rotated refresh row stays until its own expiry: the provider checks expiry
- * before reuse, so the row matters only while it is live. One sweep at a time
- * across processes: a batch that cannot take the lock ends this sweep.
+ * Delete rows that are due, one short transaction per batch. A rotated refresh
+ * row stays until its own expiry: the provider checks expiry before reuse, so
+ * the row matters only while it is live. One sweep at a time across processes:
+ * a batch that cannot take the lock ends this sweep.
  */
 export async function sweepExpiredProtocolRows(
   db: Database,
@@ -35,6 +51,7 @@ export async function sweepExpiredProtocolRows(
   ) as ProtocolSweepCounts;
   for (const table of tables) {
     const name = sql.identifier(table);
+    const { order, due } = dueRows(table);
     for (;;) {
       if (isStopping()) return deleted;
       const count = await db.transaction(async (tx) => {
@@ -42,10 +59,11 @@ export async function sweepExpiredProtocolRows(
           sql`select pg_try_advisory_xact_lock(hashtext('answerable:protocol-sweep')) as locked`,
         );
         if (!lock.rows[0]!.locked) return undefined;
+        await setDatabaseScope(tx, { kind: "protocol" });
         // The array keeps both lookups on indexes at any table size: the
-        // batch on `expires_at`, the delete on the primary key.
+        // batch on its time column, the delete on the primary key.
         const result = await tx.execute(
-          sql`delete from ${name} where id = any(array(select id from ${name} where expires_at < now() order by expires_at limit ${batchSize}))`,
+          sql`delete from ${name} where id = any(array(select id from ${name} where ${due} order by ${order} limit ${batchSize}))`,
         );
         return result.rowCount!;
       });

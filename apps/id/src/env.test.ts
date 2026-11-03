@@ -41,6 +41,10 @@ describe("unit: environment", () => {
       "GOOGLE_CLIENT_SECRET",
       "MICROSOFT_CLIENT_ID",
       "MICROSOFT_CLIENT_SECRET",
+      "POSTMARK_SERVER_TOKEN",
+      "MAIL_FROM",
+      "MAIL_REPLY_TO",
+      "MAIL_SUBJECT_PREFIX",
       "BETTER_AUTH_TRUSTED_ORIGINS",
       "ROOT_ADMIN_SECRET",
       "ROOT_ADMIN_BREAK_GLASS",
@@ -58,6 +62,10 @@ describe("unit: environment", () => {
       betterAuthUrl: requiredEnvironment.BETTER_AUTH_URL,
       betterAuthSecret: requiredEnvironment.BETTER_AUTH_SECRET,
       betterAuthSecrets: undefined,
+      postmarkServerToken: undefined,
+      mailFrom: "Answerable ID <sign-in@id.answerable.org>",
+      mailReplyTo: "support@answerable.org",
+      mailSubjectPrefix: undefined,
       trustedOrigins: ["https://auth.example.com"],
       platformApplications: {},
       trustedProxyCidrs: ["10.0.0.0/8", "2001:db8::/32"],
@@ -95,6 +103,33 @@ describe("unit: environment", () => {
         trustedProxyCidrs: [],
         openApiEnabled: true,
       });
+  });
+
+  test("reads the mail settings, and refuses a line break in a header", () => {
+    expect(
+      parseEnvironment({
+        POSTMARK_SERVER_TOKEN: "postmark-token",
+        MAIL_FROM: "ID <sign-in@id.example.com>",
+        MAIL_REPLY_TO: "help@example.com",
+        MAIL_SUBJECT_PREFIX: "[staging]",
+      }),
+    ).toMatchObject({
+      postmarkServerToken: "postmark-token",
+      mailFrom: "ID <sign-in@id.example.com>",
+      mailReplyTo: "help@example.com",
+      mailSubjectPrefix: "[staging]",
+    });
+    expect(parseEnvironment({ POSTMARK_SERVER_TOKEN: " " })).toMatchObject({
+      postmarkServerToken: undefined,
+    });
+    for (const [name, value] of [
+      ["MAIL_FROM", "ID <a@b.example>\r\nBcc: c@d.example"],
+      ["MAIL_SUBJECT_PREFIX", "[staging]\nBcc: c@d.example"],
+      ["MAIL_REPLY_TO", "not an address"],
+    ] as const)
+      expect(() => parseEnvironment({ [name]: value })).toThrow(
+        `Invalid ID configuration: ${name}: `,
+      );
   });
 
   test("listens on loopback unless ID_HOST names another address, as the image does", () => {

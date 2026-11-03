@@ -18,6 +18,7 @@ COPY --from=manifests /src ./
 RUN --mount=type=cache,target=/root/.bun/install/cache,sharing=locked bun install --frozen-lockfile --filter @answerable/id
 COPY packages/config packages/config
 COPY packages/countries packages/countries
+COPY packages/emails packages/emails
 COPY packages/ui packages/ui
 COPY apps/id apps/id
 RUN bun run --filter @answerable/id build

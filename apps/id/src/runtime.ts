@@ -8,6 +8,8 @@ import type { Environment } from "./env.ts";
 import { assertRuntimeRole } from "./db/runtime-role.ts";
 import { createOperationalMetrics } from "./operations/metrics.ts";
 import { startProtocolSweep } from "./operations/protocol-sweep.ts";
+import { createMailTransport } from "./services/mail-transport.ts";
+import { createMagicLinkRequests } from "./services/magic-link-requests.ts";
 import { symmetricDecrypt } from "better-auth/crypto";
 import { desc } from "drizzle-orm";
 
@@ -48,6 +50,7 @@ export async function startRuntime(
     databaseFactory = createDatabase,
     authFactory = createAuth,
     signingKeyCheck = assertSigningKeyReadable,
+    mailTransport = createMailTransport,
   }: {
     /** Tests only: NODE_ENV=test drops Better Auth's origin checks and the role check. */
     allowTestEnvironment?: boolean;
@@ -56,6 +59,8 @@ export async function startRuntime(
     authFactory?: typeof createAuth;
     /** Tests with a stub auth have no secrets to check. */
     signingKeyCheck?: typeof assertSigningKeyReadable;
+    /** Tests read what was sent from memory: nothing reaches Postmark. */
+    mailTransport?: typeof createMailTransport;
   } = {},
 ) {
   if (environment.nodeEnv === "test" && !allowTestEnvironment)
@@ -64,6 +69,7 @@ export async function startRuntime(
     );
   const database = databaseFactory(environment);
   let server: Bun.Server<undefined>;
+  let magicLinks: ReturnType<typeof createMagicLinkRequests>;
   const metrics = createOperationalMetrics(database.pool);
   try {
     if (environment.nodeEnv !== "test") await assertRuntimeRole(database.db);
@@ -84,6 +90,12 @@ export async function startRuntime(
     );
     const auth = authFactory(database.db, environment);
     await signingKeyCheck(database.db, auth);
+    magicLinks = createMagicLinkRequests({
+      auth,
+      db: database.db,
+      environment,
+      transport: mailTransport(environment),
+    });
     const app = createApp({ auth, db: database.db, environment, metrics });
     server = Bun.serve({
       hostname: environment.hostname,
@@ -116,9 +128,11 @@ export async function startRuntime(
     clearInterval(reporter);
 
     await server.stop();
+    // Before the database closes: each job has a row to finish.
+    await magicLinks.drain();
     await sweep.stop();
     await database.close();
   }
 
-  return { database, server, shutdown, metrics };
+  return { database, server, shutdown, metrics, magicLinks };
 }

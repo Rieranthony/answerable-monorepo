@@ -77,7 +77,7 @@ The Toolbox and the admin MCP call ID at its public issuer, through Cloudflare, 
 | Who or what | Holds | Reaches |
 | --- | --- | --- |
 | **The owner** | Each Civo account's API key, each zone's Cloudflare token, the Entra app's credentials and a fine-grained GitHub token, pasted once into each GitHub environment and kept in the vendors' consoles | Everything, through GitHub; the Civo dashboard for break-glass |
-| **The `staging` GitHub environment** | The five pasted secrets (`CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `GH_SECRETS_TOKEN`); what `bootstrap.yml` generates (`STATE_ACCESS_KEY_ID`, `STATE_SECRET_ACCESS_KEY`, `BETTER_AUTH_SECRET`, `ROOT_ADMIN_SECRET`); what Terraform writes (`KUBE_SERVER`, `KUBE_CA`, `KUBE_TOKEN`); optionally `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BETTER_AUTH_SECRETS` | Deployments from `main` and the tags `staging/*` only. Each workflow step is handed only the secrets it names |
+| **The `staging` GitHub environment** | The five pasted secrets (`CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `GH_SECRETS_TOKEN`); what `bootstrap.yml` generates (`STATE_ACCESS_KEY_ID`, `STATE_SECRET_ACCESS_KEY`, `BETTER_AUTH_SECRET`, `ROOT_ADMIN_SECRET`); what Terraform writes (`KUBE_SERVER`, `KUBE_CA`, `KUBE_TOKEN`); optionally `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BETTER_AUTH_SECRETS`, `POSTMARK_SERVER_TOKEN` | Deployments from `main` and the tags `staging/*` only. Each workflow step is handed only the secrets it names |
 | **The `production` GitHub environment** | The same for production, behind the owner's approval | `main` and `production/*` only, with the owner as required reviewer |
 | **The `deployer` ServiceAccount** | A token Terraform creates and writes into the environment | Only what `helm upgrade` of `charts/answerable` touches in `answerable`: no other namespace, no wildcard, no `escalate`, `bind`, `impersonate` or `exec` |
 
@@ -154,7 +154,7 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 
 | Secret in `answerable` | Keys | Written by | Rotated by |
 | --- | --- | --- | --- |
-| `id-env` | `BETTER_AUTH_SECRET`, `ROOT_ADMIN_SECRET`; `MICROSOFT_CLIENT_ID` with `MICROSOFT_CLIENT_SECRET`, the Google pair and `BETTER_AUTH_SECRETS` when set | The deploy, from the GitHub environment, on every tag | `bootstrap.yml` with `rotate`, or a new value in the environment; the next tag applies it and rolls ID |
+| `id-env` | `BETTER_AUTH_SECRET`, `ROOT_ADMIN_SECRET`; `MICROSOFT_CLIENT_ID` with `MICROSOFT_CLIENT_SECRET`, the Google pair, `BETTER_AUTH_SECRETS` and `POSTMARK_SERVER_TOKEN` when set | The deploy, from the GitHub environment, on every tag | `bootstrap.yml` with `rotate`, or a new value in the environment; the next tag applies it and rolls ID |
 | `postgres-admin` | `OPS_DATABASE_ADMIN_URL` | Terraform, from the database's administrator login | Civo rotates the administrator; `terraform apply` rewrites the Secret |
 | `origin-tls` | `tls.crt`, `tls.key`: the Origin CA certificate for the four hostnames, 15 years | Terraform | `terraform apply -replace` on its key |
 | `cloudflare-origin-pull-ca` | `ca.crt`, public | The platform chart, from the edge module's CA | `terraform apply -replace` on the CA's key |

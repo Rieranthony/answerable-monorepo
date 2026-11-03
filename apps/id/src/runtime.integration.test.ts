@@ -1,11 +1,23 @@
+import { createMemoryTransport } from "@answerable/emails/testing";
 import { expect, mock, test } from "bun:test";
+import { eq } from "drizzle-orm";
 
+import { browser, client } from "./__tests__/magic-link-requests.ts";
+import { createRuntimeLogin } from "./__tests__/runtime-role.ts";
 import { testEnvironment } from "./__tests__/support.ts";
 import { assertDisposableTestDatabase } from "./__tests__/test-database.ts";
 import { createAuth } from "./auth.ts";
 import type { BootstrapResult } from "./bootstrap.ts";
 import { createDatabase } from "./db/client.ts";
-import { jwks } from "./db/schema/index.ts";
+import {
+  jwks,
+  magicLinkRequests,
+  members,
+  organizationDomains,
+  organizations,
+  users,
+} from "./db/schema/index.ts";
+import { createId } from "./lib/id.ts";
 import { startRuntime } from "./runtime.ts";
 
 const seedResult: BootstrapResult = {
@@ -72,6 +84,87 @@ test("startup refuses secrets that cannot decrypt the newest signing key, before
   } finally {
     console.log = original;
     await owner.db.delete(jwks);
+    await owner.close();
+  }
+});
+
+test("shutdown finishes queued mail, row and all, before the database closes", async () => {
+  assertDisposableTestDatabase("shutdown drain");
+  const owner = createDatabase(testEnvironment());
+  const login = await createRuntimeLogin(owner.db, testEnvironment(), {
+    port: await freePort(),
+    databasePoolMax: 2,
+  });
+  const organizationId = createId();
+  const domain = `drain-${organizationId}.example.com`;
+  await owner.db.insert(organizations).values({
+    id: organizationId,
+    slug: `drain-${organizationId}`,
+    name: "Drain",
+  });
+  await owner.db.insert(organizationDomains).values({
+    id: createId(),
+    organizationId,
+    domain,
+  });
+  const emails = Array.from(
+    { length: 12 },
+    (_, index) => `person${index}@${domain}`,
+  );
+  for (const email of emails) {
+    const userId = createId();
+    await owner.db
+      .insert(users)
+      .values({ id: userId, name: email, email, status: "active" });
+    await owner.db
+      .insert(members)
+      .values({ id: createId(), organizationId, userId });
+  }
+  const memory = createMemoryTransport();
+  const { log } = console;
+  console.log = () => {};
+  try {
+    const runtime = await startRuntime(login.environment, {
+      allowTestEnvironment: true,
+      seed: async () => seedResult,
+      mailTransport: () => ({
+        // Slow enough that most of these are still queued when the shutdown starts.
+        send: async (message) => {
+          await Bun.sleep(40);
+          return memory.send(message);
+        },
+      }),
+    });
+    for (const address of emails)
+      expect(
+        runtime.magicLinks.request({
+          address,
+          browser,
+          client,
+          pendingQuery: null,
+        }),
+      ).toBe(true);
+    await runtime.shutdown();
+
+    expect(runtime.database.pool.ended).toBe(true);
+    expect(memory.sent.map(({ to }) => to).sort()).toEqual([...emails].sort());
+    const rows = await owner.db
+      .select({ sendStatus: magicLinkRequests.sendStatus })
+      .from(magicLinkRequests)
+      .where(eq(magicLinkRequests.organizationId, organizationId));
+    expect(rows).toEqual(emails.map(() => ({ sendStatus: "sent" })));
+    // The server has gone, and so has the queue.
+    expect(
+      runtime.magicLinks.request({
+        address: emails[0]!,
+        browser,
+        client,
+        pendingQuery: null,
+      }),
+    ).toBe(false);
+  } finally {
+    console.log = log;
+    await login.drop();
     await owner.close();
   }
 });

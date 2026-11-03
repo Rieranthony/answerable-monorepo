@@ -1,6 +1,6 @@
 # Answerable ID database isolation inventory
 
-The migrations protect ten tables: `groups`, `group_members`, `entitlements`, `organization_capabilities`, `grant_contexts`, `members`, `organization_domains`, `sso_providers`, `audit_events` and `audit_event_users`. Runtime startup checks protection/privileges. Service contexts, database predicates, native broker verification and parent locks remain necessary; this is not universal RLS.
+The migrations protect eleven tables: `groups`, `group_members`, `entitlements`, `organization_capabilities`, `grant_contexts`, `members`, `organization_domains`, `sso_providers`, `magic_link_requests`, `audit_events` and `audit_event_users`. Runtime startup checks protection/privileges. Service contexts, database predicates, native broker verification and parent locks remain necessary; this is not universal RLS.
 
 ## Current query boundary review
 

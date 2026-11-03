@@ -43,6 +43,13 @@
       "when": 1793714862703,
       "tag": "0005_magic_link_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793725115162,
+      "tag": "0006_magic_link_requests",
+      "breakpoints": true
     }
   ]
 }

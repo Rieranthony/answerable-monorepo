@@ -152,14 +152,23 @@ export function authTransaction(adapter: object): Executor {
   return tx;
 }
 
-/** Run a grant in one Better Auth transaction, with its bound adapter and
- * executor; a retryable database failure answers temporarily_unavailable. */
-export async function grantTransaction<T>(
+/** One Better Auth transaction in protocol scope, with its bound adapter and executor;
+ * anything Better Auth writes from inside `run` joins it. */
+export async function authenticationTransaction<T>(
   adapter: DBAdapter,
   run: (bound: DBTransactionAdapter, tx: Executor) => Promise<T>,
 ): Promise<T> {
   return await runWithTransaction(adapter, async () => {
     const bound = await getCurrentAdapter(adapter);
     return run(bound, authTransaction(bound));
-  }).catch(rethrowGrantError);
+  });
+}
+
+/** Run a grant in one Better Auth transaction; a retryable database failure answers
+ * temporarily_unavailable. */
+export async function grantTransaction<T>(
+  adapter: DBAdapter,
+  run: (bound: DBTransactionAdapter, tx: Executor) => Promise<T>,
+): Promise<T> {
+  return await authenticationTransaction(adapter, run).catch(rethrowGrantError);
 }

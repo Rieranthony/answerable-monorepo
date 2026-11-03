@@ -6,5 +6,5 @@ coverageSkipTestFiles = true
 coverageThreshold = { lines = 1, functions = 1 }
 coverageReporter = ["text", "lcov"]
 coverageDir = "coverage"
-# @answerable/auth and @answerable/config are measured by their own suites; ID only imports the verifier and the definition.
-coveragePathIgnorePatterns = ["src/**/*.test.ts", "src/__tests__/**", "src/server.ts", "../../packages/auth/**", "../../packages/config/**"]
+# @answerable/auth, @answerable/config and @answerable/emails are measured by their own suites; ID only imports the verifier, the definition and the mail.
+coveragePathIgnorePatterns = ["src/**/*.test.ts", "src/__tests__/**", "src/server.ts", "../../packages/auth/**", "../../packages/config/**", "../../packages/emails/**"]

@@ -13,6 +13,12 @@ export type LifecycleStatus = (typeof lifecycleStatuses)[number];
 export const ssoProviderKinds = ["oidc", "magic_link"] as const;
 export type SsoProviderKind = (typeof ssoProviderKinds)[number];
 
+/** What a sign-in request mailed: a link and a code, or word that access was removed. */
+export const magicLinkPurposes = ["link", "access_removed"] as const;
+
+/** A request is `sending` from before the send until its answer. Only `sent` can sign in. */
+export const magicLinkSendStatuses = ["sending", "sent", "failed"] as const;
+
 /** The principal responsible for an audit event. */
 export const auditActorTypes = ["user", "client", "system"] as const;
 export type AuditActorType = (typeof auditActorTypes)[number];

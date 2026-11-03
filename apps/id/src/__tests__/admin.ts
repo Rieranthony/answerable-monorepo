@@ -324,6 +324,7 @@ export async function createAdminFixture(
       return headers;
     }
     return {
+      auth,
       app,
       db,
       /** The connection the app serves on: the runtime role when restricted. */

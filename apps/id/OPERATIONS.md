@@ -29,13 +29,21 @@ usage from these aggregates.
 
 **Protocol sweep.** Every 60 seconds each process deletes expired rows from
 `oauth_access_tokens`, `oauth_refresh_tokens` (with the access tokens that name
-them), `oauth_client_assertions` and `sessions`, in transactions of at most 1,000
-rows. An advisory lock lets one process delete at a time. A run that deleted rows
-writes `[id] protocol sweep` with the count per table; expiry records no audit.
-Better Auth deletes expired `verifications` itself.
+them), `oauth_client_assertions`, `sessions` and `verifications`, and
+`magic_link_requests` seven days after they were made, in transactions of at most
+1,000 rows. An advisory lock lets one process delete at a time. A run that deleted
+rows writes `[id] protocol sweep` with the count per table; expiry records no audit.
+
+**Magic-link mail.** Each process sends at most 5 at a time, holds at most 500 waiting
+and drops the rest; no connection is held through a send. Limits hold across replicas,
+in Postgres: per address and client 1 in 60 s and 5 in an hour, per address 50 in a day,
+per organisation 5,000 in an hour. Both sets of numbers are judgement until staging
+measures them: `src/services/magic-link-requests.ts`.
 
 **Shutdown.** On `SIGINT` or `SIGTERM` the process stops listening, waits for
-in-flight requests, stops the sweep after its running batch and closes the pool.
+in-flight requests, finishes queued mail for at most 22 s, stops the sweep after its
+running batch and closes the pool. The chart's 30 s grace period less its 5 s preStop
+sleep leaves 25 s, and one send takes at most 21 s: 10 s, 1 s, then a retry of 10 s.
 
 ## Signals
 
@@ -53,6 +61,11 @@ or budget is configured here.
 | Rising `token_rejected` or `signin_rejected` (`[id] auth`)              | Refusals that verified no client or identity, logged instead of audited: a misconfigured client or directory, or credential stuffing; compare with 429s and the edge rate limits |
 | `[id] admin` `admin_auth_refused`, repeated                             | A missing or invalid credential on `/api/admin` (`reason` `unauthenticated` or `invalid_token`, with request id, address and path); no audit row is written. Compare the addresses with the ingress log |
 | `SigningKeyCustodyError` at startup                                     | The configured application secrets cannot decrypt the newest signing key: deliver the version that encrypted it; never delete the key       |
+| `[id] mail` `postmark_server_token_missing` at startup                  | Production with no `POSTMARK_SERVER_TOKEN`: ID sends no mail, and every request is a failed send. Deliver the token                          |
+| `[id] magic link` `magic_link_send_failed`                              | `errorCode` and `httpStatus` are Postmark's; 406 is a suppressed address, which staff reactivate in Postmark. The address is in that row of `magic_link_requests`, under its `requestId`, for seven days. No code and no status: Postmark was not reached |
+| `[id] magic link` `magic_link_request`, `outcome` `limited`             | `limit` names which. `organization_hour`, repeated: someone is requesting mail for many real addresses at that firm                        |
+| `[id] magic link` `magic_link_queue_overflow`, or `magic_link_queue_abandoned` | Requests were told to check their email and got none. `dropped`, `abandoned` and `running` are counts. Compare with Postmark's status and the pool |
+| `[id] magic link` `magic_link_job_failed`                               | A job threw before its row was final; read the class and SQLSTATE. Its row, if any, stays `sending`, which signs nobody in                 |
 | `protocol_sweep_failed`, repeated                                       | Check database availability and lock waits; expired protocol rows accumulate until a sweep succeeds                                          |
 | `shutdown_failed`                                                       | The process exited with status 1 before closing cleanly; read the class                                                                      |
 | Missing process summaries                                               | Check process health and collector delivery before interpreting demand                                                                       |
@@ -71,6 +84,8 @@ restored keys, and never edit or delete a JWKS row to force rotation.
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | Application secret           | `BETTER_AUTH_SECRET` and the optional `BETTER_AUTH_SECRETS` ring; encrypts the signing keys, signs browser cookies | [README](README.md#application-secret-rotation); promotion signs everyone out |
 | Platform application secrets | `GOOGLE_CLIENT_SECRET` and `MICROSOFT_CLIENT_SECRET`, environment only, never in PostgreSQL                     | [docs/06](../../docs/06-deploying-answerable-id.md#operating-it)        |
+| Magic-link keys              | Derived from the application secret that writes, one per label; they hash codes and client addresses            | With that secret. A code issued before a promotion stops matching: ask again |
+| Postmark server token        | `POSTMARK_SERVER_TOKEN`, environment only, never in PostgreSQL                                                  | Replace it in Postmark and the environment, then ship                    |
 | Database credentials         | Separate migration and runtime logins                                                                           | [Infrastructure runbook](../../infra/README.md#rotate)                   |
 | Root secret                  | `ROOT_ADMIN_SECRET`, break-glass only                                                                           | [Infrastructure runbook](../../infra/README.md#rotate)                   |
 

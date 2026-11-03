@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@answerable/config": "workspace:*",
+    "@answerable/emails": "workspace:*",
     "@better-auth/core": "1.7.15",
     "@better-auth/drizzle-adapter": "1.7.15",
     "@better-auth/oauth-provider": "1.7.15",

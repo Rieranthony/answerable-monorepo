@@ -242,6 +242,13 @@ async function deployedDatabase() {
       });
       await runMigrations(schemaOwner.db, folder);
     },
+    /** Migrate only as far as the release before magic-link requests. */
+    async migrateBeforeRequests() {
+      await editJournal(folder, (entries) => {
+        entries.splice(6);
+      });
+      await runMigrations(schemaOwner.db, folder);
+    },
     async close() {
       await runtimeLogin.close();
       await schemaOwner.close();
@@ -371,6 +378,116 @@ test("migrating from the previous release as the schema owner gives each live or
       "select relforcerowsecurity as forced from pg_class where relname = 'sso_providers'",
     );
     expect(forced).toEqual([{ forced: false }]);
+  } finally {
+    await deployed.close();
+  }
+}, 30_000);
+
+test("migrating real rows from the release before requests touches them, and the runtime login reaches a request only through its scope", async () => {
+  const deployed = await deployedDatabase();
+  const tuples = async () =>
+    (
+      await deployed.owner.pool.query<Record<string, unknown>>(`
+        select 'organizations' as source, id::text, xmin::text as tuple_writer from organizations
+        union all select 'sso_providers', id::text, xmin::text from sso_providers
+        union all select 'users', id::text, xmin::text from users
+        union all select 'members', id::text, xmin::text from members
+        union all select 'domains', id::text, xmin::text from organization_domains
+        order by 1, 2`)
+    ).rows;
+  const newRequest = (organization: string, provider: string) =>
+    `insert into magic_link_requests (id, organization_id, provider_id, provider_revision, purpose, email, client_hash, expires_at)
+     values ('${Bun.randomUUIDv7()}', '${organization}', '${provider}', 1, 'access_removed', 'person@one.example.com', 'client', now())`;
+  try {
+    await deployed.migrateBeforeRequests();
+    await deployed.owner.pool.query(`
+      insert into organizations (id, slug, name) values
+        ('${id(1)}', 'one', 'One'), ('${id(2)}', 'two', 'Two');
+      insert into organization_domains (id, organization_id, domain) values
+        ('${id(3)}', '${id(1)}', 'one.example.com');
+      insert into users (id, name, email, status) values
+        ('${id(4)}', 'Person', 'person@one.example.com', 'active');
+      insert into members (id, organization_id, user_id) values
+        ('${id(5)}', '${id(1)}', '${id(4)}');
+    `);
+    const before = await tuples();
+    expect(before).toHaveLength(7);
+    const { rows: missing } = await deployed.owner.pool.query(
+      "select to_regclass('magic_link_requests') as found",
+    );
+    expect(missing).toEqual([{ found: null }]);
+
+    expect(await runMigrations(deployed.owner.db)).toEqual({ ahead: false });
+    expect(await tuples()).toEqual(before);
+    await configureRuntimeRole(deployed.owner.db, deployed.runtimeRole);
+
+    const { rows: providers } = await deployed.owner.pool.query<{
+      id: string;
+      organization_id: string;
+    }>(
+      "select id, organization_id from sso_providers where kind = 'magic_link' order by organization_id",
+    );
+    const [first, second] = providers;
+    const client = await deployed.runtime.pool.connect();
+    const scoped = async (scope: string, tenant: string, statement: string) => {
+      await client.query("begin");
+      try {
+        await client.query(
+          `select set_config('answerable.scope', $1, true), set_config('answerable.tenant', $2, true)`,
+          [scope, tenant],
+        );
+        return await client.query(statement);
+      } finally {
+        await client.query("rollback");
+      }
+    };
+    try {
+      // With no scope the runtime login reads nothing and writes nothing.
+      await deployed.owner.pool.query(newRequest(id(1), first!.id));
+      expect(
+        (await client.query("select * from magic_link_requests")).rows,
+      ).toEqual([]);
+      await expect(
+        client.query(newRequest(id(1), first!.id)),
+      ).rejects.toMatchObject({ code: "42501" });
+
+      // Protocol scope does both, and the sweep's delete is granted.
+      expect(
+        (await scoped("protocol", "", "select * from magic_link_requests"))
+          .rows,
+      ).toHaveLength(1);
+      await scoped("protocol", "", newRequest(id(2), second!.id));
+      expect(
+        (await scoped("protocol", "", "delete from magic_link_requests"))
+          .rowCount,
+      ).toBe(1);
+
+      // A firm reads its own, and not another's.
+      expect(
+        (
+          await scoped(
+            "tenant-read",
+            id(1),
+            "select * from magic_link_requests",
+          )
+        ).rows,
+      ).toHaveLength(1);
+      expect(
+        (
+          await scoped(
+            "tenant-read",
+            id(2),
+            "select * from magic_link_requests",
+          )
+        ).rows,
+      ).toEqual([]);
+    } finally {
+      client.release();
+    }
+
+    // A repeated run has nothing to do, and the grants stay.
+    expect(await runMigrations(deployed.owner.db)).toEqual({ ahead: false });
+    expect(await tuples()).toEqual(before);
   } finally {
     await deployed.close();
   }

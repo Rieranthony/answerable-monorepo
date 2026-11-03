@@ -37,6 +37,7 @@ const rlsTables = [
   "members",
   "organization_domains",
   "sso_providers",
+  "magic_link_requests",
   "audit_events",
   "audit_event_users",
 ];

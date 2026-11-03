@@ -105,8 +105,8 @@ const ID_ENV_PAIRS = [
   ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"],
   ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
 ] as const
-/** ID's versioned ring of authentication secrets, from its first rotation on (infra/README.md, The application secret). */
-const ID_ENV_OPTIONAL = ["BETTER_AUTH_SECRETS"] as const
+/** ID's versioned ring of authentication secrets, from its first rotation on (infra/README.md, The application secret), and its Postmark server's token. */
+const ID_ENV_OPTIONAL = ["BETTER_AUTH_SECRETS", "POSTMARK_SERVER_TOKEN"] as const
 /**
  * Every variable `id-env` can hold: the deploy's contract with ID. deploy.test.ts holds it to the variables ID's
  * definition says the deploy delivers (packages/config/inventory.json) and to the deploy step of both workflows.
@@ -115,8 +115,8 @@ export const ID_ENV_NAMES = [...ID_ENV_REQUIRED, ...ID_ENV_PAIRS.flat(), ...ID_E
 
 /**
  * The values of the Secret `id-env`, from the deploy's environment: the two required secrets, each platform
- * application's pair when both halves are set, and `BETTER_AUTH_SECRETS` when it is. Refuses an empty required value
- * and half a pair, naming the variables, never a value.
+ * application's pair when both halves are set, and `BETTER_AUTH_SECRETS` and `POSTMARK_SERVER_TOKEN` when each is. Refuses
+ * an empty required value and half a pair, naming the variables, never a value.
  */
 export function idEnv(env: Deps["env"]): Record<string, string> {
   const value = (name: string) => env[name]?.trim() || undefined
