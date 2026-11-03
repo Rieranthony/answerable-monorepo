@@ -9,6 +9,7 @@ import { roleOf, roles, type Role, type Roles } from "./roles"
 import { staffWrites } from "./staff"
 import { standaloneWrites } from "./standalone"
 import { toolboxWrites, type ToolboxAdmin } from "./toolbox"
+import { userWrites } from "./users"
 import { createOrganisations, memberId, missingMember, missingOrganisation, organizationId, scopes, type Writes } from "./writes"
 
 const time = z.iso.datetime()
@@ -227,10 +228,10 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
   const writes: Writes = { calls, role, platform, resource, fresh, ...createOrganisations({ calls, authority, platform, fresh }) }
   const provider = defineProvider({
     id: "admin", version: "2026-10-01",
-    description: "Answerable's staff-only admin MCP: organisations, members, groups, access, single sign-on, the audit log, the Toolbox and standalone MCPs in Answerable ID, each tool behind a staff role.",
+    description: "Answerable's staff-only admin MCP: organisations, users and members (including stopping someone), groups, access, single sign-on, the audit log, the Toolbox and standalone MCPs in Answerable ID, each tool behind a staff role.",
     tools: [
       whoami, organisationsList, organisationsGet, membersList, membersGet, groupsList, accessList, auditList, ssoTest, staffList,
-      ...organisationWrites(writes), ...accessWrites(writes, standaloneOrigin), ...toolboxWrites(writes, toolbox), ...standaloneWrites(writes, standaloneOrigin), ...staffWrites(writes),
+      ...organisationWrites(writes), ...accessWrites(writes, standaloneOrigin), ...toolboxWrites(writes, toolbox), ...standaloneWrites(writes, standaloneOrigin), ...staffWrites(writes), ...userWrites(writes),
     ],
   })
   /** The least role a tool needs; null: any member of the platform organisation. */

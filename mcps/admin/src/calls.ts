@@ -17,8 +17,12 @@ function upstream(error: unknown): never {
   throw new ToolError("UPSTREAM_REJECTED", error.message, { details: { upstream: { status: error.status, code: error.code ?? null } } })
 }
 
-/** What a write to ID sends besides its path: the body, a precondition and the idempotency key, the intent's id (`<intent id>.<step>` for one of several writes). */
-type Write = { body?: unknown; ifMatch?: string; ifNoneMatch?: "*"; key: string }
+/**
+ * What a write to ID sends besides its path: the body, a precondition and the idempotency key, the intent's id (`<intent id>.<step>` for one of several
+ * writes). `scope: "users"` sends it with the machine client's `platform:read platform:users` token, which ID's commands on a user and on a membership
+ * check and `platform:write` does not include; every other write goes with `platform:read platform:write`.
+ */
+type Write = { body?: unknown; ifMatch?: string; ifNoneMatch?: "*"; key: string; scope?: "users" }
 
 /**
  * ID's admin API as the tools call it: every call carries the call's execution id as `x-request-id`, and every failure answers the error a model
@@ -63,8 +67,8 @@ export function createCalls(id: IdAdmin) {
    * every command (`apps/id/src/http/admin/command.ts`), throwing when it is missing, and the id of the row it made or changed, which a replayed
    * answer carries in its receipt; a `204` has none.
    */
-  async function write(method: "POST" | "PATCH" | "PUT" | "DELETE", path: string, { body, ifMatch, ifNoneMatch, key }: Write, { executionId }: ToolContext) {
-    const send = () => id.manage(method, path, { body, ifMatch, ifNoneMatch, idempotencyKey: key, requestId: executionId })
+  async function write(method: "POST" | "PATCH" | "PUT" | "DELETE", path: string, { body, ifMatch, ifNoneMatch, key, scope }: Write, { executionId }: ToolContext) {
+    const send = () => id.manage(method, path, { body, ifMatch, ifNoneMatch, idempotencyKey: key, requestId: executionId, scope })
     try {
       const answer = await send().catch(error => {
         if (error instanceof IdError && (error.status === 0 || error.status >= 500)) return send()

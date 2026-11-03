@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { adminApi, clientToken, failure, RootLocked } from "./admin-api"
+import { adminApi, clientToken, failure, listAll, RootLocked } from "./admin-api"
 
 const api = (answer: () => Response, seen: { url?: string; headers?: Headers; body?: unknown }[] = []) =>
   adminApi({
@@ -64,4 +64,23 @@ test("root_locked is the command's RootLocked, and a reused key is an error nami
   await expect(locked).rejects.toBeInstanceOf(RootLocked)
   await expect(locked).rejects.toThrow("locked, says the command")
   await expect(api(() => Response.json({ code: "idempotency_key_reused" }, { status: 409 }))("POST", "/x", { key: "k-v1" })).rejects.toThrow("ID refused Idempotency-Key k-v1: it was used before with different input")
+})
+
+test("listAll reads every page of a list that takes no filter at limit=200, appending the cursor with ? or & as the path needs, and fails naming the call on a page ID refuses", async () => {
+  const seen: string[] = []
+  const pages = [{ items: ["a", "b"], nextCursor: "c/1" }, { items: ["c"], nextCursor: null }]
+  const call = adminApi({
+    id: "https://id.example", token: "t", rootLocked: "locked",
+    fetch: (async (input: string | URL | Request) => {
+      seen.push(String(input))
+      return Response.json(pages[seen.length - 1])
+    }) as typeof globalThis.fetch,
+  })
+  expect(await listAll<string>(call, "/organizations/org/capabilities")).toEqual(["a", "b", "c"])
+  expect(seen).toEqual(["https://id.example/api/admin/v1/organizations/org/capabilities?limit=200", "https://id.example/api/admin/v1/organizations/org/capabilities?limit=200&cursor=c%2F1"])
+  seen.length = 0
+  await listAll(call, "/groups?q=x")
+  expect(seen[0]).toBe("https://id.example/api/admin/v1/groups?q=x&limit=200")
+  const refusing = adminApi({ id: "https://id.example", token: "t", rootLocked: "locked", fetch: (async () => Response.json({ code: "forbidden" }, { status: 403 })) as unknown as typeof globalThis.fetch })
+  await expect(listAll(refusing, "/organizations/org/capabilities")).rejects.toThrow("GET /organizations/org/capabilities answered 403 forbidden")
 })

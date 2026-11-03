@@ -61,7 +61,8 @@ export async function startAdminStack(id: Id, { adminHost, toolboxHost, fetch }:
     groups[role] = group.id
   }
   const machine = await registerMachine(admin, platform, "admin-mcp", {
-    [manifest.adminResource]: ["platform:read", "platform:write"],
+    // platform:users is what stops someone (users_disable, members_remove): ID's commands on a user and on a membership check it, and platform:write does not include it.
+    [manifest.adminResource]: ["platform:read", "platform:users", "platform:write"],
     [toolboxAdmin]: ["toolbox:admin"],
   })
 

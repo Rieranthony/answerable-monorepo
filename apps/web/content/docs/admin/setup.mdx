@@ -88,20 +88,20 @@ export TOOLBOX_ADMIN_PATH=http%3A%2F%2Flocalhost%3A47400%2Fadmin
    OWNER_GROUP=$GROUP   # the loop ends with owner
    ```
 
-5. **The machine client**, owned by the platform organisation, with two audiences: ID's admin API, which the server reads and writes with, and the Toolbox's admin API, which `toolbox_enable` calls. Register the [Toolbox's admin resource](/docs/toolbox/admin#register-the-toolbox-in-id) first. The first call answers `clientSecret` once.
+5. **The machine client**, owned by the platform organisation, with two audiences: ID's admin API, which the server reads and writes with, and the Toolbox's admin API, which `toolbox_enable` calls. On ID's admin API it holds `platform:read` and `platform:write`, and `platform:users`, which ID's commands on a person and on a membership check (`users_disable`, `members_remove` and the other tools that [stop someone](/docs/admin#stopping-someone)) and `platform:write` does not include. Register the [Toolbox's admin resource](/docs/toolbox/admin#register-the-toolbox-in-id) first. The first call answers `clientSecret` once.
 
    ```bash
    curl "$ID/api/admin/v1/clients" \
      -H "Idempotency-Key: admin-mcp-v1" -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"clientId":"admin-mcp","name":"Admin MCP","organizationId":"'"$PLATFORM_ORG"'","tokenEndpointAuthMethod":"client_secret_basic","grantTypes":["client_credentials"],"clientCredentialsScopes":["platform:read","platform:write","toolbox:admin"]}'
+     -d '{"clientId":"admin-mcp","name":"Admin MCP","organizationId":"'"$PLATFORM_ORG"'","tokenEndpointAuthMethod":"client_secret_basic","grantTypes":["client_credentials"],"clientCredentialsScopes":["platform:read","platform:users","platform:write","toolbox:admin"]}'
 
    curl -X PUT "$ID/api/admin/v1/clients/admin-mcp/resources/$ID_ADMIN_PATH" \
      -H "Idempotency-Key: admin-mcp-link-id-v1" -H "Authorization: Bearer $TOKEN"
    curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/capabilities" \
      -H "Idempotency-Key: admin-mcp-capability-id-v1" -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"clientId":"admin-mcp","resource":"'"$ID"'/api/admin","grantKind":"client_credentials","scopes":["platform:read","platform:write"]}'
+     -d '{"clientId":"admin-mcp","resource":"'"$ID"'/api/admin","grantKind":"client_credentials","scopes":["platform:read","platform:users","platform:write"]}'
 
    curl -X PUT "$ID/api/admin/v1/clients/admin-mcp/resources/$TOOLBOX_ADMIN_PATH" \
      -H "Idempotency-Key: admin-mcp-link-toolbox-v1" -H "Authorization: Bearer $TOKEN"
@@ -109,6 +109,15 @@ export TOOLBOX_ADMIN_PATH=http%3A%2F%2Flocalhost%3A47400%2Fadmin
      -H "Idempotency-Key: admin-mcp-capability-toolbox-v1" -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
      -d '{"clientId":"admin-mcp","resource":"http://localhost:47400/admin","grantKind":"client_credentials","scopes":["toolbox:admin"]}'
+   ```
+
+   **Registered before `platform:users`?** The deploy's register Job widens the client's scopes and this capability on its next run. By hand, read the capability, then change its scopes with its `ETag` as `If-Match`, after the client's own `clientCredentialsScopes` (a capability cannot exceed them). Until then the stop tools answer `UPSTREAM_REJECTED`, naming the capability to add.
+
+   ```bash
+   curl "$ID/api/admin/v1/organizations/$PLATFORM_ORG/capabilities/$CAPABILITY" -H "Authorization: Bearer $TOKEN" -i   # ETag: "<id>:<revision>"
+   curl -X PATCH "$ID/api/admin/v1/organizations/$PLATFORM_ORG/capabilities/$CAPABILITY" \
+     -H "Idempotency-Key: admin-mcp-capability-id-v1-r$REVISION" -H "If-Match: $ETAG" -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" -d '{"scopes":["platform:read","platform:users","platform:write"]}'
    ```
 
 6. **The first owner.** A person is a member once they have signed in, so sign in at ID's login page first, as [First run](/docs/id/onboard#first-run) does for the first administrator. Then find the member and put them in the owner group:
@@ -179,7 +188,7 @@ The admin journeys run these steps headlessly, from the same registrations, with
 
 **When Claude Code asks.** Claude Code 2.1.282's source asks before any tool marked `anthropic/requiresUserInteraction`, whatever your allow rules say, and the server marks `admin_commit_confirmed` and no other tool: the admin journeys assert it (A1). Seeing that prompt in a session with a model: Not yet tested.
 
-**Critical operations.** `organisations_disable`, `organisations_enable`, `staff_grant` and `staff_revoke` need a company sign-in at most 30 minutes old. When the lane has been up longer, follow [Sign in again](/docs/admin#sign-in-again): open `http://127.0.0.1:47600/security` in the browser you signed in with, choose **Verify sign-in**, then clear the server's authentication in Claude Code and authenticate again. The lane queues 12 company sign-ins for the staff member.
+**Critical operations.** `organisations_disable`, `organisations_enable`, `staff_grant`, `staff_revoke`, `users_retireemail` and the other tools that [stop someone](/docs/admin#stopping-someone) need a company sign-in at most 30 minutes old. When the lane has been up longer, follow [Sign in again](/docs/admin#sign-in-again): open `http://127.0.0.1:47600/security` in the browser you signed in with, choose **Verify sign-in**, then clear the server's authentication in Claude Code and authenticate again. The lane queues 12 company sign-ins for the staff member.
 
 Remove the servers from Claude Code when you are done:
 
@@ -199,6 +208,7 @@ claude mcp remove answerable-toolbox
 | `tools/list` is empty | The token is for another organisation than the platform organisation | Sign in with a work account of the platform organisation |
 | `toolbox_enable` answers `PRECONDITION_FAILED` naming `ADMIN_TOOLBOX_ADMIN_RESOURCE` | The variable is unset | Set it and restart the admin MCP |
 | `toolbox_enable` answers `UPSTREAM_REJECTED` that ID refused the client credentials | The machine client has no link or capability for the Toolbox's admin resource | The last two calls of step 5 |
+| `users_disable`, `members_remove` or another tool that stops someone answers `UPSTREAM_REJECTED` that ID refused the client credentials | The machine client has no capability for `platform:users` on ID's admin API | The capability call of step 5, or the widening call under it |
 | `Failed to start server. Is port 47606 in use?` (or `47604`, `47600`, `47700`, `47701`) | Something holds a port the lane needs; the acceptance or another lane may be running | Find it with `lsof -nP -iTCP:47606 -sTCP:LISTEN` and stop what you started |
 | `Command failed: docker compose -p answerable-mcp-e2e` | Docker is not running, or port `47532` is taken | [Test MCPs locally](/docs/mcp/local-testing#errors) |
 

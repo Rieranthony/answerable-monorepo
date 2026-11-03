@@ -28,12 +28,12 @@ export const slug = z.string().max(100).regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Lower
 /** ID's rows, as far as the mutations read them. */
 export type Organisation = { id: string; slug: string; name: string; status: "active" | "disabled" }
 export type Group = { id: string; slug: string; name: string; status: "active" | "disabled" }
-export type Member = { id: string; userId: string; email: string; name: string; effective: boolean; membershipStatus: "active" | "revoked" }
+export type Member = { id: string; userId: string; email: string; name: string; status: "active" | "disabled"; effective: boolean; membershipStatus: "active" | "revoked" }
 export type Entitlement = { id: string; memberId: string | null; groupId: string | null; clientId: string | null; resource: string | null; scopes: string[]; status: "active" | "disabled" }
 export type Assignment = { id: string; validFrom: string | null; validUntil: string | null }
 
-/** A target bound to the ETag ID answered for it; commit sends that ETag as `If-Match` where ID takes one. */
-export const target = (resource_type: string, resource_id: string, label: string, etag: string): Target => ({ resource_type, resource_id, label, version: { kind: "etag", value: etag } })
+/** A target bound to the version ID answered for it, an ETag unless `kind` says otherwise; commit sends an ETag as `If-Match` where ID takes one. */
+export const target = (resource_type: string, resource_id: string, label: string, version: string, kind: Target["version"]["kind"] = "etag"): Target => ({ resource_type, resource_id, label, version: { kind, value: version } })
 /** A preview warning for a write that ID takes without a precondition. */
 export const noPrecondition = (write: string) =>
   `Answerable ID takes no precondition on ${write}: the admin MCP reads the target again just before it writes, but a change in between is not refused by ID.`
@@ -43,7 +43,14 @@ export const missingMember = (organizationId: string, id: string) => `Answerable
 export const precondition = (message: string, details: Record<string, unknown>) => new ToolError("PRECONDITION_FAILED", message, { details: { preconditions: [details] } })
 export const invalid = (field: string, message: string) => new ToolError("INVALID_INPUT", message, { details: { field_violations: [{ field, message }] } })
 
-/** The organisation a write acts on, read with its ETag, and that write's guard. */
+/** A person's row in ID, as far as the tools that stop someone read it: `GET /users/{id}`. */
+export type User = {
+  id: string; name: string; email: string; status: "active" | "disabled"; retiredEmail: string | null; updatedAt: string
+  memberships: { memberId: string; organizationId: string; slug: string; effective: boolean }[]
+  sessionCount: number
+}
+
+/** The organisation a write acts on, read with its ETag, and that write's guard; and the guard on acting on a person who is staff. */
 export function createOrganisations({ calls, authority, platform, fresh }: { calls: Calls; authority: Roles; platform: string; fresh: Writes["fresh"] }) {
   /**
    * Changing the platform organisation changes who is staff and how staff sign in, so every write to it is a critical operation: the owner role
@@ -56,11 +63,21 @@ export function createOrganisations({ calls, authority, platform, fresh }: { cal
     }
     fresh(principal)
   }
+  /**
+   * Acting on someone who is staff, a person with a membership in the platform organisation, is an owner's critical operation whatever the tool's own
+   * minimum: `staff.revoke` is owner only, and ID itself protects only the last platform writer, so without this an admin could disable an owner.
+   */
+  async function protectStaff(user: User, { principal }: ToolContext) {
+    if (!user.memberships.some(item => item.organizationId === platform)) return
+    if (await authority.role(principal) !== "owner") {
+      throw new ToolError("PERMISSION_DENIED", `${user.email} is Answerable staff, and acting on staff is an owner's critical operation: staff.revoke is owner only, so an admin could otherwise cut off an owner`)
+    }
+  }
   /** The organisation with its ETag, as a target; guarded when it is the platform organisation. */
   async function organisation(organizationId: string, context: ToolContext) {
     await guard(organizationId, context)
     const { body, etag } = await calls.versioned<Organisation>(`/organizations/${organizationId}`, context, missingOrganisation(organizationId))
     return { organisation: body, target: target("organization", organizationId, named(body), etag) }
   }
-  return { guard, organisation }
+  return { guard, organisation, protectStaff }
 }

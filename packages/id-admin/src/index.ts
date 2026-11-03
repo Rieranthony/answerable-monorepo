@@ -32,6 +32,12 @@ export type IdWriteOptions = IdCallOptions & {
    * refuses a different input with `409 idempotency_key_reused`. The key stays the same when the call is resent after a `401`.
    */
   idempotencyKey?: string
+  /**
+   * The scope of the token the write is sent with. `write` (the default): `platform:read platform:write`. `users`: `platform:read platform:users`, which
+   * ID's commands on a user or a membership check (disabling, enabling and retiring a user; removing and reinstating a member) and `platform:write` does
+   * not include. The machine client needs a capability for ID's admin resource that covers it.
+   */
+  scope?: "write" | "users"
 }
 
 /**
@@ -49,6 +55,7 @@ const issued = z.object({ access_token: z.string(), expires_in: z.number() })
 const problem = z.object({ code: z.string(), title: z.string() })
 const read = "platform:read"
 const write = "platform:read platform:write"
+const users = "platform:read platform:users"
 
 // A request that got no answer: a refused connection or a timeout.
 async function reach(what: string, request: () => Promise<Response>) {
@@ -90,8 +97,9 @@ export async function* pages<Item>(path: string, get: (path: string) => Promise<
 
 /**
  * ID's admin API as a server's machine client, one per server. Reads (`get`, `read`) use a `platform:read` token; `manage` uses a `platform:read
- * platform:write` token of its own; `withToken` gets a token for another service that trusts the client. Each token is reused until 30 seconds
- * before it expires and renewed once when it is refused. A status outside 2xx from the admin API throws `IdError`.
+ * platform:write` token of its own, or a `platform:read platform:users` one for a write that says `scope: "users"`; `withToken` gets a token for
+ * another service that trusts the client. Each token is reused until 30 seconds before it expires and renewed once when it is refused. A status
+ * outside 2xx from the admin API throws `IdError`.
  */
 export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, fetch = globalThis.fetch, timeoutMs = 5000 }: IdConfig) {
   // One token per audience and scope.
@@ -166,14 +174,15 @@ export function createIdAdmin({ issuer, adminResource, clientId, clientSecret, f
       return { body: await response.json(), etag: response.headers.get("ETag") }
     },
     /**
-     * Call the admin API with `platform:read` and `platform:write`: a JSON `body`, an `If-Match` or `If-None-Match` precondition, an `Idempotency-Key`
-     * on every write (a random one unless `idempotencyKey` names it) and an `x-request-id`. Returns the JSON (`null` for `204`), the response's
+     * Call the admin API with `platform:read` and `platform:write` (`platform:read` and `platform:users` for `scope: "users"`): a JSON `body`, an
+     * `If-Match` or `If-None-Match` precondition, an `Idempotency-Key` on every write (a random one unless `idempotencyKey` names it) and an
+     * `x-request-id`. Returns the JSON (`null` for `204`), the response's
      * `ETag`, its `Operation-Id`, the id of the operation ID recorded for a write, and whether ID replayed an earlier answer to the same key
      * (`Idempotency-Replayed: true`), whose body is then ID's operation receipt rather than the resource; `etag` and `operationId` are `null`
      * when ID sent none.
      */
     async manage(method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", path: string, options?: IdWriteOptions): Promise<{ body: unknown; etag: string | null; operationId: string | null; replayed: boolean }> {
-      const response = await call(write, method, path, options)
+      const response = await call(options?.scope === "users" ? users : write, method, path, options)
       return {
         body: response.status === 204 ? null : await response.json(), etag: response.headers.get("ETag"),
         operationId: response.headers.get("Operation-Id"), replayed: response.headers.get("Idempotency-Replayed") === "true",

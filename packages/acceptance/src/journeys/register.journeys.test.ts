@@ -1,8 +1,11 @@
 // Real Answerable ID: what the ops register Job does with its own machine client, ops-register, after root is locked (infra/ops/src/register.ts).
 // Minted with the root secret as the Job's first run mints it, the client creates and patches a resource, a public client and their link, the rows
-// each standalone MCP needs, once a person holds platform:write and ID refuses the root secret.
+// each standalone MCP needs, once a person holds platform:write and ID refuses the root secret. Then the registrar's own code, which the Job runs,
+// widens the admin MCP's machine client and its capability to platform:users on an environment registered without it.
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { z } from "zod"
+import { adminApi } from "../../../../infra/ops/src/admin-api"
+import { createRegistrar } from "../../../../infra/ops/src/registrar"
 import { launchBrowser, registerMachine, startId, step, type Id } from "../index"
 
 const resource = "https://mcp.example.test/acme/mcp"
@@ -101,4 +104,51 @@ test("ops-register, minted with root, creates and patches a resource, a client a
   const audit = z.object({ items: z.array(z.object({ action: z.string(), actorType: z.string(), actorId: z.string() })) }).parse((await asClient("GET", "/audit-events?actorId=ops-register&limit=50")).body)
   expect(audit.items.map(item => item.action).toSorted()).toEqual(["client.created", "client.resource_linked", "client.updated", "oauth.token.issued", "resource.created", "resource.updated"])
   expect(new Set(audit.items.map(item => `${item.actorType} ${item.actorId}`))).toEqual(new Set(["client ops-register"]))
+})
+
+test("a deployment registered before platform:users gets it from the next run: the registrar widens the admin MCP's client and its capability with If-Match, and a platform:read platform:users token then works where a platform:write one is refused", async () => {
+  const { manifest } = id
+  const platform = manifest.platform!.organizationId
+  const call = adminApi({ id: manifest.idOrigin, token, rootLocked: "locked" })
+  const declaration = (scopes: string[]) => ({ clientId: "admin-mcp", name: "Admin MCP", organizationId: platform, tokenEndpointAuthMethod: "client_secret_basic" as const, grantTypes: ["client_credentials"], clientCredentialsScopes: scopes })
+  const capability = (scopes: string[]) => ({ clientId: "admin-mcp", resource: manifest.adminResource, grantKind: "client_credentials", scopes })
+  // The admin MCP's client asking ID's token endpoint, and then ID's admin API with what it gets.
+  const ask = (secret: string, scope: string) => fetch(`${manifest.idOrigin}/auth/oauth2/token`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${Buffer.from(`admin-mcp:${secret}`).toString("base64")}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "client_credentials", resource: manifest.adminResource, scope }),
+  })
+  const bearer = async (secret: string, scope: string) => z.object({ access_token: z.string() }).parse(await (await ask(secret, scope)).json()).access_token
+  const enable = (access: string, userId: string) => fetch(`${manifest.idOrigin}/api/admin/v1/users/${userId}/enable`, { method: "POST", headers: { Authorization: `Bearer ${access}`, "Idempotency-Key": crypto.randomUUID() } })
+
+  step("The first run, with the old scopes: platform:read and platform:write on ID's admin API")
+  const first = createRegistrar(call)
+  const held = await first.client("admin-mcp-v1", declaration(["platform:read", "platform:write"]))
+  await first.link("admin-mcp-link-id-v1", "admin-mcp", manifest.adminResource, held)
+  await first.capability(platform, "admin-mcp-capability-id-v1", capability(["platform:read", "platform:write"]))
+  expect(first.tally).toMatchObject({ made: 3, changed: 0 })
+  const secret = z.string().parse(held.created?.clientSecret)
+  expect((await ask(secret, "platform:read platform:write")).status).toBe(200)
+  expect((await ask(secret, "platform:read platform:users")).status, "ID has not been asked for platform:users yet").toBe(400)
+
+  step("The next run, declaring platform:users: the client's ceiling and the capability change, each with If-Match under <key>-r<revision>, and nothing else")
+  const second = createRegistrar(call)
+  const again = await second.client("admin-mcp-v1", declaration(["platform:read", "platform:users", "platform:write"]))
+  await second.link("admin-mcp-link-id-v1", "admin-mcp", manifest.adminResource, again)
+  await second.capability(platform, "admin-mcp-capability-id-v1", capability(["platform:read", "platform:users", "platform:write"]))
+  expect(second.tally).toMatchObject({ made: 0, changed: 2 })
+  expect((await asClient("GET", "/clients/admin-mcp")).body).toMatchObject({ clientCredentialsScopes: ["platform:read", "platform:users", "platform:write"] })
+  const { items } = z.object({ items: z.array(z.object({ clientId: z.string().nullable(), resource: z.string().nullable(), scopes: z.array(z.string()) })) }).parse((await asClient("GET", `/organizations/${platform}/capabilities?limit=200`)).body)
+  expect(items.find(item => item.clientId === "admin-mcp" && item.resource === manifest.adminResource)!.scopes).toEqual(["platform:read", "platform:users", "platform:write"])
+  const third = createRegistrar(call)
+  await third.client("admin-mcp-v1", declaration(["platform:read", "platform:users", "platform:write"]))
+  await third.capability(platform, "admin-mcp-capability-id-v1", capability(["platform:read", "platform:users", "platform:write"]))
+  expect(third.tally).toMatchObject({ made: 0, changed: 0, found: 2 })
+
+  step("The token it can now ask for: platform:users runs the commands on a user, and platform:write alone does not")
+  const staffUser = z.object({ items: z.array(z.object({ id: z.uuid() })) }).parse((await asClient("GET", `/users?email=${encodeURIComponent(manifest.platform!.email)}`)).body).items[0]!.id
+  expect((await enable(await bearer(secret, "platform:read platform:users"), staffUser)).status).toBe(200)
+  const refused = await enable(await bearer(secret, "platform:read platform:write"), staffUser)
+  expect(refused.status).toBe(403)
+  expect(((await refused.json()) as { code: string }).code).toBe("insufficient_scope")
 })

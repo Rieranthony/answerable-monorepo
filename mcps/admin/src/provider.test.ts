@@ -43,7 +43,8 @@ const team = ids.group(platform, { slug: "support", name: "Support" })
 const teamRole = ids.entitlement(platform, { groupId: team.id, resource, scopes: ["answerable-team"] })
 const unique = () => crypto.randomUUID().slice(0, 8)
 const organisation = (fields: Record<string, unknown> = {}) => ids.organisation(Bun.randomUUIDv7(), { name: "Spare", slug: `spare-${unique()}`, ...fields }).id
-const person = () => ids.member(newco.id, { email: `${unique()}@newco.example` }).id
+const human = (fields: Record<string, unknown> = {}) => ids.member(newco.id, { email: `${unique()}@newco.example`, ...fields })
+const person = () => human().id
 function staffer(joined: boolean) {
   const member = ids.member(platform, { email: `${unique()}@answerable.test` })
   if (joined) ids.join(team.id, member.id)
@@ -81,6 +82,11 @@ assertProviderConformance(world.provider, {
     "standalone.enable": () => ({ organizationId: organisation(), mcp: "acme", everyone: true }),
     "staff.grant": () => ({ memberId: staffer(false), role: "team" }),
     "staff.revoke": () => ({ memberId: staffer(true), role: "team" }),
+    "users.disable": () => ({ userId: human().userId }),
+    "users.enable": () => ({ userId: human({ status: "disabled" }).userId }),
+    "users.retireemail": () => ({ userId: human({ status: "disabled" }).userId }),
+    "members.remove": () => ({ organizationId: newco.id, memberId: person() }),
+    "members.reinstate": () => ({ organizationId: newco.id, memberId: human({ membershipStatus: "revoked", effective: false }).id }),
   },
   moveTarget: target => ids.revise(target.resource_id),
 })

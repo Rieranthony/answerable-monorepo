@@ -27,10 +27,14 @@ const names = async (client: Awaited<ReturnType<TestMcp["connect"]>>) => (await 
 const reads = ["organisations_list", "organisations_get", "members_list", "members_get", "groups_list", "access_list", "audit_list", "sso_test", "staff_list"]
 const commits = ["admin_commit", "admin_commit_confirmed"]
 // What each role lists, in the provider's order: the ordinary writes for admin, and the critical ones too for owner.
-const adminTools = ["admin_whoami", ...reads, "organisations_create", "organisations_update", "domains_add", "sso_set", "groups_create", "groups_addmember", "groups_dropmember", "access_grant", "access_revoke", "access_enable", "toolbox_enable", "standalone_enable", ...commits]
+const adminTools = [
+  "admin_whoami", ...reads, "organisations_create", "organisations_update", "domains_add", "sso_set", "groups_create", "groups_addmember", "groups_dropmember", "access_grant", "access_revoke", "access_enable",
+  "toolbox_enable", "standalone_enable", "users_disable", "users_enable", "members_remove", "members_reinstate", ...commits,
+]
 const ownerTools = [
   "admin_whoami", ...reads, "organisations_create", "organisations_update", "domains_add", "sso_set", "organisations_disable", "organisations_enable",
-  "groups_create", "groups_addmember", "groups_dropmember", "access_grant", "access_revoke", "access_enable", "toolbox_enable", "standalone_enable", "staff_grant", "staff_revoke", ...commits,
+  "groups_create", "groups_addmember", "groups_dropmember", "access_grant", "access_revoke", "access_enable", "toolbox_enable", "standalone_enable", "staff_grant", "staff_revoke",
+  "users_disable", "users_enable", "users_retireemail", "members_remove", "members_reinstate", ...commits,
 ]
 type Event = Record<"kind" | "outcome" | "actor_id" | "client_id" | "capability_identity" | "capability_version", string> &
   Record<"reason" | "error_code" | "upstream" | "execution_id" | "request_id", string | null> & { data: Record<string, unknown> }
@@ -315,6 +319,7 @@ test("every write to the platform organisation is an owner's critical operation,
   const recruit = world.staffer("recruit@answerable.test")
   const founder = world.staffer("founder@answerable.test", ["owner"])
   const retired = id.entitlement(platform, { memberId: recruit.id, resource, scopes: ["answerable-owner"], status: "disabled" })
+  const former = id.member(platform, { email: "former@answerable.test", membershipStatus: "revoked", effective: false })
   const operator = staff(["admin", "answerable-admin"])
   // Each tool that takes an organisation, aimed at the platform organisation, as an admin would aim it to make themselves an owner.
   const writes: [string, Record<string, unknown>][] = [
@@ -329,6 +334,8 @@ test("every write to the platform organisation is an owner's critical operation,
     ["access_enable", { organizationId: platform, entitlementId: retired.id }],
     ["toolbox_enable", { organizationId: platform, hostClientIds: ["claude-code-toolbox"], providers: ["e2e"] }],
     ["standalone_enable", { organizationId: platform, mcp: "acme", everyone: true }],
+    ["members_remove", { organizationId: platform, memberId: founder.id }],
+    ["members_reinstate", { organizationId: platform, memberId: former.id }],
     ["organisations_disable", { organizationId: platform }],
     ["organisations_enable", { organizationId: platform }],
   ]

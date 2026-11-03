@@ -14,10 +14,13 @@ export const toolboxMcp = "https://toolbox.test/mcp"
 export const standaloneOrigin = "https://mcp.test"
 export const entraIssuer = "https://login.microsoftonline.com/00000000-0000-0000-0000-00000000000a/v2.0"
 
-/** A fake ID whose machine client, admin-mcp, gets tokens for ID's admin API and, with `toolbox:admin`, for the Toolbox's admin API. */
-export const createIdFake = () => createFakeId({
+/**
+ * A fake ID whose machine client, admin-mcp, gets tokens for ID's admin API and, with `toolbox:admin`, for the Toolbox's admin API. It may ask for
+ * `platform:read platform:users` as the deploy's register Job lets it, unless `users` is false: a deployment registered before that scope existed.
+ */
+export const createIdFake = ({ users = true } = {}) => createFakeId({
   clientId: "admin-mcp",
-  resources: { "https://id.test/api/admin": ["platform:read", "platform:read platform:write"], [toolboxResource]: ["toolbox:admin"] },
+  resources: { "https://id.test/api/admin": ["platform:read", "platform:read platform:write", ...(users ? ["platform:read platform:users"] : [])], [toolboxResource]: ["toolbox:admin"] },
 })
 export type FakeId = ReturnType<typeof createIdFake>
 
@@ -87,8 +90,8 @@ export function seed(id: FakeId) {
 }
 
 /** The admin MCP in-process on a fake ID whose machine client belongs to the platform organisation, a fake Toolbox, and staff to sign in as. */
-export async function createAdmin(db: Database, { freshSeconds = 1800 }: { freshSeconds?: number } = {}) {
-  const id = createIdFake()
+export async function createAdmin(db: Database, { freshSeconds = 1800, users = true }: { freshSeconds?: number; users?: boolean } = {}) {
+  const id = createIdFake({ users })
   const toolbox = createFakeToolbox(id)
   const platform = id.organizationId
   // Every answer ID's admin API gave, with its Operation-Id; `lose` drops the answer to the next write after ID has acted on it, as a broken connection would.

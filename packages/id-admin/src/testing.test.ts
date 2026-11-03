@@ -12,14 +12,14 @@ const operations = Object.entries(contract.paths).flatMap(([template, methods]) 
 const admin = "https://id.test/api/admin"
 const toolbox = "https://toolbox.test/mcp"
 const google = "https://accounts.google.com"
-type Options = { body?: unknown; key?: string | null; token?: "read" | "write" | "other" | "root" | null; ifMatch?: string; ifNoneMatch?: "*" }
+type Options = { body?: unknown; key?: string | null; token?: "read" | "write" | "users" | "other" | "root" | null; ifMatch?: string; ifNoneMatch?: "*" }
 // One answer: the status the fake gives, the request, and what else to check in it.
 type Row = [status: number, method: string, path: string, options?: Options, check?: (body: unknown, response: globalThis.Response) => void]
 
 test("every answer the fake gives is one Answerable ID's admin contract declares for the operation: its status, its body's schema and its headers", async () => {
-  const id = createFakeId({ operationInProgress: true, rootSecret: "root-secret", resources: { [admin]: ["platform:read", "platform:read platform:write"], "https://other.test/api": ["other"] } })
+  const id = createFakeId({ operationInProgress: true, rootSecret: "root-secret", resources: { [admin]: ["platform:read", "platform:read platform:write", "platform:read platform:users"], "https://other.test/api": ["other"] } })
   const tokens: Record<string, string> = { root: "root-secret" }
-  for (const [name, resource, scope] of [["read", admin, "platform:read"], ["write", admin, "platform:read platform:write"], ["other", "https://other.test/api", "other"]] as const) {
+  for (const [name, resource, scope] of [["read", admin, "platform:read"], ["write", admin, "platform:read platform:write"], ["users", admin, "platform:read platform:users"], ["other", "https://other.test/api", "other"]] as const) {
     const answer = await id.config.fetch("https://id.test/auth/oauth2/token", {
       method: "POST", headers: { Authorization: `Basic ${btoa("toolbox-hub:hub-secret")}` }, body: new URLSearchParams({ grant_type: "client_credentials", resource, scope }),
     })
@@ -27,8 +27,18 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
   }
   const organisation = id.organisation(Bun.randomUUIDv7(), { name: "Newco", slug: "newco" }).id
   const bare = id.organisation(Bun.randomUUIDv7(), { name: "Bare", slug: "bare" }).id
-  const member = id.member(organisation, { email: "ada@newco.example", name: "Ada" }).id
+  const ada = id.member(organisation, { email: "ada@newco.example", name: "Ada" })
+  const member = ada.id
   const joiner = id.member(organisation, { email: "bob@newco.example" }).id
+  // A person who leaves the organisation: in a group and with a grant of their own, which a removal takes away; and a user of two organisations.
+  const leaver = id.member(organisation, { email: "lee@newco.example", name: "Lee" })
+  const staying = id.member(bare, { email: "lee@newco.example", userId: leaver.userId, name: "Lee" })
+  const leavers = id.group(organisation, { slug: "leavers" }).id
+  id.join(leavers, leaver.id)
+  id.entitlement(organisation, { memberId: leaver.id, resource: toolbox, scopes: ["toolbox"] })
+  id.grant(organisation, leaver.id, [{ kind: "resource", id: toolbox, scopes: ["toolbox"] }])
+  const user = String(ada.userId)
+  const tenant = String(leaver.userId)
   const revoked = id.member(organisation, { email: "eve@newco.example", membershipStatus: "revoked", revokedAt: new Date().toISOString() }).id
   const group = id.group(organisation, { slug: "engineers" }).id
   const assignment = id.join(group, member)
@@ -94,8 +104,9 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
     [200, "GET", at("/members?q=ada")],
     [200, "GET", at(`/members/${member}`)],
     [404, "GET", at(`/members/${missing}`)],
-    [405, "PATCH", at(`/members/${member}`)],
-    [405, "DELETE", at(`/members/${member}`)],
+    [405, "PATCH", at(`/members/${member}`), { token: "users" }],
+    [405, "PUT", at(`/members/${member}`), { token: "users" }],
+    [405, "GET", at(`/members/${member}/reinstate`)],
     [200, "GET", at(`/access?resource=${encodeURIComponent(toolbox)}`)],
     [400, "GET", at("/access"), {}, body => expect(body).toMatchObject({ errors: [{ path: "", message: "A client, resource or exact pair is required" }] })],
     [200, "GET", at(`/members/${member}/access`)],
@@ -138,6 +149,9 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
     [412, "PATCH", at(`/capabilities/${capability}`), { body: { scopes: ["e2e"] }, ifMatch: `"${capability}:1"` }],
     [405, "DELETE", at(`/capabilities/${capability}`)],
     [200, "GET", at("/capabilities")],
+    // ID takes no filter on its list of capabilities, so one the query names does not narrow it; an entitlement list's filters do.
+    [200, "GET", at("/capabilities?clientId=nobody&status=disabled"), {}, body => expect((body as { items: unknown[] }).items.length).toBeGreaterThan(0)],
+    [200, "GET", at("/entitlements?clientId=nobody"), {}, body => expect((body as { items: unknown[] }).items).toEqual([])],
     [201, "POST", at("/capabilities"), { body: { clientId: "claude-code", resource: toolbox, grantKind: "authorization_code", scopes: ["e2e"] } }],
     [200, "GET", resource],
     [200, "PATCH", resource, { body: { allowedScopes: ["e2e", "toolbox", "admin"] }, ifMatch: `"${id.resourceOf(toolbox).id}:1"` }],
@@ -180,6 +194,61 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
     [200, "PUT", `/clients/claude-code${resource}`],
     [404, "PUT", `/clients/nobody${resource}`],
     [405, "DELETE", `/clients/claude-code${resource}`],
+    // A user is found by their exact address in any case, listed with ID's filters, and read with their memberships, accounts and sessions.
+    [200, "GET", "/users?email=ADA@newco.example", {}, body => expect(body).toMatchObject({ items: [{ id: user, email: "ada@newco.example", status: "active", retiredEmail: null }], nextCursor: null })],
+    [200, "GET", "/users?email=nobody@newco.example", {}, body => expect(body).toMatchObject({ items: [] })],
+    [200, "GET", `/users?q=ada&status=active&organizationId=${organisation}`, {}, body => expect((body as { items: unknown[] }).items).toHaveLength(1)],
+    [200, "GET", `/users?organizationId=${bare}`, {}, body => expect((body as { items: { id: string }[] }).items.map(item => item.id)).toEqual([tenant])],
+    [405, "POST", "/users", { body: {} }],
+    [200, "GET", `/users/${tenant}`, {}, body => expect(body).toMatchObject({
+      id: tenant, memberships: [{ memberId: expect.any(String), organizationId: expect.any(String), slug: expect.any(String), effective: true }, { effective: true }], accounts: [], sessionCount: 0,
+    })],
+    [404, "GET", `/users/${missing}`],
+    [405, "DELETE", `/users/${user}`, { token: "write" }],
+    [405, "POST", `/users/${user}`],
+    [405, "GET", `/users/${user}/disable`],
+    // As ID refuses a machine that holds platform:write without platform:users, and one that holds platform:users without platform:write.
+    [403, "POST", `/users/${user}/disable`, { token: "write" }, (body, response) => {
+      expect(body).toMatchObject({ code: "insufficient_scope" })
+      expect(response.headers.get("WWW-Authenticate")).toBe('Bearer error="insufficient_scope"')
+    }],
+    [403, "POST", `/users/${user}/enable`, { token: "read" }],
+    [403, "POST", `/users/${user}/retire-email`, { token: "write" }],
+    [403, "DELETE", at(`/members/${leaver.id}`), { token: "write" }],
+    [403, "POST", at(`/members/${leaver.id}/reinstate`), { token: "write" }],
+    [403, "POST", "/organizations", { token: "users", body: { slug: "users-only", name: "Users only" } }],
+    [409, "POST", `/users/${user}/retire-email`, { token: "users" }, body => expect(body).toMatchObject({ code: "user_not_disabled" })],
+    [200, "POST", `/users/${user}/enable`, { token: "users", key: "enable-ada" }, body => expect(body).toMatchObject({ id: user, status: "active" })],
+    [200, "POST", `/users/${user}/enable`, { token: "users", key: "enable-ada" }, receipt("noop", "user")],
+    [404, "POST", `/users/${missing}/disable`, { token: "users" }],
+    [200, "POST", `/users/${user}/disable`, { token: "users", key: "disable-ada" }, body => expect(body).toMatchObject({ id: user, status: "disabled", disabledAt: expect.any(String), retiredEmail: null })],
+    [200, "POST", `/users/${user}/disable`, { token: "users", key: "disable-ada" }, receipt("applied", "user")],
+    [409, "POST", `/users/${user}/disable`, { token: "users", key: "disable-ada", body: { reason: "other input" } }],
+    [200, "POST", `/users/${user}/disable`, { token: "users", key: "disable-ada-again" }],
+    [200, "POST", `/users/${user}/disable`, { token: "users", key: "disable-ada-again" }, receipt("noop", "user")],
+    [200, "GET", at(`/members/${member}`), {}, body => expect(body).toMatchObject({ status: "disabled", email: "ada@newco.example" })],
+    [200, "POST", `/users/${user}/retire-email`, { token: "users", key: "retire-ada" }, body => expect(body).toMatchObject({ id: user, status: "disabled", retiredEmail: "ada@newco.example", email: `${user}@retired.invalid` })],
+    [200, "POST", `/users/${user}/retire-email`, { token: "users", key: "retire-ada" }, receipt("applied", "user")],
+    [200, "POST", `/users/${user}/retire-email`, { token: "users", key: "retire-ada-again" }, body => expect(body).toMatchObject({ retiredEmail: "ada@newco.example" })],
+    [200, "POST", `/users/${user}/retire-email`, { token: "users", key: "retire-ada-again" }, receipt("noop", "user")],
+    [409, "POST", `/users/${user}/enable`, { token: "users" }, body => expect(body).toMatchObject({ code: "user_email_retired" })],
+    [200, "GET", `/users?email=ada@newco.example`, {}, body => expect(body).toMatchObject({ items: [] })],
+    [200, "GET", at(`/members/${member}`), {}, body => expect(body).toMatchObject({ status: "disabled", email: `${user}@retired.invalid` })],
+    // A removal revokes one membership, takes its group assignments and direct grants, and leaves the user and their other memberships.
+    [204, "DELETE", at(`/members/${leaver.id}`), { token: "users", key: "remove-lee" }, () => {
+      expect([id.joined(leavers, leaver.id), id.entitlements(organisation).some(row => row.memberId === leaver.id)]).toEqual([false, false])
+    }],
+    [204, "DELETE", at(`/members/${leaver.id}`), { token: "users", key: "remove-lee" }],
+    [200, "GET", at(`/members/${leaver.id}`), {}, body => expect(body).toMatchObject({ membershipStatus: "revoked", effective: false, status: "active", revokedAt: expect.any(String), groups: [] })],
+    [404, "GET", at(`/members/${leaver.id}/access`)],
+    [200, "GET", `/users/${tenant}`, {}, body => expect((body as { memberships: { memberId: string; effective: boolean }[] }).memberships.map(item => [item.memberId, item.effective]).toSorted()).toEqual([[leaver.id, false], [staying.id, true]].toSorted())],
+    [204, "DELETE", at(`/members/${leaver.id}`), { token: "users" }],
+    [404, "DELETE", at(`/members/${missing}`), { token: "users" }],
+    [200, "POST", at(`/members/${leaver.id}/reinstate`), { token: "users", key: "reinstate-lee" }, body => expect(body).toMatchObject({ membershipStatus: "active", effective: true, revokedAt: null, groups: [] })],
+    [200, "POST", at(`/members/${leaver.id}/reinstate`), { token: "users", key: "reinstate-lee" }, receipt("applied", "member")],
+    [200, "POST", at(`/members/${leaver.id}/reinstate`), { token: "users", key: "reinstate-lee-again" }],
+    [200, "POST", at(`/members/${leaver.id}/reinstate`), { token: "users", key: "reinstate-lee-again" }, receipt("noop", "member")],
+    [404, "POST", at(`/members/${missing}/reinstate`), { token: "users" }],
     [200, "GET", `/audit-events?organizationId=${organisation}`],
     [405, "POST", "/audit-events", { body: {} }],
   ]
@@ -399,6 +468,36 @@ test("the root secret works as a platform administrator's until it is locked, th
   const locked = await id.config.fetch("https://id.test/api/admin/v1/organizations", { headers: { Authorization: "Bearer root-secret" } })
   expect([locked.status, await locked.json()]).toMatchObject([403, { code: "root_locked" }])
   expect(await status("staff-token")).toBe(200)
+})
+
+test("a user is one person with a membership in each organisation: disabling ends their sessions and every membership's access, enabling brings the status back and not the sessions, and a retired address finds nobody", async () => {
+  const id = createFakeId({ rootSecret: "root-secret" })
+  const send = (method: string, path: string) => id.config.fetch(`https://id.test/api/admin/v1${path}`, {
+    method, headers: { Authorization: "Bearer root-secret", ...(method === "GET" ? {} : { "Idempotency-Key": crypto.randomUUID() }) },
+  })
+  const [alpha, beta] = ["alpha", "beta"].map(slug => id.organisation(Bun.randomUUIDv7(), { slug, name: slug }).id) as [string, string]
+  const inAlpha = id.member(alpha, { email: "lee@firm.example", name: "Lee" })
+  const inBeta = id.member(beta, { email: "lee@firm.example", name: "Lee", userId: inAlpha.userId })
+  const person = String(inAlpha.userId)
+  id.userOf(person)!.sessionCount = 3
+  for (const [firm, member] of [[alpha, inAlpha], [beta, inBeta]] as const) id.grant(firm, member.id, [{ kind: "resource", id: "https://mcp.test", scopes: ["x"] }])
+  const detail = async () => (await send("GET", `/users/${person}`)).json() as Promise<{ status: string; sessionCount: number; memberships: { slug: string }[] }>
+  expect(await detail()).toMatchObject({ status: "active", sessionCount: 3, memberships: expect.arrayContaining([expect.objectContaining({ slug: "alpha" }), expect.objectContaining({ slug: "beta" })]) })
+  await send("POST", `/users/${person}/disable`)
+  expect(await detail()).toMatchObject({ status: "disabled", sessionCount: 0 })
+  expect([inAlpha.status, inBeta.status]).toEqual(["disabled", "disabled"])
+  for (const [firm, member] of [[alpha, inAlpha], [beta, inBeta]] as const) expect((await send("GET", `/organizations/${firm}/members/${member.id}/access`)).status).toBe(404)
+  await send("POST", `/users/${person}/enable`)
+  expect(await detail()).toMatchObject({ status: "active", sessionCount: 0 })
+  expect([inAlpha.status, inBeta.status]).toEqual(["active", "active"])
+  // A user with no membership, as ID can hold one.
+  const alone = id.user({ email: "alone@firm.example", status: "disabled" })
+  expect(await (await send("GET", `/users/${alone.id}`)).json()).toMatchObject({ status: "disabled", disabledAt: expect.any(String), memberships: [], sessionCount: 0 })
+  await send("POST", `/users/${person}/disable`)
+  await send("POST", `/users/${person}/retire-email`)
+  expect(await (await send("GET", "/users?email=lee@firm.example")).json()).toMatchObject({ items: [] })
+  expect(id.userOf(person)).toMatchObject({ retiredEmail: "lee@firm.example", email: `${person}@retired.invalid` })
+  expect([inAlpha.email, inBeta.email]).toEqual([`${person}@retired.invalid`, `${person}@retired.invalid`])
 })
 
 test("ID answers its liveness check, and a fake that is down answers it 503", async () => {

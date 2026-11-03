@@ -1,6 +1,6 @@
 // What the deployment registers in Answerable ID, and how: the register Job's (register.ts) and bun mcp's in the developer's local ID
 // (scripts/mcp/local-id.ts), so the two never differ. It imports nothing from @answerable/mcp, which the ops image does not carry.
-import { type Answer, type Call, failure } from "./admin-api"
+import { type Answer, type Call, failure, listAll } from "./admin-api"
 
 /** The scopes every host client signs a person in with, and the grants it signs in and refreshes with. */
 export const signIn = ["openid", "offline_access"]
@@ -21,6 +21,8 @@ type ClientFields = {
 /** What the registrar knows of a client after making sure of it: the creation's answer when it made it, its revision and the resources it is linked to. */
 type Held = { created?: Record<string, unknown>; revision: number; resources: string[] }
 type ResourceFields = { identifier: string; name: string; allowedScopes: string[]; accessTokenTtl: number }
+/** A capability as the registrar declares it: the client and resource it approves (`null` for a login, which approves no resource), its grant kind and its scopes. */
+type CapabilityFields = { clientId: string; resource: string | null; grantKind: string; scopes: string[] }
 
 // The fields of `wanted` whose value differs from what ID holds; lists compare as sets, since ID keeps its own order.
 function differences(held: Record<string, unknown>, wanted: Record<string, unknown>) {
@@ -29,9 +31,9 @@ function differences(held: Record<string, unknown>, wanted: Record<string, unkno
 }
 
 /**
- * Resources, clients and links in ID as declared: each is read first, created with its `Idempotency-Key` when ID lacks it, and changed with `If-Match`
- * under `<key>-r<revision>` in the fields that differ, scopes and redirect URIs only widening. `tally` counts what it made, changed and found as
- * declared; `log` hears each row made or changed, and each scope an MCP's own resource stops allowing.
+ * Resources, clients, links and capabilities in ID as declared: each is read first, created with its `Idempotency-Key` when ID lacks it, and changed
+ * with `If-Match` under `<key>-r<revision>` in the fields that differ, scopes and redirect URIs only widening. `tally` counts what it made, changed and
+ * found as declared; `log` hears each row made or changed, and each scope an MCP's own resource stops allowing.
  */
 export function createRegistrar(call: Call, log: (line: string) => void = () => {}) {
   const tally = { made: 0, changed: 0, found: 0 }
@@ -100,6 +102,22 @@ export function createRegistrar(call: Call, log: (line: string) => void = () => 
       const widened = (field: "redirectUris" | "scopes" | "clientCredentialsScopes") => fields[field] && sorted([...((held.body[field] as string[] | null) ?? []), ...fields[field]])
       const revision = await update(path, key, held, { name: fields.name, redirectUris: widened("redirectUris"), scopes: widened("scopes"), clientCredentialsScopes: widened("clientCredentialsScopes") })
       return { revision, resources: held.body.resources as string[] }
+    },
+    /**
+     * An organisation's capability as declared: created under `key` when the organisation holds none for this client, resource and grant kind; else its
+     * scopes widened by what it lacks, never narrowed, with `If-Match` under `<key>-r<revision>`, so that a deployment registered before a scope
+     * existed gains it. ID's list takes no filter, so every page is read.
+     */
+    async capability(organizationId: string, key: string, { clientId, resource, grantKind, scopes }: CapabilityFields) {
+      const path = `/organizations/${organizationId}/capabilities`
+      const held = (await listAll<{ id: string; clientId: string | null; resource: string | null; grantKind: string; scopes: string[] }>(call, path))
+        .find(row => row.clientId === clientId && row.resource === resource && row.grantKind === grantKind)
+      if (!held) return void (await write("POST", path, key, { clientId, resource, grantKind, scopes }, { create: true }))
+      if (scopes.every(scope => held.scopes.includes(scope))) return void tally.found++
+      const row = `${path}/${held.id}`
+      const current = await call("GET", row)
+      if (!current.ok) throw failure("GET", row, current)
+      await update(row, key, current, { scopes: sorted([...(current.body.scopes as string[]), ...scopes]) })
     },
     /** A client's link to a resource, when the client's read lacked it, under `<key>-r<revision>` of the client, which a link changes. */
     async link(key: string, clientId: string, target: string, held: Held) {

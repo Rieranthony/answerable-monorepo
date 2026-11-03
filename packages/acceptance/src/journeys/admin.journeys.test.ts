@@ -23,8 +23,11 @@ const refusalText = "Access is unavailable for this organisation. Sign in again 
 const freshSeconds = 10
 
 const reads = ["access_list", "audit_list", "groups_list", "members_get", "members_list", "organisations_get", "organisations_list", "sso_test", "staff_list"]
-const ordinary = ["access_enable", "access_grant", "access_revoke", "domains_add", "groups_addmember", "groups_create", "groups_dropmember", "organisations_create", "organisations_update", "sso_set", "standalone_enable", "toolbox_enable"]
-const critical = ["organisations_disable", "organisations_enable", "staff_grant", "staff_revoke"]
+const ordinary = [
+  "access_enable", "access_grant", "access_revoke", "domains_add", "groups_addmember", "groups_create", "groups_dropmember", "members_reinstate", "members_remove", "organisations_create", "organisations_update",
+  "sso_set", "standalone_enable", "toolbox_enable", "users_disable", "users_enable",
+]
+const critical = ["organisations_disable", "organisations_enable", "staff_grant", "staff_revoke", "users_retireemail"]
 const commits = ["admin_commit", "admin_commit_confirmed"]
 const teamTools = ["admin_whoami", ...reads].toSorted()
 const adminTools = [...teamTools, ...ordinary, ...commits].toSorted()
@@ -51,6 +54,8 @@ let staffBrowser: BrowserContext
 let staff: OAuthSession
 let staffClient: Client
 let staffMember: string
+// The client organisation's person, as A4 signs them in: A9 removes, disables and reinstates them.
+let tenantSession: OAuthSession
 // A second member of the platform organisation, whose role the owner changes with staff_grant and staff_revoke.
 let colleague: OAuthSession
 let colleagueClient: Client
@@ -131,9 +136,9 @@ async function audited(client: Client, receipt: Receipt) {
 
 beforeAll(async () => {
   // Sign-ins each step consumes, in order. The platform directory: the staff member for A1, their colleague for A1, then the staff member's Verify sign-in for A6
-  // (the authorisations after it reuse ID's session). The tenant's member: one ID refuses and one it lets through (A4). The spare directory's person: one ID refuses
-  // before the Toolbox is enabled and one it lets through (A3).
-  id = await startId({ tenants: [{ slug: "client", signIns: 2 }], platform: { signIns: ["staff", "colleague", "staff"] }, spares: [{ slug: "newco", signIns: 2 }] })
+  // (the authorisations after it reuse ID's session). The tenant's member: one ID refuses and one it lets through (A4), and the same again once A9 has removed them
+  // and reinstated them. The spare directory's person: one ID refuses before the Toolbox is enabled and one it lets through (A3).
+  id = await startId({ tenants: [{ slug: "client", signIns: 4 }], platform: { signIns: ["staff", "colleague", "staff"] }, spares: [{ slug: "newco", signIns: 2 }] })
   stack = await startAdminStack(id, { adminHost, toolboxHost, fetch: counted })
   adminMcp = stack.adminMcp()
   serve(47_606, request => adminMcp.fetch(request))
@@ -373,6 +378,7 @@ describe("A4 refusals", () => {
     expect(await signInRefused(browser, adminTarget(), asTenant)).toBe(refusalText)
     await grantOrganisation(id.admin, tenant.organizationId, { clientId: adminHost.clientId, resource: adminResource, scopes: ["admin"] })
     const member = await signIn(browser, adminTarget(), asTenant)
+    tenantSession = member
     expect(claims(member)).toMatchObject({ aud: adminResource, organization_id: tenant.organizationId })
     const client = await on(member)
     expect(await names(client)).toEqual([])
@@ -455,6 +461,98 @@ describe("A5 idempotency", () => {
       ["admin/organisations.create", "success", null, "id"],
     ])
     expect(calls.filter(row => row.outcome === "success" && row.capability_identity === "admin/commit_confirmed").map(row => row.receipt_id)).toEqual([winner.receipt_id, winner.receipt_id])
+  })
+})
+
+// Stopping someone, with the machine client's real scopes: ID checks platform:users on these routes, which platform:write does not include. Before A6, which shortens
+// the window a critical operation allows to ten seconds: each tool needs a company sign-in at most 30 minutes old.
+describe("A9 stopping someone", () => {
+  const userRow = z.object({ status: z.string(), email: z.string(), retiredEmail: z.string().nullable(), sessionCount: z.number() })
+  const memberRow = z.object({ membershipStatus: z.string(), effective: z.boolean() })
+  const tenant = () => id.manifest.tenants[0]!
+  const asTenant = () => ({ slug: tenant().slug, email: tenant().email, scopes: ["admin"] })
+  const user = async (userId: string) => userRow.parse(await id.admin("GET", `/users/${userId}`))
+  const member = async (memberId: string) => memberRow.parse(await id.admin("GET", `/organizations/${tenant().organizationId}/members/${memberId}`))
+  let tenantUser: string
+  let tenantMember: string
+  // The tenant person's session after A9 signs them in again.
+  let again: OAuthSession
+
+  test("members_remove, committed by an admin by the person's address, revokes their membership in one organisation: ID shows it, their refresh stops and a new sign-in is refused; members_reinstate by member id brings it back", async () => {
+    const { organizationId, email } = tenant()
+    tenantUser = String(claims(tenantSession).sub)
+    const removed = await change(colleagueClient, "members_remove", { organizationId, email })
+    tenantMember = removed.intent.targets[0]!.resource_id
+    expect(removed.intent.targets).toEqual([expect.objectContaining({ resource_type: "member", resource_id: claims(tenantSession).membership_id, version: { kind: "etag", value: expect.stringMatching(/^"[0-9a-f-]{36}:\d+"$/) } })])
+    expect(removed.intent.preview.summary).toContain(`Remove ${email}`)
+    expect(removed.receipt.results).toMatchObject({ organizationId, memberId: tenantMember })
+    await audited(colleagueClient, removed.receipt)
+    expect(await member(tenantMember)).toEqual({ membershipStatus: "revoked", effective: false })
+    expect(await user(tenantUser)).toMatchObject({ status: "active" })
+    await refreshRefused(tenantSession, adminHost.clientId, adminResource)
+    expect(await refusal(colleagueClient, "members_remove", { organizationId, memberId: tenantMember })).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("is already removed") })
+    // ID ends a removed member's sign-in at its error page, after their company sign-in: connecting the account cannot restore the membership.
+    expect(await signInRefused(browser, adminTarget(), asTenant())).toContain("Your membership is no longer available")
+    const reinstated = await change(staffClient, "members_reinstate", { organizationId, memberId: tenantMember })
+    await audited(staffClient, reinstated.receipt)
+    expect(await member(tenantMember)).toEqual({ membershipStatus: "active", effective: true })
+    // What was revoked stays revoked: the old refresh token is refused, and the person signs in again.
+    await refreshRefused(tenantSession, adminHost.clientId, adminResource)
+    again = await signIn(browser, adminTarget(), asTenant())
+    expect(claims(again)).toMatchObject({ aud: adminResource, organization_id: organizationId, sub: tenantUser })
+    step(`members_remove and members_reinstate: ${email} revoked and back in ${tenant().slug} alone, each one ID audit row, their old refresh refused and a new sign-in refused in between`)
+  })
+
+  test("users_disable by an owner ends the person's sessions and grants at every organisation; users_enable by an admin restores the status and not the sessions", async () => {
+    const before = await user(tenantUser)
+    expect(before).toMatchObject({ status: "active", email: tenant().email })
+    expect(before.sessionCount).toBeGreaterThan(0)
+    const disabled = await change(staffClient, "users_disable", { email: tenant().email })
+    expect(disabled.intent.targets).toEqual([expect.objectContaining({ resource_type: "user", resource_id: tenantUser, version: { kind: "timestamp", value: expect.any(String) } })])
+    expect(disabled.intent.preview.summary).toContain(`Disable ${tenant().email}`)
+    await audited(staffClient, disabled.receipt)
+    expect(await user(tenantUser)).toMatchObject({ status: "disabled", sessionCount: 0 })
+    await refreshRefused(again, adminHost.clientId, adminResource)
+    const enabled = await change(colleagueClient, "users_enable", { userId: tenantUser })
+    await audited(colleagueClient, enabled.receipt)
+    expect(await user(tenantUser)).toMatchObject({ status: "active", sessionCount: 0 })
+    await refreshRefused(again, adminHost.clientId, adminResource)
+    step(`users_disable: ${before.sessionCount} session${before.sessionCount === 1 ? "" : "s"} ended and the refresh refused; users_enable restored the status and no session`)
+  })
+
+  test("users_disable then users_retireemail by an owner frees the spare person's address: ID finds nobody by it, keeps it as retiredEmail, and the person can be neither enabled nor found by it", async () => {
+    const spare = id.manifest.spares[0]!
+    const spareUser = String(claims(person).sub)
+    expect(await refusal(staffClient, "users_retireemail", { email: spare.email })).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("is not disabled") })
+    await change(staffClient, "users_disable", { email: spare.email })
+    const retired = await change(staffClient, "users_retireemail", { email: spare.email })
+    await audited(staffClient, retired.receipt)
+    expect(retired.intent.preview.summary).toContain(`Retire the address ${spare.email}`)
+    expect(await user(spareUser)).toMatchObject({ status: "disabled", retiredEmail: spare.email, email: `${spareUser}@retired.invalid` })
+    expect(z.object({ items: z.array(z.unknown()) }).parse(await id.admin("GET", `/users?email=${encodeURIComponent(spare.email)}`)).items).toEqual([])
+    expect(await refusal(staffClient, "users_enable", { userId: spareUser })).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("retired") })
+    expect(await refusal(staffClient, "users_disable", { email: spare.email })).toMatchObject({ code: "NOT_FOUND", message: expect.stringContaining("name that person by userId") })
+    step(`users_retireemail: ${spare.email} is free in ID; the retired user keeps it as retiredEmail`)
+  })
+
+  test("an admin is refused each tool on a member of staff, and the owner is not harmed; an owner may prepare it, and users_retireemail is not listed to an admin", async () => {
+    const ownerUser = String(claims(staff).sub)
+    const colleagueUser = String(claims(colleague).sub)
+    expect(await refusal(colleagueClient, "users_disable", { userId: ownerUser })).toMatchObject({
+      code: "PERMISSION_DENIED", message: expect.stringContaining(`${id.manifest.platform!.email} is Answerable staff, and acting on staff is an owner's critical operation`),
+    })
+    expect(await refusal(colleagueClient, "users_enable", { email: id.manifest.platform!.email })).toMatchObject({ code: "PERMISSION_DENIED" })
+    expect(await refusal(colleagueClient, "members_remove", { organizationId: platformOrganization(), memberId: staffMember })).toMatchObject({ code: "PERMISSION_DENIED" })
+    expect(await refusal(colleagueClient, "members_reinstate", { organizationId: platformOrganization(), memberId: staffMember })).toMatchObject({ code: "PERMISSION_DENIED" })
+    await expect(colleagueClient.callTool({ name: "users_retireemail", arguments: { userId: ownerUser } })).rejects.toThrow("Tool users_retireemail not found")
+    expect(await user(ownerUser)).toMatchObject({ status: "active" })
+    expect(memberRow.parse(await id.admin("GET", `/organizations/${platformOrganization()}/members/${staffMember}`))).toEqual({ membershipStatus: "active", effective: true })
+    // The owner may aim at staff, here only to prepare: the preview says who they are and warns when it is themselves.
+    const colleagues = await prepare(staffClient, "users_disable", { userId: colleagueUser })
+    expect(colleagues.preview).toMatchObject({ summary: expect.stringContaining(colleaguePerson().email) })
+    const yourself = z.object({ preview: z.object({ warnings: z.array(z.string()) }) }).parse(await tool(staffClient, "users_disable", { userId: ownerUser }))
+    expect(yourself.preview.warnings).toContain("You are disabling yourself: your sessions end with it, and only another admin can enable you again.")
+    expect(await user(colleagueUser)).toMatchObject({ status: "active" })
   })
 })
 

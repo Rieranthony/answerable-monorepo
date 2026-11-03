@@ -36,7 +36,13 @@ async function onPage<T>(where: Where, steps: (page: Page) => Promise<T>) {
   }
 }
 
-/** ID's first pages for one person: email and company sign-in, unless the browser context already holds the person's ID session, and the organisation chooser, where it continues with the person's organisation. */
+/** ID's error page for a person whose membership was removed, shown after their company sign-in in place of the organisation chooser. */
+const unavailable = (page: Page) => page.getByRole("heading", { name: "Organisation access is unavailable" })
+
+/**
+ * ID's first pages for one person: email and company sign-in, unless the browser context already holds the person's ID session, and the organisation chooser, where it continues with the person's organisation.
+ * Answers `"unavailable"` when ID ends the sign-in at its error page instead, for a person removed from their organisation.
+ */
 async function chooseOrganisation(page: Page, authorizationUrl: string, email: string) {
   await page.goto(authorizationUrl)
   const field = page.getByLabel(/email/i)
@@ -45,7 +51,8 @@ async function chooseOrganisation(page: Page, authorizationUrl: string, email: s
   if (await field.isVisible()) {
     await field.fill(email)
     await page.getByRole("button", { name: /continue/i }).click()
-    await chooser.waitFor()
+    await chooser.or(unavailable(page)).waitFor()
+    if (await unavailable(page).isVisible()) return "unavailable" as const
   }
   await page.getByRole("button", { name: "Continue", exact: true }).click()
 }
@@ -53,7 +60,7 @@ async function chooseOrganisation(page: Page, authorizationUrl: string, email: s
 /** Complete ID's pages for one person: email, company sign-in, organisation, consent. Returns the callback's query. On failure, prints the page ID showed. */
 function approve(browser: Where, authorizationUrl: string, target: Pick<SignInTarget, "callback" | "scopes">, tenant: SignInTenant) {
   return onPage(browser, async page => {
-    await chooseOrganisation(page, authorizationUrl, tenant.email)
+    if ((await chooseOrganisation(page, authorizationUrl, tenant.email)) === "unavailable") assert.fail(`ID ended the sign-in: ${await page.locator("body").innerText()}`)
     await page.getByRole("heading", { name: "Access it will receive" }).waitFor()
     const withheld = target.scopes.filter(scope => !tenant.scopes.includes(scope))
     const scopeList = await page.locator("section ul").innerText()
@@ -101,11 +108,14 @@ export async function signIn(browser: Where, target: SignInTarget, tenant: SignI
   return oauth
 }
 
-/** Sign a person in where ID is expected to refuse, such as one of an organisation not yet entitled to the MCP. Makes the same request as `signIn`, but returns the refusal ID shows at the organisation chooser ("Access is unavailable for this organisation. …") instead of waiting 30 seconds for a consent page. */
+/**
+ * Sign a person in where ID is expected to refuse, such as one of an organisation not yet entitled to the MCP. Makes the same request as `signIn`, but returns the refusal ID shows at the organisation chooser
+ * ("Access is unavailable for this organisation. …") instead of waiting 30 seconds for a consent page; for a person removed from their organisation, the text of the error page ID shows after their company sign-in.
+ */
 export async function signInRefused(browser: Where, target: SignInTarget, tenant: SignInTenant) {
   const { authorize } = await challenge(target)
   return onPage(browser, async page => {
-    await chooseOrganisation(page, authorize.href, tenant.email)
+    if ((await chooseOrganisation(page, authorize.href, tenant.email)) === "unavailable") return page.locator("body").innerText()
     return page.getByRole("alert").innerText()
   })
 }

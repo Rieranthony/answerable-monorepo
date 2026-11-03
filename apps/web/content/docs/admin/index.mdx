@@ -1,6 +1,6 @@
 ---
 title: The admin MCP
-description: "The staff-only MCP server through which Answerable staff onboard and manage organisations in Answerable ID from an AI host: its roles, its read and write tools, how a change is prepared and confirmed, the critical operations, its limits and its errors."
+description: "The staff-only MCP server through which Answerable staff onboard and manage organisations in Answerable ID, and stop a person, from an AI host: its roles, its read and write tools, how a change is prepared and confirmed, the critical operations, its limits and its errors."
 ---
 
 ```bash
@@ -8,7 +8,7 @@ claude mcp add --transport http answerable-admin http://localhost:47520/mcp \
   --client-id claude-code-admin --callback-port 47700
 ```
 
-The admin MCP (`mcps/admin`) gives Answerable staff the work of [onboarding an organisation](/docs/id/onboard) in an AI host such as Claude Code: reading organisations, members, access and the audit log, and changing them. A staff member signs in with their Answerable account and sees exactly the tools their role allows. The server acts on Answerable ID with its own machine client, and only after it has checked the person's role.
+The admin MCP (`mcps/admin`) gives Answerable staff the work of [onboarding an organisation](/docs/id/onboard) in an AI host such as Claude Code: reading organisations, members, access and the audit log, changing them, and [stopping someone](#stopping-someone). A staff member signs in with their Answerable account and sees exactly the tools their role allows. The server acts on Answerable ID with its own machine client, and only after it has checked the person's role.
 
 **Staff only.** Only members of the platform organisation get any tool. An admin MCP for an organisation's own administrators: Not yet.
 
@@ -27,8 +27,8 @@ Claude prepares each change, shows you its summary and commits it only once you 
 | --- | --- | --- |
 | None | None | `admin_whoami` only |
 | `team` | `answerable-team` | `admin_whoami` and every read tool |
-| `admin` | `answerable-admin` | The same, the eleven ordinary writes and the two commit tools |
-| `owner` | `answerable-owner` | Everything: also the [critical operations](#critical-operations), and any write to the platform organisation |
+| `admin` | `answerable-admin` | The same, the sixteen ordinary writes and the two commit tools |
+| `owner` | `answerable-owner` | Everything: also the [critical operations](#critical-operations), any write to the platform organisation, and any write to a member of Answerable staff |
 
 **Where a role lives.** In Answerable ID, as an entitlement on the admin MCP's resource, with no client, whose scopes include the role's grant string. Hold it through a group of the platform organisation: put a member in the group and they have the role. The group's name confers nothing; the entitlement does.
 
@@ -83,7 +83,7 @@ Your person, membership, organisation and host client from the token; your role 
 
 ### Writes
 
-Each write is a prepare tool: it changes nothing and returns an intent, which `admin_commit_confirmed` applies. All take `organizationId` but the first and the last two.
+Each write is a prepare tool: it changes nothing and returns an intent, which `admin_commit_confirmed` applies. Most take `organizationId`; `organisations_create`, `staff_grant`, `staff_revoke` and the `users_` tools do not.
 
 | Tool | Prepares | Least role | Writes to Answerable ID |
 | --- | --- | --- | --- |
@@ -103,8 +103,13 @@ Each write is a prepare tool: it changes nothing and returns an intent, which `a
 | `organisations_enable` | The organisation enabled again | `owner` | [enableOrganization](/docs/id/admin-api/organizations/enableOrganization) |
 | `staff_grant` | `role` for `memberId` of the platform organisation, through the group whose entitlement carries it | `owner` | [putGroupMember](/docs/id/admin-api/groups/putGroupMember) |
 | `staff_revoke` | `role` taken from `memberId`, out of every group whose entitlement carries it | `owner` | [removeGroupMember](/docs/id/admin-api/groups/removeGroupMember) |
+| `users_disable` | A person (`email` or `userId`) disabled at every organisation: [stopping someone](#stopping-someone) | `admin` | [disableUser](/docs/id/admin-api/users/disableUser) |
+| `users_enable` | A disabled person enabled again; revoked sessions are not restored | `admin` | [enableUser](/docs/id/admin-api/users/enableUser) |
+| `users_retireemail` | The address of a disabled person retired, so that another person can hold it; terminal | `owner` | [retireUserEmail](/docs/id/admin-api/users/retireUserEmail) |
+| `members_remove` | A member (`memberId` or `email`) removed from one organisation | `admin` | [removeMember](/docs/id/admin-api/members/removeMember) |
+| `members_reinstate` | A removed member reinstated in the organisation; the grants and group assignments removed with them are not restored | `admin` | [reinstateMember](/docs/id/admin-api/members/reinstateMember) |
 
-**Refused at prepare.** A write that would change nothing, or that ID would refuse, answers before anything is recorded: `PRECONDITION_FAILED` for a taken slug, a domain already routed, a member already in the group or not in it, an identical entitlement, an organisation already in that status, a role already held or not held; `INVALID_INPUT` for a scope the resource does not allow, an issuer `sso_set` does not take, or a provider or host client the Toolbox or ID does not know.
+**Refused at prepare.** A write that would change nothing, or that ID would refuse, answers before anything is recorded: `PRECONDITION_FAILED` for a taken slug, a domain already routed, a member already in the group or not in it, an identical entitlement, an organisation already in that status, a role already held or not held, a person already disabled, enabled or retired, a member already removed or not removed; `INVALID_INPUT` for a scope the resource does not allow, an issuer `sso_set` does not take, or a provider or host client the Toolbox or ID does not know.
 
 ### A standalone MCP
 
@@ -116,6 +121,32 @@ A `standalone` or `both` MCP is its own resource, `https://mcp.<zone>/<name>/mcp
 2. `access_grant` of the MCP's scopes, such as `acme:read`, on its resource, with `clientId` set to the host client, `claude-code-<name>`, to the organisation, a group or a person. ID puts a scope in a person's token only through the client the entitlement names, so `access_grant` refuses a standalone MCP's resource without `clientId`. Or pass `everyone: true` to step 1, which grants every scope to the whole organisation through the host client in the same intent.
 
 `access_revoke` undoes it: the sign-in entitlement, which `access_list` shows with the host client and no resource, and, after `everyone: true`, the entitlement with the host client on the MCP's resource.
+
+### Stopping someone
+
+```text
+Disable ada@newco.example everywhere, then retire the address so that someone new can have it.
+```
+
+Staff stop a person here, whatever company directory or sign-in method they came through: Answerable ID decides who signs in, and a directory is only a provider to it.
+
+| To | Tool | Effect | Undo |
+| --- | --- | --- | --- |
+| Remove someone from one organisation | `members_remove` | Their sign-in to that organisation fails and its grants stop; their direct grants and group assignments there are removed. Their other organisations stay | `members_reinstate`. The grants and group assignments are not restored |
+| Cut someone off everywhere | `users_disable` | Every session, grant and stored token ends, and no sign-in works at any organisation | `users_enable`. Revoked sessions are not restored |
+| Give their address to someone else | `users_retireemail`, after `users_disable` | The address is free again. The next holder is a new person with a new `sub` | None: terminal |
+
+**Name the person.** `users_disable`, `users_enable` and `users_retireemail` take `email` or `userId`; `members_remove` and `members_reinstate` take `organizationId` and a member's `email` or `memberId`. Give one of the two. The schema marks both optional, because hosts refuse a top-level choice in a tool's input, so giving neither or both answers `INVALID_INPUT` naming both fields. An address is found with the exact `email` filter of [listUsers](/docs/id/admin-api/users/listUsers) or [listMembers](/docs/id/admin-api/members/listMembers), in any case. A person it does not find answers `NOT_FOUND`; an address that was retired finds nobody, so name that person by `userId`.
+
+**Read the preview.** It names the person and their organisations, says whether it reaches one or all of them, and says what it does not reach: a service token already issued lives to its expiry, and each app's own session is the app's to end. For `users_disable` it counts the sessions that end; for `members_remove` it names the organisations where the person stays.
+
+**Who may.** `admin` for the first four tools, `owner` for `users_retireemail`. A person with a membership in the platform organisation is Answerable staff: acting on them needs `owner` with any of the five, because `staff_revoke` is owner-only and Answerable ID itself protects only the last platform administrator. An admin who aims one at staff gets `PERMISSION_DENIED`. Each also needs a [recent company sign-in](#critical-operations), because Answerable ID checks that on a person's own session and not on a machine client's.
+
+**Precondition.** A person already disabled, enabled or retired, a member already removed or not removed, and a retirement before the disable each answer `PRECONDITION_FAILED` at prepare, with the state in `details.preconditions`. A target that changed since prepare answers `INTENT_STALE` at commit: a user is versioned by when ID last changed them, a member by its `ETag`.
+
+**The machine client.** These routes need `platform:users`, which `platform:write` does not include, so the admin MCP's machine client holds it beside `platform:read` and `platform:write` and the server sends these five writes with a `platform:read platform:users` token. A deployment registered before then gets it when the deploy's register Job next runs. Until then a commit answers `UPSTREAM_REJECTED`, whose message names the client's `platform:read` and `platform:users` capability: [add it by hand](/docs/admin/setup#register-the-admin-mcp).
+
+**What stopping does not reach.** Answerable ID ends its own sessions, grants and tokens. A service token already issued lives to its expiry, and each app's own session is the app's to end: that belongs to each app's integration. No company directory can tell Answerable ID that someone left, so staff must remove the member in ID. To reuse an address, disable the previous holder and retire the address first: until then a new person who signs in with it gets `email_conflict`, and the holder's row does not change. [Offboard](/docs/id/onboard#offboard) lists the same steps as API calls.
 
 ### Some tools, not all
 
@@ -179,6 +210,8 @@ Prepare reads what the write acts on and binds ID's `ETag` to it as the target's
 | `staff_grant` | `If-None-Match: *`: the membership must not exist yet. Its target is the role's entitlement, read again just before the write |
 | `organisations_create`, `domains_add`, `groups_create`, `access_grant` | Nothing: the slug, domain or entitlement is checked again just before the write. ID refuses a duplicate with `409 conflict` |
 | `organisations_disable`, `organisations_enable`, `access_revoke`, `access_enable`, `groups_dropmember`, `staff_revoke` | Nothing: the target is read again just before the write |
+| `users_disable`, `users_enable`, `users_retireemail` | Nothing: the target is the user, which ID versions by when it last changed them (a timestamp, since a user has no `ETag`), read again just before the write |
+| `members_remove`, `members_reinstate` | Nothing: the target is the member's `ETag`, read again just before the write |
 
 A write that ID takes without a precondition says so in its preview's warnings.
 
@@ -192,9 +225,9 @@ A write that ID takes without a precondition says so in its preview's warnings.
 
 ## Critical operations
 
-**Which.** `organisations_disable`, `organisations_enable`, `staff_grant` and `staff_revoke`, and any write whose organisation is the platform organisation: it decides who is staff and how staff sign in.
+**Which.** `organisations_disable`, `organisations_enable`, `staff_grant`, `staff_revoke` and `users_retireemail`; any write whose organisation is the platform organisation, since it decides who is staff and how staff sign in; and any of the five tools that [stop someone](#stopping-someone) aimed at a member of Answerable staff. `users_disable`, `users_enable`, `members_remove` and `members_reinstate` aimed at anyone else need the same recent sign-in from an admin.
 
-**Who.** An owner whose last sign-in at their company's directory is within `ADMIN_FRESH_SECONDS`, 1,800 seconds by default. The sign-in time is the token's `upstream_auth_time`. An admin preparing a write to the platform organisation gets `PERMISSION_DENIED`.
+**Who.** An owner (an admin, for the four stopping tools aimed at someone who is not staff) whose last sign-in at their company's directory is within `ADMIN_FRESH_SECONDS`, 1,800 seconds by default. The sign-in time is the token's `upstream_auth_time`. An admin preparing a write to the platform organisation, or aiming a stopping tool at staff, gets `PERMISSION_DENIED`.
 
 **When it is checked.** At prepare and again at commit, so an intent prepared in time cannot be committed once the window has passed. Older, or no time at all, answers `ADMIN_REAUTHENTICATION_REQUIRED` with `details.upstream_auth_time` and `details.max_age_seconds`, and the refusal is evidence (`capability.denied`, reason `stale_authentication`).
 
@@ -276,7 +309,8 @@ Read from the root `.env` by `bun run admin:dev`. An empty variable counts as un
 | Lists | At most 100 items a page |
 | Secrets | No tool takes one. `sso_set` sets Answerable's own Microsoft or Google application only: `https://login.microsoftonline.com/<tenant id>/v2.0` or `https://accounts.google.com`. A directory with its own credentials is set with cURL, as [Connect the directory](/docs/id/onboard#connect-the-directory) shows |
 | SSO provider changes | ID revokes every grant of the organisation when its provider changes, including when it is first set |
-| Writes without a precondition at ID | Creating an organisation, a domain, a group or an entitlement; disabling or enabling an organisation or an entitlement; removing a group member. The admin MCP reads the target again just before the write |
+| Writes without a precondition at ID | Creating an organisation, a domain, a group or an entitlement; disabling or enabling an organisation or an entitlement; removing a group member; disabling, enabling or retiring a user; removing or reinstating a member. The admin MCP reads the target again just before the write |
+| Stopping someone | Answerable ID's sessions, grants and tokens only: a service token already issued lives to its expiry, and each app's own session is the app's to end. A retired address cannot be given back |
 | Entitlements | ID keeps one per principal and target, whatever its scopes or status: `access_grant` refuses a second, naming the one there. A disabled one comes back with `access_enable`; its scopes change only with [updateEntitlement](/docs/id/admin-api/entitlements/updateEntitlement) |
 | `toolbox_enable` | Not atomic: if the Toolbox fails part-way, what it made stays. Safe to repeat: prepare and commit the same request again, and it makes only what is missing |
 | `standalone_enable` | Not atomic: if ID fails part-way, what was made stays; preparing again previews only what is missing. A row that exists and does not fit, disabled or short of scopes, stops the prepare, naming it |
@@ -301,6 +335,7 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | `APPROVAL_REQUIRED` | You committed with `admin_commit`, or `preview_summary` differs from the intent's summary | Show the person the preview, then call `admin_commit_confirmed` with its summary word for word |
 | `ADMIN_REAUTHENTICATION_REQUIRED` | A critical operation, and your last directory sign-in is older than `ADMIN_FRESH_SECONDS`, or unknown | [Sign in again](#sign-in-again), then prepare again |
 | `PERMISSION_DENIED`: `Changing the platform organisation is an owner's critical operation…` | An admin prepared a write to the platform organisation | Ask an owner |
+| `PERMISSION_DENIED`: `<address> is Answerable staff, and acting on staff is an owner's critical operation…` | An admin aimed `users_disable`, `users_enable`, `members_remove` or `members_reinstate` at a member of the platform organisation | Ask an owner |
 | `PERMISSION_DENIED`: `Your access no longer covers admin/<tool>` | Your role fell below the tool's minimum since you prepared | Ask for the role again, then prepare again |
 | `PRECONDITION_FAILED` | The write would change nothing, ID would refuse it, or the Toolbox is not configured; the message and `details.preconditions` say which | Change that state, or nothing is needed |
 | `PRECONDITION_FAILED`: `No group of the platform organisation holds answerable-<role>…` | `staff_grant` found no group whose entitlement carries the role | As the message says: `groups_create` in the platform organisation, then `access_grant` to that group on the admin MCP's resource with the role's grant string |
@@ -310,6 +345,7 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | `PRECONDITION_FAILED`: `Answerable ID already holds the <row> (<id>) with status…` | `standalone_enable` found a row for that target that is disabled or lacks scopes | Enable it (`access_enable` for an entitlement) or widen it in ID, then prepare again |
 | Tool result `NOT_FOUND`: `Answerable ID has no resource https://mcp.<zone>/<name>/mcp…` or `…has no client claude-code-<name>…` | The MCP is not served standalone, or no deploy has registered it | Ship it with `serve` `standalone` or `both`; the deploy's register Job registers it |
 | `INVALID_INPUT`: `<resource> is a standalone MCP's resource, and Answerable ID counts an entitlement…` | `access_grant` named a standalone MCP's resource, `<origin>/<name>/mcp`, without `clientId`; ID would count the entitlement towards no token | Prepare again with `clientId` `claude-code-<name>`, or use `standalone_enable` with `everyone: true` |
+| `INVALID_INPUT`: `Name the person: give their email or their userId` (or `by email or by userId, not both`; `member`, `memberId` for the members tools) | A stopping tool got neither or both of the two ways to name someone | Give one of them; `details.field_violations` names both fields |
 | `INVALID_INPUT` | An argument failed the schema, or a rule: an issuer `sso_set` does not take, a scope the resource does not allow, a `principal.id` missing or extra, a provider or host client unknown | Fix the field `details.field_violations` names |
 | `INTENT_STALE` | A target moved since prepare, or ID refused the write's precondition; `details.targets` holds both versions | Prepare again and show the new preview |
 | `INTENT_EXPIRED` | 30 minutes passed since prepare | Prepare again |
@@ -319,6 +355,10 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | Tool result `UPSTREAM_UNAVAILABLE`: `Answerable ID failed the write twice, did not answer it, or is still applying it…` | ID failed or did not answer a write, sent twice with the same key, or answered `409 operation_in_progress`; whether it applied it is unknown | Read the target back with a read tool before preparing again |
 | Tool result `UPSTREAM_UNAVAILABLE`: `The Toolbox…` | The Toolbox did not answer, or failed | Retry; `toolbox_enable` is safe to repeat |
 | Tool result `UPSTREAM_REJECTED` | ID or the Toolbox refused the machine client or a write; the message is theirs, and `details.upstream` holds the status and code, such as `409 conflict` for a domain another organisation holds or `platform_application_missing` for a directory without Answerable's application | Fix what the message names, such as `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` or the client's capabilities |
+| Tool result `NOT_FOUND`: `Answerable ID has no user with the address <address>…` or `Organisation <id> has no member with the address <address>…` | The exact address finds nobody, or its holder's address was retired | Check the address with `members_list`; name a retired person by `userId` |
+| `PRECONDITION_FAILED`: `<address> is already disabled`, `is already enabled`, `is already retired`, `is not disabled…`, `was already removed from…`, `is not removed from…`, or `<address>'s address was retired, which is permanent…` | The stop would change nothing, or ID would refuse it: `users_retireemail` needs `users_disable` committed first, and a retired person cannot be enabled | Nothing is needed; or `users_disable` first |
+| Tool result `UPSTREAM_REJECTED`: `Answerable ID refused the client credentials of admin-mcp (400); check … the client's platform:read and platform:users capability…` | The machine client has no capability for `platform:users` on ID's admin API: it was registered before the scope existed, and register has not run since | Run the deploy's register Job, or add the scope by hand as [Register the admin MCP](/docs/admin/setup#register-the-admin-mcp) shows |
+| Tool result `UPSTREAM_REJECTED` with `details.upstream.code` `last_platform_administrator` | `users_disable` of the last effective platform administrator: ID keeps one | Make another platform administrator first |
 | Tool result `NOT_FOUND` | The organisation, member, group, entitlement, resource or client does not exist in ID | Take ids from the list tools |
 | Tool result `NOT_FOUND`: `Organisation <id> has no SSO provider…` | `sso_test` found no provider to test | `organisations_get` shows `sso: null`; set one with `sso_set` |
 | Tool result `NOT_FOUND`: `Answerable ID does not know this admin MCP's resource…` | `staff_list` found no resource registered as `ADMIN_RESOURCE_URL` | Register it, or correct the variable |
@@ -347,7 +387,7 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | Changing the scopes of an entitlement | [updateEntitlement](/docs/id/admin-api/entitlements/updateEntitlement) with cURL; or one group per set of tools, moved with `groups_addmember` and `groups_dropmember` |
 | SSO providers with their own credentials | cURL, as [Connect the directory](/docs/id/onboard#connect-the-directory) shows |
 | Human approval of a write | Every write is controlled class; the critical operations are owner-only and need a recent sign-in |
-| Registering clients and resources, users, sessions, disabling domains, member windows and removal | cURL, as [Onboard an organisation](/docs/id/onboard) and [Manage your organisation](/docs/id/manage) show |
+| Registering clients and resources, erasing users, revoking sessions alone, disabling domains, member windows | cURL, as [Onboard an organisation](/docs/id/onboard) and [Manage your organisation](/docs/id/manage) show |
 | An admin MCP for an organisation's own administrators | They use [Manage your organisation](/docs/id/manage) |
 | Mounting this provider in the Toolbox | It is served alone, at its own resource |
 | Spans, rate limits and budgets | None |

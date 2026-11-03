@@ -56,10 +56,11 @@ const roles = ["team", "admin", "owner"] as const
  * and for each standalone or both MCP of `mcps`, which the Toolbox serves alone, its resource, `<mcpOrigin>/<name>/mcp`, its
  * Claude Code client, `claude-code-<name>`, and their link.
  *
- * Every resource and client is read first: one ID lacks is created with its `Idempotency-Key`; one that differs is changed with `If-Match`,
- * under `<key>-r<revision>`, in the fields that differ. Scopes and redirect URIs only widen: the Toolbox's resource keeps what enable calls added. An
- * MCP's own resource follows its manifest, and a scope the manifest dropped is logged as it goes. An MCP removed from the list keeps its rows.
- * Links are made under `<key>-r<revision>` of the client when its read lacks them; capabilities, entitlements and groups are created when missing.
+ * Every resource, client and capability is read first: one ID lacks is created with its `Idempotency-Key`; one that differs is changed with `If-Match`,
+ * under `<key>-r<revision>`, in the fields that differ. Scopes and redirect URIs only widen: the Toolbox's resource keeps what enable calls added, and a
+ * capability gains a scope declared since it was made (the admin MCP's `platform:users`). An MCP's own resource follows its manifest, and a scope the
+ * manifest dropped is logged as it goes. An MCP removed from the list keeps its rows.
+ * Links are made under `<key>-r<revision>` of the client when its read lacks them; entitlements and groups are created when missing.
  * Each machine client's secret is stored the moment ID answers it, and one that exists while its secret is not stored is rotated. With `staff`,
  * then connects the staff domain and directory (see {@link connectStaff}). Prints the Claude Code commands and the first owner's step; never a secret.
  */
@@ -105,8 +106,8 @@ export async function register({ id, rootSecret, toolbox, adminMcp, mcpOrigin, m
       await capability(`${clientId}-capability${suffix}-v1`, clientId, audience, "client_credentials", granted)
     }
   }
-  const capability = (key: string, clientId: string, target: string | null, grantKind: string, scopes: string[]) =>
-    write("POST", `/organizations/${platform}/capabilities`, key, { clientId, resource: target, grantKind, scopes }, { create: true })
+  const capability = (key: string, clientId: string, resource: string | null, grantKind: string, scopes: string[]) =>
+    registrar.capability(platform, key, { clientId, resource, grantKind, scopes })
   const entitlement = (key: string, body: Record<string, unknown>) => write("POST", `/organizations/${platform}/entitlements`, key, body, { create: true })
 
   const platform = await platformOrganisation(call)
@@ -144,7 +145,9 @@ export async function register({ id, rootSecret, toolbox, adminMcp, mcpOrigin, m
     groups[role] = (await findBySlug(call, `/organizations/${platform}/groups`, `answerable-${role}`))!
     await entitlement(`admin-role-${role}-v1`, { groupId: groups[role], resource: adminResource, scopes: [`answerable-${role}`] })
   }
-  await machine("admin-mcp", [["-id", admin, ["platform:read", "platform:write"]], ["-toolbox", toolboxAdmin, ["toolbox:admin"]]])
+  // platform:users is what ID's commands on a user and on a membership check, and platform:write does not include it: it stops someone (users_disable,
+  // members_remove). A deployment registered without it gets it here, since a capability is widened when its scopes differ.
+  await machine("admin-mcp", [["-id", admin, ["platform:read", "platform:users", "platform:write"]], ["-toolbox", toolboxAdmin, ["toolbox:admin"]]])
 
   // Each MCP the Toolbox serves alone.
   const standalone = mcps.filter(mcp => mcp.serve !== "toolbox")

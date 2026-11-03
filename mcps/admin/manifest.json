@@ -1,7 +1,7 @@
 {
   "id": "admin",
   "version": "2026-10-01",
-  "description": "Answerable's staff-only admin MCP: organisations, members, groups, access, single sign-on, the audit log, the Toolbox and standalone MCPs in Answerable ID, each tool behind a staff role.",
+  "description": "Answerable's staff-only admin MCP: organisations, users and members (including stopping someone), groups, access, single sign-on, the audit log, the Toolbox and standalone MCPs in Answerable ID, each tool behind a staff role.",
   "tools": [
     {
       "identity": "admin/access.enable",
@@ -1841,6 +1841,162 @@
       }
     },
     {
+      "identity": "admin/members.reinstate",
+      "name": "members_reinstate",
+      "version": "2026-10-01",
+      "kind": "mutate",
+      "description": "Prepare reinstating a person removed from one organisation in Answerable ID, so that they can sign in to it again. Name the member by memberId or email. A person who is Answerable staff needs the owner role. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. The direct grants and group assignments removed with the membership are not restored.",
+      "scopes": [
+        "admin"
+      ],
+      "errors": [
+        "ADMIN_REAUTHENTICATION_REQUIRED"
+      ],
+      "risk": "normal",
+      "effects": [
+        "permission_change"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "The organisation's id in Answerable ID, from organisations_list"
+          },
+          "memberId": {
+            "description": "The member's id, from members_list; give this or the email, not both",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "email": {
+            "description": "Their address as Answerable ID holds it, in any case; give this or the id, not both",
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          }
+        },
+        "required": [
+          "organizationId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "memberId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "organizationId",
+          "memberId",
+          "operationId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "identity": "admin/members.remove",
+      "name": "members_remove",
+      "version": "2026-10-01",
+      "kind": "mutate",
+      "description": "Prepare removing a person from one organisation in Answerable ID: their membership there is revoked, their direct grants and group assignments in it are removed, and they cannot sign in to it. Their other organisations stay as they are. Name the member by memberId or email. A person who is Answerable staff needs the owner role. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. members_reinstate brings the membership back, not the grants and assignments; users_disable stops them everywhere.",
+      "scopes": [
+        "admin"
+      ],
+      "errors": [
+        "ADMIN_REAUTHENTICATION_REQUIRED"
+      ],
+      "risk": "normal",
+      "effects": [
+        "permission_change"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "The organisation's id in Answerable ID, from organisations_list"
+          },
+          "memberId": {
+            "description": "The member's id, from members_list; give this or the email, not both",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "email": {
+            "description": "Their address as Answerable ID holds it, in any case; give this or the id, not both",
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          }
+        },
+        "required": [
+          "organizationId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "memberId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "organizationId",
+          "memberId",
+          "operationId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "identity": "admin/organisations.create",
       "name": "organisations_create",
       "version": "2026-10-01",
@@ -3060,6 +3216,207 @@
         "required": [
           "created",
           "existing"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "identity": "admin/users.disable",
+      "name": "users_disable",
+      "version": "2026-10-01",
+      "kind": "mutate",
+      "description": "Prepare disabling a person in Answerable ID at every organisation they belong to, not one: their sessions, grants and stored tokens end, and no sign-in works for them. Name them by email or userId. A person who is Answerable staff needs the owner role. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. users_enable reverses the status, not what was revoked; members_remove stops them at one organisation only.",
+      "scopes": [
+        "admin"
+      ],
+      "errors": [
+        "ADMIN_REAUTHENTICATION_REQUIRED"
+      ],
+      "risk": "normal",
+      "effects": [
+        "cascade_delete"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "email": {
+            "description": "Their address as Answerable ID holds it, in any case; give this or the id, not both",
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          },
+          "userId": {
+            "description": "Their user id, from members_list or staff_list; give this or the email, not both",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ]
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "userId",
+          "status",
+          "operationId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "identity": "admin/users.enable",
+      "name": "users_enable",
+      "version": "2026-10-01",
+      "kind": "mutate",
+      "description": "Prepare enabling a disabled person in Answerable ID, so that they can sign in again where their membership is in force. Name them by email or userId. A person who is Answerable staff needs the owner role. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. Sessions, grants and tokens revoked when they were disabled stay revoked, and a person whose address was retired cannot be enabled.",
+      "scopes": [
+        "admin"
+      ],
+      "errors": [
+        "ADMIN_REAUTHENTICATION_REQUIRED"
+      ],
+      "risk": "normal",
+      "effects": [],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "email": {
+            "description": "Their address as Answerable ID holds it, in any case; give this or the id, not both",
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          },
+          "userId": {
+            "description": "Their user id, from members_list or staff_list; give this or the email, not both",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ]
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "userId",
+          "status",
+          "operationId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "identity": "admin/users.retireemail",
+      "name": "users_retireemail",
+      "version": "2026-10-01",
+      "kind": "mutate",
+      "description": "Prepare retiring the address of a disabled person in Answerable ID, for good, so that another person can hold it. Name them by email or userId; users_disable them first. Owner only, with a recent sign-in at your directory. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. It cannot be undone: the next holder of the address is a new person with a new sub.",
+      "scopes": [
+        "admin"
+      ],
+      "errors": [
+        "ADMIN_REAUTHENTICATION_REQUIRED"
+      ],
+      "risk": "normal",
+      "effects": [],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "email": {
+            "description": "Their address as Answerable ID holds it, in any case; give this or the id, not both",
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          },
+          "userId": {
+            "description": "Their user id, from members_list or staff_list; give this or the email, not both",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "userId",
+          "operationId"
         ],
         "additionalProperties": false
       }

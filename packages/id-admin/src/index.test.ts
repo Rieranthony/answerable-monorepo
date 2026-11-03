@@ -229,3 +229,29 @@ test("pages reads every page of a list at limit=200, appending the cursor with ?
   for await (const items of pages("/organizations/org/members?q=x", get)) if (items.includes("b")) break
   expect(asked).toEqual(["/organizations/org/members?q=x&limit=200"])
 })
+
+test("manage with scope users sends a token for platform:read and platform:users of its own, which platform:write does not stand in for, reused and renewed once on its own", async () => {
+  const resource = "https://id.test/api/admin"
+  const id = createFakeId({ resources: { [resource]: ["platform:read", "platform:read platform:write", "platform:read platform:users"] } })
+  const admin = createIdAdmin(id.config)
+  const person = id.member(id.organizationId, { email: "ada@answerable.test" })
+  const disable = `/users/${person.userId}/disable`
+  await expect(admin.manage("POST", disable)).rejects.toMatchObject({ status: 403, code: "insufficient_scope" })
+  const done = await admin.manage("POST", disable, { scope: "users", idempotencyKey: "intent-5" })
+  expect(done).toMatchObject({ body: { id: person.userId, status: "disabled" }, operationId: expect.any(String), replayed: false })
+  expect(id.received.at(-1)).toMatchObject({ request: `POST /api/admin/v1${disable}`, idempotencyKey: "intent-5", caller: "toolbox-hub" })
+  await admin.manage("POST", `/users/${person.userId}/enable`, { scope: "users" })
+  expect(id.scopesAsked).toEqual(["platform:read platform:write", "platform:read platform:users"])
+  id.revoke()
+  await admin.manage("POST", disable, { scope: "users", idempotencyKey: "intent-6" })
+  expect(id.scopesAsked).toEqual(["platform:read platform:write", "platform:read platform:users", "platform:read platform:users"])
+})
+
+test("a client without a capability for platform:users cannot write with scope users, and the refusal names the capability to check", async () => {
+  const id = createFakeId()
+  const admin = createIdAdmin(id.config)
+  const person = id.member(id.organizationId)
+  await expect(admin.manage("POST", `/users/${person.userId}/disable`, { scope: "users" })).rejects.toThrow(
+    "Answerable ID refused the client credentials of toolbox-hub (400); check the client id, the client secret and the client's platform:read and platform:users capability for the admin resource",
+  )
+})

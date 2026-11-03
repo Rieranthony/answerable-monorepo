@@ -101,6 +101,22 @@ export function failure(method: string, path: string, answer: Answer, key?: stri
   return new Error(`${method} ${path}${key ? ` (Idempotency-Key ${key})` : ""} answered ${answer.status} ${answer.body.code ?? ""}`.trimEnd())
 }
 
+/**
+ * Every item of one of ID's lists, in order, page by page: `limit=200`, then each page's `nextCursor`. For a list that takes no filter, whose items the
+ * caller picks from. Throws, naming the call, when ID answers a page with anything but 2xx.
+ */
+export async function listAll<Item>(call: Call, path: string): Promise<Item[]> {
+  const items: Item[] = []
+  let cursor: string | null = null
+  do {
+    const answer = await call("GET", `${path}${path.includes("?") ? "&" : "?"}limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`)
+    if (!answer.ok) throw failure("GET", path, answer)
+    items.push(...(answer.body.items as Item[]))
+    cursor = answer.body.nextCursor as string | null
+  } while (cursor)
+  return items
+}
+
 /** The id of the item with this slug in a list ID answers to `?q=<slug>`, which matches by prefix; undefined when there is none. */
 export async function findBySlug(call: Call, path: string, slug: string) {
   const answer = await call("GET", `${path}?q=${encodeURIComponent(slug)}&limit=100`)

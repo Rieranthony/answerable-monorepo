@@ -108,7 +108,7 @@ At ID's email step type the address given below; the company sign-in that follow
    members_list finds the member, who has signed in. Within a minute the Toolbox lists two tools for the same sign-in: toolbox_whoami and e2e_records_list, and toolbox_whoami
    shows the grant e2e/records.list. Taking the person out of the group removes the tool again.
 
-When the previous sign-in at your company directory is older than 30 minutes, the critical tools (organisations_disable, organisations_enable, staff_grant, staff_revoke) ask you to sign in again:
+When the previous sign-in at your company directory is older than 30 minutes, the critical tools (organisations_disable, organisations_enable, staff_grant, staff_revoke, users_retireemail, and every tool that stops someone) ask you to sign in again:
 open ${manifest.idOrigin}/security in the browser you signed in with and choose Verify sign-in, then clear the server's authentication in Claude Code and authenticate again.
 
 claude mcp remove answerable-admin; claude mcp remove answerable-toolbox   when you are done.

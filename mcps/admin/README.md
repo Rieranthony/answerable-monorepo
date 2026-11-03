@@ -24,10 +24,11 @@ It needs its registrations in ID and the `ADMIN_*` variables, which [its page](.
 | `src/roles.ts` | `createRoles`: each caller's role from ID's member access view, once per request; `roleOf`, the three grant strings; `refusal`, why a caller may not use a tool |
 | `src/provider.ts` | `createAdminProvider`: `admin_whoami`, the read tools and the writes, each with its minimum role |
 | `src/calls.ts` | `createCalls`: ID's admin API as the tools call it, with the call's execution id as `x-request-id`; reads with ETags, and writes with the intent's id as `Idempotency-Key`, sent once more when ID does not answer; ID asking to be asked again (`503`, `409 operation_in_progress`) is `UPSTREAM_UNAVAILABLE` after its `Retry-After` |
-| `src/writes.ts` | What the mutations share: targets bound to ETags, the preview warnings, and the guard that makes every write to the platform organisation an owner's critical operation |
+| `src/writes.ts` | What the mutations share: targets bound to ETags, the preview warnings, the guard that makes every write to the platform organisation an owner's critical operation, and the one that does the same for acting on a member of staff |
 | `src/organisations.ts` | `organisations.create`, `.update`, `.disable` and `.enable`, `domains.add`, `sso.set` |
 | `src/access.ts` | `groups.create`, `.addmember` and `.dropmember`, `access.grant`, `.revoke` and `.enable` |
 | `src/staff.ts` | `staff.grant` and `staff.revoke`: a role through the group whose entitlement on the admin MCP's resource carries it |
+| `src/users.ts` | The tools that stop someone: `users.disable`, `.enable` and `.retireemail`, `members.remove` and `.reinstate`. A person is named by address or id and found with ID's exact `email` filter; the preview names them and their organisations; a member of staff needs the owner role; each write is sent with the machine client's `platform:read platform:users` token |
 | `src/toolbox.ts` | `createToolboxAdmin`, the Toolbox's admin API with a `toolbox:admin` token for its admin resource, and `toolbox.enable` |
 | `src/standalone.ts`, `src/enablement.ts` | `standalone.enable`: an organisation's access, through `claude-code-<name>`, to a standalone MCP the Toolbox serves at `<standaloneOrigin>/<name>/mcp`, from `enablementSteps`, the plan `bun mcp dev` also makes locally |
 | `src/fresh.ts` | `requireFresh`: the critical operations' rule on the token's `upstream_auth_time`, and `ADMIN_REAUTHENTICATION_REQUIRED` |

@@ -52,11 +52,13 @@ describe("register's own machine client", () => {
     expect(id.capabilities(id.platform).filter(row => row.grantKind === "client_credentials").map(row => [row.clientId, row.resource, row.scopes])).toEqual([
       ["ops-register", admin, ["platform:read", "platform:write"]],
       ["toolbox-hub", admin, ["platform:read", "platform:write"]],
-      ["admin-mcp", admin, ["platform:read", "platform:write"]],
+      ["admin-mcp", admin, ["platform:read", "platform:users", "platform:write"]],
       ["admin-mcp", "https://toolbox.example/admin", ["toolbox:admin"]],
     ])
     for (const identifier of [toolboxResource, "https://toolbox.example/admin", "https://admin-mcp.example/mcp", acme]) expect(id.resourceOf(identifier), identifier).toBeDefined()
     expect(id.calls().filter(call => call.method === "POST" && call.path === "/clients").length).toBe(6)
+    // The admin MCP's client may ask ID's admin API for platform:users, which stops someone (users_disable, members_remove), and the Toolbox's for toolbox:admin.
+    expect(id.clientOf("admin-mcp")).toMatchObject({ clientCredentialsScopes: ["platform:read", "platform:users", "platform:write", "toolbox:admin"] })
     for (const [clientId, resources] of Object.entries({
       "ops-register": [admin], "toolbox-hub": [admin], "claude-code-toolbox": [], "claude-code-admin": ["https://admin-mcp.example/mcp"], "admin-mcp": ["https://toolbox.example/admin", admin], "claude-code-acme": [acme],
     })) expect(id.clientOf(clientId)!.resources, clientId).toEqual(resources)
@@ -142,6 +144,98 @@ describe("register's own machine client", () => {
     expect(memory.writes).toEqual(["admin-id-client/ADMIN_ID_CLIENT_SECRET"])
     expect(memory.values["admin-id-client/ADMIN_ID_CLIENT_SECRET"]).toBe(id.clientOf("admin-mcp")!.secret!)
     expect(lines.join("\n")).toContain("admin-mcp: its secret was not stored, so ID rotated it")
+  })
+})
+
+describe("the admin MCP's machine client and platform:users", () => {
+  const ceiling = ["platform:read", "platform:users", "platform:write", "toolbox:admin"]
+  const capabilityOf = (id: FakeId, target = admin) => id.capabilities(id.platform).find(row => row.clientId === "admin-mcp" && row.resource === target)!
+  // The token endpoint, as the admin MCP meets it: the status ID answers a client_credentials request for ID's admin API with these scopes.
+  const asks = async (id: FakeId, scope: string) => (await id.fetch("https://id.example/auth/oauth2/token", {
+    method: "POST", headers: { Authorization: `Basic ${Buffer.from(`admin-mcp:${id.clientOf("admin-mcp")!.secret}`).toString("base64")}` },
+    body: new URLSearchParams({ grant_type: "client_credentials", resource: admin, scope }),
+  })).status
+  // An environment register registered before platform:users: the client's ceiling and its capability on ID's admin API as they were.
+  async function registeredBefore(id: FakeId, run: () => Promise<unknown>) {
+    await run()
+    Object.assign(capabilityOf(id), { scopes: ["platform:read", "platform:write"] })
+    const old = await id.fetch(`https://id.example/api/admin/v1/clients/admin-mcp`, {
+      method: "PATCH", headers: { Authorization: `Bearer ${id.rootSecret}`, "Idempotency-Key": crypto.randomUUID(), "Content-Type": "application/json" },
+      body: JSON.stringify({ clientCredentialsScopes: ["platform:read", "platform:write", "toolbox:admin"] }),
+    })
+    expect(old.status).toBe(200)
+    expect(await asks(id, "platform:read platform:users")).toBe(400)
+  }
+
+  test("a new environment: the client's ceiling and its capability on ID's admin API carry platform:users, so a platform:read platform:users token is issued, as is the write token the other tools use", async () => {
+    const { id, run } = setup()
+    await run()
+    expect(id.clientOf("admin-mcp")).toMatchObject({ clientCredentialsScopes: ceiling })
+    expect(capabilityOf(id).scopes).toEqual(["platform:read", "platform:users", "platform:write"])
+    expect(await asks(id, "platform:read platform:users")).toBe(200)
+    expect(await asks(id, "platform:read platform:write")).toBe(200)
+    // The Toolbox's client is not given it.
+    expect(id.capabilities(id.platform).find(row => row.clientId === "toolbox-hub")!.scopes).toEqual(["platform:read", "platform:write"])
+  })
+
+  test("an environment registered before it: the next run widens the client's ceiling and the capability with If-Match under <key>-r<revision>, changes nothing else, and the run after finds both as declared", async () => {
+    const { id, run, printed, lines } = setup()
+    await registeredBefore(id, run)
+    const client = id.clientOf("admin-mcp")!
+    // The capability as register finds it: its row is the one ID keeps, so the id and revision are read now.
+    const capability = { id: capabilityOf(id).id, revision: capabilityOf(id).revision as number }
+    const [from, patched] = [id.calls().length, id.entitlements(id.platform).length]
+    lines.length = 0
+    await run({ rootSecret: undefined })
+    expect(id.calls().slice(from).filter(call => call.method === "PATCH").map(call => [call.path, call.key, call.ifMatch])).toEqual([
+      ["/clients/admin-mcp", `admin-mcp-v1-r${client.revision}`, `"${client.id}:${client.revision}"`],
+      [`/organizations/${id.platform}/capabilities/${capability.id}`, `admin-mcp-capability-id-v1-r${capability.revision}`, `"${capability.id}:${capability.revision}"`],
+    ])
+    expect(id.clientOf("admin-mcp")).toMatchObject({ clientCredentialsScopes: ceiling })
+    expect(capabilityOf(id)).toMatchObject({ scopes: ["platform:read", "platform:users", "platform:write"], revision: capability.revision + 1 })
+    expect(id.capabilities(id.platform).filter(row => row.id !== capability.id).every(row => row.revision === 1)).toBe(true)
+    expect(id.entitlements(id.platform)).toHaveLength(patched)
+    expect(await asks(id, "platform:read platform:users")).toBe(200)
+    expect(printed()).toContain("admin-mcp-capability-id-v1: changed scopes")
+    expect(printed()).toContain(` s: 0 created, 2 changed, ${keys.length - 2} as declared already`)
+    // The capability on the Toolbox's admin API, which was already as declared, is read and left.
+    expect(capabilityOf(id, "https://toolbox.example/admin")).toMatchObject({ scopes: ["toolbox:admin"], revision: 1 })
+    const again = id.calls().length
+    await run({ rootSecret: undefined })
+    expect(id.calls().slice(again).filter(call => call.method === "PATCH")).toEqual([])
+  })
+
+  test("a capability only widens: one that holds more than the declaration keeps it, and register writes nothing to it", async () => {
+    const { id, run } = setup()
+    await run()
+    id.resourceOf("https://toolbox.example/admin").allowedScopes.push("toolbox:extra")
+    Object.assign(capabilityOf(id, "https://toolbox.example/admin"), { scopes: ["toolbox:admin", "toolbox:extra"] })
+    const from = id.calls().length
+    await run({ rootSecret: undefined })
+    expect(capabilityOf(id, "https://toolbox.example/admin")).toMatchObject({ scopes: ["toolbox:admin", "toolbox:extra"], revision: 1 })
+    expect(id.calls().slice(from).filter(call => call.method === "PATCH")).toEqual([])
+  })
+
+  test("a capability read that fails, one changed between the read and the change, and a list that fails are errors naming the call", async () => {
+    const { id, run } = setup()
+    await registeredBefore(id, run)
+    const row = `/organizations/${id.platform}/capabilities/${capabilityOf(id).id}`
+    id.fail(`GET ${row}`, 500)
+    await expect(run({ rootSecret: undefined })).rejects.toThrow(`GET ${row} answered 500 internal_error`)
+    const racing = setup()
+    await registeredBefore(racing.id, racing.run)
+    const raced = (async (input: string | URL | Request, init?: RequestInit) => {
+      const answer = await racing.id.fetch(input, init)
+      if (String(input).endsWith(`/capabilities/${capabilityOf(racing.id).id}`) && (init?.method ?? "GET") === "GET") racing.id.revise(String(capabilityOf(racing.id).id))
+      return answer
+    }) as typeof globalThis.fetch
+    const memory = memoryStore({ "ops-id-client/OPS_ID_CLIENT_SECRET": racing.id.clientOf("ops-register")!.secret! })
+    await expect(register({ id: "https://id.example", toolbox: "https://toolbox.example", adminMcp: "https://admin-mcp.example", mcpOrigin: "https://mcp.example", mcps: [], callbackPort: 47700, store: memory.store, fetch: raced, log: () => {} }))
+      .rejects.toThrow(/answered 412 revision_mismatch$/)
+    const listing = setup()
+    await listing.run()
+    listing.id.fail(`GET /organizations/${listing.id.platform}/capabilities`, 500)
+    await expect(listing.run({ rootSecret: undefined })).rejects.toThrow(`GET /organizations/${listing.id.platform}/capabilities answered 500 internal_error`)
   })
 })
 

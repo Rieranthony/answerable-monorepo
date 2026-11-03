@@ -19,12 +19,12 @@ const unsupported = (request: Request, ...methods: string[]) => methods.includes
 // The resource an operation's receipt names (apps/id/src/http/admin/*.ts): its type, and the id of the row or of its owner.
 const references: [RegExp, string][] = [
   [/^\/organizations\/[^/]+\/domains/, "domain"], [/^\/organizations\/[^/]+\/sso-provider/, "sso_provider"], [/^\/organizations\/[^/]+\/groups/, "group"],
-  [/^\/organizations\/[^/]+\/entitlements/, "entitlement"], [/^\/organizations\/[^/]+\/capabilities/, "capability"], [/^\/organizations/, "organization"],
-  [/^\/resources/, "resource"], [/^\/clients/, "client"],
+  [/^\/organizations\/[^/]+\/entitlements/, "entitlement"], [/^\/organizations\/[^/]+\/capabilities/, "capability"], [/^\/organizations\/[^/]+\/members/, "member"],
+  [/^\/organizations/, "organization"], [/^\/resources/, "resource"], [/^\/clients/, "client"], [/^\/users/, "user"],
 ]
 function referenceOf(path: string, body: Record<string, unknown> | null) {
   const type = references.find(([pattern]) => pattern.test(path))![1]
-  const owner = /^\/organizations\/[^/]+\/groups\/([^/]+)\/members\//.exec(path)?.[1] ?? /^\/(?:resources|clients)\/([^/]+)/.exec(path)?.[1]
+  const owner = /^\/organizations\/[^/]+\/groups\/([^/]+)\/members\//.exec(path)?.[1] ?? /^\/(?:resources|clients|users|organizations\/[^/]+\/members)\/([^/]+)/.exec(path)?.[1]
   return { type, id: owner ? decodeURIComponent(owner) : String(body?.id) }
 }
 // Wait as a slow ID would, and give up as fetch does when the caller's signal aborts.
@@ -38,6 +38,8 @@ function wait(ms: number, signal: AbortSignal) {
   })
 }
 const now = () => new Date().toISOString()
+// A time later than `previous`, even within the same millisecond, so that a row ID versions by when it changed always moves.
+const after = (previous: unknown) => new Date(Math.max(Date.now(), Date.parse(String(previous)) + 1 || 0)).toISOString()
 const etag = ({ id, revision }: Stored) => `"${id}:${revision}"`
 const tagged = (row: Stored, status = 200) => Response.json(row, { status, headers: { ETag: etag(row) } })
 const contains = (value: unknown, text: string) => String(value).toLowerCase().includes(text.toLowerCase())
@@ -49,6 +51,11 @@ const invalid = (path: string, message = "Invalid input") => problem(400, "valid
 const conflict = (constraint: string) => problem(409, "conflict", "Conflict", { detail: `A row already exists for ${constraint}.` })
 // The issuers ID signs in through Answerable's own Google or Microsoft application (services/federation.ts classifyIssuer).
 const platformIssuer = (value: unknown) => value === "https://accounts.google.com" || /^https:\/\/login\.microsoftonline\.com\/[0-9a-f-]{36}\/v2\.0$/.test(String(value))
+// The commands ID guards with platform:users, not platform:write (apps/id/src/http/admin/users.ts, members.ts): a user's disable, enable and email retirement,
+// and a membership's change, removal and reinstatement.
+const usersCommand = (path: string) => /^\/users\/[^/]+\/(?:disable|enable|retire-email)$/.test(path) || /^\/organizations\/[^/]+\/members\/[^/]+(?:\/reinstate)?$/.test(path)
+// The address ID gives a user whose email is retired (apps/id/src/db/queries/users.ts retiredEmailFor).
+const retiredAddress = (userId: unknown) => `${String(userId)}@retired.invalid`
 
 /**
  * Answerable ID in memory, for the tests of a server that calls its admin API: `config` goes to `createIdAdmin`, the rest sets up what ID holds and
@@ -64,6 +71,10 @@ const platformIssuer = (value: unknown) => value === "https://accounts.google.co
  * holds a capability for, on ID's own admin resource without registration. Without `microsoft`, ID has no Microsoft platform application, and an
  * Entra SSO provider with platform credentials is `409 platform_application_missing`. A command's `Idempotency-Key` is its caller's, as ID keys
  * its journal by actor: the root secret, a machine client or a staff token.
+ *
+ * A user's lifecycle (`disable`, `enable`, `retire-email`) and a membership's removal and reinstatement need a token that carries `platform:users`,
+ * as in ID, where `platform:write` does not include it: the root secret and a staff token carry both, and a machine client asks for
+ * `platform:read platform:users` where `resources` lists that scope.
  */
 export function createFakeId({
   issuer = "https://id.test", expiresIn = 3600, pageSize = 200, clientId = "toolbox-hub", clientSecret = "hub-secret", platform = true, operationInProgress = false, rootSecret = undefined as string | undefined,
@@ -94,6 +105,7 @@ export function createFakeId({
   // Per organisation: its domains, members and groups; per organisation, its SSO provider; per group, its assignments by member id.
   const domains = new Map<string, Stored[]>()
   const members = new Map<string, Stored[]>()
+  const users = new Map<string, Stored>()
   const groups = new Map<string, Stored[]>()
   const providers = new Map<string, Stored>()
   const joined = new Map<string, Map<string, Stored>>()
@@ -138,7 +150,7 @@ export function createFakeId({
   function change(row: Stored, fields: Record<string, unknown>) {
     const changed = Object.entries(fields).some(([key, value]) => JSON.stringify(row[key]) !== JSON.stringify(value))
     if (changed) {
-      Object.assign(row, fields, { revision: Number(row.revision) + 1, updatedAt: now() })
+      Object.assign(row, fields, { revision: Number(row.revision) + 1, updatedAt: after(row.updatedAt) })
       changes++
     }
     return changed
@@ -156,6 +168,53 @@ export function createFakeId({
       elapsedMs: 12,
       problems: [],
     }
+  }
+  // A user as ID lists it, and as it shows one: with its memberships (newest first), accounts and session count.
+  function userDetail(user: Stored) {
+    const memberships = [...members].flatMap(([organisation, list]) => list.filter(member => member.userId === user.id).map(member => ({
+      memberId: member.id, organizationId: organisation, slug: organisations.get(organisation)?.slug ?? organisation, validFrom: member.validFrom, validUntil: member.validUntil, effective: member.effective,
+    })))
+    return { ...user, memberships: memberships.toSorted((a, b) => (a.memberId < b.memberId ? 1 : -1)) }
+  }
+  // The rows that carry a user's address and status for their memberships.
+  const membersOf = (userId: string) => [...members.values()].flat().filter(member => member.userId === userId)
+  function usersRoute(request: Request, url: URL, path: string) {
+    if (path === "/users") {
+      const refusedMethod = unsupported(request, "GET")
+      if (refusedMethod) return refusedMethod
+      const [email, q, organisation] = ["email", "q", "organizationId"].map(name => url.searchParams.get(name))
+      return newest(matching([...users.values()], url, ["status"]).filter(user =>
+        (!email || String(user.email).toLowerCase() === email.toLowerCase()) && (!q || contains(user.email, q) || contains(user.name, q))
+        && (!organisation || rows(members, organisation).some(member => member.userId === user.id))), url)
+    }
+    const match = /^\/users\/([^/]+)(\/disable|\/enable|\/retire-email)?$/.exec(path)
+    if (!match) return
+    const action = match[2]
+    const refusedMethod = action ? unsupported(request, "POST") : unsupported(request, "GET")
+    if (refusedMethod) return refusedMethod
+    const user = users.get(match[1]!)
+    if (!user) return problem(404, "not_found", "User not found")
+    if (!action) return Response.json(userDetail(user))
+    const people = membersOf(user.id)
+    if (action === "/disable") {
+      // Sessions and grants end with the status; a user already disabled is reconciled again, and it is a no-op only when nothing was left to end.
+      change(user, { status: "disabled", disabledAt: user.disabledAt ?? now(), sessionCount: 0 })
+      for (const member of people) {
+        member.status = "disabled"
+        access.delete(`${member.organizationId}/${member.id}`)
+      }
+    } else if (action === "/enable") {
+      if (user.retiredEmail !== null) return problem(409, "user_email_retired", "User email has been retired")
+      change(user, { status: "active", disabledAt: null })
+      for (const member of people) member.status = "active"
+    } else {
+      if (user.status !== "disabled") return problem(409, "user_not_disabled", "Disable the user before retiring their email")
+      if (user.retiredEmail === null) {
+        change(user, { retiredEmail: user.email, email: retiredAddress(user.id) })
+        for (const member of people) member.email = user.email
+      }
+    }
+    return Response.json(user)
   }
   function groupRoute(request: Request, organisation: string, groupId: string, rest: string, body: Record<string, unknown>) {
     const group = rows(groups, organisation).find(row => row.id === groupId)
@@ -260,17 +319,32 @@ export function createFakeId({
       return newest(matching(rows(members, organisation), url, ["effective"])
         .filter(member => (!q || contains(member.email, q) || contains(member.name, q)) && (!email || member.email === email.toLowerCase())), url)
     }
-    const member = /^\/members\/([^/]+)$/.exec(rest)
+    const member = /^\/members\/([^/]+)(\/reinstate)?$/.exec(rest)
     if (member) {
-      const refusedMethod = unsupported(request, "GET")
+      const refusedMethod = member[2] ? unsupported(request, "POST") : unsupported(request, "GET", "DELETE")
       if (refusedMethod) return refusedMethod
       const found = rows(members, organisation).find(row => row.id === member[1])
       if (!found) return notFound()
-      const held = rows(groups, organisation).flatMap(group => {
-        const assignment = assignments(group.id).get(found.id)
-        return assignment ? [{ groupId: group.id, slug: group.slug, name: group.name, validFrom: assignment.validFrom, validUntil: assignment.validUntil }] : []
+      const detail = () => tagged({
+        ...found,
+        groups: rows(groups, organisation).flatMap(group => {
+          const assignment = assignments(group.id).get(found.id)
+          return assignment ? [{ groupId: group.id, slug: group.slug, name: group.name, validFrom: assignment.validFrom, validUntil: assignment.validUntil }] : []
+        }),
       })
-      return tagged({ ...found, groups: held })
+      if (request.method === "GET") return detail()
+      if (request.method === "DELETE") {
+        // Revoked, with its direct grants and group assignments removed, as ID removes them; the user and their other memberships stay.
+        const direct = rows(entitlements, organisation).filter(row => row.memberId === found.id)
+        const assigned = rows(groups, organisation).filter(group => assignments(group.id).delete(found.id))
+        entitlements.set(organisation, rows(entitlements, organisation).filter(row => row.memberId !== found.id))
+        access.delete(`${organisation}/${found.id}`)
+        const changed = change(found, { membershipStatus: "revoked", revokedAt: found.revokedAt ?? now(), effective: false })
+        if (!changed && direct.length + assigned.length > 0) changes++
+        return new Response(null, { status: 204 })
+      }
+      change(found, { membershipStatus: "active", revokedAt: null, effective: true })
+      return detail()
     }
     if (rest === "/access") {
       const refusedMethod = unsupported(request, "GET")
@@ -330,7 +404,7 @@ export function createFakeId({
     const token = tokens.get(bearer)!
     if (token.resource !== adminResource) return invalidToken()
     const write = request.method !== "GET"
-    if (write && !token.scope.includes("platform:write"))
+    if (write && !token.scope.split(" ").includes(usersCommand(path) ? "platform:users" : "platform:write"))
       return problem(403, "insufficient_scope", "Current command authority is required", {}, { "WWW-Authenticate": 'Bearer error="insufficient_scope"' })
     const fails = failures.get(`${request.method} ${path}`)
     if (fails) return problem(fails.status, fails.code, "The fake ID failed this route")
@@ -467,7 +541,8 @@ export function createFakeId({
       if (!organisations.has(organisationTable[1]!)) return problem(404, "not_found", "Organisation not found")
       const table = organisationTable[2] === "capabilities" ? capabilities : entitlements
       const held = rows(table, organisationTable[1]!)
-      if (request.method === "GET") return newest(matching(held, url, ["clientId", "resource", "memberId", "groupId", "status"]), url)
+      // ID lists capabilities without a filter (listCapabilities takes limit and cursor alone) and entitlements with them.
+      if (request.method === "GET") return newest(table === capabilities ? held : matching(held, url, ["clientId", "resource", "memberId", "groupId", "status"]), url)
       const scopes = body.scopes as string[]
       const key = (row: Record<string, unknown>) => ["clientId", "resource", "grantKind", "memberId", "groupId"].map(field => row[field] ?? null).join("|")
       if (outsideVocabulary(body.resource, scopes)) return problem(400, "validation_failed", "Capability scopes exceed the client/resource ceiling or mix login and resource scopes")
@@ -488,6 +563,8 @@ export function createFakeId({
     }
     const within = /^\/organizations\/([^/]+)(\/.*)?$/.exec(path)
     if (within) return organisations.has(within[1]!) ? organisationRoute(request, url, within[1]!, within[2] ?? "", body) ?? notFound() : notFound()
+    const listed = usersRoute(request, url, path)
+    if (listed) return listed
     if (path === "/audit-events") {
       const from = url.searchParams.get("from")
       const to = url.searchParams.get("to")
@@ -564,6 +641,15 @@ export function createFakeId({
     if (secret) secrets.set(id, secret)
     return { row, secret }
   }
+  function addUser(fields: Record<string, unknown> = {}) {
+    const row = {
+      id: crypto.randomUUID(), revision: 1, name: "A person", email: "person@example.test", emailVerified: true, image: null, status: "active", disabledAt: null,
+      retiredEmail: null, createdAt: now(), updatedAt: now(), accounts: [], sessionCount: 0, ...fields,
+    } as Stored
+    if (row.status === "disabled" && row.disabledAt === null) row.disabledAt = now()
+    users.set(row.id, row)
+    return row
+  }
   // Store a row and return it, so that a test can change it as ID would.
   function add<T extends Stored>(table: Map<string, Stored[]>, organisation: string, row: T) {
     rows(table, organisation).push(row)
@@ -575,7 +661,7 @@ export function createFakeId({
     return row
   }
   organisation(organizationId, platform ? { name: "Answerable", slug: "answerable" } : {})
-  if (rootSecret) tokens.set(rootSecret, { scope: "platform:read platform:write", resource: adminResource })
+  if (rootSecret) tokens.set(rootSecret, { scope: "platform:read platform:users platform:write", resource: adminResource })
   return {
     config: { issuer, adminResource, clientId, clientSecret, fetch },
     /** The machine client's organisation: the platform organisation unless `platform` was false. */
@@ -613,7 +699,7 @@ export function createFakeId({
     /** Whether ID refuses the root secret now. */
     rootLocked: () => rootLocked,
     /** Make `token` a staff token: a bearer of a platform administrator, who can write to the admin API. */
-    staffToken(token: string) { tokens.set(token, { scope: "platform:read platform:write", resource: adminResource }) },
+    staffToken(token: string) { tokens.set(token, { scope: "platform:read platform:users platform:write", resource: adminResource }) },
     /** Register a resource with the scopes it allows, named after its identifier, as staff do; its linked clients and revision are read back. */
     resource(identifier: string, allowedScopes: string[]) {
       addResource(identifier, allowedScopes)
@@ -655,11 +741,23 @@ export function createFakeId({
       providers.set(organizationId, row)
       return row
     },
-    /** Add a member, a person who signed in, to an organisation and return its row. */
-    member: (organizationId: string, fields: Record<string, unknown> = {}) => add(members, organizationId, {
-      id: Bun.randomUUIDv7(), revision: 1, organizationId, userId: crypto.randomUUID(), email: "person@example.test", name: "A person", status: "active",
-      membershipStatus: "active", revokedAt: null, validFrom: null, validUntil: null, createdAt: now(), effective: true, ...fields,
-    }),
+    /**
+     * Add a member, a person who signed in, to an organisation and return its row. Their user is made with it, with the member's address, name and
+     * status, unless `userId` names one that exists: a person is one user with a membership in each organisation.
+     */
+    member(organizationId: string, fields: Record<string, unknown> = {}) {
+      const row = add(members, organizationId, {
+        id: Bun.randomUUIDv7(), revision: 1, organizationId, userId: crypto.randomUUID(), email: "person@example.test", name: "A person", status: "active",
+        membershipStatus: "active", revokedAt: null, validFrom: null, validUntil: null, createdAt: now(), effective: true, ...fields,
+      })
+      const userId = String(row.userId)
+      if (!users.has(userId)) addUser({ id: userId, email: row.email, name: row.name, status: row.status })
+      return row
+    },
+    /** Add a user who is a member of no organisation, with ID's fields, and return its row. */
+    user: addUser,
+    /** What ID holds for a user, as `GET /users/{id}` answers it but for its memberships: read it back, or set its `sessionCount` and `accounts`. Undefined when there is none. */
+    userOf: (userId: string) => users.get(userId),
     /** Add a group to an organisation and return its row. */
     group: (organizationId: string, fields: Record<string, unknown> & { slug: string }) => add(groups, organizationId, {
       id: Bun.randomUUIDv7(), revision: 1, organizationId, name: fields.slug, status: "active", createdAt: now(), updatedAt: now(), ...fields,
@@ -673,15 +771,16 @@ export function createFakeId({
     },
     /** Whether a member is in a group now. */
     joined: (groupId: string, memberId: string) => assignments(groupId).has(memberId),
-    /** Advance the revision of the row with this id, or of the resource with this identifier, as another writer's change would. */
+    /** Advance the revision of the row with this id (and the time of its last change, which versions a user), or of the resource with this identifier, as another writer's change would. */
     revise(id: string) {
       const stored = [
-        ...organisations.values(), ...providers.values(), ...clients.values(), ...[...groups.values(), ...entitlements.values(), ...capabilities.values()].flat(),
+        ...organisations.values(), ...providers.values(), ...clients.values(), ...users.values(), ...[...groups.values(), ...entitlements.values(), ...capabilities.values(), ...members.values()].flat(),
         ...[...joined.values()].flatMap(table => [...table.values()]),
       ]
       const row = stored.find(item => item.id === id) ?? resources.get(id) ?? [...resources.values()].find(item => item.id === id)
       if (!row) throw new Error(`The fake ID holds no row ${id}`)
       row.revision = Number(row.revision) + 1
+      if (typeof row.updatedAt === "string") row.updatedAt = after(row.updatedAt)
     },
     /** Forget every command's receipt, as if a caller that never sent them sent the next ones. */
     forgetCommands() { journal.clear() },
