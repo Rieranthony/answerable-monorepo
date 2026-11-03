@@ -3,7 +3,17 @@ import { slugPattern } from "../../db/schema/columns.ts";
 export type LoginRoute =
   { mode: "auto"; organizationSlug: string } | { mode: "form"; email?: string };
 
-export const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** An address is at most 254 characters, so nothing longer reaches the pattern. */
+export const maxLoginAddressLength = 254;
+
+const loginAddressPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Whether a typed or hinted value has the shape of an address we route on. */
+export function isLoginAddress(value: string): boolean {
+  return (
+    value.length <= maxLoginAddressLength && loginAddressPattern.test(value)
+  );
+}
 
 export function decideLoginRoute(params: URLSearchParams): LoginRoute {
   const organizationSlug = params.get("organization");
@@ -17,7 +27,7 @@ export function decideLoginRoute(params: URLSearchParams): LoginRoute {
     return { mode: "auto", organizationSlug };
   }
 
-  if (loginHint !== null && emailPattern.test(loginHint)) {
+  if (loginHint !== null && isLoginAddress(loginHint)) {
     return { mode: "form", email: loginHint };
   }
 

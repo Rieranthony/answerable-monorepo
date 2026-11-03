@@ -1,4 +1,5 @@
 import type { PlatformApplications } from "../../auth/platform-applications.ts";
+import type { Database } from "../../db/client.ts";
 import { expect, test } from "bun:test";
 import { createApp } from "../../app.ts";
 import {
@@ -47,6 +48,7 @@ type Reply = {
 function fixture(
   replies: Record<string, Reply> = {},
   platformApplications: PlatformApplications = {},
+  db: Database = stubDatabase(),
 ) {
   const requests: {
     path: string;
@@ -80,11 +82,25 @@ function fixture(
   return {
     app: createApp({
       auth,
-      db: stubDatabase(),
+      db,
       environment: testEnvironment({ platformApplications }),
     }),
     requests,
   };
+}
+// A database that records whether anything reached for it.
+function watchedDatabase() {
+  const watch = { touched: false };
+  const db = new Proxy(
+    {},
+    {
+      get() {
+        watch.touched = true;
+        throw new Error("Database unavailable");
+      },
+    },
+  ) as Database;
+  return { db, watch };
 }
 function post(
   body: Record<string, string> = {},
@@ -538,6 +554,111 @@ test("invalid email re-renders with the footer without calling auth", async () =
     );
     expect(f.requests).toHaveLength(0);
   }
+});
+test("login routes on an address of at most 254 characters and puts no longer one back", async () => {
+  const atBound = "a".repeat(254 - "@example.com".length) + "@example.com";
+  expect(atBound).toHaveLength(254);
+  const accepted = watchedDatabase();
+  const f = fixture({}, {}, accepted.db);
+  await html(
+    await f.app.request("/login", post({ email: atBound })),
+    'role="alert"',
+  );
+  // The address passed the check, so the lookup was attempted.
+  expect(accepted.watch.touched).toBe(true);
+  for (const email of [
+    "a" + atBound,
+    "a@" + ".".repeat(3000),
+    "a@" + ".".repeat(3000) + "x y",
+  ]) {
+    const refused = watchedDatabase();
+    const f = fixture({}, {}, refused.db);
+    const text = await html(
+      await f.app.request("/login", post({ email })),
+      'role="alert"',
+      "We couldn&#39;t sign you in",
+      "Works with",
+    );
+    expect(text).not.toContain(email.slice(0, 20));
+    expect(f.requests).toHaveLength(0);
+    expect(refused.watch.touched).toBe(false);
+  }
+  // A short address that does not match is still shown for correction.
+  await html(
+    await fixture().app.request("/login", post({ email: "person@" })),
+    'value="person@"',
+  );
+});
+test("a login hint is carried into the form only within 254 characters", async () => {
+  const atBound = "a".repeat(254 - "@example.com".length) + "@example.com";
+  await html(
+    await fixture().app.request("/login?login_hint=" + atBound),
+    `value="${atBound}"`,
+  );
+  for (const hint of ["a" + atBound, "a@" + ".".repeat(5000)]) {
+    await html(
+      await fixture().app.request("/login?login_hint=" + hint),
+      "Work email",
+      'value=""',
+    );
+  }
+});
+test("the login form limits the address field to 254 characters", async () => {
+  await html(
+    await fixture().app.request("/login"),
+    'name="email"',
+    'maxlength="254"',
+  );
+});
+test("login refuses a post from another origin before it reads anything", async () => {
+  const refusals: Record<string, string>[] = [
+    { origin: "https://foreign.example" },
+    // The same host on another scheme or port is another origin.
+    { origin: "https://localhost:47300" },
+    { origin: "http://localhost:47301" },
+    { origin: "null" },
+    { origin: "" },
+    { "sec-fetch-site": "cross-site" },
+    { origin: "http://localhost:47300", "sec-fetch-site": "cross-site" },
+  ];
+  for (const headers of refusals) {
+    const watched = watchedDatabase();
+    const f = fixture({}, {}, watched.db);
+    const response = await f.app.request("/login?organization=tenant", {
+      method: "POST",
+      headers: {
+        cookie: "session=old",
+        "content-type": "application/x-www-form-urlencoded",
+        ...headers,
+      },
+      body: new URLSearchParams({ email: "person@second.example.com" }),
+    });
+    expect(response.status).toBe(403);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.getSetCookie()).toEqual([]);
+    const text = await response.text();
+    for (const value of [
+      'role="alert"',
+      "We couldn&#39;t sign you in",
+      "Work email",
+      "Works with",
+      'action="/login?organization=tenant"',
+    ])
+      expect(text).toContain(value);
+    expect(text).not.toContain("person@second.example.com");
+    expect(f.requests).toHaveLength(0);
+    expect(watched.watch.touched).toBe(false);
+  }
+  // The answer does not wait for a body: one that cannot be parsed is not read.
+  const response = await fixture().app.request("/login", {
+    method: "POST",
+    headers: {
+      origin: "https://foreign.example",
+      "content-type": "multipart/form-data",
+    },
+    body: "not a multipart body",
+  });
+  expect(response.status).toBe(403);
 });
 test("other pages do not show the directory footer", async () => {
   for (const path of ["/error", "/security", "/authorize", "/consent"]) {

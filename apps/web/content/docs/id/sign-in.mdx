@@ -165,7 +165,7 @@ curl https://id.answerable.org/auth/oauth2/token \
 
 **Revoked membership.** A valid corporate login still returns `membership_revoked` when that organisation has revoked the membership. An authorised administrator must [reinstate membership](/docs/id/manage#revoke-and-reinstate-membership); signing in again does not restore it or its deleted assignments.
 
-**Transport limits.** Bodies are limited to 256 KiB and must finish within five seconds of application body acquisition. Oversized bodies return 413; stalled bodies return 408. These responses can precede OAuth handling and need not use the OAuth JSON error format. See [request boundaries](/docs/id/manage#request-boundaries).
+**Transport limits.** Bodies are limited to 256 KiB, except the sign-in form (4 KiB) and the sign-in start at `/auth/sign-in/sso` (64 KiB), and must finish within five seconds of application body acquisition. Oversized bodies return 413; stalled bodies return 408. These responses can precede OAuth handling and need not use the OAuth JSON error format. See [request boundaries](/docs/id/manage#request-boundaries).
 
 **Busy authorization state.** The two-second limit applies to each database lock wait during issuance. Database statements also have a configurable server-side deadline, ten seconds by default. Neither is a total transaction or HTTP deadline. A timed-out or deadlocked issuance rolls back before returning `503 temporarily_unavailable` with `Retry-After: 1`. Wait at least one second and use bounded retries with increasing delay. Clients using `private_key_jwt` must generate a new assertion: an authenticated assertion remains consumed even when issuance fails. This is a fresh OAuth request, not administrative operation-key replay.
 

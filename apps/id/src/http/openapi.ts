@@ -4,7 +4,10 @@ import type { App } from "../app.ts";
 import type { Auth } from "../auth.ts";
 import type { Environment } from "../env.ts";
 import { publicAuthRoutes } from "./auth-allowlist.ts";
-import { requestBoundaryResponses } from "./request-limits.ts";
+import {
+  requestBodyLimit,
+  requestBoundaryResponses,
+} from "./request-limits.ts";
 
 type OpenApiOperation = {
   [key: string]: unknown;
@@ -115,7 +118,9 @@ export async function buildPublicOpenApiDocument(input: {
           ...operation,
           responses: {
             ...operation.responses,
-            ...requestBoundaryResponses,
+            ...requestBoundaryResponses(
+              requestBodyLimit(route.method, route.path),
+            ),
           },
           operationId: route.operationId,
           summary: route.summary,

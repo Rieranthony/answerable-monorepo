@@ -368,6 +368,21 @@ function scriptedFixture(replies: Record<string, Reply> = {}) {
     requests,
   };
 }
+// A post that names only the headers given, the Origin among them or not.
+function postFrom(
+  headers: Record<string, string>,
+  body: Record<string, string>,
+) {
+  return {
+    method: "POST",
+    headers: {
+      cookie: "session=old",
+      "content-type": "application/x-www-form-urlencoded",
+      ...headers,
+    },
+    body: new URLSearchParams(body),
+  };
+}
 function post(
   body: Record<string, string> = {},
   origin = "http://localhost:47300",
@@ -394,7 +409,7 @@ test("email routing preserves SSO request headers, cookies and OAuth query", asy
     });
     const response = await f.app.request(
       "/login" + suffix,
-      post({ email: "person@second.example.com" }, "https://foreign.example"),
+      post({ email: "person@second.example.com" }),
     );
     expect(response.status).toBe(302);
     expect(response.headers.getSetCookie()).toEqual([
@@ -402,7 +417,7 @@ test("email routing preserves SSO request headers, cookies and OAuth query", asy
       "state2=def",
     ]);
     const sent = f.requests[0]!;
-    expect(sent.headers.get("origin")).toBe("https://foreign.example");
+    expect(sent.headers.get("origin")).toBe("http://localhost:47300");
     expect(sent.headers.get("cookie")).toBe("session=old");
     expect(sent.body).toEqual({
       organizationSlug: "tenant",
@@ -414,6 +429,75 @@ test("email routing preserves SSO request headers, cookies and OAuth query", asy
   }
 });
 
+test("login accepts a post from its own origin or one that names none", async () => {
+  const posts: Record<string, string>[] = [
+    { origin: "http://localhost:47300" },
+    { origin: "http://localhost:47300", "sec-fetch-site": "same-origin" },
+    { "sec-fetch-site": "same-origin" },
+    { "sec-fetch-site": "none" },
+    {},
+  ];
+  for (const extra of posts) {
+    const f = scriptedFixture({
+      "/auth/sign-in/sso": {
+        data: { url: "https://issuer.example" },
+        cookies: ["state=abc"],
+      },
+    });
+    const response = await f.app.request(
+      "/login",
+      postFrom(extra, { email: "person@second.example.com" }),
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("https://issuer.example");
+    expect(response.headers.getSetCookie()).toEqual(["state=abc"]);
+    expect(f.requests).toHaveLength(1);
+    expect(f.requests[0]!.headers.get("origin")).toBe(extra.origin ?? null);
+  }
+});
+test("login refuses another origin without asking the database or the service", async () => {
+  const refusals: Record<string, string>[] = [
+    { origin: "https://foreign.example" },
+    { origin: "null" },
+    { "sec-fetch-site": "cross-site" },
+  ];
+  for (const extra of refusals) {
+    const f = scriptedFixture({
+      "/auth/sign-in/sso": {
+        data: { url: "https://issuer.example" },
+        cookies: ["state=abc"],
+      },
+    });
+    const response = await f.app.request(
+      "/login",
+      postFrom(extra, { email: "person@second.example.com" }),
+    );
+    expect(response.status).toBe(403);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.getSetCookie()).toEqual([]);
+    expect(await response.text()).toContain("We couldn&#39;t sign you in");
+    expect(f.requests).toHaveLength(0);
+  }
+});
+test("login routes an address of 254 characters and refuses a longer one", async () => {
+  await createOrganizationDomain(fixture.db, {
+    organizationId: fixture.tenant.organizationId,
+    domain: "long.example.com",
+  });
+  const suffix = "@long.example.com";
+  const atBound = "a".repeat(254 - suffix.length) + suffix;
+  const f = scriptedFixture({
+    "/auth/sign-in/sso": { data: { url: "https://issuer.example" } },
+  });
+  const accepted = await f.app.request("/login", post({ email: atBound }));
+  expect(accepted.status).toBe(302);
+  expect(f.requests).toHaveLength(1);
+  const refused = await f.app.request("/login", post({ email: "a" + atBound }));
+  expect(refused.status).toBe(200);
+  expect(refused.headers.get("location")).toBeNull();
+  expect(await refused.text()).toContain("We couldn&#39;t sign you in");
+  expect(f.requests).toHaveLength(1);
+});
 test("typed email SSO failures retain the form, address and footer", async () => {
   for (const reply of [
     { data: { code: "platform_application_missing" }, status: 400 },

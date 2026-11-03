@@ -50,7 +50,7 @@ function standardResponses(
 ) {
   return {
     ...success,
-    ...requestBoundaryResponses,
+    ...requestBoundaryResponses(),
     ...problemResponses(401, 403, 503),
     ...(route.orgScope ? problemResponses(404) : {}),
   };

@@ -11,7 +11,8 @@ import {
 } from "../gateway.ts";
 import {
   decideLoginRoute,
-  emailPattern,
+  isLoginAddress,
+  maxLoginAddressLength,
   pendingOAuthQuery,
 } from "../login-routing.ts";
 import { describeError, type ErrorDescription } from "../error-copy.ts";
@@ -98,16 +99,34 @@ async function renderLogin(context: PageContext, message?: ErrorDescription) {
   );
 }
 
+/**
+ * The form only ever lives on ID's own origin. A browser always sends Origin
+ * on a post; a request without one is not a cross-site browser form.
+ */
+function isOwnOriginPost(context: PageContext): boolean {
+  const origin = context.req.header("origin");
+  if (origin !== undefined && origin !== new URL(serviceOrigin(context)).origin)
+    return false;
+  return context.req.header("sec-fetch-site") !== "cross-site";
+}
+
 export function registerLogin(app: Hono<AppEnvironment>) {
   app.get("/login", (context) => renderLogin(context));
   app.post("/login", async (context) => {
     const query = new URL(context.req.url).searchParams;
+    if (!isOwnOriginPost(context)) {
+      context.status(403);
+      return renderSignIn(
+        context,
+        jsx(LoginForm, { query: query.toString(), message: describeError() }),
+      );
+    }
     const body = await context.req.parseBody();
     const email =
       typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     let message = describeError();
     const domain = email.slice(email.lastIndexOf("@") + 1);
-    if (emailPattern.test(email)) {
+    if (isLoginAddress(email)) {
       try {
         const slug = await findDomainOrganizationSlug(
           context.get("db"),
@@ -132,7 +151,12 @@ export function registerLogin(app: Hono<AppEnvironment>) {
     }
     return renderSignIn(
       context,
-      jsx(LoginForm, { email, query: query.toString(), message }),
+      jsx(LoginForm, {
+        // An address over the bound is not put back into the form.
+        email: email.length <= maxLoginAddressLength ? email : undefined,
+        query: query.toString(),
+        message,
+      }),
     );
   });
   app.post("/sign-out", async (context) => {

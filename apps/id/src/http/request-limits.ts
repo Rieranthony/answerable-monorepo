@@ -4,15 +4,35 @@ import type { AppEnvironment } from "./context.ts";
 export const maxRequestBodyBytes = 256 * 1024;
 const requestBodyTimeoutMs = 5_000;
 
-export const requestBoundaryResponses = {
-  408: {
-    description:
-      "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response.",
-  },
-  413: {
-    description: `The request body exceeds ${maxRequestBodyBytes} bytes (256 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response.`,
-  },
+/**
+ * Sign-in routes take small bodies: the login form carries one address (its
+ * OAuth query is in the URL), and the SSO start carries a callback URL and an
+ * OAuth query. Every other route keeps the general limit.
+ */
+const routeBodyLimits: Record<string, number> = {
+  "POST /login": 4 * 1024,
+  "POST /auth/sign-in/sso": 64 * 1024,
 };
+
+/** The most body bytes a request to this method and path may send. */
+export function requestBodyLimit(method: string, path: string): number {
+  return routeBodyLimits[`${method} ${path}`] ?? maxRequestBodyBytes;
+}
+
+const describeLimit = (bytes: number) => `${bytes} bytes (${bytes / 1024} KiB)`;
+
+/** The 408 and 413 responses of a route whose body limit is `limit` bytes. */
+export function requestBoundaryResponses(limit = maxRequestBodyBytes) {
+  return {
+    408: {
+      description:
+        "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response.",
+    },
+    413: {
+      description: `The request body exceeds ${describeLimit(limit)}. Reduce the payload. This transport response may precede application headers and is not a problem-details response.`,
+    },
+  };
+}
 
 const rejected = (status: 400 | 408 | 413, message: string) =>
   new Response(message, { status, headers: { "Cache-Control": "no-store" } });
@@ -24,6 +44,7 @@ export const limitRequestBody: MiddlewareHandler<AppEnvironment> = async (
 ) => {
   const request = context.req.raw;
   if (!request.body) return next();
+  const limit = requestBodyLimit(request.method, context.req.path);
   const reader = request.body.getReader();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let body: Uint8Array<ArrayBuffer>;
@@ -36,8 +57,7 @@ export const limitRequestBody: MiddlewareHandler<AppEnvironment> = async (
           const { done, value } = await reader.read();
           if (done) break;
           size += value.byteLength;
-          if (size > maxRequestBodyBytes)
-            return rejected(413, "Payload Too Large");
+          if (size > limit) return rejected(413, "Payload Too Large");
           if (value.byteLength) chunks.push(value);
         }
         const result = new Uint8Array(size);

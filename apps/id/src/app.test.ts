@@ -662,6 +662,79 @@ test("preflight cannot bypass the incoming body limit", async () => {
   expect(response.status).toBe(413);
 });
 
+test("sign-in routes take smaller bodies than the rest, whole or streamed", async () => {
+  const limits = [
+    ["/login", 4 * 1024],
+    ["/auth/sign-in/sso", 64 * 1024],
+    ["/auth/sign-out", 256 * 1024],
+  ] as const;
+  const streamed = (size: number) => {
+    let remaining = size;
+    return new ReadableStream({
+      pull(output) {
+        const count = Math.min(1024, remaining);
+        remaining -= count;
+        if (count) output.enqueue(new Uint8Array(count));
+        else output.close();
+      },
+    });
+  };
+  for (const [path, limit] of limits) {
+    for (const [size, status] of [
+      [limit, 200],
+      [limit + 1, 413],
+    ] as const) {
+      for (const body of [new Uint8Array(size), streamed(size)]) {
+        let reached = 0;
+        const app = createApp({
+          db: stubDatabase(),
+          environment: testEnvironment(),
+          auth: {
+            ...stubAuth(),
+            handler: async () => {
+              reached += 1;
+              return new Response();
+            },
+          },
+        });
+        const response = await app.request(path, {
+          method: "POST",
+          headers: { origin: "http://localhost:47300" },
+          body,
+        });
+        expect(response.status).toBe(status);
+        if (status === 413) {
+          expect(await response.text()).toBe("Payload Too Large");
+          expect(reached).toBe(0);
+        }
+        // The sign-in start reaches the service at the bound; the form
+        // answers itself and the other route is the general case.
+        if (path !== "/login" && status === 200) expect(reached).toBe(1);
+      }
+    }
+  }
+});
+
+test("the 413 response of a sign-in route names the limit that route enforces", async () => {
+  const document = await buildPublicOpenApiDocument({
+    app: createApp({
+      auth: stubAuth(),
+      db: stubDatabase(),
+      environment: testEnvironment(),
+    }),
+    auth: stubAuth(),
+    environment: testEnvironment(),
+  });
+  const description = (path: string) =>
+    (
+      document.paths[path]!.post as {
+        responses: Record<string, { description: string }>;
+      }
+    ).responses["413"]!.description;
+  expect(description("/auth/sign-in/sso")).toContain("65536 bytes (64 KiB)");
+  expect(description("/auth/sign-out")).toContain("262144 bytes (256 KiB)");
+});
+
 for (const path of [
   "/auth/sso%2Fregister",
   "/auth/../auth/sso/register",

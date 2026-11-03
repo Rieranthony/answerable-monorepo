@@ -2448,7 +2448,7 @@
             "description": "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response."
           },
           "413": {
-            "description": "The request body exceeds 262144 bytes (256 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response."
+            "description": "The request body exceeds 65536 bytes (64 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response."
           },
           "429": {
             "content": {

@@ -1,5 +1,6 @@
 import type { ErrorDescription } from "../error-copy.ts";
 import { Button } from "../ui/button.tsx";
+import { maxLoginAddressLength } from "../login-routing.ts";
 import { Input } from "../ui/input.tsx";
 
 function Message({ message }: { message?: ErrorDescription }) {
@@ -69,6 +70,7 @@ export function LoginForm({
             name="email"
             value={email}
             required
+            maxlength={maxLoginAddressLength}
             autocomplete="email"
             placeholder="you@company.com"
             class="text-sm"
