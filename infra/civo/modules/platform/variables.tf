@@ -59,8 +59,18 @@ variable "trusted_proxy_cidrs" {
   }
 }
 
+variable "network_cidr" {
+  description = "The private network, from which the load balancer connects to Traefik: ID trusts it as a proxy hop."
+  type        = string
+
+  validation {
+    condition     = can(cidrhost(var.network_cidr, 0)) && try(tonumber(split("/", var.network_cidr)[1]) > 0, false)
+    error_message = "The private network must be a CIDR narrower than the whole internet."
+  }
+}
+
 variable "pod_cidr" {
-  description = "The cluster's pod range, from which Traefik reaches the services: ID trusts it as a proxy hop after Traefik's own trusted peers."
+  description = "The cluster's pod range, from which Traefik reaches the services: ID trusts it as a proxy hop after the private network."
   type        = string
 
   validation {

@@ -14,6 +14,6 @@ output "release" {
 }
 
 output "trusted_proxy_cidrs" {
-  description = "The trusted-proxies ConfigMap's cidrs, ID's TRUSTED_PROXY_CIDRS: Traefik's trusted peers, then the pod range."
+  description = "The trusted-proxies ConfigMap's cidrs, ID's TRUSTED_PROXY_CIDRS: the private network, then the pod range."
   value       = kubernetes_config_map_v1.trusted_proxies.data["cidrs"]
 }

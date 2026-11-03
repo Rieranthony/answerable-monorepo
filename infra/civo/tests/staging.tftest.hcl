@@ -79,8 +79,8 @@ run "admits_and_trusts_cloudflare" {
   }
 
   assert {
-    condition     = module.platform.trusted_proxy_cidrs == "173.245.48.0/20,103.21.244.0/22,104.16.0.0/13,2400:cb00::/32,2606:4700::/32,10.10.0.0/24,10.42.0.0/16"
-    error_message = "TRUSTED_PROXY_CIDRS must be Cloudflare's ranges, the private network and the pod range, nothing else."
+    condition     = module.platform.trusted_proxy_cidrs == "10.10.0.0/24,10.42.0.0/16"
+    error_message = "TRUSTED_PROXY_CIDRS must be the private network and the pod range, without Cloudflare's ranges."
   }
 }
 

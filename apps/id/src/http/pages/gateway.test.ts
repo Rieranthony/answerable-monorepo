@@ -13,7 +13,12 @@ test("gateway forwards only the required headers and appends every response cook
         "http://localhost:47300/auth/" +
           (withBody ? "sign-out" : "get-session"),
       );
-      for (const name of ["cookie", "user-agent", "x-forwarded-for"])
+      for (const name of [
+        "cookie",
+        "user-agent",
+        "cf-connecting-ip",
+        "x-forwarded-for",
+      ])
         expect(request.headers.get(name)).toBe(
           withBody ? name + "-value" : null,
         );
@@ -60,6 +65,7 @@ test("gateway forwards only the required headers and appends every response cook
         ? {
             cookie: "cookie-value",
             "user-agent": "user-agent-value",
+            "cf-connecting-ip": "cf-connecting-ip-value",
             "x-forwarded-for": "x-forwarded-for-value",
             origin: "https://foreign.example",
           }

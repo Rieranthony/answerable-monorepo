@@ -14,7 +14,7 @@ Everything below is derived from the code on this branch: `apps/id/src/config.ts
 | `apps/id` | One Bun process serving the OAuth/OIDC provider, the admin API, login, selection, consent, error and security pages, health and discovery on `ID_HOST` and `PORT` (default `127.0.0.1` and 47300; the image sets `0.0.0.0`) | Stateless apart from per-process rate-limit buckets and a five-minute JWKS cache, so replicas are fine |
 | `apps/web` | Next.js site and docs | Public website |
 | PostgreSQL 17 | The only state: users, sessions, native OAuth state, policy, audit, command receipts | Local compose uses `postgres:17-alpine`; production needs your own instance with backups |
-| Ingress | TLS termination and the `x-forwarded-for` header | The **only** network path to `apps/id`; see the first requirement below |
+| Ingress | TLS termination, and the `cf-connecting-ip` and `x-forwarded-for` headers | The **only** network path to `apps/id`; see the first requirement below |
 
 ID serves its own login, selection, consent, error and security pages at `BETTER_AUTH_URL` (`/login`, `/authorize`, `/consent`, `/error`, `/security`).
 
@@ -24,7 +24,7 @@ Answerable's own deployment of ID, the Toolbox and the admin MCP (Civo, Kubernet
 
 | Requirement | Why | Enforced by |
 | --- | --- | --- |
-| `apps/id` reachable only through the proxies in `TRUSTED_PROXY_CIDRS` | Better Auth's rate limiter and every audit row key on the client address. The address is taken from `x-forwarded-for`, walking from the right and skipping listed proxies. A request that reaches the process directly has no trustworthy address; in production it is refused with `403 untrusted_ingress` before authentication | `src/app.ts` ingress check; `src/env.ts` requires the variable in production |
+| `apps/id` reachable only through the proxies in `TRUSTED_PROXY_CIDRS` | Better Auth's rate limiter and every audit row key on the client address. The address is taken from `cf-connecting-ip` (set by Cloudflare on every request, so a client cannot choose it) and otherwise from `x-forwarded-for`; each is walked from the right, skipping listed proxies. A `cf-connecting-ip` that is absent, not an address, or inside a listed proxy range moves on to `x-forwarded-for`. A request that reaches the process directly has no trustworthy address; in production it is refused with `403 untrusted_ingress` before authentication | `src/app.ts` ingress check; `src/env.ts` requires the variable in production |
 | The application's `DATABASE_URL` is an unprivileged login, never the owner | Row-level security does not apply to the table owner. Ten tables rely on it for tenant isolation, and audit rows are immutable only because the runtime role cannot update or delete them. Startup refuses an owner or privileged role in every environment | `src/runtime.ts` calls `assertRuntimeRole` before listening |
 | A separate schema-owner login for migrations | DDL, functions, triggers and policies need ownership; the same run provisions the runtime role's permissions so the two never drift | `scripts/migrate.ts` migrates with `DATABASE_MIGRATION_URL`, then runs `configureRuntimeRole` for `DATABASE_RUNTIME_ROLE` |
 | `BETTER_AUTH_URL` is the public issuer origin, `https://` | It becomes the JWT `iss`, the discovery document and the default admin audience (`${BETTER_AUTH_URL}/api/admin`). Changing it invalidates every issued token | `src/env.ts`, `src/auth.ts` |

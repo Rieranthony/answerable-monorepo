@@ -30,4 +30,6 @@ The release receives, in order:
 
 **Why the pod range is in `cidrs` and not in `trustedIPs`.** Traefik reaches ID from a pod address, so ID must trust that hop too. No proxy in the pod range sits in front of Traefik, so Traefik trusts none.
 
+**Why Cloudflare's ranges are in `trustedIPs` and not in `cidrs`.** ID reads `CF-Connecting-IP` first, which Cloudflare overwrites on every request, and takes X-Forwarded-For only when a request has none. An address inside `cidrs` is skipped as a hop, so a Cloudflare range there would make ID fall through to X-Forwarded-For for a client that connects from Cloudflare itself. `cidrs` is therefore the private network and the pod range alone.
+
 Nothing else is set here. Replicas, the TLS option, the `web` entry point and the rest belong to the chart's own values.

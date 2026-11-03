@@ -27,7 +27,12 @@ export async function callAuth<T = { url?: string; code?: string }>(
   });
   if (input.body !== undefined) headers.set("content-type", "application/json");
   if (input.origin !== null) headers.set("origin", input.origin);
-  for (const name of ["cookie", "user-agent", "x-forwarded-for"]) {
+  for (const name of [
+    "cookie",
+    "user-agent",
+    "cf-connecting-ip",
+    "x-forwarded-for",
+  ]) {
     const value = context.req.header(name);
     if (value !== undefined) headers.set(name, value);
   }

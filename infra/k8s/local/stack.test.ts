@@ -209,12 +209,12 @@ describe("the edge's checks", () => {
     expect(ipOf(created.forged!)).toBe(stack!.dockerGateway)
   })
 
-  test("through the edge, a trusted hop, Traefik keeps X-Forwarded-For and ID records the calling pod's own address", async () => {
+  test("through the edge, as through Cloudflare, ID records the calling pod's own address, whatever CF-Connecting-IP the pod sends", async () => {
     const requestId = `infra-stack-pod-${Date.now()}`
     const result = await inPod("toolbox", "/app/mcps/toolbox", `
       const response = await fetch(process.env.TOOLBOX_ID_ISSUER + "/api/admin/v1/organizations", {
         method: "POST",
-        headers: { authorization: "Bearer " + ${JSON.stringify(stack!.secrets.rootAdminSecret)}, "content-type": "application/json", "idempotency-key": ${JSON.stringify(requestId)}, "x-request-id": ${JSON.stringify(requestId)} },
+        headers: { authorization: "Bearer " + ${JSON.stringify(stack!.secrets.rootAdminSecret)}, "content-type": "application/json", "cf-connecting-ip": "203.0.113.66", "idempotency-key": ${JSON.stringify(requestId)}, "x-request-id": ${JSON.stringify(requestId)} },
         body: JSON.stringify({ slug: "stack-from-pod", name: "Stack from a pod" }),
       })
       console.log(JSON.stringify({ status: response.status }))`)

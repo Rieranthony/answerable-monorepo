@@ -16,7 +16,8 @@ data "cloudflare_zone" "this" {
 locals {
   # The proxies whose X-Forwarded-For Traefik trusts. Cloudflare connects to the load balancer; the load balancer
   # connects to Traefik from the private network (it passes TCP through without PROXY protocol, so Traefik sees its
-  # private address). ID trusts these and the pod range Traefik reaches it from (the trusted-proxies ConfigMap, D31).
+  # private address). ID trusts only the private network and the pod range Traefik reaches it from (the trusted-proxies
+  # ConfigMap, D31).
   edge_trusted_cidrs = concat(
     data.cloudflare_ip_ranges.this.ipv4_cidrs,
     data.cloudflare_ip_ranges.this.ipv6_cidrs,
@@ -80,6 +81,7 @@ module "platform" {
   load_balancer_firewall_id = module.ingress_firewall.firewall_id
   load_balancer_ip          = module.ingress_firewall.ip
   trusted_proxy_cidrs       = local.edge_trusted_cidrs
+  network_cidr              = module.network.cidr_v4
   pod_cidr                  = var.pod_cidr
   database_admin_url        = module.database.admin_url
   origin_certificate_pem    = module.edge.origin_certificate_pem

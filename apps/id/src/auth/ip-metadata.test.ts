@@ -1,5 +1,6 @@
 import type { BetterAuthOptions } from "better-auth";
 import { afterAll, expect, test } from "bun:test";
+import { createApp } from "../app.ts";
 import { createAuth } from "../auth.ts";
 import { createDatabase } from "../db/client.ts";
 import { testEnvironment } from "../__tests__/support.ts";
@@ -46,6 +47,124 @@ for (const spoof of [false, true])
       expect(keys[0] === keys[1]).toBe(spoof);
     },
   );
+
+// Each request is counted against the key of the client address it resolves
+// to; a limit of one makes a repeated key answer 429.
+async function sendCounted(
+  requests: Record<string, string>[],
+  send: (
+    auth: ReturnType<typeof createAuth>,
+    headers: Record<string, string>,
+  ) => Response | Promise<Response>,
+) {
+  const auth = createAuth(connection.db, environment);
+  const context = await auth.$context;
+  context.rateLimit.enabled = true;
+  context.rateLimit.max = 1;
+  const keys: string[] = [];
+  const counts = new Map<string, number>();
+  const options: BetterAuthOptions = context.options;
+  options.rateLimit = {
+    customStorage: {
+      consume: async (key, rule) => {
+        keys.push(key);
+        const count = (counts.get(key) ?? 0) + 1;
+        counts.set(key, count);
+        return count <= rule.max
+          ? { allowed: true, retryAfter: null }
+          : { allowed: false, retryAfter: rule.window };
+      },
+    },
+  };
+  const statuses: number[] = [];
+  for (const headers of requests)
+    statuses.push((await send(auth, headers)).status);
+  return { keys, statuses };
+}
+const direct = (
+  auth: ReturnType<typeof createAuth>,
+  headers: Record<string, string>,
+) =>
+  auth.handler(
+    new Request(`${environment.betterAuthUrl}/auth/get-session`, { headers }),
+  );
+// The sign-in pages call the service in-process and pass the headers on.
+const throughPages = (
+  auth: ReturnType<typeof createAuth>,
+  headers: Record<string, string>,
+) =>
+  createApp({ auth, db: connection.db, environment }).request("/login", {
+    headers,
+  });
+
+for (const [name, send] of [
+  ["the service", direct],
+  ["the sign-in pages", throughPages],
+] as const) {
+  const clientKey = (address: string) => expect.stringContaining(address);
+  test(`${name}: cf-connecting-ip decides the client address over X-Forwarded-For`, async () => {
+    // Rotating forwarded entries cannot move a client to a new key, and
+    // another client behind the same forwarded entries gets its own.
+    const { keys, statuses } = await sendCounted(
+      [
+        {
+          "cf-connecting-ip": "198.51.100.7",
+          "x-forwarded-for": "192.0.2.1, 10.0.0.1",
+        },
+        {
+          "cf-connecting-ip": "198.51.100.7",
+          "x-forwarded-for": "192.0.2.2, 10.0.0.1",
+        },
+        {
+          "cf-connecting-ip": "198.51.100.7",
+          "x-forwarded-for": "203.0.113.9, 10.0.0.1",
+        },
+        {
+          "cf-connecting-ip": "198.51.100.8",
+          "x-forwarded-for": "192.0.2.1, 10.0.0.1",
+        },
+      ],
+      send,
+    );
+    expect(keys).toHaveLength(4);
+    expect(keys[0]).toEqual(clientKey("198.51.100.7"));
+    expect(new Set(keys.slice(0, 3)).size).toBe(1);
+    expect(keys[3]).toEqual(clientKey("198.51.100.8"));
+    expect(keys[3]).not.toBe(keys[0]);
+    // The pages answer 200 whatever the service says to their session read.
+    if (send === direct)
+      expect(statuses.map((status) => status === 429)).toEqual([
+        false,
+        true,
+        true,
+        false,
+      ]);
+  });
+
+  test(`${name}: without cf-connecting-ip, or when it names no client, the forwarded walk decides`, async () => {
+    const { keys } = await sendCounted(
+      [
+        { "x-forwarded-for": "192.0.2.1, 10.0.0.1" },
+        // A proxy address, a malformed value and an empty one name no client.
+        {
+          "cf-connecting-ip": "10.0.0.7",
+          "x-forwarded-for": "192.0.2.1, 10.0.0.1",
+        },
+        {
+          "cf-connecting-ip": "not-an-address",
+          "x-forwarded-for": "192.0.2.1, 10.0.0.1",
+        },
+        { "cf-connecting-ip": "", "x-forwarded-for": "192.0.2.1, 10.0.0.1" },
+        { "x-forwarded-for": "198.51.100.7, 10.0.0.1" },
+      ],
+      send,
+    );
+    expect(keys).toHaveLength(5);
+    expect(keys[0]).toEqual(clientKey("192.0.2.1"));
+    expect(new Set(keys.slice(0, 4)).size).toBe(1);
+    expect(keys[4]).toEqual(clientKey("198.51.100.7"));
+  });
+}
 
 for (const path of [
   "/auth/get-session",

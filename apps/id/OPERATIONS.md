@@ -17,7 +17,7 @@ a change ships as a release. Only the pool size is a variable.
 | Database statements | 10 s per statement; lock wait 2 s; idle transaction 15 s                   | Not a whole-request deadline; transactions may execute multiple statements |
 | Request body        | 256 KiB (4 KiB on `POST /login`, 64 KiB on `POST /auth/sign-in/sso`); acquisition deadline 5 s | Does not bound response streaming or socket count                          |
 | Rate limits         | Per client address per process, production only ([docs/06](../../docs/06-deploying-answerable-id.md#operating-it)) | Replicas multiply them; not a volumetric defence                           |
-| Forwarded IP        | Rightmost untrusted address after the proxies in `TRUSTED_PROXY_CIDRS`     | Requires proxy-only network access ([README](README.md#http-surface))      |
+| Client address      | `cf-connecting-ip`; else the rightmost untrusted `x-forwarded-for` address after the proxies in `TRUSTED_PROXY_CIDRS` | Requires proxy-only network access ([README](README.md#http-surface))      |
 
 **Runtime summaries.** Every 30 seconds each process writes `[id] operations`
 followed by JSON: per route class and HTTP status, the completed handler count,

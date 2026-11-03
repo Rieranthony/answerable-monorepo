@@ -10,6 +10,7 @@ variables {
   load_balancer_firewall_id = "44444444-4444-4444-8444-444444444444"
   load_balancer_ip          = "192.0.2.10"
   trusted_proxy_cidrs       = ["173.245.48.0/20", "2400:cb00::/32", "10.10.0.0/24"]
+  network_cidr              = "10.10.0.0/24"
   pod_cidr                  = "10.42.0.0/16"
   origin_pull_ca_pem        = "placeholder: origin-pull CA certificate"
   database_admin_url        = "postgres://civo:secret@10.10.0.7:5432/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem"
@@ -49,12 +50,12 @@ run "writes_the_trusted_proxies_configmap" {
   }
 
   assert {
-    condition     = kubernetes_config_map_v1.trusted_proxies.data["cidrs"] == "173.245.48.0/20,2400:cb00::/32,10.10.0.0/24,10.42.0.0/16"
-    error_message = "cidrs must be Traefik's trusted ranges then the pod range, comma-separated."
+    condition     = kubernetes_config_map_v1.trusted_proxies.data["cidrs"] == "10.10.0.0/24,10.42.0.0/16"
+    error_message = "cidrs must be the private network then the pod range, comma-separated, without Traefik's other trusted ranges."
   }
 
   assert {
-    condition     = output.trusted_proxy_cidrs == "173.245.48.0/20,2400:cb00::/32,10.10.0.0/24,10.42.0.0/16"
+    condition     = output.trusted_proxy_cidrs == "10.10.0.0/24,10.42.0.0/16"
     error_message = "The module must report the ConfigMap's cidrs."
   }
 }
@@ -210,4 +211,14 @@ run "refuses_a_pod_range_that_is_everyone" {
   }
 
   expect_failures = [var.pod_cidr]
+}
+
+run "refuses_a_private_network_as_wide_as_the_internet" {
+  command = plan
+
+  variables {
+    network_cidr = "0.0.0.0/0"
+  }
+
+  expect_failures = [var.network_cidr]
 }

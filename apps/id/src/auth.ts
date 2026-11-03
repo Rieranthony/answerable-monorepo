@@ -170,7 +170,11 @@ export function createAuth(db: Database, environment: Environment) {
     },
     advanced: {
       ipAddress: {
-        ipAddressHeaders: ["x-forwarded-for"],
+        // Cloudflare overwrites cf-connecting-ip on every request and only
+        // Cloudflare can reach Traefik (authenticated origin pulls), so it
+        // wins. X-Forwarded-For remains for a path with no Cloudflare in
+        // front, such as the local stack.
+        ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"],
         trustedProxies: environment.trustedProxyCidrs,
       },
       database: {

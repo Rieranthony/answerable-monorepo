@@ -26,8 +26,9 @@ resource "kubernetes_namespace_v1" "platform" {
   }
 }
 
-# The proxies whose X-Forwarded-For ID trusts (TRUSTED_PROXY_CIDRS, read from this ConfigMap's key cidrs): Traefik's own
-# trusted peers, then the pod range Traefik reaches the services from (D31).
+# The hops ID skips in X-Forwarded-For (TRUSTED_PROXY_CIDRS, read from this ConfigMap's key cidrs): the private network the
+# load balancer connects from, then the pod range Traefik reaches the services from (D31). Cloudflare's ranges are not
+# hops here: ID reads CF-Connecting-IP first, and takes the address Cloudflare reports as the client's, whatever it is.
 resource "kubernetes_config_map_v1" "trusted_proxies" {
   metadata {
     name      = "trusted-proxies"
@@ -35,7 +36,7 @@ resource "kubernetes_config_map_v1" "trusted_proxies" {
   }
 
   data = {
-    cidrs = join(",", concat(var.trusted_proxy_cidrs, [var.pod_cidr]))
+    cidrs = join(",", [var.network_cidr, var.pod_cidr])
   }
 }
 
