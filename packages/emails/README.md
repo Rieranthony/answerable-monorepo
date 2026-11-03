@@ -1,0 +1,58 @@
+# Answerable emails
+
+Every email Answerable sends, and the Postmark transport that sends it. Private to the monorepo; no npm release.
+
+```ts
+import { createPostmarkTransport, renderEmail } from "@answerable/emails"
+
+const transport = createPostmarkTransport({
+  serverToken: process.env.POSTMARK_SERVER_TOKEN!,
+  from: "Answerable ID <sign-in@id.answerable.org>",
+  replyTo: "support@answerable.org",
+  subjectPrefix: "[staging]", // staging only
+})
+
+const email = renderEmail({
+  template: "magic-link",
+  firmName: "Acme Surveyors",
+  url: "https://id.answerable.org/magic-link?token=…",
+  code: "04817352",
+  expiresInMinutes: 10,
+})
+const result = await transport.send({ to: "alice@acme.example", ...email })
+// { status: "sent", messageId } or { status: "failed", httpStatus, errorCode, retried }: never a throw for Postmark's answer
+```
+
+| Email | Subject | Tag | Holes |
+| --- | --- | --- | --- |
+| `magic-link` | Sign in to {firmName} | `sign-in` | `firmName`, `url`, `code`, `expiresInMinutes` |
+| `access-removed` | Your access to {firmName} was removed | `access-removed` | `firmName` |
+| `mailbox-code` | Your code to connect your company sign-in | `mailbox-code` | `firmName`, `code`, `expiresInMinutes` |
+
+`renderEmail` is synchronous. It refuses what an email cannot say, by throwing a `TypeError` that never repeats the value: an empty firm name, an address that is not `http` or `https` or that holds a space or a control character, a code that is not exactly 8 digits, an expiry that is not a positive whole number of minutes. A line break in a firm name becomes a space. Every value is escaped in the HTML part and used as given in the subject and the text part.
+
+## Transport
+
+- `createPostmarkTransport` is a thin `fetch` client: a 10 second timeout, one retry after `retryDelayMs` on a 429, a 5xx, a network error or a timeout, and none on any other answer. `TrackOpens` is off and `TrackLinks` is `None`; no `Metadata`, and nothing secret in `Tag`. Postmark has no idempotency key, so a retried timeout can send an email twice.
+- A failed result holds numbers and a flag only: never the token, the link, the code, the address or Postmark's message. `errorCode` 406 (`postmarkErrorCode.inactiveRecipient`) means Postmark suppressed the address; 412 and 413 mean the account is not approved yet.
+- `createLogTransport(log)` writes the recipient, subject and text, link and code included, for local development. `createMemoryTransport()` from `@answerable/emails/testing` keeps what it was sent, and fails when its `failure` is set.
+
+## Add an email
+
+1. Write `src/<name>.tsx`: the first line is `/** @jsxImportSource react */`, the content goes in `Layout` from `src/layout.tsx`, and every value arrives as a string prop (`{firmName}`, `{expiry}`).
+2. Add it to the `Email` type and `holeNames` in `src/holes.ts` (its checks go in `holesOf`), and to the table in `src/react.tsx` with its subject and tag.
+3. `bun run --filter @answerable/emails generate`, and commit `src/generated/templates.generated.ts`.
+4. Add it to `emails` in `src/fixtures.ts` and read its text in `src/render.test.ts`; `src/equivalence.test.ts` compares it with React on hostile values.
+
+## Preview
+
+`bun run --filter @answerable/emails preview [directory]` writes each email's HTML and text to `dist/preview/` (git-ignored), through React, so an edit shows without a `generate`. The firm name is hostile on purpose: the files show the escaping. Open them in a browser, or send them to a test inbox.
+
+## Why the emails are precompiled
+
+React Email renders in about 20 ms and, measured under Bun 1.3.1, keeps about 20 KB of heap per render. Bundled into a service it adds 1.36 MB (React, `react-dom`, Prettier, an HTML-to-text converter). Each email's only holes are strings, so `scripts/generate.ts` renders each template once with `{{hole}}` placeholders and commits the result. `renderEmail` fills the holes in one pass, with no React: the entry bundles to about 28 KB.
+
+- **The tests hold the two paths together.** `src/equivalence.test.ts` renders every email through React and through `renderEmail` on hostile values (markup, quotes, `$&`, a name that reads `{{url}}`, a line break) and expects the same bytes, apart from the preheader's invisible padding. `src/generate.test.ts` fails when the committed file differs from what the generator writes, and names the command to run.
+- **No React reaches a service.** `src/index.ts` and `src/testing.ts` import none, and `src/bundle.test.ts` bundles the entry and looks for it. React Email, React and the generator are `devDependencies`; `src/react.tsx` is not in the package's exports.
+- **Each `.tsx` carries its own JSX pragma.** A consumer whose tsconfig says another runtime (Answerable ID uses `hono/jsx`) would otherwise type-check and run these files with its own.
+- **Limits.** Holes are strings. A repeated or optional block needs a variant of the template, or a different approach.

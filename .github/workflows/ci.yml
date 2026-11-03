@@ -49,6 +49,9 @@ jobs:
       - name: Test countries
         run: bun --filter @answerable/countries test
 
+      - name: Test emails
+        run: bun --filter @answerable/emails test
+
       - name: Install MCP browser test runtime
         working-directory: packages/acceptance
         run: bun x playwright install --with-deps chromium

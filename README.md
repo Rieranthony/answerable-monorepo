@@ -16,6 +16,7 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 | `packages/mcp` | The SDK for MCP servers, on the official MCP TypeScript SDK: `defineTool`, `defineMutation`, `defineProvider`, `createMcpServer`, the error envelope, the manifest, the conformance kit and the in-process test client | Locally tested |
 | `packages/id-admin` | A server's machine client on ID's admin API (`createIdAdmin`, with `x-request-id` and a caller-chosen `Idempotency-Key`) and the fake ID for tests | Locally tested |
 | `packages/mcp-postgres` | Postgres storage for MCP servers and MCPs: the intent store, the hash-chained evidence, the drizzle base schema, and each MCP's schema and migrations | Locally tested |
+| `packages/emails` | Every email Answerable sends: React Email templates (the sign-in link, access removed, the mailbox code) precompiled to strings that a service fills with no React, and the Postmark transport | Locally tested |
 | `mcps/e2e` | Reference MCP: five tools (one a prepared mutation), a prompt, a resource and an MCP Apps view; every new MCP is compared with it | Local acceptance passes |
 | `mcps/toolbox` | The Toolbox: one MCP endpoint serving each person the capabilities their organisation granted, with intents, evidence, spans and an admin API | Local acceptance passes |
 | `mcps/admin` | The admin MCP: a staff-only server that reads and changes organisations, domains, SSO providers, groups, access and staff roles in ID, and enables the Toolbox, each tool behind a role read live from ID and each change a prepared intent the person confirms | Local acceptance passes |
@@ -93,6 +94,7 @@ Every MCP gets a database linked to it and its sign-in through Answerable ID, se
 - [`scripts`](scripts) holds `bun mcp`: `new`, `add tool`, `list`, `check`, `db`, `setup`, `dev` and the generator of the lists the Toolbox and the chart read.
 - [`mcps/toolbox`](mcps/toolbox/README.md) is the Toolbox, which also serves every MCP that runs on its own URL, and [`mcps/admin`](mcps/admin/README.md) is the admin MCP for Answerable staff, each with databases of its own.
 - [`mcps/e2e`](mcps/e2e/README.md) is the reference server and [`mcps/example`](mcps/example) the finished example, exactly as `bun mcp` writes it.
+- [`packages/emails`](packages/emails/README.md) holds every email: the templates, the precompiled strings a service fills, and the Postmark transport.
 - [`packages/acceptance`](packages/acceptance/README.md) holds the real-ID acceptance kit and journeys.
 
 | Command | Does |

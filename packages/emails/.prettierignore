@@ -1,0 +1,2 @@
+# Generated: `bun run --filter @answerable/emails generate` writes it, and Prettier would rewrap its long lines.
+src/generated/

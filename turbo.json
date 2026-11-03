@@ -64,6 +64,11 @@
       "inputs": ["$TURBO_DEFAULT$", "../../DESIGN.md", "../ui/src/styles/tokens.css"],
       "outputs": ["coverage/**"]
     },
+    "@answerable/emails#test": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "../../DESIGN.md"],
+      "outputs": ["coverage/**"]
+    },
     "@answerable/mcp-e2e#test": {
       "cache": false
     },
