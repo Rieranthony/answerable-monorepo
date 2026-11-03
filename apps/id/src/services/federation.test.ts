@@ -177,16 +177,22 @@ describe("unit: federated user resolution", () => {
     ).toMatchObject({ action: "reject", code: "domain_not_allowed" });
   });
 
-  test("rejects an active email holder", async () => {
-    const result = await resolveFederatedUser(
-      input(),
-      databaseWithFinds(provider, organization, domain, null, null, {
-        id: "holder",
-        email: "person@contoso.com",
-        status: "active",
-      }),
-    );
-    expect(result).toMatchObject({ action: "reject", code: "email_conflict" });
+  test("rejects an email holder, disabled or not, without touching it", async () => {
+    for (const status of ["active", "disabled"] as const) {
+      const recorded = recordingDatabase(
+        provider,
+        organization,
+        domain,
+        null,
+        null,
+        { id: "holder", email: "person@contoso.com", status },
+      );
+      expect(
+        await resolveFederatedUser(input(), recorded.database),
+      ).toMatchObject({ action: "reject", code: "email_conflict" });
+      expect(recorded.creates).toEqual([]);
+      expect(recorded.updates).toEqual([]);
+    }
   });
 
   test("creates a Google user with the email fallback name", async () => {

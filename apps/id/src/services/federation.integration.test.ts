@@ -3,9 +3,13 @@ import {
   type PlatformApplications,
 } from "../auth/platform-applications.ts";
 import { inTenant } from "../__tests__/tenant-command.ts";
-import { inPlatformWrite } from "../__tests__/platform-context.ts";
+import {
+  inPlatformUsers,
+  inPlatformWrite,
+} from "../__tests__/platform-context.ts";
 import { putSsoProvider, deleteSsoProvider } from "./sso-providers.ts";
 import { remove as removeMembership, reinstate } from "./members.ts";
+import { disableUser, retireUserEmail } from "./users.ts";
 import {
   afterAll,
   beforeAll,
@@ -41,7 +45,6 @@ import { createOrganizationDomain } from "../__tests__/domain-queries.ts";
 import { createSsoProvider } from "../__tests__/sso-queries.ts";
 import {
   auditEvents,
-  auditEventUsers,
   accounts,
   members,
   organizations,
@@ -729,6 +732,7 @@ describe("integration: federated sign-in", () => {
           if (property === "request")
             return (input: string, init?: RequestInit) => {
               const headers = new Headers(init?.headers);
+              // Cloudflare's header names the client; the other two do not.
               headers.set("x-forwarded-for", "192.0.2.1");
               headers.set("x-real-ip", "198.51.100.7");
               headers.set("cf-connecting-ip", "203.0.113.9");
@@ -1033,17 +1037,42 @@ describe("integration: federated sign-in", () => {
     expect(await connection.db.select().from(sessions)).toHaveLength(1);
   });
 
-  test("releases a disabled holder's recycled email for a new identity", async () => {
-    const oldUser = await insertUser("person@contoso.com", "disabled");
+  test.each(["active", "disabled"] as const)(
+    "refuses a recycled email held by a %s user and leaves the holder as it is",
+    async (status) => {
+      const holder = await insertUser("person@contoso.com", status);
+      await seedProvider();
+      issuer.enqueue(entraClaims());
+
+      expect(errorCode((await signIn()).location)).toBe("email_conflict");
+      expect(await connection.db.select().from(users)).toEqual([holder]);
+      expect(await connection.db.select().from(accounts)).toHaveLength(0);
+      expect(await connection.db.select().from(sessions)).toHaveLength(0);
+      expect(
+        await connection.db
+          .select()
+          .from(auditEvents)
+          .where(eq(auditEvents.action, "user.email_retired")),
+      ).toEqual([]);
+    },
+  );
+
+  test("signs a new identity in as a new user once staff have disabled the holder and retired the address", async () => {
+    const holder = await insertUser("person@contoso.com", "active");
     await seedProvider();
+    await inPlatformUsers(connection.db, async (context) => {
+      await disableUser(context, holder.id);
+      await retireUserEmail(context, holder.id);
+    });
     issuer.enqueue(entraClaims());
 
     expect((await signIn()).location).toBe(callbackURL);
     const allUsers = await connection.db.select().from(users);
-    const retired = allUsers.find((user) => user.id === oldUser.id)!;
-    const replacement = allUsers.find((user) => user.id !== oldUser.id)!;
+    const retired = allUsers.find((user) => user.id === holder.id)!;
+    const replacement = allUsers.find((user) => user.id !== holder.id)!;
+    expect(allUsers).toHaveLength(2);
     expect(retired).toMatchObject({
-      email: `${oldUser.id}@retired.invalid`,
+      email: `${holder.id}@retired.invalid`,
       retiredEmail: "person@contoso.com",
       status: "disabled",
     });
@@ -1051,53 +1080,16 @@ describe("integration: federated sign-in", () => {
       email: "person@contoso.com",
       status: "active",
     });
-    // The takeover is recorded for the holder, as the admin route records it.
+    expect(isUuidV7(replacement.id)).toBe(true);
+    // The retirement is staff's command; signing in writes none of its own.
     const events = await connection.db
       .select()
       .from(auditEvents)
       .where(eq(auditEvents.action, "user.email_retired"));
     expect(events).toEqual([
-      expect.objectContaining({
-        actorType: "system",
-        actorId: "sso-sign-in",
-        organizationId: null,
-        targetType: "user",
-        targetId: oldUser.id,
-        outcome: "success",
-        data: {
-          before: {
-            id: oldUser.id,
-            deletedAt: null,
-            status: "disabled",
-            disabledAt: oldUser.disabledAt!.toISOString(),
-            emailRetired: false,
-          },
-          after: {
-            id: oldUser.id,
-            deletedAt: null,
-            status: "disabled",
-            disabledAt: oldUser.disabledAt!.toISOString(),
-            emailRetired: true,
-          },
-        },
-      }),
+      expect.objectContaining({ targetId: holder.id, outcome: "success" }),
     ]);
-    expect(
-      await connection.db
-        .select({ userId: auditEventUsers.userId })
-        .from(auditEventUsers)
-        .where(eq(auditEventUsers.eventId, events[0]!.id)),
-    ).toEqual([{ userId: oldUser.id }]);
-  });
-
-  test("rejects a recycled email held by an active user without changing it", async () => {
-    const holder = await insertUser("person@contoso.com", "active");
-    await seedProvider();
-    issuer.enqueue(entraClaims());
-
-    expect(errorCode((await signIn()).location)).toBe("email_conflict");
-    expect(await connection.db.select().from(users)).toEqual([holder]);
-    expect(await connection.db.select().from(accounts)).toHaveLength(0);
+    expect(events[0]!.actorId).not.toBe("sso-sign-in");
   });
 
   test("rejects a disabled user already bound to the exact account", async () => {

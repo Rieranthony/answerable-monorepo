@@ -35,7 +35,7 @@ import { softDeleteEntitlements } from "./entitlements.ts";
 import { softDeleteAssignments } from "./groups.ts";
 import { memberEvidence } from "./members.ts";
 
-export function retiredEmailFor(userId: string): string {
+function retiredEmailFor(userId: string): string {
   return `${userId}@retired.invalid`;
 }
 
