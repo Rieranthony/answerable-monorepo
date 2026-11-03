@@ -1,21 +1,16 @@
-import { makeSignature } from "better-auth/crypto";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { and, eq, like, sql } from "drizzle-orm";
-import { createHash } from "node:crypto";
+import { and, eq, isNull, like, sql } from "drizzle-orm";
 
 import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
 import { approveAdminCapability } from "../__tests__/capabilities.ts";
 import { createOrganizationDomain } from "../__tests__/domain-queries.ts";
-import { signInThroughIdp } from "../__tests__/federation.ts";
+import { magicLinkFirms } from "../__tests__/magic-link.ts";
 import { createOrganization } from "../__tests__/organization-queries.ts";
 import {
   inPlatformRead,
   inPlatformWrite,
 } from "../__tests__/platform-context.ts";
-import {
-  createSsoProvider,
-  lockSsoProvider,
-} from "../__tests__/sso-queries.ts";
+import { lockSsoProvider } from "../__tests__/sso-queries.ts";
 import { inTenantRead } from "../__tests__/tenant-command.ts";
 import { createAuth } from "../auth.ts";
 import {
@@ -23,33 +18,28 @@ import {
   readSsoIssuer,
 } from "../db/queries/sso-providers.ts";
 import {
-  accounts,
   auditEvents,
   entitlements,
   grantContexts,
-  members,
-  oauthClientResources,
-  oauthClients,
-  oauthResources,
   sessions,
   ssoProviders,
   verifications,
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
-import { createCapability } from "../services/capabilities.ts";
-import { hashClientSecret } from "../services/client-secrets.ts";
 import { tenantAuthentication } from "./tenant-authentication.ts";
 
-// This release creates no magic-link row: the next one does, and this image is the
-// previous image during that rollout and after a tag back. Every test here seeds the
-// next release's rows and drives this image's real routes on the runtime role.
+// Every organisation holds a magic-link row beside any directory. Every test here drives
+// the real routes on the runtime role and proves that the row changes nothing about a
+// directory. No sign-in by link exists yet, so a magic-link session is seeded.
 
 let fixture: AdminFixture;
+let firms: ReturnType<typeof magicLinkFirms>;
 beforeAll(async () => {
   fixture = await createAdminFixture(
     { databasePoolMax: 4 },
     { restrictedRole: true },
   );
+  firms = magicLinkFirms(fixture);
 });
 afterAll(async () => {
   await fixture?.close();
@@ -76,140 +66,15 @@ async function providerRow(id: string) {
   return row!;
 }
 
-function directoryInput(slug: string) {
-  const { origin } = fixture.issuer;
-  return {
-    issuer: origin,
-    domain: `${slug}.example.com`,
-    oidc: {
-      clientId: `${slug}-client`,
-      clientSecret: "secret",
-      authorizationEndpoint: `${origin}/authorize`,
-      tokenEndpoint: `${origin}/token`,
-      jwksEndpoint: `${origin}/jwks`,
-    },
-  };
-}
-
-/** An organisation as the next release leaves it. The magic-link row goes in first, so
- * a scan finds it first, as an index in `(organization_id, kind)` order does. */
-async function seedOrganization(slug: string, directory = true) {
-  const organization = await createOrganization(fixture.db, {
-    slug,
-    name: slug,
-  });
-  const [magicLink] = await fixture.db
-    .insert(ssoProviders)
-    .values(magicLinkValues(organization.id))
-    .returning();
-  const domain = `${slug}.example.com`;
-  await createOrganizationDomain(fixture.db, {
-    organizationId: organization.id,
-    domain,
-  });
-  const row = directory
-    ? await createSsoProvider(fixture.db, {
-        ...directoryInput(slug),
-        organizationId: organization.id,
-        providerId: slug,
-      })
-    : null;
-  return { id: organization.id, slug, domain, magicLink: magicLink!, row };
-}
+const directoryInput = (slug: string) => firms.directoryInput(slug);
+const seedOrganization = (slug: string, directory = true) =>
+  firms.seedOrganization(slug, directory);
 type Organization = Awaited<ReturnType<typeof seedOrganization>>;
-
-const cookieOf = (cookies: string[]) =>
-  cookies.map((value) => value.split(";", 1)[0]).join("; ");
-
-/** Signs in through the organisation's directory, for real. */
-async function directorySignIn(
-  organization: Organization,
-  selector: Record<string, string> = { providerId: organization.slug },
-  name = "person",
-) {
-  const email = `${name}@${organization.domain}`;
-  fixture.issuer.enqueue({
-    sub: `${organization.slug}-${name}`,
-    email,
-    email_verified: true,
-    name,
-    auth_time: Math.floor(Date.now() / 1000),
-  });
-  const signedIn = await signInThroughIdp(fixture.app, {
-    ...selector,
-    callbackURL,
-  });
-  expect(signedIn.location).toBe(callbackURL);
-  const [member] = await fixture.db
-    .select({ id: members.id, userId: members.userId })
-    .from(members)
-    .innerJoin(accounts, eq(accounts.userId, members.userId))
-    .where(
-      and(
-        eq(members.organizationId, organization.id),
-        eq(accounts.accountId, `${organization.slug}-${name}`),
-      ),
-    );
-  return {
-    email,
-    memberId: member!.id,
-    userId: member!.userId,
-    cookie: cookieOf(signedIn.cookies),
-  };
-}
+const directorySignIn: typeof firms.directorySignIn = (...input) =>
+  firms.directorySignIn(...input);
 type Person = Awaited<ReturnType<typeof directorySignIn>>;
-
-/** The next release's sign-in result, seeded directly: the person's account with the
- * magic-link row, and a session whose origin names that row. */
-async function magicLinkSession(
-  organization: Organization,
-  person: Pick<Person, "email" | "userId">,
-  upstreamAuthTime: Date | null = null,
-) {
-  const { issuer, providerId, id, revision } = await providerRow(
-    organization.magicLink.id,
-  );
-  let [account] = await fixture.db
-    .select()
-    .from(accounts)
-    .where(
-      and(eq(accounts.userId, person.userId), eq(accounts.issuer, issuer)),
-    );
-  if (!account)
-    [account] = await fixture.db
-      .insert(accounts)
-      .values({
-        id: createId(),
-        userId: person.userId,
-        issuer,
-        providerId,
-        accountId: person.email,
-      })
-      .returning();
-  const token = createId();
-  const [session] = await fixture.db
-    .insert(sessions)
-    .values({
-      id: createId(),
-      userId: person.userId,
-      token,
-      expiresAt: new Date(Date.now() + 7 * 86_400_000),
-      authenticationOrganizationId: organization.id,
-      authenticationProviderId: id,
-      authenticationProviderRevision: revision,
-      authenticationAccountId: account!.id,
-      upstreamAuthTime,
-    })
-    .returning();
-  const signature = await makeSignature(
-    token,
-    fixture.environment.betterAuthSecret,
-  );
-  return {
-    session: session!,
-    cookie: `better-auth.session_token=${encodeURIComponent(`${token}.${signature}`)}`,
-  };
-}
+const magicLinkSession: typeof firms.magicLinkSession = (...input) =>
+  firms.magicLinkSession(...input);
 
 const aSecondAgo = () => new Date(Date.now() - 1000);
 
@@ -501,12 +366,21 @@ test("the admin API can connect a directory beside a magic-link row", async () =
   await directorySignIn(organization, { organizationSlug: organization.slug });
 });
 
-test("an organisation with only a magic-link row answers as one with no directory", async () => {
+test("an organisation with no directory answers as one that holds no provider row at all", async () => {
   const organization = await seedOrganization("magic-only", false);
   const bare = await createOrganization(fixture.db, {
     slug: "no-provider",
     name: "No provider",
   });
+  await fixture.db
+    .update(ssoProviders)
+    .set({ deletedAt: new Date() })
+    .where(
+      and(
+        eq(ssoProviders.organizationId, bare.id),
+        isNull(ssoProviders.deletedAt),
+      ),
+    );
   await createOrganizationDomain(fixture.db, {
     organizationId: bare.id,
     domain: "no-provider.example.com",
@@ -738,151 +612,14 @@ test("a link cannot target a magic-link row", async () => {
   expect(await identityFlows()).toBe(flows);
 });
 
-const clientId = "rollout-client";
-const clientSecret = "rollout-client-secret";
-const resource = "https://service.example/rollout";
-const redirect = "https://client.example/callback";
-const verifier = "v".repeat(64);
-
-function protocol(
-  path: string,
-  init: { cookie?: string; json?: object; form?: Record<string, string> },
-) {
-  return fixture.app.fetch(
-    new Request(`${fixture.environment.betterAuthUrl}/auth${path}`, {
-      method: init.json || init.form ? "POST" : "GET",
-      headers: {
-        origin: fixture.trustedOrigin,
-        ...(init.cookie ? { cookie: init.cookie } : {}),
-        ...(init.json ? { "content-type": "application/json" } : {}),
-        ...(init.form
-          ? {
-              "content-type": "application/x-www-form-urlencoded",
-              authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
-            }
-          : {}),
-      },
-      ...(init.json ? { body: JSON.stringify(init.json) } : {}),
-      ...(init.form ? { body: new URLSearchParams(init.form) } : {}),
-    }),
-  );
-}
-
-/** The whole user flow from a browser session: authorise, select, consent, exchange. */
-async function issueTokens(cookie: string, memberId: string) {
-  const query = new URLSearchParams({
-    client_id: clientId,
-    response_type: "code",
-    redirect_uri: redirect,
-    scope: "openid offline_access mail:read",
-    resource,
-    state: "client-state",
-    code_challenge_method: "S256",
-    code_challenge: createHash("sha256").update(verifier).digest("base64url"),
-  });
-  const started = await protocol(`/oauth2/authorize?${query}`, { cookie });
-  const selection = new URL(started.headers.get("location")!);
-  expect(selection.pathname).toBe("/authorize");
-  const selected = await protocol("/oauth2/continue", {
-    cookie,
-    json: {
-      oauth_query: selection.search.slice(1),
-      postLogin: true,
-      memberId,
-    },
-  });
-  expect(selected.status).toBe(200);
-  const consent = new URL((await selected.json()).url);
-  const accepted = await protocol("/oauth2/consent", {
-    cookie,
-    json: { oauth_query: consent.search.slice(1), accept: true },
-  });
-  expect(accepted.status).toBe(200);
-  const code = new URL((await accepted.json()).url).searchParams.get("code")!;
-  const exchanged = await protocol("/oauth2/token", {
-    form: {
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: redirect,
-      code_verifier: verifier,
-      resource,
-    },
-  });
-  expect(exchanged.status).toBe(200);
-  return (await exchanged.json()) as { refresh_token: string };
-}
-
-function refresh(token: string) {
-  return protocol("/oauth2/token", {
-    form: { grant_type: "refresh_token", refresh_token: token, resource },
-  });
-}
-
 test("a magic-link grant renews by its row's revision, apart from the directory's", async () => {
   const organization = await seedOrganization("renewal");
   const person = await directorySignIn(organization);
   const { session, cookie } = await magicLinkSession(organization, person);
-  await fixture.db.insert(oauthClients).values({
-    id: createId(),
-    clientId,
-    clientSecret: hashClientSecret(clientSecret),
-    name: "Rollout client",
-    uri: "https://client.example",
-    scopes: ["openid", "offline_access", "mail:read"],
-    grantTypes: ["authorization_code", "refresh_token"],
-    redirectUris: [redirect],
-    tokenEndpointAuthMethod: "client_secret_basic",
-    skipConsent: false,
-  });
-  await fixture.db.insert(oauthResources).values({
-    id: createId(),
-    identifier: resource,
-    name: "Service",
-    allowedScopes: ["openid", "offline_access", "mail:read"],
-    accessTokenTtl: 300,
-  });
-  await fixture.db
-    .insert(oauthClientResources)
-    .values({ id: createId(), clientId, resourceId: resource });
-  await inPlatformWrite(fixture.db, async (context) => {
-    for (const input of [
-      {
-        clientId,
-        resource: null,
-        grantKind: "authorization_code" as const,
-        scopes: ["openid", "offline_access"],
-      },
-      {
-        clientId,
-        resource,
-        grantKind: "authorization_code" as const,
-        scopes: ["mail:read"],
-      },
-      {
-        clientId,
-        resource,
-        grantKind: "refresh_token" as const,
-        scopes: ["mail:read"],
-      },
-    ])
-      await createCapability(context, organization.id, input);
-  });
-  await fixture.db.insert(entitlements).values([
-    {
-      id: createId(),
-      organizationId: organization.id,
-      clientId,
-      scopes: ["openid", "offline_access"],
-    },
-    {
-      id: createId(),
-      organizationId: organization.id,
-      clientId,
-      resource,
-      scopes: ["mail:read"],
-    },
-  ]);
+  await firms.registerClient();
+  await firms.allowClient(organization.id);
 
+  const { issueTokens, refresh } = firms;
   const magicLinkTokens = await issueTokens(cookie, person.memberId);
   const [grant] = await fixture.db
     .select()

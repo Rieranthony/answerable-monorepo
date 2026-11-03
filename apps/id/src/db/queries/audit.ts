@@ -63,6 +63,8 @@ export const auditActions = [
   "organization.disabled",
   "organization.enabled",
   "organization.erased",
+  "organization.magic_link_disabled",
+  "organization.magic_link_enabled",
   "organization.updated",
   "resource.created",
   "resource.disabled",

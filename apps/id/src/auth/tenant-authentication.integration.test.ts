@@ -120,6 +120,7 @@ async function providerInput() {
     .where(
       and(
         eq(ssoProviders.organizationId, fixture.tenant.organizationId),
+        eq(ssoProviders.kind, "oidc"),
         sql`${ssoProviders.deletedAt} is null`,
       ),
     );
@@ -236,7 +237,12 @@ test("independently verified B account evidence admits the same global user to B
   const [provider] = await fixture.db
     .select()
     .from(ssoProviders)
-    .where(eq(ssoProviders.organizationId, fixture.outsider.organizationId));
+    .where(
+      and(
+        eq(ssoProviders.organizationId, fixture.outsider.organizationId),
+        eq(ssoProviders.kind, "oidc"),
+      ),
+    );
   const [session] = await fixture.db
     .select()
     .from(sessions)
@@ -519,7 +525,12 @@ for (const consumer of ["grant", "human"] as const) {
       await tx
         .select()
         .from(ssoProviders)
-        .where(eq(ssoProviders.organizationId, fixture.tenant.organizationId))
+        .where(
+          and(
+            eq(ssoProviders.organizationId, fixture.tenant.organizationId),
+            eq(ssoProviders.kind, "oidc"),
+          ),
+        )
         .for("update");
       ready.resolve();
       await resume.promise;
@@ -648,7 +659,12 @@ test("human permissions expiring during a provider lock wait cannot authorise a 
     await tx
       .select()
       .from(ssoProviders)
-      .where(eq(ssoProviders.organizationId, fixture.tenant.organizationId))
+      .where(
+        and(
+          eq(ssoProviders.organizationId, fixture.tenant.organizationId),
+          eq(ssoProviders.kind, "oidc"),
+        ),
+      )
       .for("update");
     ready.resolve();
     await resume.promise;

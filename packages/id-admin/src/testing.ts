@@ -64,6 +64,8 @@ const retiredAddress = (userId: unknown) => `${String(userId)}@retired.invalid`
  * `operationInProgress`, a write whose method, path and Idempotency-Key a running write holds answers `409 operation_in_progress`, as ID does;
  * without it, the second write runs after the first. A method the fake does not implement on a route answers `405`.
  *
+ * Every organisation holds its magic-link setting, on, and the platform organisation's off, which `POST .../magic-link/enable` answers `409 platform_magic_link`.
+ *
  * Staff set a service up through the admin API: `rootSecret` is a bearer that works as a platform administrator's until `lockRoot(true)`, or until a
  * member joins the platform organisation's `platform-admins` group without `breakGlass`, after which ID answers it `403 root_locked`; `staffToken`
  * makes another bearer one. `POST /resources` and `POST /clients` create a resource or a client (a `client_secret_basic` or `client_secret_post` client's secret is
@@ -268,6 +270,18 @@ export function createFakeId({
       if (row.status !== status) {
         Object.assign(row, { status, disabledAt: status === "disabled" ? now() : null, revision: Number(row.revision) + 1, updatedAt: now() })
         if (status === "disabled") row.authorizationVersion = Number(row.authorizationVersion) + 1
+        changes++
+      }
+      return Response.json(row)
+    }
+    if (rest === "/magic-link/enable" || rest === "/magic-link/disable") {
+      const refusedMethod = unsupported(request, "POST")
+      if (refusedMethod) return refusedMethod
+      const enabled = rest === "/magic-link/enable"
+      if (enabled && platform && organisation === organizationId) return problem(409, "platform_magic_link", "The platform organisation cannot use magic links")
+      // The setting lives on the organisation's magic-link row in ID, so its revision does not move.
+      if ((row.magicLink as { enabled: boolean }).enabled !== enabled) {
+        row.magicLink = { enabled }
         changes++
       }
       return Response.json(row)
@@ -656,11 +670,11 @@ export function createFakeId({
     return row
   }
   const organisation = (id: string, fields: Record<string, unknown> = {}) => {
-    const row = { id, revision: 1, name: "Organisation", slug: `org-${id.slice(0, 8)}`, status: "active", authorizationVersion: 1, disabledAt: null, createdAt: now(), updatedAt: now(), ...organisations.get(id), ...fields }
+    const row = { id, revision: 1, name: "Organisation", slug: `org-${id.slice(0, 8)}`, status: "active", authorizationVersion: 1, disabledAt: null, createdAt: now(), updatedAt: now(), magicLink: { enabled: true }, ...organisations.get(id), ...fields }
     organisations.set(id, row)
     return row
   }
-  organisation(organizationId, platform ? { name: "Answerable", slug: "answerable" } : {})
+  organisation(organizationId, platform ? { name: "Answerable", slug: "answerable", magicLink: { enabled: false } } : {})
   if (rootSecret) tokens.set(rootSecret, { scope: "platform:read platform:users platform:write", resource: adminResource })
   return {
     config: { issuer, adminResource, clientId, clientSecret, fetch },

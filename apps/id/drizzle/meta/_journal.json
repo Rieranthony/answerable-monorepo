@@ -29,6 +29,20 @@
       "when": 1793706860714,
       "tag": "0003_sso_provider_kind_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793714862319,
+      "tag": "0004_sso_provider_enabled",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793714862703,
+      "tag": "0005_magic_link_provider",
+      "breakpoints": true
     }
   ]
 }

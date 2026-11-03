@@ -322,7 +322,12 @@ async function independentTargetIssuer(
   const [provider] = await fixture.db
     .select()
     .from(ssoProviders)
-    .where(eq(ssoProviders.organizationId, fixture.outsider.organizationId));
+    .where(
+      and(
+        eq(ssoProviders.organizationId, fixture.outsider.organizationId),
+        eq(ssoProviders.kind, "oidc"),
+      ),
+    );
   await inPlatformWrite(fixture.db, (context) =>
     putSsoProvider(
       context,
@@ -440,7 +445,12 @@ const changeProvider = (organizationId: string) =>
   fixture.db
     .update(ssoProviders)
     .set({ domain: "changed.example.com" })
-    .where(eq(ssoProviders.organizationId, organizationId));
+    .where(
+      and(
+        eq(ssoProviders.organizationId, organizationId),
+        eq(ssoProviders.kind, "oidc"),
+      ),
+    );
 const tenantAdmin = () => eq(users.id, fixture.principals.tenantAdmin.userId);
 
 const refusals: {
@@ -979,7 +989,10 @@ test("no database lock spans upstream authentication; a concurrent provider chan
         .update(ssoProviders)
         .set({ domain: "changed.example.com" })
         .where(
-          eq(ssoProviders.organizationId, fixture.outsider.organizationId),
+          and(
+            eq(ssoProviders.organizationId, fixture.outsider.organizationId),
+            eq(ssoProviders.kind, "oidc"),
+          ),
         );
     });
   } finally {
@@ -1027,7 +1040,12 @@ test("binding-first holds current provider and source authority until the audite
     return tx
       .update(ssoProviders)
       .set({ domain: "changed.example.com" })
-      .where(eq(ssoProviders.organizationId, fixture.outsider.organizationId));
+      .where(
+        and(
+          eq(ssoProviders.organizationId, fixture.outsider.organizationId),
+          eq(ssoProviders.kind, "oidc"),
+        ),
+      );
   });
   try {
     let blocked = false;
@@ -1058,7 +1076,12 @@ test("binding-first holds current provider and source authority until the audite
   const [provider] = await fixture.db
     .select()
     .from(ssoProviders)
-    .where(eq(ssoProviders.organizationId, fixture.outsider.organizationId));
+    .where(
+      and(
+        eq(ssoProviders.organizationId, fixture.outsider.organizationId),
+        eq(ssoProviders.kind, "oidc"),
+      ),
+    );
   const [account] = await fixture.db
     .select()
     .from(accounts)

@@ -27,6 +27,7 @@ export async function insertOriginSession(
     .where(
       and(
         eq(ssoProviders.organizationId, input.organizationId),
+        eq(ssoProviders.kind, "oidc"),
         isNull(ssoProviders.deletedAt),
       ),
     );

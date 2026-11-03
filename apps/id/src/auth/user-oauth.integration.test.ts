@@ -1279,7 +1279,12 @@ for (const change of [
       await fixture.db
         .update(ssoProviders)
         .set({ domain: "changed.example.com" })
-        .where(eq(ssoProviders.organizationId, fixture.tenant.organizationId));
+        .where(
+          and(
+            eq(ssoProviders.organizationId, fixture.tenant.organizationId),
+            eq(ssoProviders.kind, "oidc"),
+          ),
+        );
     if (change === "session")
       await fixture.db
         .delete(sessions)
@@ -2154,7 +2159,12 @@ const ssoInput = async () => {
   const [provider] = await fixture.db
     .select()
     .from(ssoProviders)
-    .where(eq(ssoProviders.organizationId, fixture.tenant.organizationId));
+    .where(
+      and(
+        eq(ssoProviders.organizationId, fixture.tenant.organizationId),
+        eq(ssoProviders.kind, "oidc"),
+      ),
+    );
   return {
     issuer: provider!.issuer,
     domain: provider!.domain,

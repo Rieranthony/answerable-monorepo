@@ -19,6 +19,8 @@ import {
   oauthResources,
   organizationCapabilities,
   organizations,
+  ssoProviders,
+  systemBindings,
 } from "./db/schema/index.ts";
 import { adminScopes } from "./http/admin/scopes.ts";
 
@@ -74,6 +76,15 @@ test("the first start provisions the platform; later starts change only the admi
     status: "active",
   });
   expect(first.slug).toBe("answerable");
+  // The binding turned its magic-link row off, in the transaction that made both.
+  expect(await db.select().from(ssoProviders)).toMatchObject([
+    {
+      organizationId: first.organizationId,
+      kind: "magic_link",
+      enabled: false,
+      revision: 2,
+    },
+  ]);
   expect(seeded.resource[0]).toMatchObject({
     id: first.resourceId,
     identifier: options.adminResourceIdentifier,
@@ -238,6 +249,46 @@ test("bootstrap does not adopt an unrelated existing resource", async () => {
     code: "system_binding_conflict",
   });
   expect(await db.select().from(organizations)).toHaveLength(0);
+});
+
+test("making the binding turns its organisation's magic-link row off, whatever scope the caller holds", async () => {
+  const connections = await openRuntimeRole(testEnvironment());
+  try {
+    const organizationId = crypto.randomUUID();
+    const resourceInstanceId = crypto.randomUUID();
+    const groupId = crypto.randomUUID();
+    await db.insert(organizations).values({
+      id: organizationId,
+      slug: "about-to-be-bound",
+      name: "Bound",
+    });
+    await db.insert(oauthResources).values({
+      id: resourceInstanceId,
+      identifier: options.adminResourceIdentifier,
+      name: "Admin",
+    });
+    await db.insert(groups).values({
+      id: groupId,
+      organizationId,
+      slug: platformAdminsGroupSlug,
+      name: "Platform admins",
+    });
+    const row = () =>
+      db
+        .select({ enabled: ssoProviders.enabled })
+        .from(ssoProviders)
+        .where(eq(ssoProviders.organizationId, organizationId));
+    expect(await row()).toEqual([{ enabled: true }]);
+    await connections.runtime.db.insert(systemBindings).values({
+      name: "platform",
+      organizationId,
+      resourceInstanceId,
+      groupId,
+    });
+    expect(await row()).toEqual([{ enabled: false }]);
+  } finally {
+    await connections.close();
+  }
 });
 
 test("system binding protects its rows and rejects a changed admin audience", async () => {

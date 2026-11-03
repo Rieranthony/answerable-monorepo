@@ -7,7 +7,7 @@ import {
   type DatabaseConnection,
 } from "../db/client.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   insertGrantContext,
   insertOriginSession,
@@ -140,7 +140,12 @@ async function grantFixture(
     await db
       .update(ssoProviders)
       .set({ deletedAt: new Date(), oidcConfig: null })
-      .where(eq(ssoProviders.organizationId, org.id));
+      .where(
+        and(
+          eq(ssoProviders.organizationId, org.id),
+          eq(ssoProviders.kind, "oidc"),
+        ),
+      );
   return { db, org, other, userId, contexts };
 }
 const changedInput = {

@@ -6,7 +6,7 @@ import {
   expect,
   test,
 } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import {
   createClient,
@@ -535,7 +535,12 @@ describe("integration: PostgreSQL schema", () => {
           organizationId: ssoProviders.organizationId,
         })
         .from(ssoProviders)
-        .where(eq(ssoProviders.organizationId, first.id)),
+        .where(
+          and(
+            eq(ssoProviders.organizationId, first.id),
+            eq(ssoProviders.kind, "oidc"),
+          ),
+        ),
     ).toEqual([{ id: firstProvider.id, organizationId: first.id }]);
     await expect(
       createSsoProvider(connection.db, {
@@ -742,6 +747,8 @@ describe("integration: PostgreSQL schema", () => {
         .values({ ...group, slug: "team", name: "Team", ...values })
         .execute();
     const deleted = { status: "disabled" as const, deletedAt: new Date() };
+    // Every organisation holds a live magic-link row; this test is about its groups.
+    await connection.db.update(ssoProviders).set({ deletedAt: new Date() });
     const deleteOrganization = () =>
       connection.db
         .update(organizations)

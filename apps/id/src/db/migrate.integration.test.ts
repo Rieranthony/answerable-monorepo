@@ -13,10 +13,12 @@ import { fileURLToPath } from "node:url";
 import { sql } from "drizzle-orm";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 
-import { testEnvironment } from "../__tests__/support.ts";
+import { isUuidV7, testEnvironment } from "../__tests__/support.ts";
 import { testDatabaseUrl } from "../__tests__/test-database.ts";
+import { bootstrap, systemActor } from "../bootstrap.ts";
 import { createDatabase } from "./client.ts";
 import { runMigrations } from "./migrate.ts";
+import { configureRuntimeRole } from "./runtime-role.ts";
 
 const connection = createDatabase(testEnvironment());
 const committed = fileURLToPath(new URL("../../drizzle", import.meta.url));
@@ -181,8 +183,8 @@ test("migrating a database at 0001 leaves its provider rows as they were, as dir
 
     // The same tuples: nothing wrote to a row, so no trigger saw one, and a session
     // naming a revision still names the current one.
-    expect(await rows()).toEqual(
-      before.map((row) => ({ ...row, kind: "oidc" })),
+    expect((await rows()).filter((row) => row.kind === "oidc")).toEqual(
+      before.map((row) => ({ ...row, kind: "oidc", enabled: true })),
     );
     expect(await scratch.db.$count(sql`drizzle.__drizzle_migrations`)).toBe(
       committedCount,
@@ -194,3 +196,237 @@ test("migrating a database at 0001 leaves its provider rows as they were, as dir
     await rm(folder, { recursive: true, force: true });
   }
 });
+
+const id = (n: number) =>
+  `00000000-0000-7000-8000-${String(n).padStart(12, "0")}`;
+
+/** A database owned by an ordinary login, as a deployment's is, not a superuser, and the
+ * restricted runtime login beside it: what RLS and the grants actually bind. */
+async function deployedDatabase() {
+  const suffix = crypto.randomUUID().replaceAll("-", "");
+  const name = `answerable_id_deployed_${suffix}`;
+  const owner = `id_test_owner_${suffix}`;
+  const runtime = `id_test_runtime_${suffix}`;
+  const password = crypto.randomUUID().replaceAll("-", "");
+  await connection.pool.query(`
+    create role ${owner} login password '${password}' nosuperuser nocreatedb nocreaterole nobypassrls;
+    create role ${runtime} login password '${password}' nosuperuser nocreatedb nocreaterole noinherit nobypassrls;
+  `);
+  await connection.pool.query(`create database ${name} owner ${owner}`);
+  const login = (username: string) => {
+    const url = new URL(testDatabaseUrl);
+    url.pathname = `/${name}`;
+    url.username = username;
+    url.password = password;
+    return createDatabase(
+      testEnvironment({
+        databaseUrl: url.toString(),
+        databasePoolMax: 2,
+        databaseLockTimeoutMs: 15_000,
+      }),
+    );
+  };
+  const schemaOwner = login(owner);
+  const runtimeLogin = login(runtime);
+  const folder = await mkdtemp(join(tmpdir(), "id-migrations-"));
+  await cp(committed, folder, { recursive: true });
+  return {
+    name,
+    owner: schemaOwner,
+    runtime: runtimeLogin,
+    runtimeRole: runtime,
+    /** Migrate only as far as the release before the magic-link rows. */
+    async migrateBeforeMagicLinks() {
+      await editJournal(folder, (entries) => {
+        entries.splice(4);
+      });
+      await runMigrations(schemaOwner.db, folder);
+    },
+    async close() {
+      await runtimeLogin.close();
+      await schemaOwner.close();
+      await rm(folder, { recursive: true, force: true });
+      await connection.pool.query(`drop database ${name} with (force)`);
+      await connection.pool.query(`drop role ${owner}; drop role ${runtime};`);
+    },
+  };
+}
+
+// Run by the schema owner, before the column and the triggers exist.
+const realRows = `
+  insert into organizations (id, slug, name) values
+    ('${id(1)}', 'with-directory', 'With directory'),
+    ('${id(2)}', 'without-directory', 'Without directory'),
+    ('${id(3)}', 'answerable', 'Answerable'),
+    ('${id(4)}', 'erased', 'Erased'),
+    ('${id(5)}', 'disabled', 'Disabled'),
+    ('${id(7)}', 'already-holds-one', 'Already holds one');
+  insert into sso_providers (id, organization_id, kind, provider_id, issuer, domain) values
+    ('${id(17)}', '${id(7)}', 'magic_link', 'magic-link:${id(7)}', 'urn:answerable:magic-link', 'magic-link.invalid');
+  insert into sso_providers (id, organization_id, provider_id, issuer, domain, oidc_config) values
+    ('${id(11)}', '${id(1)}', 'with-directory', 'https://idp.example', 'with-directory.example.com', '{"pkce":true}'),
+    ('${id(13)}', '${id(3)}', 'answerable', 'https://idp.example', 'answerable.example.com', '{"pkce":true}'),
+    ('${id(14)}', '${id(4)}', 'erased', 'https://idp.example', 'erased.example.com', '{"pkce":true}');
+  insert into oauth_resources (id, identifier, name, allowed_scopes) values
+    ('${id(21)}', 'https://id.example/api/admin', 'Admin', '{}');
+  insert into groups (id, organization_id, slug, name) values
+    ('${id(22)}', '${id(3)}', 'platform-admins', 'Platform admins');
+  insert into system_bindings (name, organization_id, resource_instance_id, group_id) values
+    ('platform', '${id(3)}', '${id(21)}', '${id(22)}');
+  update sso_providers set domain = 'moved.example.com' where provider_id = 'with-directory';
+  update sso_providers set deleted_at = now(), oidc_config = null where provider_id = 'erased';
+  update organizations set deleted_at = now(), status = 'disabled', disabled_at = now() where id = '${id(4)}';
+  update organizations set status = 'disabled', disabled_at = now() where id = '${id(5)}';
+`;
+
+test("migrating from the previous release as the schema owner gives each live organisation its row, off for the platform's", async () => {
+  const deployed = await deployedDatabase();
+  const directories = async () =>
+    (
+      await deployed.owner.pool.query<Record<string, unknown>>(
+        "select *, xmin::text as tuple_writer from sso_providers where kind = 'oidc' order by id",
+      )
+    ).rows;
+  try {
+    await deployed.migrateBeforeMagicLinks();
+    await deployed.owner.pool.query(realRows);
+    const before = await directories();
+    expect(before.map((row) => row.revision)).toEqual([2, 1, 2]);
+
+    expect(await runMigrations(deployed.owner.db)).toEqual({ ahead: false });
+
+    // The directories' tuples are the same, so a session naming a revision still does.
+    expect(await directories()).toEqual(
+      before.map((row) => ({ ...row, enabled: true })),
+    );
+    const { rows } = await deployed.owner.pool.query<{
+      id: string;
+      organization_id: string;
+      enabled: boolean;
+      provider_id: string;
+      issuer: string;
+      domain: string;
+      oidc_config: string | null;
+      revision: number;
+      deleted_at: Date | null;
+    }>(
+      "select * from sso_providers where kind = 'magic_link' order by organization_id",
+    );
+    expect(rows.map((row) => [row.organization_id, row.enabled])).toEqual([
+      [id(1), true],
+      [id(2), true],
+      [id(3), false],
+      [id(5), true],
+      [id(7), true],
+    ]);
+    for (const row of rows) {
+      expect(row).toMatchObject({
+        provider_id: `magic-link:${row.organization_id}`,
+        issuer: "urn:answerable:magic-link",
+        domain: "magic-link.invalid",
+        oidc_config: null,
+        revision: 1,
+        deleted_at: null,
+      });
+      expect(isUuidV7(row.id)).toBe(true);
+    }
+    // A row that was there already stays the row.
+    expect(rows.at(-1)!.id).toBe(id(17));
+
+    // The runtime login, under the owner's real grants: what it creates gets a row through
+    // the function the owner owns, and it cannot turn the platform organisation's on.
+    await configureRuntimeRole(deployed.owner.db, deployed.runtimeRole);
+    await deployed.runtime.pool.query(
+      `insert into organizations (id, slug, name) values ('${id(6)}', 'after', 'After')`,
+    );
+    const made = await deployed.owner.pool.query(
+      `select enabled from sso_providers where organization_id = '${id(6)}' and kind = 'magic_link'`,
+    );
+    expect(made.rows).toEqual([{ enabled: true }]);
+    const client = await deployed.runtime.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query("set local answerable.scope = 'platform-write'");
+      await expect(
+        client.query(
+          `update sso_providers set enabled = true where organization_id = '${id(3)}' and kind = 'magic_link'`,
+        ),
+      ).rejects.toMatchObject({
+        code: "23514",
+        constraint: "sso_providers_platform_magic_link",
+      });
+    } finally {
+      await client.query("rollback");
+      client.release();
+    }
+
+    // A repeated run has nothing to do.
+    expect(await runMigrations(deployed.owner.db)).toEqual({ ahead: false });
+    const { rows: counted } = await deployed.owner.pool.query(
+      "select count(*)::int as count from sso_providers where kind = 'magic_link'",
+    );
+    expect(counted).toEqual([{ count: 6 }]);
+    // Why the owner's backfill and its SECURITY DEFINER functions pass RLS.
+    const { rows: forced } = await deployed.owner.pool.query(
+      "select relforcerowsecurity as forced from pg_class where relname = 'sso_providers'",
+    );
+    expect(forced).toEqual([{ forced: false }]);
+  } finally {
+    await deployed.close();
+  }
+}, 30_000);
+
+test("a first start on a fresh database under the deployed logins leaves the platform organisation off", async () => {
+  const deployed = await deployedDatabase();
+  try {
+    await runMigrations(deployed.owner.db);
+    await configureRuntimeRole(deployed.owner.db, deployed.runtimeRole);
+    const { organizationId } = await bootstrap(
+      deployed.runtime.db,
+      systemActor("deployed-first-start"),
+      {
+        platformOrganizationSlug: "answerable",
+        platformOrganizationName: "Answerable",
+        adminResourceIdentifier: "https://id.example/api/admin",
+      },
+    );
+    const { rows } = await deployed.owner.pool.query(
+      `select enabled, revision from sso_providers where organization_id = '${organizationId}' and kind = 'magic_link'`,
+    );
+    expect(rows).toEqual([{ enabled: false, revision: 2 }]);
+  } finally {
+    await deployed.close();
+  }
+}, 30_000);
+
+test("an organisation being created while the migration runs gets its row", async () => {
+  const deployed = await deployedDatabase();
+  const creating = await deployed.owner.pool.connect();
+  try {
+    await deployed.migrateBeforeMagicLinks();
+    await creating.query("begin");
+    await creating.query(
+      `insert into organizations (id, slug, name) values ('${id(1)}', 'in-flight', 'In flight')`,
+    );
+    // Once the migration is waiting on this transaction, it commits. A backfill ahead of
+    // the trigger would already have passed this organisation by.
+    const migrating = runMigrations(deployed.owner.db);
+    for (let wait = 0; wait < 1000; wait++) {
+      const { rows } = await connection.pool.query(
+        "select 1 from pg_stat_activity where datname = $1 and wait_event_type = 'Lock'",
+        [deployed.name],
+      );
+      if (rows.length) break;
+      await Bun.sleep(10);
+    }
+    await creating.query("commit");
+    expect(await migrating).toEqual({ ahead: false });
+    const { rows } = await deployed.owner.pool.query(
+      `select enabled from sso_providers where organization_id = '${id(1)}' and kind = 'magic_link'`,
+    );
+    expect(rows).toEqual([{ enabled: true }]);
+  } finally {
+    creating.release();
+    await deployed.close();
+  }
+}, 30_000);

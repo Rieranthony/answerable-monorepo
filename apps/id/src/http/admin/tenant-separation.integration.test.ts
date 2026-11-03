@@ -104,7 +104,12 @@ beforeAll(async () => {
     const [provider] = await fixture.db
       .select({ id: ssoProviders.id })
       .from(ssoProviders)
-      .where(eq(ssoProviders.organizationId, organizationId));
+      .where(
+        and(
+          eq(ssoProviders.organizationId, organizationId),
+          eq(ssoProviders.kind, "oidc"),
+        ),
+      );
     const [session] = await fixture.db
       .select({ id: sessions.id })
       .from(sessions)

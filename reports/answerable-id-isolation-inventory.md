@@ -29,7 +29,7 @@ The query boundary does not cover every native adapter or broker query. See [ten
 
 | Members | Tenant-owned membership, terminal revocation/deletion and effective windows. |
 | Organisation domains | Routing reads without scope, bound to the selected tenant under tenant scopes; scoped writes. |
-| SSO providers | Routing reads without scope, bound to the selected tenant under tenant scopes; scoped writes, including protocol writes. |
+| SSO providers | Routing reads without scope, bound to the selected tenant under tenant scopes; scoped writes, including protocol writes. Two owner-executed triggers write outside any scope: one creates an organisation's magic-link row, one turns the platform organisation's off. Their values are fixed, and the runtime cannot call them. |
 | Audit events | Unrestricted INSERT policy; administrative SELECT only, append-only runtime grants. |
 | Audit event users | Platform SELECT only; no INSERT policy, runtime INSERT is revoked and the triggers fill it as the owner. |
 

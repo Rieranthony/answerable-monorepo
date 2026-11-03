@@ -380,7 +380,12 @@ test("domain and provider deletion remove native discovery while retaining their
   const [provider] = await fixture.db
     .select()
     .from(ssoProviders)
-    .where(eq(ssoProviders.organizationId, organizationId));
+    .where(
+      and(
+        eq(ssoProviders.organizationId, organizationId),
+        eq(ssoProviders.kind, "oidc"),
+      ),
+    );
   const [domain] = await fixture.db
     .select()
     .from(organizationDomains)

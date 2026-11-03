@@ -23,7 +23,7 @@ export async function createOrganization(
       after: evidence(row),
     },
   });
-  return row;
+  return queries.answerOrganization(context, row.id);
 }
 
 export async function updateOrganization(
@@ -56,7 +56,7 @@ export async function updateOrganization(
       action: "organization.updated",
       data: { before: evidence(before), after: evidence(row) },
     });
-  return { row, changed };
+  return { row: await queries.answerOrganization(context, id), changed };
 }
 
 export async function disableOrganization(
@@ -76,7 +76,8 @@ export async function disableOrganization(
     id,
   );
   const changed = stateChanged || revokedGrantContexts.length > 0;
-  if (!changed) return { row, changed };
+  if (!changed)
+    return { row: await queries.answerOrganization(context, id), changed };
   const revokedMachineAccessTokenIds = await revokeOrganizationMachineTokens(
     context,
     id,
@@ -98,7 +99,7 @@ export async function disableOrganization(
       effects: { revokedMachineAccessTokenIds, revokedGrantContexts },
     },
   });
-  return { row, changed };
+  return { row: await queries.answerOrganization(context, id), changed };
 }
 
 export async function enableOrganization(
@@ -124,7 +125,55 @@ export async function enableOrganization(
         after: evidence(row),
       },
     });
-  return { row, changed };
+  return { row: await queries.answerOrganization(context, id), changed };
+}
+
+/** Sessions and grants name this row and its revision, so turning it off ends those at
+ * once and touches nothing else. A new revision never matches an old one, so turning it
+ * back on revives neither. */
+async function setMagicLink(
+  context: PlatformWriteContext,
+  id: string,
+  enabled: boolean,
+) {
+  found(await queries.lockOrganizationForCommand(context, id), notFound);
+  const before = await queries.lockMagicLinkForCommand(context, id);
+  if (enabled && (await queries.isPlatformOrganization(context, id)))
+    throw new ProblemError(
+      409,
+      "platform_magic_link",
+      "The platform organisation cannot use magic links",
+    );
+  const changed = before.enabled !== enabled;
+  // An unchanged command's receipt is its record; it writes no audit event.
+  if (changed) {
+    const after = await queries.setMagicLinkEnabled(
+      context,
+      before.id,
+      enabled,
+    );
+    await recordCommandEvent(context, {
+      organizationId: id,
+      targetType: "organization",
+      targetId: id,
+      action: enabled
+        ? "organization.magic_link_enabled"
+        : "organization.magic_link_disabled",
+      data: {
+        before: { enabled: before.enabled, revision: before.revision },
+        after: { enabled: after.enabled, revision: after.revision },
+      },
+    });
+  }
+  return { row: await queries.answerOrganization(context, id), changed };
+}
+
+export function enableMagicLink(context: PlatformWriteContext, id: string) {
+  return setMagicLink(context, id, true);
+}
+
+export function disableMagicLink(context: PlatformWriteContext, id: string) {
+  return setMagicLink(context, id, false);
 }
 
 export async function eraseOrganization(

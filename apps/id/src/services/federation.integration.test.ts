@@ -19,7 +19,7 @@ import {
   spyOn,
   test,
 } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { createApp, type App } from "../app.ts";
 import { createAuth } from "../auth.ts";
@@ -294,7 +294,12 @@ describe("integration: federated sign-in", () => {
       const [provider] = await connection.db
         .select()
         .from(ssoProviders)
-        .where(eq(ssoProviders.organizationId, org.id));
+        .where(
+          and(
+            eq(ssoProviders.organizationId, org.id),
+            eq(ssoProviders.kind, "oidc"),
+          ),
+        );
       const [session] = await connection.db.select().from(sessions);
       expect(session).toMatchObject({
         authenticationProviderId: provider!.id,
@@ -304,7 +309,10 @@ describe("integration: federated sign-in", () => {
   }
   test("native SSO initiation evidence cannot be supplied by the browser", async () => {
     await seedProvider();
-    const [provider] = await connection.db.select().from(ssoProviders);
+    const [provider] = await connection.db
+      .select()
+      .from(ssoProviders)
+      .where(eq(ssoProviders.kind, "oidc"));
     const forged = { [provider!.id]: provider!.revision + 1 };
     const input = {
       providerId: "contoso",
@@ -328,7 +336,10 @@ describe("integration: federated sign-in", () => {
   for (const change of ["delete", "recreate", "unchanged"] as const) {
     test(`restricted native SSO rechecks ${change} configuration after token exchange`, async () => {
       const org = await seedProvider();
-      const [provider] = await connection.db.select().from(ssoProviders);
+      const [provider] = await connection.db
+        .select()
+        .from(ssoProviders)
+        .where(eq(ssoProviders.kind, "oidc"));
       const input = {
         issuer: provider!.issuer,
         domain: provider!.domain,
@@ -373,7 +384,10 @@ describe("integration: federated sign-in", () => {
   for (const change of ["update", "delete", "recreate"] as const) {
     test(`restricted callback commits its origin before waiting provider ${change}`, async () => {
       const org = await seedProvider();
-      const [provider] = await connection.db.select().from(ssoProviders);
+      const [provider] = await connection.db
+        .select()
+        .from(ssoProviders)
+        .where(eq(ssoProviders.kind, "oidc"));
       const input = {
         issuer: provider!.issuer,
         domain: provider!.domain,
@@ -470,7 +484,10 @@ describe("integration: federated sign-in", () => {
         authenticationProviderId: provider!.id,
         authenticationProviderRevision: provider!.revision,
       });
-      const retained = await connection.db.select().from(ssoProviders);
+      const retained = await connection.db
+        .select()
+        .from(ssoProviders)
+        .where(eq(ssoProviders.kind, "oidc"));
       const current = retained.filter((row) => row.deletedAt === null);
       if (change !== "update")
         expect(retained.find((row) => row.id === provider!.id)).toMatchObject({
@@ -486,11 +503,17 @@ describe("integration: federated sign-in", () => {
   }
   test("ordinary native SSO logins preserve provider revision and timestamp", async () => {
     await seedProvider();
-    const [before] = await connection.db.select().from(ssoProviders);
+    const [before] = await connection.db
+      .select()
+      .from(ssoProviders)
+      .where(eq(ssoProviders.kind, "oidc"));
     for (let attempt = 0; attempt < 2; attempt++) {
       issuer.enqueue(entraClaims());
       expect(errorCode((await signIn()).location)).toBeNull();
-      const [current] = await connection.db.select().from(ssoProviders);
+      const [current] = await connection.db
+        .select()
+        .from(ssoProviders)
+        .where(eq(ssoProviders.kind, "oidc"));
       expect(current!.revision).toBe(before!.revision);
       expect(current!.updatedAt).toEqual(before!.updatedAt);
     }
@@ -535,7 +558,10 @@ describe("integration: federated sign-in", () => {
     issuer.enqueue(entraClaims());
     const result = await signIn();
     expect(errorCode(result.location)).toBeNull();
-    const [provider] = await connection.db.select().from(ssoProviders);
+    const [provider] = await connection.db
+      .select()
+      .from(ssoProviders)
+      .where(eq(ssoProviders.kind, "oidc"));
     const [session] = await connection.db.select().from(sessions);
     expect(session).toMatchObject({
       authenticationOrganizationId: organization.id,
@@ -1146,7 +1172,12 @@ describe("integration: federated sign-in", () => {
       errorCallbackURL,
     });
     expect(result.location).toBe(callbackURL);
-    expect(await connection.db.select().from(ssoProviders)).toHaveLength(1);
+    expect(
+      await connection.db
+        .select()
+        .from(ssoProviders)
+        .where(eq(ssoProviders.kind, "oidc")),
+    ).toHaveLength(1);
   });
 });
 
@@ -1225,7 +1256,10 @@ for (const application of ["google", "microsoft"] as const) {
       issuer.tokenRequests[0]!.clientSecret ===
         platformApps[application]!.clientSecret,
     ).toBe(true);
-    const [provider] = await connection.db.select().from(ssoProviders);
+    const [provider] = await connection.db
+      .select()
+      .from(ssoProviders)
+      .where(eq(ssoProviders.kind, "oidc"));
     expect(JSON.parse(provider!.oidcConfig!)).not.toHaveProperty("clientId");
     expect(JSON.parse(provider!.oidcConfig!)).not.toHaveProperty(
       "clientSecret",

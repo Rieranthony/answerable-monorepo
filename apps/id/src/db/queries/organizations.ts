@@ -4,7 +4,16 @@ import type {
 } from "../../services/platform-context.ts";
 import type { TenantReadContext } from "../../services/tenant-context.ts";
 import { lockOrganization } from "../locks.ts";
-import { and, count, desc, eq, sql, isNull } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  getTableColumns,
+  sql,
+  isNull,
+} from "drizzle-orm";
+import type { Executor } from "../client.ts";
 import {
   organizations,
   oauthClients,
@@ -15,6 +24,7 @@ import {
   organizationCapabilities,
   organizationDomains,
   ssoProviders,
+  systemBindings,
 } from "../schema/index.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
 import type { PageQuery } from "../../http/pagination.ts";
@@ -36,25 +46,62 @@ export type OrganizationQuery = PageQuery & {
   status?: LifecycleStatus;
 };
 
+/** The organisation's one live magic-link row: it has one for as long as it is live. */
+const liveMagicLink = (organizationId: typeof organizations.id | string) =>
+  and(
+    isNull(ssoProviders.deletedAt),
+    eq(ssoProviders.organizationId, organizationId),
+    eq(ssoProviders.kind, "magic_link"),
+  );
+
+const noMagicLink = (organizationId: string) =>
+  new Error(`Organisation ${organizationId} has no magic-link provider row`);
+
+/** An organisation as an answer shows it. A left join, so that a missing row fails in
+ * `shownOrganization` instead of hiding the organisation from a list. */
+const organizationsShown = (tx: Executor) =>
+  tx
+    .select({
+      ...getTableColumns(organizations),
+      magicLinkEnabled: ssoProviders.enabled,
+    })
+    .from(organizations)
+    .leftJoin(ssoProviders, liveMagicLink(organizations.id));
+
+function shownOrganization({
+  magicLinkEnabled,
+  ...row
+}: Awaited<ReturnType<typeof organizationsShown>>[number]) {
+  if (magicLinkEnabled === null) throw noMagicLink(row.id);
+  return { ...row, magicLink: { enabled: magicLinkEnabled } };
+}
+
+async function readLiveOrganization(tx: Executor, id: string) {
+  const [row] = await organizationsShown(tx).where(
+    and(isNull(organizations.deletedAt), eq(organizations.id, id)),
+  );
+  return shownOrganization(row!);
+}
+
 export async function listOrganizations(
   context: PlatformReadContext,
   query: OrganizationQuery,
 ) {
   const { tx: executor } = context;
   return cursorPage(
-    await executor
-      .select()
-      .from(organizations)
-      .where(
-        and(
-          isNull(organizations.deletedAt),
-          contains(query.q, organizations.name, organizations.slug),
-          optionalEq(organizations.status, query.status),
-          beforeCursor(organizations.id, query.cursor),
-        ),
-      )
-      .orderBy(desc(organizations.id))
-      .limit(query.limit + 1),
+    (
+      await organizationsShown(executor)
+        .where(
+          and(
+            isNull(organizations.deletedAt),
+            contains(query.q, organizations.name, organizations.slug),
+            optionalEq(organizations.status, query.status),
+            beforeCursor(organizations.id, query.cursor),
+          ),
+        )
+        .orderBy(desc(organizations.id))
+        .limit(query.limit + 1)
+    ).map(shownOrganization),
     query.limit,
   );
 }
@@ -64,16 +111,57 @@ export async function readOrganization(
   context: TenantReadContext<"directory">,
 ) {
   const { tx, organizationId } = context;
+  return readLiveOrganization(tx, organizationId);
+}
+
+/** What a command answers: the live organisation it just changed, as a read shows it. */
+export async function answerOrganization(
+  context: PlatformWriteContext,
+  id: string,
+) {
+  return readLiveOrganization(context.tx, id);
+}
+
+/** Caller holds the organisation lock. */
+export async function lockMagicLinkForCommand(
+  context: PlatformWriteContext,
+  organizationId: string,
+) {
+  const { tx } = context;
   const [row] = await tx
     .select()
-    .from(organizations)
-    .where(
-      and(
-        isNull(organizations.deletedAt),
-        eq(organizations.id, organizationId),
-      ),
-    );
+    .from(ssoProviders)
+    .where(liveMagicLink(organizationId))
+    .for("update");
+  if (!row) throw noMagicLink(organizationId);
+  return row;
+}
+
+/** The revision guard moves the row's revision: the setting and it cannot disagree. */
+export async function setMagicLinkEnabled(
+  context: PlatformWriteContext,
+  id: string,
+  enabled: boolean,
+) {
+  const { tx } = context;
+  const [row] = await tx
+    .update(ssoProviders)
+    .set({ enabled })
+    .where(eq(ssoProviders.id, id))
+    .returning();
   return row!;
+}
+
+export async function isPlatformOrganization(
+  context: PlatformWriteContext,
+  organizationId: string,
+) {
+  const { tx } = context;
+  const [binding] = await tx
+    .select({ name: systemBindings.name })
+    .from(systemBindings)
+    .where(eq(systemBindings.organizationId, organizationId));
+  return binding !== undefined;
 }
 
 export async function readOrganizationStatus(

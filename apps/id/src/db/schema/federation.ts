@@ -1,6 +1,7 @@
 import { routingPolicies } from "./tenant-policies.ts";
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   foreignKey,
   integer,
@@ -29,6 +30,9 @@ export const ssoProviders = pgTable(
     ...softDeletion(),
     id: id(),
     kind: text("kind", { enum: ssoProviderKinds }).default("oidc").notNull(),
+    /** Only a magic-link row can be off: sessions and grants name this row and its
+     * revision, so turning it off ends those at once and touches nothing else. */
+    enabled: boolean("enabled").default(true).notNull(),
     issuer: text("issuer").notNull(),
     oidcConfig: text("oidc_config"),
     providerId: text("provider_id").notNull().unique(),
@@ -57,6 +61,10 @@ export const ssoProviders = pgTable(
     check(
       "sso_providers_kind_config_check",
       sql`(${table.kind} = 'oidc' and (${table.deletedAt} is not null or ${table.oidcConfig} is not null)) or (${table.kind} = 'magic_link' and ${table.oidcConfig} is null)`,
+    ),
+    check(
+      "sso_providers_enabled_check",
+      sql`${table.kind} = 'magic_link' or ${table.enabled}`,
     ),
     uniqueIndex("sso_providers_organization_kind_unique")
       .on(table.organizationId, table.kind)

@@ -17,7 +17,7 @@ import {
 const createClient = platformWriteService(createClientImplementation);
 const linkResource = platformWriteService(linkResourceImplementation);
 import { type DatabaseConnection } from "./client.ts";
-import { auditEvents, oauthResources } from "./schema/index.ts";
+import { auditEvents, oauthResources, ssoProviders } from "./schema/index.ts";
 import { configureRuntimeRole, assertRuntimeRole } from "./runtime-role.ts";
 import { openRuntimeRole } from "../__tests__/runtime-role.ts";
 
@@ -47,6 +47,13 @@ test("real runtime login can bootstrap, restart, audit and issue a machine token
     adminResourceIdentifier: environment.adminResourceIdentifier,
   };
   const seeded = await bootstrap(runtime.db, actor, options);
+  // Its row went in with no scope and went off with the binding, on this login.
+  expect(
+    await owner.db
+      .select({ enabled: ssoProviders.enabled, kind: ssoProviders.kind })
+      .from(ssoProviders)
+      .where(eq(ssoProviders.organizationId, seeded.organizationId)),
+  ).toEqual([{ enabled: false, kind: "magic_link" }]);
   // A later start restores the admin resource's definition under the same role.
   await owner.db
     .update(oauthResources)
