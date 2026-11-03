@@ -67,11 +67,18 @@ type UserPrincipal = Readonly<{
   organizationAuthorizationVersion: number
   /**
    * When the person last signed in at their organisation's directory, in seconds since the epoch: the token's `upstream_auth_time`, or `null`
-   * when the directory reported no time. ID takes it from the browser session when it creates the authorisation (`grantId`), and every token of
-   * that authorisation, refreshed ones included, carries the same value, so only a new authorisation after a new directory sign-in makes it recent.
+   * when no directory reported a time, either because the directory gave none or because the person signed in by emailed link
+   * (`authenticationMethod`). ID takes it from the browser session when it creates the authorisation (`grantId`), and every token of that
+   * authorisation, refreshed ones included, carries the same value, so only a new authorisation after a new directory sign-in makes it recent.
    * A token without the claim gives `null`.
    */
   upstreamAuthTime: number | null
+  /**
+   * How the person proved who they are when this authorisation was made: `directory`, a sign-in at their organisation's directory, with its MFA and
+   * conditional access, or `magic_link`, a link or code from an email, which shows only that they could read that mailbox. It is the token's
+   * `authentication_method`, kept across refreshes. A token without the claim, from an ID older than this field, gives `null`, so no absence reads as a directory sign-in.
+   */
+  authenticationMethod: "directory" | "magic_link" | null
 }>
 ```
 
@@ -142,7 +149,7 @@ type TestIssuer = {
   /** The issuer URL to trust: `https://id.test`. */
   issuer: string
   /**
-   * Sign an access token for `resource`, with ID's user claims: `upstream_auth_time` is the signing time, as for a person who has just signed in.
+   * Sign an access token for `resource`, with ID's user claims: `upstream_auth_time` is the signing time and `authentication_method` is `directory`, as for a person who has just signed in at their directory.
    * `claims` replace the token's claims (an `undefined` value removes one) and `header` its header, to make unusual tokens.
    */
   sign(options: {

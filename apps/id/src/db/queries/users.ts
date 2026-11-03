@@ -34,6 +34,7 @@ import { isEffective } from "./effective.ts";
 import { softDeleteEntitlements } from "./entitlements.ts";
 import { softDeleteAssignments } from "./groups.ts";
 import { memberEvidence } from "./members.ts";
+import { releaseMagicLinkAddress } from "./magic-link-requests.ts";
 
 function retiredEmailFor(userId: string): string {
   return `${userId}@retired.invalid`;
@@ -45,6 +46,7 @@ export async function retireUserEmail(
   userId: string,
 ) {
   const { tx: db } = context;
+  await releaseMagicLinkAddress(db, userId);
   const [user] = await db
     .update(users)
     .set({
@@ -189,6 +191,7 @@ export async function deleteUser(
   userId: string,
 ) {
   const { tx } = context;
+  await releaseMagicLinkAddress(tx, userId);
   // Lock indirect parents before capturing any children, including grants.
   for (const table of [members, sessions, oauthRefreshTokens] as const) {
     await tx

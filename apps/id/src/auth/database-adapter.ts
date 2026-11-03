@@ -152,6 +152,10 @@ export function authTransaction(adapter: object): Executor {
   return tx;
 }
 
+/** The transaction this adapter belongs to, for a read that may or may not run inside one. */
+export const activeTransaction = (adapter: object): Executor | undefined =>
+  transactions.get(adapter);
+
 /** One Better Auth transaction in protocol scope, with its bound adapter and executor;
  * anything Better Auth writes from inside `run` joins it. */
 export async function authenticationTransaction<T>(

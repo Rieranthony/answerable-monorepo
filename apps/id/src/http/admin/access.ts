@@ -27,7 +27,13 @@ const sourceSchema = z.object({
 const permissionSchema = z.discriminatedUnion("allowed", [
   z.object({
     allowed: z.literal(false),
-    reason: z.enum(["context", "login", "capability", "scope"]),
+    reason: z.enum([
+      "context",
+      "login",
+      "capability",
+      "scope",
+      "directory_sign_in",
+    ]),
   }),
   z.object({
     allowed: z.literal(true),

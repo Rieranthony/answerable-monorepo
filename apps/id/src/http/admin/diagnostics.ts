@@ -7,7 +7,11 @@ import {
   tokenOnlyCodes,
 } from "../../services/diagnostics.ts";
 import type { AppEnvironment } from "../context.ts";
-import { userStatuses } from "../../db/schema/vocabulary.ts";
+import {
+  magicLinkPurposes,
+  magicLinkSendStatuses,
+  userStatuses,
+} from "../../db/schema/vocabulary.ts";
 import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
@@ -33,6 +37,20 @@ const signInDiagnosisSchema = z.object({
     configured: z.boolean(),
     kind: z.enum(["entra", "google", "oidc"]).nullable(),
     issuer: z.string().nullable(),
+  }),
+  magicLink: z.object({
+    enabled: z.boolean(),
+    suppressed: z.boolean(),
+    lastRequest: z
+      .object({
+        id: z.uuid(),
+        purpose: z.enum(magicLinkPurposes),
+        sendStatus: z.enum(magicLinkSendStatuses),
+        postmarkErrorCode: z.number().int().nullable(),
+        postmarkHttpStatus: z.number().int().nullable(),
+        createdAt: z.iso.datetime(),
+      })
+      .nullable(),
   }),
   user: z
     .object({
@@ -61,7 +79,7 @@ export const routes = {
     operationId: "diagnoseSignIn",
     summary: "Diagnose sign-in by email",
     description:
-      "Inspect tenant-local configuration and membership. Current platform:read or org:users authority is rechecked inside the read transaction. Routing identifies only this organisation; user and membership are null unless this tenant has a membership for the exact email. Global accounts and retired-email state are excluded, including for staff. A null user does not mean the email is globally unused. authentication_required means local checks found no blocker; a real IdP authentication must establish identity and account conflicts. Windows affect grants, not admission; revoked membership requires reinstatement. Responses use no-store. validation_failed rejects malformed input; not_found means the organisation is unavailable.",
+      "Inspect tenant-local configuration and membership. Current platform:read or org:users authority is rechecked inside the read transaction. Routing identifies only this organisation; user and membership are null unless this tenant has a membership for the exact email. Global accounts and retired-email state are excluded, including for staff. A null user does not mean the email is globally unused. authentication_required means local checks found no blocker; a real IdP authentication or a magic link's confirmation must establish identity and account conflicts. provider describes the directory; magicLink is the organisation's setting and the newest sign-in mail for this exact email, kept for seven days. magic_link_suppressed means a link is the way in and Postmark refused the last send as a suppressed address (406), which staff reactivate in Postmark. Windows affect grants, not admission; revoked membership requires reinstatement. Responses use no-store. validation_failed rejects malformed input; not_found means the organisation is unavailable.",
     tag: "Diagnostics",
     platformScope: "platform:read",
     orgScope: "org:users",

@@ -1,6 +1,7 @@
 import { type PlatformWriteContext } from "./platform-context.ts";
 import * as queries from "../db/queries/organization-domains.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
+import { endMagicLinkUseOfDomain } from "../db/queries/magic-link-requests.ts";
 import { recordCommandEvent, statusAction, evidence } from "./audit.ts";
 import { found } from "../http/problem.ts";
 
@@ -53,14 +54,28 @@ async function setStatus(
       )
     : existing;
   // An unchanged command's receipt is its record; it writes no audit event.
-  if (changed)
+  if (changed) {
+    const magicLinkEffects =
+      status === "disabled"
+        ? await endMagicLinkUseOfDomain(
+            context,
+            organizationId,
+            existing.domain,
+          )
+        : null;
     await recordCommandEvent(context, {
       organizationId,
       targetType: "domain",
       targetId: domainId,
       action: statusAction("domain", status),
-      data: { status, before: evidence(existing), after: evidence(row!) },
+      data: {
+        status,
+        before: evidence(existing),
+        after: evidence(row!),
+        ...(magicLinkEffects ? { magicLinkEffects } : {}),
+      },
     });
+  }
   return { row: row!, changed };
 }
 export async function disableDomain(
@@ -97,6 +112,11 @@ export async function deleteOrganizationDomain(
     organizationId,
     domainId,
   );
+  const magicLinkEffects = await endMagicLinkUseOfDomain(
+    context,
+    organizationId,
+    before.domain,
+  );
   await recordCommandEvent(context, {
     organizationId,
     targetType: "domain",
@@ -106,6 +126,7 @@ export async function deleteOrganizationDomain(
       before: evidence(before),
       after: evidence(row!),
       deletionMode: "soft",
+      magicLinkEffects,
     },
   });
 }

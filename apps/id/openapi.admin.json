@@ -2521,7 +2521,7 @@
           }
         ],
         "summary": "Diagnose sign-in by email",
-        "description": "Inspect tenant-local configuration and membership. Current platform:read or org:users authority is rechecked inside the read transaction. Routing identifies only this organisation; user and membership are null unless this tenant has a membership for the exact email. Global accounts and retired-email state are excluded, including for staff. A null user does not mean the email is globally unused. authentication_required means local checks found no blocker; a real IdP authentication must establish identity and account conflicts. Windows affect grants, not admission; revoked membership requires reinstatement. Responses use no-store. validation_failed rejects malformed input; not_found means the organisation is unavailable.",
+        "description": "Inspect tenant-local configuration and membership. Current platform:read or org:users authority is rechecked inside the read transaction. Routing identifies only this organisation; user and membership are null unless this tenant has a membership for the exact email. Global accounts and retired-email state are excluded, including for staff. A null user does not mean the email is globally unused. authentication_required means local checks found no blocker; a real IdP authentication or a magic link's confirmation must establish identity and account conflicts. provider describes the directory; magicLink is the organisation's setting and the newest sign-in mail for this exact email, kept for seven days. magic_link_suppressed means a link is the way in and Postmark refused the last send as a suppressed address (406), which staff reactivate in Postmark. Windows affect grants, not admission; revoked membership requires reinstatement. Responses use no-store. validation_failed rejects malformed input; not_found means the organisation is unavailable.",
         "tags": [
           "Diagnostics"
         ],
@@ -2637,6 +2637,91 @@
                         "issuer"
                       ]
                     },
+                    "magicLink": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "suppressed": {
+                          "type": "boolean"
+                        },
+                        "lastRequest": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "purpose": {
+                                  "type": "string",
+                                  "enum": [
+                                    "link",
+                                    "access_removed"
+                                  ]
+                                },
+                                "sendStatus": {
+                                  "type": "string",
+                                  "enum": [
+                                    "sending",
+                                    "sent",
+                                    "failed"
+                                  ]
+                                },
+                                "postmarkErrorCode": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "postmarkHttpStatus": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "createdAt": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "purpose",
+                                "sendStatus",
+                                "postmarkErrorCode",
+                                "postmarkHttpStatus",
+                                "createdAt"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "suppressed",
+                        "lastRequest"
+                      ]
+                    },
                     "user": {
                       "anyOf": [
                         {
@@ -2726,6 +2811,7 @@
                             "domain_not_allowed",
                             "user_disabled",
                             "membership_revoked",
+                            "magic_link_suppressed",
                             "authentication_required"
                           ]
                         },
@@ -2739,6 +2825,7 @@
                               "domain_not_allowed",
                               "user_disabled",
                               "membership_revoked",
+                              "magic_link_suppressed",
                               "authentication_required"
                             ]
                           }
@@ -2770,6 +2857,7 @@
                     "routing",
                     "organization",
                     "provider",
+                    "magicLink",
                     "user",
                     "membership",
                     "verdict"
@@ -10197,7 +10285,8 @@
                                           "context",
                                           "login",
                                           "capability",
-                                          "scope"
+                                          "scope",
+                                          "directory_sign_in"
                                         ]
                                       }
                                     },
@@ -10705,7 +10794,8 @@
                                           "context",
                                           "login",
                                           "capability",
-                                          "scope"
+                                          "scope",
+                                          "directory_sign_in"
                                         ]
                                       }
                                     },
@@ -11213,7 +11303,8 @@
                                           "context",
                                           "login",
                                           "capability",
-                                          "scope"
+                                          "scope",
+                                          "directory_sign_in"
                                         ]
                                       }
                                     },
@@ -12039,7 +12130,8 @@
                                       "context",
                                       "login",
                                       "capability",
-                                      "scope"
+                                      "scope",
+                                      "directory_sign_in"
                                     ]
                                   }
                                 },
@@ -33897,7 +33989,7 @@
           }
         ],
         "summary": "Enable magic links for an organisation",
-        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Store that an organisation may use magic links and return the updated organisation. Sign-in by emailed link: Not yet. Works whether or not a directory is connected and on a disabled organisation. Prefer disableMagicLink for the opposite transition; platform_magic_link means this is the platform organisation, which can never use magic links, not_found means the organisation is missing and already enabled state returns a noop.",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Store that an organisation may use magic links and return the updated organisation. Works whether or not a directory is connected and on a disabled organisation. Prefer disableMagicLink for the opposite transition; platform_magic_link means this is the platform organisation, which can never use magic links, not_found means the organisation is missing and already enabled state returns a noop.",
         "tags": [
           "Organizations"
         ],
@@ -34337,7 +34429,7 @@
           }
         ],
         "summary": "Disable magic links for an organisation",
-        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Store that an organisation may not use magic links, end any session and grant that came from its magic-link provider row and return the updated organisation. Directory sign-ins, sessions and grants carry on, and enabling again revives neither. A resource access token already issued lasts until it expires. Sign-in by emailed link: Not yet. Works whether or not a directory is connected and on a disabled organisation. Prefer enableMagicLink for the opposite transition; not_found means the organisation is missing and already disabled state returns a noop.",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Store that an organisation may not use magic links, end any session and grant that came from its magic-link provider row and return the updated organisation. Directory sign-ins, sessions and grants carry on, and enabling again revives neither. A resource access token already issued lasts until it expires. Works whether or not a directory is connected and on a disabled organisation. Prefer enableMagicLink for the opposite transition; not_found means the organisation is missing and already disabled state returns a noop.",
         "tags": [
           "Organizations"
         ],

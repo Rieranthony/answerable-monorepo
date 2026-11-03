@@ -16,7 +16,7 @@ test("valid tokens return only a frozen principal and de-duplicated scopes", asy
   const principal = await issuer.verify(await issuer.sign({ resource, userId, organizationId, scopes: ["read", "write", "read"] }))
   expect(principal).toEqual({
     userId, organizationId, membershipId: expect.any(String), grantId: expect.any(String), clientId: "test-client", scopes: ["read", "write"], expiresAt: expect.any(Number),
-    organizationAuthorizationVersion: 1, upstreamAuthTime: expect.any(Number),
+    organizationAuthorizationVersion: 1, upstreamAuthTime: expect.any(Number), authenticationMethod: "directory",
   })
   expect(Object.isFrozen(principal)).toBe(true)
   expect(Object.isFrozen(principal.scopes)).toBe(true)
@@ -43,6 +43,7 @@ const invalidClaims: [string, Record<string, unknown>][] = [
   ["text upstream authentication time", { upstream_auth_time: "2026-10-01T09:00:00Z" }],
   ["negative upstream authentication time", { upstream_auth_time: -1 }],
   ["fractional upstream authentication time", { upstream_auth_time: 1.5 }],
+  ["unknown authentication method", { authentication_method: "password" }],
 ]
 for (const [name, claims] of invalidClaims) {
   test(`rejects ${name} with a safe authentication error`, async () => {
@@ -103,6 +104,11 @@ test("the upstream authentication time is the token's, null when the directory r
   expect(await time({ upstream_auth_time: 1_790_000_000 })).toBe(1_790_000_000)
   expect(await time({ upstream_auth_time: null })).toBeNull()
   expect(await time({ upstream_auth_time: undefined })).toBeNull()
+  const method = async (claims: Record<string, unknown>) => (await issuer.verify(await issuer.sign({ resource, claims }))).authenticationMethod
+  expect(await method({ authentication_method: "magic_link" })).toBe("magic_link")
+  expect(await method({ authentication_method: "directory" })).toBe("directory")
+  expect(await method({ authentication_method: null })).toBeNull()
+  expect(await method({ authentication_method: undefined })).toBeNull()
   const now = Math.floor(Date.now() / 1000)
   expect(await time({})).toBeWithin(now - 5, now + 1)
 })

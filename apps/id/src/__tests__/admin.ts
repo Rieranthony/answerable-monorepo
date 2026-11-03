@@ -6,6 +6,7 @@ import { platformWriteService } from "./platform-context.ts";
 import { expect } from "bun:test";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { generateKeyPair, SignJWT } from "jose";
+import { createMemoryTransport } from "@answerable/emails/testing";
 import { createApp } from "../app.ts";
 import { createAuth } from "../auth.ts";
 import { bootstrap, platformScopes, systemActor } from "../bootstrap.ts";
@@ -28,6 +29,10 @@ import {
   users,
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
+import {
+  createMagicLinkRequests,
+  type MagicLinkRequest,
+} from "../services/magic-link-requests.ts";
 import { signInThroughIdp } from "./federation.ts";
 import { startOidcIssuer } from "./oidc-issuer.ts";
 import { testEnvironment } from "./support.ts";
@@ -103,7 +108,31 @@ export async function createAdminFixture(
       context.skipOriginCheck = false;
       context.skipCSRFCheck = false;
     }
-    const app = createApp({ auth, db: appDb, environment });
+    const transport = createMemoryTransport();
+    const requests = createMagicLinkRequests({
+      auth,
+      db: appDb,
+      environment,
+      transport,
+    });
+    // Each request runs as the queue runs it, and `settled` says when they are done.
+    const running: Promise<unknown>[] = [];
+    const mail = {
+      transport,
+      requests,
+      settled: () => Promise.all(running.splice(0)),
+    };
+    const app = createApp({
+      auth,
+      db: appDb,
+      environment,
+      magicLinks: {
+        request(request: MagicLinkRequest) {
+          running.push(requests.process(request));
+          return true;
+        },
+      },
+    });
     const bootstrapped = await bootstrap(db, systemActor("fixture"), {
       platformOrganizationSlug: environment.platformOrganizationSlug,
       platformOrganizationName: "Answerable",
@@ -324,6 +353,7 @@ export async function createAdminFixture(
       return headers;
     }
     return {
+      mail,
       auth,
       app,
       db,

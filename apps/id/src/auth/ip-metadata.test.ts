@@ -170,6 +170,8 @@ for (const path of [
   "/auth/get-session",
   "/api/admin/v1/me",
   "/login",
+  "/magic-link",
+  "/magic-link/code",
   "/assets/tailwind.css",
   "/healthz",
   "/readyz",

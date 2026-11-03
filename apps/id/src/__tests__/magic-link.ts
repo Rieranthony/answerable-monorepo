@@ -276,9 +276,9 @@ export function magicLinkFirms(fixture: AdminFixture) {
     ]);
   }
 
-  /** The whole user flow from a browser session: authorise, select, consent, exchange. */
-  async function issueTokens(cookie: string, memberId: string) {
-    const query = new URLSearchParams({
+  /** What an application sends to start an authorisation. */
+  const authorizationQuery = (extra: Record<string, string> = {}) =>
+    new URLSearchParams({
       client_id: clientId,
       response_type: "code",
       redirect_uri: redirect,
@@ -287,14 +287,32 @@ export function magicLinkFirms(fixture: AdminFixture) {
       state: "client-state",
       code_challenge_method: "S256",
       code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+      ...extra,
     });
-    const started = await protocol(`/oauth2/authorize?${query}`, { cookie });
+
+  /** The whole user flow from a browser session: authorise, select, consent, exchange. */
+  async function issueTokens(cookie: string, memberId: string) {
+    const started = await protocol(
+      `/oauth2/authorize?${authorizationQuery()}`,
+      {
+        cookie,
+      },
+    );
     const selection = new URL(started.headers.get("location")!);
     expect(selection.pathname).toBe("/authorize");
+    return finishAuthorization(selection.search.slice(1), cookie, memberId);
+  }
+
+  /** From the organisation selection to the tokens. */
+  async function finishAuthorization(
+    query: string,
+    cookie: string,
+    memberId: string,
+  ) {
     const selected = await protocol("/oauth2/continue", {
       cookie,
       json: {
-        oauth_query: selection.search.slice(1),
+        oauth_query: query,
         postLogin: true,
         memberId,
       },
@@ -333,7 +351,10 @@ export function magicLinkFirms(fixture: AdminFixture) {
     magicLinkSession,
     registerClient,
     allowClient,
+    authorizationQuery,
+    protocol,
     issueTokens,
+    finishAuthorization,
     refresh,
   };
 }

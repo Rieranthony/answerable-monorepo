@@ -1,0 +1,2 @@
+CREATE INDEX "magic_link_requests_client_attempted_idx" ON "magic_link_requests" USING btree ("client_hash","created_at") WHERE "magic_link_requests"."attempts" > 0;--> statement-breakpoint
+CREATE INDEX "magic_link_requests_organization_attempted_idx" ON "magic_link_requests" USING btree ("organization_id","created_at") WHERE "magic_link_requests"."attempts" > 0;

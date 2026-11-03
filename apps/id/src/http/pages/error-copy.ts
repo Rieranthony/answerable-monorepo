@@ -105,6 +105,22 @@ export const ERRORS: Record<string, ErrorDescription> = {
     title: "Access wasn't allowed",
     body: "You chose not to allow access, or your organisation did not permit it. You can try again with another account.",
   },
+  sign_in_rate_limited: {
+    title: "Too many sign-in attempts",
+    body: "Wait a few seconds, then try again.",
+  },
+  magic_link_elsewhere: {
+    title: "This link can't sign you in here",
+    body: "Enter the code from the email on the page where you started signing in, or ask for a new link.",
+  },
+  magic_link_code_refused: {
+    title: "That code didn't work",
+    body: "Check the code in your email and try again. A code lasts ten minutes and three tries, then you need a new link.",
+  },
+  magic_link_access_removed: {
+    title: "Your access was removed",
+    body: "This sign-in can't be used because your access has ended. Ask your administrator for help.",
+  },
 };
 
 export function describeError(code?: string | null): ErrorDescription {

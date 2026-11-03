@@ -1,4 +1,10 @@
-import { createHash, createHmac, hkdfSync, randomInt } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  hkdfSync,
+  randomInt,
+  timingSafeEqual,
+} from "node:crypto";
 import { magicLink } from "better-auth/plugins/magic-link";
 
 import type { Auth } from "../auth.ts";
@@ -6,6 +12,17 @@ import type { Environment } from "../env.ts";
 
 /** How long a link and its code work: NIST 800-63B-4's cap on an out-of-band secret. */
 export const magicLinkTtlMinutes = 10;
+
+/** The issuer of every account a magic link makes: the trigger that writes the provider row
+ * cannot read `BETTER_AUTH_URL`, so it is a constant (drizzle/0005). */
+export const magicLinkIssuer = "urn:answerable:magic-link";
+
+/** The owner's decision D3: a mailbox proof earns less than a directory sign-in. */
+export const magicLinkSessionLifetimeSeconds = 86_400;
+export const magicLinkGrantLifetimeSeconds = 604_800;
+
+/** How many comparisons one request's code gets. */
+export const magicLinkCodeAttempts = 3;
 
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("base64url");
@@ -85,6 +102,14 @@ export function magicLinkKeys({
     /** Bound to the request, so one code gives two different values on two requests. */
     codeHmac: (requestId: string, value: string) =>
       mac(code, `${requestId}:${value}`),
+    /** In constant time, so a response's timing says nothing of how much of a guess was right. */
+    codeMatches(requestId: string, value: string, stored: string) {
+      const actual = Buffer.from(mac(code, `${requestId}:${value}`));
+      const expected = Buffer.from(stored);
+      return (
+        actual.length === expected.length && timingSafeEqual(actual, expected)
+      );
+    },
     clientHash: (value: string) => mac(client, value),
   };
 }

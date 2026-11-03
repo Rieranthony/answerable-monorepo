@@ -1,5 +1,5 @@
 import type { Executor } from "../client.ts";
-import { sql, and, desc, eq, isNull } from "drizzle-orm";
+import { sql, and, desc, eq, exists, isNull } from "drizzle-orm";
 import type { PlatformWriteContext } from "../../services/platform-context.ts";
 import type { TenantReadContext } from "../../services/tenant-context.ts";
 import type { PageQuery } from "../../http/pagination.ts";
@@ -7,7 +7,11 @@ import { beforeCursor, cursorPage, optionalEq } from "./lists.ts";
 import type { LifecycleStatus } from "../schema/vocabulary.ts";
 
 import { createId } from "../../lib/id.ts";
-import { organizationDomains, organizations } from "../schema/index.ts";
+import {
+  organizationDomains,
+  organizations,
+  ssoProviders,
+} from "../schema/index.ts";
 
 export async function createOrganizationDomain(
   context: PlatformWriteContext,
@@ -54,9 +58,40 @@ export async function organizationAcceptsDomain(
   return organization !== undefined;
 }
 
-export async function findDomainOrganizationSlug(db: Executor, domain: string) {
-  const [organization] = await db
-    .select({ slug: organizations.slug })
+/** How the firm offers sign-in. One read, the same whatever the address it was asked for. */
+const signInMethods = (db: Executor) => ({
+  slug: organizations.slug,
+  directory: sql<boolean>`${exists(
+    db
+      .select({ id: ssoProviders.id })
+      .from(ssoProviders)
+      .where(
+        and(
+          eq(ssoProviders.organizationId, organizations.id),
+          eq(ssoProviders.kind, "oidc"),
+          isNull(ssoProviders.deletedAt),
+        ),
+      ),
+  )}`,
+  magicLink: sql<boolean>`${exists(
+    db
+      .select({ id: ssoProviders.id })
+      .from(ssoProviders)
+      .where(
+        and(
+          eq(ssoProviders.organizationId, organizations.id),
+          eq(ssoProviders.kind, "magic_link"),
+          eq(ssoProviders.enabled, true),
+          isNull(ssoProviders.deletedAt),
+        ),
+      ),
+  )}`,
+});
+
+/** The firm that holds this domain, and how it offers sign-in. */
+export async function findDomainSignInRoute(db: Executor, domain: string) {
+  const [route] = await db
+    .select(signInMethods(db))
     .from(organizationDomains)
     .innerJoin(
       organizations,
@@ -72,7 +107,22 @@ export async function findDomainOrganizationSlug(db: Executor, domain: string) {
     )
     .limit(1);
 
-  return organization?.slug ?? null;
+  return route ?? null;
+}
+
+/** Whether `?organization=<slug>` names a firm whose only way in is a link. */
+export async function organizationUsesLinksOnly(db: Executor, slug: string) {
+  const [route] = await db
+    .select(signInMethods(db))
+    .from(organizations)
+    .where(
+      and(
+        eq(organizations.slug, slug),
+        eq(organizations.status, "active"),
+        isNull(organizations.deletedAt),
+      ),
+    );
+  return route !== undefined && route.magicLink && !route.directory;
 }
 
 export type DomainQuery = PageQuery & { status?: LifecycleStatus };

@@ -50,6 +50,20 @@
       "when": 1793725115162,
       "tag": "0006_magic_link_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793730071971,
+      "tag": "0007_magic_link_code_budgets",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793730072318,
+      "tag": "0008_magic_link_origin_on",
+      "breakpoints": true
     }
   ]
 }

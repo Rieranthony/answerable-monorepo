@@ -5,9 +5,16 @@ import type { SSOOptions } from "@better-auth/sso";
 import { getCurrentAdapter, type BetterAuthOptions } from "better-auth";
 import { APIError } from "better-auth/api";
 import { and, isNull, eq } from "drizzle-orm";
-import { accounts, members, ssoProviders } from "../db/schema/index.ts";
+import type { Database } from "../db/client.ts";
+import {
+  accounts,
+  members,
+  sessions,
+  ssoProviders,
+} from "../db/schema/index.ts";
 import { resolveFederatedUser } from "../services/federation.ts";
-import { authTransaction } from "./database-adapter.ts";
+import { authTransaction, activeTransaction } from "./database-adapter.ts";
+import { magicLinkSessionLifetimeSeconds } from "./magic-link.ts";
 import type { VerifiedSso } from "./verified-sso.ts";
 
 type SessionHooks = NonNullable<
@@ -20,12 +27,17 @@ type Origin = {
   authenticationAccountId: string;
   upstreamAuthTime: Date | null;
   userId: string;
+  /** A magic link's session ends this long after it starts; a directory's has Better Auth's. */
+  lifetimeSeconds?: number;
 };
 
 /** Native SSO resolution and session creation share one transaction adapter.
  * The caller's request fields never supply authentication origin.
  */
-export function createSsoOriginBoundary(verifiedSso?: VerifiedSso) {
+export function createSsoOriginBoundary(
+  db: Database,
+  verifiedSso?: VerifiedSso,
+) {
   const origins = new WeakMap<object, Origin>();
   const resolveUser: NonNullable<SSOOptions["resolveUser"]> = async (
     input,
@@ -109,7 +121,8 @@ export function createSsoOriginBoundary(verifiedSso?: VerifiedSso) {
     const adapter =
       context && (await getCurrentAdapter(context.context.adapter));
     const origin = adapter && origins.get(adapter);
-    // Only native SSO resolution in this transaction supplies an origin.
+    // Only native SSO resolution or a magic link's confirmation in this transaction
+    // supplies an origin.
     if (!adapter || !origin)
       throw new APIError("FORBIDDEN", {
         code: "authentication_origin_missing",
@@ -152,8 +165,49 @@ export function createSsoOriginBoundary(verifiedSso?: VerifiedSso) {
         authenticationOrganizationId: origin.authenticationOrganizationId,
         authenticationProviderId: origin.authenticationProviderId,
         authenticationProviderRevision: origin.authenticationProviderRevision,
+        ...(origin.lifetimeSeconds
+          ? {
+              expiresAt: new Date(
+                session.createdAt.getTime() + origin.lifetimeSeconds * 1000,
+              ),
+            }
+          : {}),
       },
     };
   };
-  return { resolveUser, before };
+  /** What a magic link's confirmation has verified in this transaction, under its locks. */
+  const establish = (database: object, origin: Origin) => {
+    origins.set(database, origin);
+  };
+  /**
+   * Better Auth's refresh moves `expiresAt` to seven days from now on the first page view of
+   * a session that starts with less (measured: 24 hours became 168). A magic link's session
+   * ends a fixed time after it began, however often it is read: refreshes are skipped for it
+   * (magic-link-confirm.ts), and this holds the cap if one happens all the same. The native
+   * session read names the session in its context, and this may run inside a caller's
+   * transaction.
+   */
+  const refresh: NonNullable<
+    NonNullable<SessionHooks["update"]>["before"]
+  > = async (update, context) => {
+    const id = context?.context.session?.session.id;
+    if (!id || !update.expiresAt) return;
+    const adapter = await getCurrentAdapter(context.context.adapter);
+    const [origin] = await (activeTransaction(adapter) ?? db)
+      .select({ kind: ssoProviders.kind, createdAt: sessions.createdAt })
+      .from(sessions)
+      .innerJoin(
+        ssoProviders,
+        eq(ssoProviders.id, sessions.authenticationProviderId),
+      )
+      .where(eq(sessions.id, id));
+    if (origin?.kind !== "magic_link") return;
+    const cap = new Date(
+      origin.createdAt.getTime() + magicLinkSessionLifetimeSeconds * 1000,
+    );
+    return {
+      data: { expiresAt: update.expiresAt < cap ? update.expiresAt : cap },
+    };
+  };
+  return { resolveUser, before, establish, refresh };
 }

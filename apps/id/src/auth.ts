@@ -17,10 +17,11 @@ import { createSsoOriginBoundary } from "./auth/sso-origin.ts";
 import { createVerifiedSso } from "./auth/verified-sso.ts";
 import { grantLifetimeSeconds } from "./auth/user-oauth-flow.ts";
 import { magicLinkPlugin } from "./auth/magic-link.ts";
+import { magicLinkConfirmation } from "./auth/magic-link-confirm.ts";
 
 export function createAuth(db: Database, environment: Environment) {
   const verifiedSso = createVerifiedSso(db);
-  const ssoOrigin = createSsoOriginBoundary(verifiedSso);
+  const ssoOrigin = createSsoOriginBoundary(db, verifiedSso);
   const nativeSso = sso({
     schema: {
       ssoProvider: {
@@ -76,6 +77,7 @@ export function createAuth(db: Database, environment: Environment) {
       session: {
         ...sessionAuditHooks(db),
         create: { before: ssoOrigin.before },
+        update: { before: ssoOrigin.refresh },
       },
     },
     session: {
@@ -195,6 +197,9 @@ export function createAuth(db: Database, environment: Environment) {
     },
     plugins: [
       answerableSchema(),
+      // In-process only, from the pages: off the allowlist and server-only. First, since its
+      // hook says whether a session is refreshed, and another plugin's hook may read one.
+      magicLinkConfirmation(db, ssoOrigin),
       // Token-signing keys for ID tokens and JWT access tokens. The model is
       // named in the singular so the plural table is `jwks`, not `jwkss`.
       // The issuer is the bare origin (id.answerable.org), not the /auth

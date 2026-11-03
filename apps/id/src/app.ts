@@ -20,6 +20,7 @@ import { createId } from "./lib/id.ts";
 import { limitRequestBody } from "./http/request-limits.ts";
 import { publicOAuthMetadata } from "./http/oauth-metadata.ts";
 import type { OperationalMetrics } from "./operations/metrics.ts";
+import type { MagicLinkRequests } from "./services/magic-link-requests.ts";
 
 const requestIdPattern = /^[A-Za-z0-9._:-]{1,128}$/;
 
@@ -31,6 +32,9 @@ export type AppServices = {
   db: Database;
   environment: Environment;
   metrics?: OperationalMetrics;
+  /** Where `POST /login` hands a request for a link; the runtime always supplies it. A test
+   * that does not ask for mail gets the same page and sends none. */
+  magicLinks?: Pick<MagicLinkRequests, "request">;
 };
 
 export function createApp(services: AppServices) {
@@ -46,6 +50,7 @@ export function createApp(services: AppServices) {
     context.set("environment", services.environment);
     context.set("auth", services.auth);
     context.set("db", services.db);
+    context.set("magicLinks", services.magicLinks);
     context.set("requestId", requestId);
     context.header("x-request-id", requestId);
 

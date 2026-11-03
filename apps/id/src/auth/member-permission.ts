@@ -296,8 +296,12 @@ export function evaluateClientLoginPermission(
   };
 }
 
-/** Resource-only assignments authorise direct sessions only at the bound admin resource. */
-export function evaluateAdminPermission(row: PermissionFacts) {
+/** Resource-only assignments authorise direct sessions only at the bound admin resource.
+ * Authority reads the session's origin (`effectiveGrants`); what explains a member, with no
+ * session to read, says `directorySignIn` to report what that member could not hold. */
+export function evaluateAdminPermission(
+  row: PermissionFacts & { directorySignIn?: boolean },
+) {
   const decision = memberDecision(row, "resource", "admin_session");
   if (!row.adminEligible) return { ...decision, reason: "context" as const };
   const capability = row.capabilities.find(
@@ -310,6 +314,8 @@ export function evaluateAdminPermission(row: PermissionFacts) {
     row.assignments.flatMap((source) => source.scopes),
   ]);
   if (!scopes) return { ...decision, reason: "scope" as const };
+  if (row.directorySignIn === false)
+    return { ...decision, reason: "directory_sign_in" as const };
   return {
     ...decision,
     allowed: true as const,

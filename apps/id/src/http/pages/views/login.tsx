@@ -13,10 +13,12 @@ function Message({ message }: { message?: ErrorDescription }) {
 }
 export function SignedIn({
   email,
+  method,
   query,
   message,
 }: {
   email: string;
+  method: "directory" | "magic_link";
   query: string;
   message?: ErrorDescription;
 }) {
@@ -26,11 +28,13 @@ export function SignedIn({
         Signed in
       </h1>
       <p class="mt-2 text-sm/6">Signed in as {email}</p>
-      <p class="mt-4 text-sm/6">
-        <a href="/security" class="underline underline-offset-4">
-          Verify sign-in or connect a work account
-        </a>
-      </p>
+      {method === "directory" && (
+        <p class="mt-4 text-sm/6">
+          <a href="/security" class="underline underline-offset-4">
+            Verify sign-in or connect a work account
+          </a>
+        </p>
+      )}
       <form method="post" action={`/sign-out?${query}`}>
         <Button type="submit" class="mt-8">
           Sign out
@@ -56,7 +60,7 @@ export function LoginForm({
       </h1>
       <p class="text-muted-foreground mt-2 text-sm/6">
         Use your work email. We&apos;ll take you to your organisation&apos;s
-        login.
+        login, or email you a sign-in link.
       </p>
       <form
         method="post"

@@ -92,6 +92,14 @@ export const magicLinkRequests = pgTable(
     index("magic_link_requests_organization_created_at_idx")
       .on(table.organizationId, table.createdAt)
       .where(sql`${table.sendStatus} <> 'failed'`),
+    // The failure budgets add up attempts by client and by organisation, and only a row
+    // somebody guessed at counts, which is few of them.
+    index("magic_link_requests_client_attempted_idx")
+      .on(table.clientHash, table.createdAt)
+      .where(sql`${table.attempts} > 0`),
+    index("magic_link_requests_organization_attempted_idx")
+      .on(table.organizationId, table.createdAt)
+      .where(sql`${table.attempts} > 0`),
     index("magic_link_requests_browser_hash_idx").on(table.browserHash),
     index("magic_link_requests_created_at_idx").on(table.createdAt),
   ],

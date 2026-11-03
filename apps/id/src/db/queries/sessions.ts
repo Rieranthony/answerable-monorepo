@@ -2,8 +2,9 @@ import type {
   PlatformReadContext,
   PlatformUsersContext,
 } from "../../services/platform-context.ts";
-import { and, desc, eq } from "drizzle-orm";
-import { sessions } from "../schema/index.ts";
+import { and, desc, eq, sql } from "drizzle-orm";
+import type { Executor } from "../client.ts";
+import { sessions, ssoProviders } from "../schema/index.ts";
 import type { PageQuery } from "../../http/pagination.ts";
 import { beforeCursor, cursorPage } from "./lists.ts";
 
@@ -49,4 +50,24 @@ export async function listUserSessions(
       .limit(page.limit + 1),
     page.limit,
   );
+}
+
+/**
+ * How a browser's session came about, for the pages: `live` is false for a magic-link session
+ * whose row is off, changed or gone, which holds no authority anywhere and reads as signed out.
+ * A session with no origin, which holds none either, reads as a directory's.
+ */
+export async function readSessionOrigin(db: Executor, sessionId: string) {
+  const [row] = await db
+    .select({
+      kind: ssoProviders.kind,
+      live: sql<boolean>`${ssoProviders.enabled} and ${ssoProviders.deletedAt} is null and ${ssoProviders.revision} = ${sessions.authenticationProviderRevision}`,
+    })
+    .from(sessions)
+    .innerJoin(
+      ssoProviders,
+      eq(ssoProviders.id, sessions.authenticationProviderId),
+    )
+    .where(eq(sessions.id, sessionId));
+  return row ?? null;
 }

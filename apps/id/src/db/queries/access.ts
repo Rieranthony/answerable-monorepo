@@ -11,9 +11,11 @@ import type {
   TenantReadContext,
 } from "../../services/tenant-context.ts";
 import {
+  accounts,
   entitlements,
   members,
   organizations,
+  ssoProviders,
   users,
   oauthClients,
   oauthResources,
@@ -47,6 +49,27 @@ const activeOrganization = and(
   eq(organizations.id, members.organizationId),
   eq(organizations.status, "active"),
 );
+/**
+ * Only a directory sign-in carries administrative authority, so a member who signs in by link
+ * alone holds none, whatever their entitlements say. A member with both keeps what their
+ * directory session holds, and a member with no account yet is whoever their first sign-in
+ * shows them to be.
+ */
+const directorySignIn = sql<boolean>`(
+  not exists(
+    select 1 from ${accounts} account
+    where account.user_id = ${members.userId} and account.deleted_at is null
+      and account.provider_id = 'magic-link:' || ${members.organizationId}::text
+  )
+  or exists(
+    select 1 from ${accounts} account
+    join ${ssoProviders} directory
+      on directory.issuer = account.issuer and directory.provider_id = account.provider_id
+    where account.user_id = ${members.userId} and account.deleted_at is null
+      and directory.organization_id = ${members.organizationId}
+      and directory.kind = 'oidc' and directory.deleted_at is null
+  )
+)`;
 export async function memberAccess(
   context: TenantReadContext<"memberAccess"> | TenantMemberContext,
   memberId: string,
@@ -80,6 +103,7 @@ export async function memberAccess(
       targetClientId: assignedTargets.clientId,
       targetResource: assignedTargets.resource,
       targetAssignments: assignedTargets.sources,
+      directorySignIn,
       ...memberPermissionFields(executor),
     })
     .from(members)
@@ -160,6 +184,7 @@ export async function targetAccess(
       email: users.email,
       name: users.name,
       scopes: sql<string[]>`array_agg(distinct s.scope order by s.scope)`,
+      directorySignIn,
       ...memberPermissionFields(executor),
     })
     .from(members)

@@ -366,8 +366,12 @@ test("the admin API can connect a directory beside a magic-link row", async () =
   await directorySignIn(organization, { organizationSlug: organization.slug });
 });
 
-test("an organisation with no directory answers as one that holds no provider row at all", async () => {
+test("an organisation with no directory and links off answers as one that holds no provider row at all", async () => {
   const organization = await seedOrganization("magic-only", false);
+  await fixture.db
+    .update(ssoProviders)
+    .set({ enabled: false })
+    .where(eq(ssoProviders.id, organization.magicLink.id));
   const bare = await createOrganization(fixture.db, {
     slug: "no-provider",
     name: "No provider",

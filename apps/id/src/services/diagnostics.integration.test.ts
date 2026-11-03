@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { createOrganizationDomain } from "../__tests__/domain-queries.ts";
 import { createOrganization } from "../__tests__/organization-queries.ts";
 import { createSsoProvider } from "../__tests__/sso-queries.ts";
@@ -11,7 +11,14 @@ import {
   createDatabase,
   type DatabaseConnection,
 } from "../db/client.ts";
-import { accounts, members, organizations, users } from "../db/schema/index.ts";
+import {
+  accounts,
+  magicLinkRequests,
+  members,
+  organizations,
+  ssoProviders,
+  users,
+} from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
 import {
   diagnoseSignIn as implementation,
@@ -81,6 +88,10 @@ test("provider precedes disabled organisation and routing", async () => {
     .update(organizations)
     .set({ status: "disabled", disabledAt: new Date() })
     .where(eq(organizations.id, org.id));
+  await db
+    .update(ssoProviders)
+    .set({ enabled: false })
+    .where(eq(ssoProviders.organizationId, org.id));
   const result = await diagnoseSignIn(db, org.id, email);
   verdict(result, "provider_not_found");
   expect(result.provider).toEqual({
@@ -88,6 +99,118 @@ test("provider precedes disabled organisation and routing", async () => {
     kind: null,
     issuer: null,
   });
+});
+test("a firm with no directory and links on is not a missing provider", async () => {
+  const { db, org } = await seed(false);
+  const result = await diagnoseSignIn(db, org.id, email);
+  verdict(result, "authentication_required");
+  expect(result.provider.configured).toBe(false);
+  expect(result.magicLink).toEqual({
+    enabled: true,
+    suppressed: false,
+    lastRequest: null,
+  });
+});
+test("a suppressed address blocks only where a link is the way in, and is shown", async () => {
+  const { db, org } = await seed(false);
+  const [row] = await db
+    .select({ id: ssoProviders.id })
+    .from(ssoProviders)
+    .where(eq(ssoProviders.organizationId, org.id));
+  const write = async (values: {
+    postmarkErrorCode: number | null;
+    postmarkHttpStatus: number | null;
+  }) => {
+    const id = createId();
+    await db.insert(magicLinkRequests).values({
+      id,
+      organizationId: org.id,
+      providerId: row!.id,
+      providerRevision: 1,
+      purpose: "access_removed",
+      email,
+      clientHash: "client",
+      expiresAt: new Date(Date.now() + 60_000),
+      sendStatus: "failed",
+      ...values,
+    });
+    return id;
+  };
+  await write({ postmarkErrorCode: 300, postmarkHttpStatus: 422 });
+  verdict(await diagnoseSignIn(db, org.id, email), "authentication_required");
+
+  const id = await write({ postmarkErrorCode: 406, postmarkHttpStatus: 422 });
+  const suppressed = await diagnoseSignIn(db, org.id, email);
+  verdict(suppressed, "magic_link_suppressed");
+  expect(suppressed.magicLink).toEqual({
+    enabled: true,
+    suppressed: true,
+    lastRequest: {
+      id,
+      purpose: "access_removed",
+      sendStatus: "failed",
+      postmarkErrorCode: 406,
+      postmarkHttpStatus: 422,
+      createdAt: expect.any(String),
+    },
+  });
+  // Another address's row says nothing about this one.
+  const other = await diagnoseSignIn(db, org.id, "other@example.com");
+  expect(other.magicLink.lastRequest).toBeNull();
+  verdict(other, "authentication_required");
+
+  await createSsoProvider(db, {
+    organizationId: org.id,
+    providerId: org.slug,
+    issuer,
+    domain: "example.com",
+    oidc: { clientId: "client" },
+  });
+  const withDirectory = await diagnoseSignIn(db, org.id, email);
+  verdict(withDirectory, "authentication_required");
+  expect(withDirectory.magicLink.suppressed).toBe(true);
+});
+test("a firm with a directory shows its magic-link setting beside it", async () => {
+  const { db, org } = await seed();
+  await db
+    .update(ssoProviders)
+    .set({ enabled: false })
+    .where(
+      and(
+        eq(ssoProviders.organizationId, org.id),
+        eq(ssoProviders.kind, "magic_link"),
+      ),
+    );
+  const result = await diagnoseSignIn(db, org.id, email);
+  expect(result.provider.configured).toBe(true);
+  expect(result.magicLink.enabled).toBe(false);
+  verdict(result, "authentication_required");
+});
+test("the setting shown is this firm's magic-link row, whichever rows exist", async () => {
+  const db = connection.db;
+  const other = await createOrganization(db, { slug: "other", name: "Other" });
+  await db
+    .update(ssoProviders)
+    .set({ enabled: false })
+    .where(eq(ssoProviders.organizationId, other.id));
+  const { org } = await seed();
+  const shown = await diagnoseSignIn(db, org.id, email);
+  expect(shown.magicLink.enabled).toBe(true);
+  const theirs = await diagnoseSignIn(db, other.id, email);
+  expect(theirs.magicLink.enabled).toBe(false);
+  // A directory beside it is not the setting: with no magic-link row, there is none.
+  await db
+    .update(ssoProviders)
+    .set({ deletedAt: new Date() })
+    .where(
+      and(
+        eq(ssoProviders.organizationId, org.id),
+        eq(ssoProviders.kind, "magic_link"),
+      ),
+    );
+  const gone = await diagnoseSignIn(db, org.id, email);
+  expect(gone.provider.configured).toBe(true);
+  expect(gone.magicLink.enabled).toBe(false);
 });
 test("disabled organisation precedes domain rejection", async () => {
   const { db, org } = await seed();

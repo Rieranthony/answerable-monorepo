@@ -8,8 +8,10 @@ import {
   serviceOrigin,
   type PageContext,
 } from "../gateway.ts";
+import { organizationUsesLinksOnly } from "../../../db/queries/organization-domains.ts";
+import { LoginForm } from "../views/login.tsx";
 import { OAuthRequest, type OAuthFlow } from "../views/oauth-request.tsx";
-import { startSignIn } from "./login.ts";
+import { renderSignIn, startSignIn } from "./login.ts";
 
 const unavailable =
   "This request has expired or is unavailable. Start again from the application.";
@@ -63,6 +65,16 @@ export function registerOAuth(app: Hono<AppEnvironment>) {
     );
     if (!member) return renderFlow(context, false, accessUnavailable);
     const query = new URL(context.req.url).searchParams.toString();
+    // A firm whose only way in is a link has no sign-in to start, so it asks for the address.
+    // `POST /login` never redirects on a session, and the new session a link makes is what
+    // the provider resumes this query on. If this read fails, sign-in starts as for any firm.
+    if (
+      !member.authenticated &&
+      (await organizationUsesLinksOnly(context.get("db"), member.slug).catch(
+        () => false,
+      ))
+    )
+      return renderSignIn(context, jsx(LoginForm, { query }));
     try {
       const result = member.authenticated
         ? await callAuth(context, {

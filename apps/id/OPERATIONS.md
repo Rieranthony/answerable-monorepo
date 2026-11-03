@@ -15,8 +15,9 @@ a change ships as a release. Only the pool size is a variable.
 | ------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | Database pool       | `DATABASE_POOL_MAX` connections (default 20); checkout 5 s; idle 10 s      | Multiply pools by processes and include other database users               |
 | Database statements | 10 s per statement; lock wait 2 s; idle transaction 15 s                   | Not a whole-request deadline; transactions may execute multiple statements |
-| Request body        | 256 KiB (4 KiB on `POST /login`, 64 KiB on `POST /auth/sign-in/sso`); acquisition deadline 5 s | Does not bound response streaming or socket count                          |
+| Request body        | 256 KiB (4 KiB on `POST /login`, `POST /magic-link` and `POST /magic-link/code`, 64 KiB on `POST /auth/sign-in/sso`); acquisition deadline 5 s | Does not bound response streaming or socket count                          |
 | Rate limits         | Per client address per process, production only ([docs/06](../../docs/06-deploying-answerable-id.md#operating-it)) | Replicas multiply them; not a volumetric defence                           |
+| Sign-in page posts  | 60 per 10 s per client address per process, in every environment: on `POST /login`, a 429 page; on `POST /magic-link` and `POST /magic-link/code` together, their usual refusal with no database work. At most 10,000 clients held per route | Replicas multiply them; not a volumetric defence                           |
 | Client address      | `cf-connecting-ip`; else the rightmost untrusted `x-forwarded-for` address after the proxies in `TRUSTED_PROXY_CIDRS` | Requires proxy-only network access ([README](README.md#http-surface))      |
 
 **Runtime summaries.** Every 30 seconds each process writes `[id] operations`
@@ -40,6 +41,12 @@ in Postgres: per address and client 1 in 60 s and 5 in an hour, per address 50 i
 per organisation 5,000 in an hour. Both sets of numbers are judgement until staging
 measures them: `src/services/magic-link-requests.ts`.
 
+**Magic-link codes.** Three comparisons per request. Wrong codes per client 30 in an hour
+and per organisation 1,000 in an hour, added up from `attempts` in Postgres so that they hold
+across replicas and checked before comparing; at most the ten newest requests of one browser
+are compared per attempt. These too are judgement: `src/services/magic-link-codes.ts`. The
+link does not go through these budgets.
+
 **Shutdown.** On `SIGINT` or `SIGTERM` the process stops listening, waits for
 in-flight requests, finishes queued mail for at most 22 s, stops the sweep after its
 running batch and closes the pool. The chart's 30 s grace period less its 5 s preStop
@@ -56,7 +63,7 @@ or budget is configured here.
 | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Rising 503 counts, active work and pool waiters                         | Compare with traffic and database limits; inspect authorised audit history for context                                                       |
 | `[id] error` `unexpected_error`, or `provider_diagnostic` with an error | Read the class and SQLSTATE; a repeated one is a defect or a database fault                                                                  |
-| `[id] page` `page_auth_call_failed`                                     | A sign-in page's in-process authentication call threw; the person saw the friendly message. Check the named auth path and the database       |
+| `[id] page` `page_auth_call_failed`                                     | A sign-in page's in-process authentication call threw; the person saw the friendly message. Check the named auth path, or page for a magic link, and the database |
 | `admin_denial_audit_unavailable` or `token_rejection_audit_unavailable` | Investigate database/audit availability; refusal remains refusal                                                                             |
 | Rising `token_rejected` or `signin_rejected` (`[id] auth`)              | Refusals that verified no client or identity, logged instead of audited: a misconfigured client or directory, or credential stuffing; compare with 429s and the edge rate limits |
 | `[id] admin` `admin_auth_refused`, repeated                             | A missing or invalid credential on `/api/admin` (`reason` `unauthenticated` or `invalid_token`, with request id, address and path); no audit row is written. Compare the addresses with the ingress log |
@@ -66,6 +73,9 @@ or budget is configured here.
 | `[id] magic link` `magic_link_request`, `outcome` `limited`             | `limit` names which. `organization_hour`, repeated: someone is requesting mail for many real addresses at that firm                        |
 | `[id] magic link` `magic_link_queue_overflow`, or `magic_link_queue_abandoned` | Requests were told to check their email and got none. `dropped`, `abandoned` and `running` are counts. Compare with Postmark's status and the pool |
 | `[id] magic link` `magic_link_job_failed`                               | A job threw before its row was final; read the class and SQLSTATE. Its row, if any, stays `sending`, which signs nobody in                 |
+| `[id] magic link` `magic_link_code_budget_exhausted`                    | `budget` says which: `client`, repeated from one address, is someone guessing or an office with a bad day; `organization`, with its id, someone trying a firm from many addresses. Codes stop being compared and the person sees the usual refusal; the link still works |
+| `[id] magic link` `magic_link_audit_unavailable`                        | A refused sign-in could not write its audit row; read the class and SQLSTATE. The refusal stands                                            |
+| Rising `auth.magic_link.refused` or `auth.magic_link.code_exhausted` audit events | Refusals that took a real browser cookie and a real request. `reason` says why: `provider_changed`, repeated, follows a firm switched off and on; `code_attempts` someone guessing or mistyping |
 | `protocol_sweep_failed`, repeated                                       | Check database availability and lock waits; expired protocol rows accumulate until a sweep succeeds                                          |
 | `shutdown_failed`                                                       | The process exited with status 1 before closing cleanly; read the class                                                                      |
 | Missing process summaries                                               | Check process health and collector delivery before interpreting demand                                                                       |

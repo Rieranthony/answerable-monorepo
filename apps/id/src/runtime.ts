@@ -96,7 +96,13 @@ export async function startRuntime(
       environment,
       transport: mailTransport(environment),
     });
-    const app = createApp({ auth, db: database.db, environment, metrics });
+    const app = createApp({
+      auth,
+      db: database.db,
+      environment,
+      metrics,
+      magicLinks,
+    });
     server = Bun.serve({
       hostname: environment.hostname,
       port: environment.port,

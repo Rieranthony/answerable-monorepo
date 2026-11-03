@@ -117,6 +117,6 @@ export function testPrincipal(overrides: Partial<UserPrincipal> = {}): UserPrinc
   return {
     userId: crypto.randomUUID(), organizationId: crypto.randomUUID(), membershipId: crypto.randomUUID(), grantId: crypto.randomUUID(),
     clientId: "test-client", scopes: [], expiresAt: Math.floor(Date.now() / 1000) + 300, organizationAuthorizationVersion: 1,
-    upstreamAuthTime: Math.floor(Date.now() / 1000), ...overrides,
+    upstreamAuthTime: Math.floor(Date.now() / 1000), authenticationMethod: "directory", ...overrides,
   }
 }

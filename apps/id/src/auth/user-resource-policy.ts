@@ -8,6 +8,7 @@ import {
   users,
   oauthClients,
   oauthResources,
+  ssoProviders,
 } from "../db/schema/index.ts";
 import {
   evaluateUserResourcePermission,
@@ -42,6 +43,7 @@ export async function userResourcePolicy(
       const [row] = await tx
         .select({
           grant: grantContexts,
+          authenticationProviderKind: ssoProviders.kind,
           ...memberPermissionFields(tx),
         })
         .from(grantContexts)
@@ -54,6 +56,10 @@ export async function userResourcePolicy(
           ),
         )
         .innerJoin(users, eq(users.id, grantContexts.userId))
+        .innerJoin(
+          ssoProviders,
+          eq(ssoProviders.id, grantContexts.authenticationProviderId),
+        )
         .innerJoin(
           organizations,
           eq(organizations.id, grantContexts.organizationId),
@@ -89,7 +95,15 @@ export async function userResourcePolicy(
               resource: input.resource,
               originalScopes: row.grant.requestedScopes,
             });
-      return decision.allowed ? { ...decision, grant: row.grant } : decision;
+      return decision.allowed
+        ? {
+            ...decision,
+            grant: {
+              ...row.grant,
+              authenticationProviderKind: row.authenticationProviderKind,
+            },
+          }
+        : decision;
     },
   );
 }

@@ -6,11 +6,14 @@ const requestBodyTimeoutMs = 5_000;
 
 /**
  * Sign-in routes take small bodies: the login form carries one address (its
- * OAuth query is in the URL), and the SSO start carries a callback URL and an
- * OAuth query. Every other route keeps the general limit.
+ * OAuth query is in the URL), the magic-link forms a token or a code, and the SSO
+ * start carries a callback URL and an OAuth query. Every other route keeps the
+ * general limit.
  */
 const routeBodyLimits: Record<string, number> = {
   "POST /login": 4 * 1024,
+  "POST /magic-link": 4 * 1024,
+  "POST /magic-link/code": 4 * 1024,
   "POST /auth/sign-in/sso": 64 * 1024,
 };
 

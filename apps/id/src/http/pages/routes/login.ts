@@ -1,11 +1,18 @@
-import { findDomainOrganizationSlug } from "../../../db/queries/organization-domains.ts";
+import {
+  findDomainSignInRoute,
+  organizationUsesLinksOnly,
+} from "../../../db/queries/organization-domains.ts";
+import { createClientBudget } from "../../../lib/client-budget.ts";
 import { DirectoryLogos } from "../views/directory-logos.tsx";
+import { verifyOAuthQueryParams } from "@better-auth/oauth-provider";
 import type { Hono } from "hono";
 import { jsx, type Child } from "hono/jsx";
 import type { AppEnvironment } from "../../context.ts";
 import {
   applyCookies,
   callAuth,
+  isOwnOriginPost,
+  readPageSession,
   serviceOrigin,
   type PageContext,
 } from "../gateway.ts";
@@ -13,10 +20,13 @@ import {
   decideLoginRoute,
   isLoginAddress,
   maxLoginAddressLength,
+  maxPendingQueryLength,
   pendingOAuthQuery,
 } from "../login-routing.ts";
 import { describeError, type ErrorDescription } from "../error-copy.ts";
+import { holdSignInCookie } from "../sign-in-cookie.ts";
 import { LoginForm, SignedIn } from "../views/login.tsx";
+import { CheckEmail } from "../views/magic-link.tsx";
 
 export async function startSignIn(
   context: PageContext,
@@ -40,7 +50,7 @@ export async function startSignIn(
   return result;
 }
 
-function renderSignIn(context: PageContext, view: Child) {
+export function renderSignIn(context: PageContext, view: Child) {
   return context.render(view, {
     title: "Sign in",
     footer: jsx(DirectoryLogos, {}),
@@ -54,27 +64,34 @@ async function renderLogin(context: PageContext, message?: ErrorDescription) {
   const mustAuthenticate =
     parameters.get("prompt")?.split(" ").includes("login") ||
     parameters.has("max_age");
-  let email: string | undefined;
+  let session: Awaited<ReturnType<typeof readPageSession>> = null;
   try {
-    const session = await callAuth<{ user?: { email: string } }>(context, {
-      method: "GET",
-      path: "/auth/get-session",
-      origin: serviceOrigin(context),
-    });
-    applyCookies(context, session.setCookies);
-    if (session.ok) email = session.data?.user?.email;
+    session = await readPageSession(context);
   } catch {
     /* An unreachable service leaves the sign-in form available. */
   }
   const route = decideLoginRoute(query);
-  if (email && !mustAuthenticate) {
+  if (session && !mustAuthenticate) {
     if (pending) return context.redirect(`/authorize?${pending}`, 302);
     return renderSignIn(
       context,
-      jsx(SignedIn, { email, query: query.toString(), message }),
+      jsx(SignedIn, {
+        email: session.email,
+        method: session.method,
+        query: query.toString(),
+        message,
+      }),
     );
   }
-  if (route.mode === "auto" && !message) {
+  // A firm whose only way in is a link has no sign-in to start: it asks for the address.
+  // If this read fails, sign-in starts as it does for any firm and answers for itself.
+  const linksOnly =
+    route.mode === "auto" &&
+    (await organizationUsesLinksOnly(
+      context.get("db"),
+      route.organizationSlug,
+    ).catch(() => false));
+  if (route.mode === "auto" && !message && !linksOnly) {
     try {
       const result = await startSignIn(
         context,
@@ -100,17 +117,38 @@ async function renderLogin(context: PageContext, message?: ErrorDescription) {
 }
 
 /**
- * The form only ever lives on ID's own origin. A browser always sends Origin
- * on a post; a request without one is not a cross-site browser form.
+ * The same page whatever becomes of this address, and the work that depends on it runs after
+ * the response. Only a signed query within the bound is kept: refusing it costs the person
+ * their place in the application, not the sign-in.
  */
-function isOwnOriginPost(context: PageContext): boolean {
-  const origin = context.req.header("origin");
-  if (origin !== undefined && origin !== new URL(serviceOrigin(context)).origin)
-    return false;
-  return context.req.header("sec-fetch-site") !== "cross-site";
+async function askForLink(
+  context: PageContext,
+  email: string,
+  query: URLSearchParams,
+) {
+  const browser = holdSignInCookie(context);
+  const pending = pendingOAuthQuery(query);
+  const { secret } = await context.get("auth").$context;
+  const resumable =
+    pending !== null &&
+    pending.length <= maxPendingQueryLength &&
+    (await verifyOAuthQueryParams(pending, secret));
+  context.get("magicLinks")?.request({
+    address: email,
+    browser,
+    client: context.get("clientIp") ?? "unresolved",
+    pendingQuery: resumable ? pending : null,
+  });
+  return context.render(jsx(CheckEmail, { email, query: query.toString() }), {
+    title: "Sign in",
+  });
 }
 
 export function registerLogin(app: Hono<AppEnvironment>) {
+  // An office signs in through one egress address, so this is as wide as `/sign-in/sso`'s rule.
+  // Without it a stranger's flood costs a transaction and a queue slot each, and drops real
+  // requests. It depends on no address.
+  const budget = createClientBudget({ max: 60, windowMs: 10_000 });
   app.get("/login", (context) => renderLogin(context));
   app.post("/login", async (context) => {
     const query = new URL(context.req.url).searchParams;
@@ -121,6 +159,17 @@ export function registerLogin(app: Hono<AppEnvironment>) {
         jsx(LoginForm, { query: query.toString(), message: describeError() }),
       );
     }
+    if (!budget.take(context.get("clientIp") ?? "unresolved")) {
+      context.status(429);
+      context.header("Retry-After", "10");
+      return renderSignIn(
+        context,
+        jsx(LoginForm, {
+          query: query.toString(),
+          message: describeError("sign_in_rate_limited"),
+        }),
+      );
+    }
     const body = await context.req.parseBody();
     const email =
       typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
@@ -128,16 +177,15 @@ export function registerLogin(app: Hono<AppEnvironment>) {
     const domain = email.slice(email.lastIndexOf("@") + 1);
     if (isLoginAddress(email)) {
       try {
-        const slug = await findDomainOrganizationSlug(
-          context.get("db"),
-          domain,
-        );
-        if (!slug) {
+        const route = await findDomainSignInRoute(context.get("db"), domain);
+        if (!route) {
           message = describeError("provider_not_found");
+        } else if (route.magicLink && !route.directory) {
+          return await askForLink(context, email, query);
         } else {
           const result = await startSignIn(
             context,
-            { organizationSlug: slug, loginHint: email },
+            { organizationSlug: route.slug, loginHint: email },
             `${serviceOrigin(context)}/login?${query}`,
             context.req.header("origin") ?? null,
           );

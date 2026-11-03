@@ -2,6 +2,10 @@ import { listMembers } from "../db/queries/members.ts";
 import { type TenantReadContext } from "./tenant-context.ts";
 import { organizationAcceptsDomain } from "../db/queries/organization-domains.ts";
 import { readOrganizationStatus } from "../db/queries/organizations.ts";
+import {
+  readMagicLinkSetting,
+  readLastMagicLinkRequest,
+} from "../db/queries/magic-link-requests.ts";
 import { readSsoIssuer } from "../db/queries/sso-providers.ts";
 import { classifyIssuer } from "./federation.ts";
 
@@ -11,6 +15,7 @@ export const signInVerdictCodes = [
   "domain_not_allowed",
   "user_disabled",
   "membership_revoked",
+  "magic_link_suppressed",
   "authentication_required",
 ] as const;
 export const tokenOnlyCodes = [
@@ -22,6 +27,9 @@ export const tokenOnlyCodes = [
   "identity_conflict",
 ] as const;
 
+/** Postmark's code for an address it will not send to, after a hard bounce or a complaint. */
+const postmarkSuppressed = 406;
+
 /** Local blockers only: an email cannot establish the authenticated identity. */
 export async function diagnoseSignIn(
   context: TenantReadContext<"memberAccess">,
@@ -31,18 +39,24 @@ export async function diagnoseSignIn(
   // The context holds a shared lock on this existing organisation.
   const organization = (await readOrganizationStatus(context))!;
   const domain = email.slice(email.lastIndexOf("@") + 1);
-  const [matchesThisOrganization, provider, memberRows] = await Promise.all([
-    organizationAcceptsDomain(context, domain),
-    readSsoIssuer(context),
-    listMembers(context, { email, limit: 1 }),
-  ]);
+  const [matchesThisOrganization, provider, memberRows, linksOn, lastRequest] =
+    await Promise.all([
+      organizationAcceptsDomain(context, domain),
+      readSsoIssuer(context),
+      listMembers(context, { email, limit: 1 }),
+      readMagicLinkSetting(context),
+      readLastMagicLinkRequest(context, email),
+    ]);
   const membership = memberRows.items[0];
+  const suppressed = lastRequest?.postmarkErrorCode === postmarkSuppressed;
   const checks: [(typeof signInVerdictCodes)[number], boolean][] = [
-    ["provider_not_found", provider === null],
+    ["provider_not_found", provider === null && !linksOn],
     ["organization_disabled", organization.status !== "active"],
     ["domain_not_allowed", !matchesThisOrganization],
     ["user_disabled", membership?.status === "disabled"],
     ["membership_revoked", membership?.membershipStatus === "revoked"],
+    // Only a block where a link is the way in; a directory sign-in sends no mail.
+    ["magic_link_suppressed", provider === null && suppressed],
     ["authentication_required", true],
   ];
   const checked: string[] = [];
@@ -72,6 +86,11 @@ export async function diagnoseSignIn(
       configured: provider !== null,
       kind: provider ? classifyIssuer(provider.issuer).kind : null,
       issuer: provider ? provider.issuer : null,
+    },
+    magicLink: {
+      enabled: linksOn,
+      suppressed,
+      lastRequest,
     },
     user: membership
       ? { id: membership.userId, status: membership.status }

@@ -168,3 +168,64 @@ test("shutdown finishes queued mail, row and all, before the database closes", a
     await owner.close();
   }
 });
+
+test("the running server's POST /login reaches the real queue and the mail goes out", async () => {
+  const environment = testEnvironment({ port: 0 });
+  const owner = createDatabase(environment);
+  const login = await createRuntimeLogin(owner.db, environment);
+  const organizationId = createId();
+  const domain = `served-${organizationId}.example.com`;
+  await owner.db.insert(organizations).values({
+    id: organizationId,
+    slug: `served-${organizationId}`,
+    name: "Served",
+  });
+  await owner.db.insert(organizationDomains).values({
+    id: createId(),
+    organizationId,
+    domain,
+  });
+  const email = `person@${domain}`;
+  const userId = createId();
+  await owner.db.insert(users).values({
+    id: userId,
+    name: "Person",
+    email,
+    emailVerified: true,
+    status: "active",
+  });
+  await owner.db
+    .insert(members)
+    .values({ id: createId(), organizationId, userId });
+  const memory = createMemoryTransport();
+  const { log } = console;
+  console.log = () => {};
+  try {
+    const runtime = await startRuntime(login.environment, {
+      allowTestEnvironment: true,
+      seed: async () => seedResult,
+      mailTransport: () => memory,
+    });
+    const response = await fetch(
+      `http://127.0.0.1:${runtime.server.port}/login`,
+      {
+        method: "POST",
+        headers: {
+          origin: environment.betterAuthUrl,
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ email }),
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("Check your email");
+    expect(response.headers.getSetCookie()[0]).toContain("answerable-sign-in=");
+    // Drains what the response left behind, as a shutdown does.
+    await runtime.shutdown();
+    expect(memory.sent.map(({ to }) => to)).toEqual([email]);
+  } finally {
+    console.log = log;
+    await login.drop();
+    await owner.close();
+  }
+});

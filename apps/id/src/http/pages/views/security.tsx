@@ -2,9 +2,11 @@ import { Button } from "../ui/button.tsx";
 import { Input } from "../ui/input.tsx";
 export function Security({
   email,
+  method,
   message,
 }: {
   email: string | null;
+  method: "directory" | "magic_link" | null;
   message: string | null;
 }) {
   return (
@@ -12,7 +14,16 @@ export function Security({
       <h1 id="security-heading" class="text-xl/6 font-bold">
         Account security
       </h1>
-      {email ? (
+      {email && method === "magic_link" ? (
+        <>
+          <p class="mt-2 text-sm/6">Signed in as {email}</p>
+          <p class="text-muted-foreground mt-2 text-sm/6">
+            You signed in with a link sent to your email. This sign-in lasts up
+            to 24 hours. Security changes need a sign-in through your
+            organisation&apos;s directory, so there is nothing to change here.
+          </p>
+        </>
+      ) : email ? (
         <>
           <p class="mt-2 text-sm/6">Signed in as {email}</p>
           <h2 class="mt-8 text-base/6 font-semibold">Verify your sign-in</h2>

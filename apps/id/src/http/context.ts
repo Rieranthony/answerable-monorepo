@@ -2,6 +2,7 @@ import type { Auth } from "../auth.ts";
 import type { Database } from "../db/client.ts";
 
 import type { Environment } from "../env.ts";
+import type { MagicLinkRequests } from "../services/magic-link-requests.ts";
 import type { Principal, BearerClaims } from "./principal.ts";
 
 export type AppEnvironment = {
@@ -11,6 +12,7 @@ export type AppEnvironment = {
     requestId: string;
     clientIp: string | null;
     environment: Environment;
+    magicLinks?: Pick<MagicLinkRequests, "request">;
     principal?: Principal;
     bearerClaims?: BearerClaims;
     operationId?: string;

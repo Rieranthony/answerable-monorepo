@@ -2,6 +2,7 @@ import type { Message, Transport } from "@answerable/emails";
 import { createMemoryTransport } from "@answerable/emails/testing";
 import { eq, inArray, like, sql } from "drizzle-orm";
 
+import { createApp } from "../app.ts";
 import { createAuth } from "../auth.ts";
 import { bootstrap, systemActor } from "../bootstrap.ts";
 import {
@@ -162,6 +163,14 @@ export async function openMagicLinkFixture() {
     });
 
   const requests = instance();
+  /** The real app on the same login: `POST /login` queues on `requests` and sends through
+   * the same memory transport. */
+  const app = createApp({
+    auth,
+    db: runtime.db,
+    environment,
+    magicLinks: requests,
+  });
   const ask = (
     address: string,
     overrides: {
@@ -197,6 +206,8 @@ export async function openMagicLinkFixture() {
     tokens,
     magicLinkVerifications,
     instance,
+    requests,
+    app,
     ask,
     mailsTo: (email: string) =>
       transport.sent.filter((message) => message.to === email),

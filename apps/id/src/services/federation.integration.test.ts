@@ -526,7 +526,7 @@ describe("integration: federated sign-in", () => {
   test("origin resolution rejects missing providers before identity writes", async () => {
     const auth = createAuth(connection.db, testEnvironment());
     const adapter = authDatabaseAdapter(connection.db)(auth.options);
-    const origin = createSsoOriginBoundary();
+    const origin = createSsoOriginBoundary(connection.db);
     const input: Parameters<typeof origin.resolveUser>[0] = {
       protocol: "oidc",
       providerId: "missing",

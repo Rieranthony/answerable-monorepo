@@ -36,11 +36,18 @@ export type UserPrincipal = Readonly<{
   organizationAuthorizationVersion: number
   /**
    * When the person last signed in at their organisation's directory, in seconds since the epoch: the token's `upstream_auth_time`, or `null`
-   * when the directory reported no time. ID takes it from the browser session when it creates the authorisation (`grantId`), and every token of
-   * that authorisation, refreshed ones included, carries the same value, so only a new authorisation after a new directory sign-in makes it recent.
+   * when no directory reported a time, either because the directory gave none or because the person signed in by emailed link
+   * (`authenticationMethod`). ID takes it from the browser session when it creates the authorisation (`grantId`), and every token of that
+   * authorisation, refreshed ones included, carries the same value, so only a new authorisation after a new directory sign-in makes it recent.
    * A token without the claim gives `null`.
    */
   upstreamAuthTime: number | null
+  /**
+   * How the person proved who they are when this authorisation was made: `directory`, a sign-in at their organisation's directory, with its MFA and
+   * conditional access, or `magic_link`, a link or code from an email, which shows only that they could read that mailbox. It is the token's
+   * `authentication_method`, kept across refreshes. A token without the claim, from an ID older than this field, gives `null`, so no absence reads as a directory sign-in.
+   */
+  authenticationMethod: "directory" | "magic_link" | null
 }>
 
 /**
@@ -81,7 +88,7 @@ const shared = z.object({
   cnf: z.never().optional(),
 })
 const claimsOf = {
-  user: shared.extend({ subject_type: z.literal("user"), sub: z.uuid(), membership_id: z.uuid(), grant_id: z.uuid(), upstream_auth_time: z.number().int().nonnegative().nullish() }),
+  user: shared.extend({ subject_type: z.literal("user"), sub: z.uuid(), membership_id: z.uuid(), grant_id: z.uuid(), upstream_auth_time: z.number().int().nonnegative().nullish(), authentication_method: z.enum(["directory", "magic_link"]).nullish() }),
   // A machine client is its own subject.
   client: shared.extend({ subject_type: z.literal("client"), sub: z.string().min(1), authorization_version: version }).refine(claims => claims.sub === claims.client_id),
 }
@@ -149,7 +156,7 @@ export function createIdVerifier<Kind extends "user" | "client" = "user">(config
         organizationAuthorizationVersion: claims.organization_authorization_version,
       }
       return Object.freeze(claims.subject_type === "user"
-        ? { userId: claims.sub, membershipId: claims.membership_id, grantId: claims.grant_id, ...common, upstreamAuthTime: claims.upstream_auth_time ?? null }
+        ? { userId: claims.sub, membershipId: claims.membership_id, grantId: claims.grant_id, ...common, upstreamAuthTime: claims.upstream_auth_time ?? null, authenticationMethod: claims.authentication_method ?? null }
         : { authorizationVersion: claims.authorization_version, ...common }) as Kind extends "client" ? MachinePrincipal : UserPrincipal
     } catch {
       throw new AuthenticationError()

@@ -15,13 +15,15 @@ import {
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
 import { uniqueSorted } from "../lib/scopes.ts";
+import { magicLinkGrantLifetimeSeconds } from "./magic-link.ts";
 import { lockResourceGrantTargets } from "./lock-resource-grant-policy.ts";
 import { rethrowGrantError } from "./grant-error.ts";
 import { tenantAuthentication } from "./tenant-authentication.ts";
 
 /** Native callback supplies authenticated identity/session and validated request scopes.
  * This validates stored provenance; knowing these IDs is not authentication.
- * Lifetime comes from server configuration, never an OAuth request.
+ * Lifetime comes from server configuration, never an OAuth request, and a magic link's grant
+ * lasts what that origin earns, whatever the caller's configured lifetime for a directory's.
  */
 export async function createResourceGrant(
   tx: Executor,
@@ -76,6 +78,10 @@ export async function createResourceGrant(
       });
       if (!authentication || authentication.memberId !== input.memberId)
         throw new APIError("FORBIDDEN", { error: "access_denied" });
+      const lifetime =
+        authentication.authenticationProviderKind === "magic_link"
+          ? magicLinkGrantLifetimeSeconds
+          : lifetimeSeconds;
       const [row] = await tx
         .insert(grantContexts)
         .select(
@@ -100,7 +106,7 @@ export async function createResourceGrant(
               requestedScopes: scopeArray.as("requested_scopes"),
               createdAt: sql<Date>`statement_timestamp()`.as("created_at"),
               expiresAt:
-                sql<Date>`statement_timestamp() + (${lifetimeSeconds} * interval '1 second')`.as(
+                sql<Date>`statement_timestamp() + (${lifetime} * interval '1 second')`.as(
                   "expires_at",
                 ),
               revokedAt: sql<null>`null`.as("revoked_at"),

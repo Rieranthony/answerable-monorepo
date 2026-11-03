@@ -69,6 +69,11 @@ export function createUserTokenBoundary() {
         decision.grant.upstreamAuthTime === null
           ? null
           : Math.floor(decision.grant.upstreamAuthTime.getTime() / 1000),
+      // How this authorisation's sign-in was proved. Not `amr`, which the provider strips.
+      authentication_method:
+        decision.grant.authenticationProviderKind === "magic_link"
+          ? "magic_link"
+          : "directory",
     };
   }
   async function readDecision(

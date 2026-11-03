@@ -135,11 +135,13 @@ async function exceededLimit(
 
 /** Serialises the limit check and the insert for one address, across replicas. The
  * transaction's end releases it, and no transaction stays open across a send. */
-function lockMagicLinkAddress(tx: Executor, email: string) {
+export function lockMagicLinkAddress(tx: Executor, email: string) {
   return tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${`answerable:magic-link:${email}`}, 0))`,
   );
 }
+
+export type MagicLinkRequests = ReturnType<typeof createMagicLinkRequests>;
 
 /**
  * Turn one request into an email, or into nothing.

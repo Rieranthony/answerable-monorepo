@@ -75,7 +75,7 @@ Also, `runMigrations` must accept a database ahead of its image, or a tag back f
 - **Magic links only:** the "check your email" page.
 - **Both:** a page with "Continue with Microsoft" and "Email me a sign-in link". There is no automatic redirect, because a person blocked by IT must be able to reach the link. After a failed directory sign-in that returns to ID, the error page offers the link too.
 
-Asking for a link always answers the same "check your email" page whatever the address's state. It keeps an unexpired browser cookie, `__Host-answerable-sign-in` (`SameSite=Lax`), or sets a new random one for 10 minutes. Address-dependent work runs after the response, in a bounded in-process queue that drains on SIGTERM. An overflow is dropped and counted.
+Asking for a link always answers the same "check your email" page whatever the address's state, apart from echoing the address. It keeps the value of a well-formed browser cookie, `__Host-answerable-sign-in` (`SameSite=Lax`), and renews its 10 minutes, or sets a new random one, so a reload never orphans a flow and the cookie cannot die before the newest link. Address-dependent work runs after the response, in a bounded in-process queue that drains on SIGTERM. An overflow is dropped and counted.
 
 The job:
 
@@ -94,7 +94,7 @@ Requests write log lines, not audit rows. Confirms and refusals at confirm write
 - **Same browser:** the page names the address and shows Continue. `POST /magic-link` signs in.
 - **Another browser, device, scanner or forwarded link:** the page signs nobody in and says to enter the code where sign-in started. A form-filling scanner has no cookie, so it cannot burn the link.
 
-`POST /magic-link/code` is taken on the page where sign-in started. It needs the cookie. Three wrong codes end that request, the count commits outside the sign-in transaction, and a per-client failure budget applies. Using the link or the code ends both.
+`POST /magic-link/code` is taken on the page where sign-in started. It needs the cookie. Three wrong codes end that request, the count commits outside the sign-in transaction, and failure budgets apply per client and per firm, counted from `attempts` on the last hour's rows. Using the link or the code ends both, and so does a refusal at confirm, so one request writes one audit row.
 
 ## Confirm
 
@@ -119,9 +119,10 @@ Better Auth's `emailOTP` plugin is not used. It keys one code per address and ha
 
 - A magic-link session has no admin authority, even with an entitlement: one condition in `effectiveGrants`. The same person's directory session keeps theirs (measured: 200 against 404).
 - It cannot use `POST /auth/sso/link` or `/reauthenticate`; both refuse by kind.
-- Tokens and UserInfo carry `authentication_method: "magic_link"`, and `packages/auth` passes it on.
-- Lifetimes (decision D3): a session capped at 24 hours from creation, through a session update hook, because Better Auth's refresh extends it otherwise (measured: 24 hours became 168 after one GET), and a 7-day grant for this origin.
+- Tokens and UserInfo carry `authentication_method`: `magic_link` for this origin and `directory` for a directory's, so no absence reads as a directory sign-in. `packages/auth` passes it on, and a token with no claim gives `null`.
+- Lifetimes (decision D3): a session capped at 24 hours from creation, and a 7-day grant for this origin. Better Auth's refresh extends a session otherwise (measured: 24 hours became 168 after one GET), and a session below its week looks due for a refresh on every read. Each refresh sets the session cookie, which the OAuth provider's after-hook takes for a new sign-in, so the flow breaks (measured: continue answered the selection page, consent gave no code). So refreshes are skipped for this origin through `setShouldSkipSessionRefresh`, in a before hook, and a session update hook holds the cap if one happens all the same.
 - Pages treat a magic-link session with a stale revision as signed out. `/security` hides directory actions. `diagnoseSignIn` understands this origin.
+- On the selection page, choosing a firm whose only way in is a link, with no session that counts there, shows the address form posting to `/login?<query>` instead of starting a directory sign-in. A stale session after the firm went off then on reaches a code this way. A person with another firm's directory account still gets no mail, by the admission rule above, and another person's mail signs them in but not into this flow, which belongs to whoever opened it: they start again from the application.
 
 ## Stopping someone (decisions D5 and D6)
 

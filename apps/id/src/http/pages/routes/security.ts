@@ -4,6 +4,7 @@ import type { AppEnvironment } from "../../context.ts";
 import {
   applyCookies,
   callAuth,
+  readPageSession,
   serviceOrigin,
   type PageContext,
 } from "../gateway.ts";
@@ -11,22 +12,20 @@ import { describeError } from "../error-copy.ts";
 import { Security } from "../views/security.tsx";
 
 async function renderSecurity(context: PageContext, message: string | null) {
-  let email: string | null = null;
+  let session: Awaited<ReturnType<typeof readPageSession>> = null;
   try {
-    const result = await callAuth<{ user?: { email: string } }>(context, {
-      method: "GET",
-      path: "/auth/get-session",
-      origin: serviceOrigin(context),
-    });
-    applyCookies(context, result.setCookies);
-    if (!result.ok) throw new Error("Session unavailable");
-    email = result.data?.user?.email ?? null;
+    session = await readPageSession(context);
   } catch {
     message = "We couldn't check your sign-in. Please try again.";
   }
-  return context.render(jsx(Security, { email, message }), {
-    title: "Account security",
-  });
+  return context.render(
+    jsx(Security, {
+      email: session?.email ?? null,
+      method: session?.method ?? null,
+      message,
+    }),
+    { title: "Account security" },
+  );
 }
 export function registerSecurity(app: Hono<AppEnvironment>) {
   app.get("/security", (context) => {

@@ -69,8 +69,6 @@ const parameters = [
 const success = {
   200: { description: "Organisation", content: json(organizationSchema) },
 };
-/** Removed once a person can sign in by link. */
-const magicLinkNotYet = "Sign-in by emailed link: Not yet.";
 const magicLinkAnyTime =
   "Works whether or not a directory is connected and on a disabled organisation.";
 
@@ -197,7 +195,7 @@ export const routes = {
     path: "/organizations/:organizationId/magic-link/enable",
     operationId: "enableMagicLink",
     summary: "Enable magic links for an organisation",
-    description: `Store that an organisation may use magic links and return the updated organisation. ${magicLinkNotYet} ${magicLinkAnyTime} Prefer disableMagicLink for the opposite transition; platform_magic_link means this is the platform organisation, which can never use magic links, not_found means the organisation is missing and already enabled state returns a noop.`,
+    description: `Store that an organisation may use magic links and return the updated organisation. ${magicLinkAnyTime} Prefer disableMagicLink for the opposite transition; platform_magic_link means this is the platform organisation, which can never use magic links, not_found means the organisation is missing and already enabled state returns a noop.`,
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
@@ -216,7 +214,7 @@ export const routes = {
     path: "/organizations/:organizationId/magic-link/disable",
     operationId: "disableMagicLink",
     summary: "Disable magic links for an organisation",
-    description: `Store that an organisation may not use magic links, end any session and grant that came from its magic-link provider row and return the updated organisation. Directory sign-ins, sessions and grants carry on, and enabling again revives neither. A resource access token already issued lasts until it expires. ${magicLinkNotYet} ${magicLinkAnyTime} Prefer enableMagicLink for the opposite transition; not_found means the organisation is missing and already disabled state returns a noop.`,
+    description: `Store that an organisation may not use magic links, end any session and grant that came from its magic-link provider row and return the updated organisation. Directory sign-ins, sessions and grants carry on, and enabling again revives neither. A resource access token already issued lasts until it expires. ${magicLinkAnyTime} Prefer enableMagicLink for the opposite transition; not_found means the organisation is missing and already disabled state returns a noop.`,
     tag: "Organizations",
     platformScope: "platform:write",
     kind: "write",
