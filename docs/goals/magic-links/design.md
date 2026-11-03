@@ -79,11 +79,11 @@ Asking for a link always answers the same "check your email" page whatever the a
 
 The job:
 
-1. Checks admission.
-2. Takes limits, in Postgres so they hold across replicas: per address and client 1 per 60 s and 5 per hour; per address 50 per day; per organisation a cap that drops. Taken after a send, so a failed send costs nothing.
-3. Calls Better Auth's `auth.api.signInMagicLink` (`disableSignUp`, custom hasher, 10-minute `expiresIn`). The plugin stores the hashed token.
-4. Writes a `magic_link_requests` row: organisation, address, token hash, browser-cookie hash (indexed), HMAC of the code, attempts, pending OAuth query, expiry, send status and Postmark error code.
-5. Sends one email through Postmark with the link and an 8-digit code.
+1. Checks admission. An account from another firm's directory or magic-link row, or one no provider row names, makes a stranger.
+2. In one transaction, under an advisory lock on the address, takes limits in Postgres so they hold across replicas: per address and client 1 per 60 s and 5 per hour; per address 50 per day; per organisation 5,000 per hour.
+3. In the same transaction, calls Better Auth's `auth.api.signInMagicLink` (`disableSignUp`, custom hasher, 10-minute `expiresIn`), which stores the hashed token, and writes a `magic_link_requests` row marked `sending`: organisation, the provider row and its revision, address, token hash, browser-cookie hash (indexed), an HMAC of the client address, HMAC of the code, attempts, pending OAuth query and expiry. Only `sent` can sign in, so a paused Postmark stops guesses as well as mail.
+4. Sends one email through Postmark with the link and an 8-digit code, outside any transaction.
+5. Marks the row `sent`, or `failed` with Postmark's code and status. A failed row loses its token in the same commit and counts against no limit.
 
 Requests write log lines, not audit rows. Confirms and refusals at confirm write audit rows. A sweep removes rows after 7 days, and diagnosis reads them, so staff can see a suppressed address (Postmark 406).
 

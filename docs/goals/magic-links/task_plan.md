@@ -28,7 +28,7 @@ An organisation can sign its people in with an emailed link, sent through Postma
 6. [complete] Throwaway end-to-end prototype of the sign-in core, in a worktree. Rerun by the coordinator: 1,543 pass, 0 fail.
 7. [complete] Independent attack on the design and prototype. Design rewritten: `design.md`.
 8. [complete] Report with decisions, published privately. The owner decided D1 to D6: `decisions.md`.
-9. [in_progress] The steps below. W0, W1, W2 and W3 landed on main on 3 November 2026.
+9. [in_progress] The steps below. W0, W1, W2, W3 and W4 landed on main on 3 November 2026.
 
 ## Build order, after approval
 
