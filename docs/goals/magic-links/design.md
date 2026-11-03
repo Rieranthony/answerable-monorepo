@@ -43,6 +43,7 @@ A magic-link origin is a row in `sso_providers` with `kind = 'magic_link'`. Dire
 - One live row per organisation and kind (partial unique index). A database trigger creates the row with the organisation.
 - `kind` is immutable. A live `oidc` row has config, and a `magic_link` row has none (check constraint).
 - `enabled` is a column on this row. Any change to the row bumps `revision` through the existing guard, so the setting and the revision cannot disagree.
+- `admission` is the exception, in the guard's ignored columns. It decides who may ask for a link, and narrowing it leaves existing members as members, so changing it ends nobody's session.
 - Issuer is the constant `urn:answerable:magic-link`. `provider_id` is `magic-link:<organisation id>`, and a colon can never collide with a slug.
 - Native SSO never sees these rows: the adapter's `visible` filter adds `kind = 'oidc'`. Direct reads that mean "the directory" filter too: `providerQuery`, `readSsoIssuer`, `readSsoEndpoints`, `deleteSsoProvider`, the link target in `verified-sso.ts`. Origin checks do not filter.
 
@@ -100,7 +101,7 @@ Requests write log lines, not audit rows. Confirms and refusals at confirm write
 An internal endpoint, not on the public allowlist, reached only through the pages. One transaction, lock order as the SSO callback, plus `FOR UPDATE` on the request row and an advisory lock on the address:
 
 1. **Compare the browser cookie's hash with the row, in this transaction.** A token alone never signs in.
-2. Re-check admission against current state.
+2. Re-check admission against current state, holding the provider row `FOR SHARE` and refusing when it is off. A boundary compares the revision only, so this is what stops a sign-in racing a disable: either the disable commits first and this refuses, or the session names the old revision and the disable ends it. The session trigger also refuses an origin on an off row.
 3. Establish the origin through `createSsoOriginBoundary`, with `upstream_auth_time` null. That column means a directory sign-in, and null keeps sensitive admin commands and `POST /auth/sso/link` closed.
 4. Consume by identifier and create the session and cookie through Better Auth (`consumeVerificationValue`, `createSession`, `setSessionCookie`).
 5. Resume the pending authorisation through the provider's after-hook with `oauth_query`, so `prompt=login` and `max_age=0` do not loop.
