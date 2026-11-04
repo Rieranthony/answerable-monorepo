@@ -117,6 +117,7 @@ export async function diagnoseSignIn(
     },
     magicLink: {
       enabled: setting.enabled,
+      admission: setting.admission,
       suppressed,
       lastRequest,
       directoryConnection,

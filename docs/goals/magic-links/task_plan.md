@@ -50,9 +50,8 @@ The coordinator reviews every change and runs the gates. The owner pushes tags.
 
 **No staging release yet (owner, 3 November 2026).** Work lands on `main` and nothing is tagged. W0 is not deployed.
 
-- **First tag:** `CLOUDFLARE_API_TOKEN` needs Zone > Zone WAF > Edit on the zone first, or Terraform fails at the rate limit.
-- **Order:** when releases start, tag W1's commit first (`d838e071`): it carries W0 and no migration, so tag back works from then on. Then W2's commit, and let it finish. Then W3's. The image before W2 breaks on a magic-link row, so one tag across W2 and W3 would break directory sign-in.
-- **W8:** `POSTMARK_SERVER_TOKEN` must be in the GitHub environment before the first tag that requires it.
+- **Release (owner, 4 November 2026):** one tag on the newest commit of `main`. Staging has no users, the migrations are squashed, and `staging/fourth`'s image was measured staying healthy while they applied. A fault is fixed forward.
+- **W8:** `POSTMARK_SERVER_TOKEN` must be in the GitHub environment before that tag.
 - **W10:** needs a release to staging, so it waits for the owner.
 
 ## Constraints

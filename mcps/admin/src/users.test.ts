@@ -164,7 +164,7 @@ test("users_retireemail is an owner's terminal write: it refuses a person who is
     ],
     effects: [],
     warnings: [
-      "Permanent: nothing gives the address back to this person, and the address then finds nobody, so no tool can name them.",
+      "Permanent: nothing gives the address back to this person, and that address then finds nobody.",
       "The next holder of the address is a new person with a new sub: nothing of this person's carries over to them.",
       noPrecondition("retiring an address"),
     ],

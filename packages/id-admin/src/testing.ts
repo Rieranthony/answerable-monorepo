@@ -292,7 +292,7 @@ export function createFakeId({
       routing: { domain, routesTo: routed ? { organizationId: organisation.id, slug: organisation.slug } : null, matchesThisOrganization: routed },
       organization: { id: organisation.id, slug: organisation.slug, status: organisation.status },
       provider: { configured: provider !== undefined, kind: provider ? ssoTest(provider).kind : null, issuer: provider?.issuer ?? null },
-      magicLink: { enabled: setting.enabled, suppressed, dailyLimit: magicLinkDailyLimit, ...held },
+      magicLink: { enabled: setting.enabled, admission: setting.admission, suppressed, dailyLimit: magicLinkDailyLimit, ...held },
       user: member ? { id: member.userId, status: member.status } : null,
       membership: member ? { memberId: member.id, effective: member.effective, validFrom: member.validFrom, validUntil: member.validUntil } : null,
       verdict: {

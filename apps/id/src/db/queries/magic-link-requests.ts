@@ -48,7 +48,10 @@ export async function readMagicLinkSetting(
         isNull(ssoProviders.deletedAt),
       ),
     );
-  return { enabled: row?.enabled ?? false, admission: row?.admission };
+  return {
+    enabled: row?.enabled ?? false,
+    admission: row?.admission ?? ("listed" as const),
+  };
 }
 
 /** The rows the day's limit counts for one address: what did not fail, in the last day. */

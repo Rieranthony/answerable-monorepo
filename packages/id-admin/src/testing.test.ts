@@ -585,7 +585,7 @@ test("a sign-in diagnosis answers from one organisation's rows and the mail a te
     routing: { domain: "newco.example", routesTo: { organizationId: newco.id, slug: "newco" }, matchesThisOrganization: true },
     organization: { id: newco.id, slug: "newco", status: "active" },
     provider: { configured: false, kind: null, issuer: null },
-    magicLink: { enabled: true, suppressed: false, lastRequest: null, directoryConnection: null, requestsInLastDay: 0, dailyLimit: 50 },
+    magicLink: { enabled: true, admission: "listed", suppressed: false, lastRequest: null, directoryConnection: null, requestsInLastDay: 0, dailyLimit: 50 },
     user: { id: ada.userId, status: "active" },
     membership: { memberId: ada.id, effective: true, validFrom: null, validUntil: null },
     verdict: {

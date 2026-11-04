@@ -4,12 +4,12 @@ description: "How a person signs in with a link and a code sent to their work em
 ---
 
 ```bash
-curl -X POST "https://id.answerable.org/api/admin/v1/organizations/$ORG/magic-link/disable" \
+curl -X POST "https://id.answerable.org/api/admin/v1/organizations/$ORG/magic-link/enable" \
   -H "Idempotency-Key: $MAGIC_LINK_KEY" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-That turns sign-in by email link off for one organisation. A person types their work email and Answerable ID mails them a link and an 8-digit code, through Postmark. It is **on by default** for every organisation except the platform organisation, which can never use it. It is not a replacement for a company directory: a firm can have links, a directory, or both, and staff set each separately.
+That turns sign-in by email link on for one organisation. A person types their work email and Answerable ID mails them a link and an 8-digit code, through Postmark. It is **off until staff turn it on**, and the platform organisation can never use it. It is not a replacement for a company directory: a firm can have links, a directory, or both, and staff set each separately.
 
 This page is for Answerable staff, who turn it on and off and stop people, and for developers who want to know what a sign-in by email means. [Sign in](/docs/id/sign-in) covers the directory side.
 
@@ -17,7 +17,7 @@ This page is for Answerable staff, who turn it on and off and stop people, and f
 
 1. They type their work email at `https://id.answerable.org/login`, or are sent there by an application.
 2. A firm with a directory as well asks which way: **Continue with Microsoft** (or Google, or company sign-in) or **Email me a sign-in link**. Nothing redirects by itself, so a person whose IT team blocks the directory can still reach the link.
-3. **Check your email** appears. It is the same page for every address at the firm's domain, whatever becomes of the request.
+3. **Check your email** appears. It is the same page for every address, whatever becomes of the request. It says to check the junk or quarantine folder, to ask again after a minute, and which address an IT team should allow.
 4. In the browser that asked, the mailed link shows **Continue as** the address, and one click signs in.
 5. In any other browser, on a phone, in a forwarded mail or in a mail scanner, the link says **This link can't sign you in here**. The person types the 8-digit code on the page where they asked.
 
@@ -26,7 +26,7 @@ A link opened by a mail gateway (`GET` or `HEAD`) consumes nothing, and a scanne
 ## Turn it on and off
 
 ```bash
-curl -X POST "https://id.answerable.org/api/admin/v1/organizations/$ORG/magic-link/enable" \
+curl -X POST "https://id.answerable.org/api/admin/v1/organizations/$ORG/magic-link/disable" \
   -H "Idempotency-Key: $MAGIC_LINK_KEY" \
   -H "Authorization: Bearer $TOKEN"
 ```
@@ -38,7 +38,7 @@ curl -X POST "https://id.answerable.org/api/admin/v1/organizations/$ORG/magic-li
 | On | None | Sign in by link |
 | On | Connected | Choose: the link or the directory |
 | Off | Connected | Use the directory only. This is how a firm **requires** its directory |
-| Off | None | Nobody can sign in |
+| Off | None | Nobody can sign in. A new organisation starts here |
 
 **Neither replaces the other.** Connecting, changing or removing a directory never changes the links setting, and turning links off never touches a directory. Staff do not replace a firm's links with its directory when the directory arrives: the directory is an addition, because a firm's IT team may block or delay it.
 
@@ -57,6 +57,8 @@ curl -X POST "https://id.answerable.org/api/admin/v1/organizations/$ORG/magic-li
 
 **List people before they sign in.** Up to 1,000 addresses a call. Each address has its own answer, and one refusal does not stop the rest. Importing sends no mail, and it works with links off and with a directory connected.
 
+**Do not import at a firm with a directory**, as a rule. Its people become members at their first directory sign-in. A person imported first must prove their mailbox with a code at that sign-in, once.
+
 ```bash
 curl -X POST "https://id.answerable.org/api/admin/v1/organizations/$ORG/members/import" \
   -H "Idempotency-Key: $IMPORT_KEY" \
@@ -65,7 +67,7 @@ curl -X POST "https://id.answerable.org/api/admin/v1/organizations/$ORG/members/
   -d '{"addresses":["ada@contoso.com","grace@contoso.com"]}'
 ```
 
-[importMembers](/docs/id/admin-api/members/importMembers) needs `platform:users`. [previewMemberImport](/docs/id/admin-api/members/previewMemberImport), at `POST …/members/import/preview`, answers the same without changing anything. An address is refused as `invalid`, `outside_domains`, `public_mail`, `disabled`, `removed` (only `members_reinstate` brings a removed member back) or `other_firm`.
+[importMembers](/docs/id/admin-api/members/importMembers) needs `platform:users`. It only adds, and running it again is safe. `members_remove` undoes one. An address is refused as `invalid`, `outside_domains`, `disabled`, `removed` (only `members_reinstate` brings a removed member back) or `other_firm`.
 
 **Open a firm to its whole domain** only when its domains are proved. Prove each one with a DNS TXT record, then ask ID to look for it:
 
@@ -83,12 +85,10 @@ curl -X PATCH "https://id.answerable.org/api/admin/v1/organizations/$ORG/magic-l
 
 The record is a TXT record at `_answerable-challenge.<domain>` with the value `answerable-domain-verification=<token>`. [Adding the domain](/docs/id/admin-api/domains/createOrganizationDomain) and `organisations_get` show the exact name and value as `verificationRecord`. [verifyOrganizationDomain](/docs/id/admin-api/domains/verifyOrganizationDomain) looks once, for at most 5 seconds. A value split into several strings counts. On a domain already proved, a record that is gone clears the proof and writes `domain.verification_lost`, so the domain fails closed.
 
-- **Every active domain must be proved**, and none may be public mail, before `admission` can be `domain`. A domain added later admits nobody new until it is proved.
+- **Every active domain must be proved** before `admission` can be `domain`, so a free mail provider's domain can never be opened: nobody outside it can publish that record. A domain added later admits nobody new until it is proved.
 - **Domain mode is an owner's choice** in the admin MCP, because a new person gets the firm's organisation-wide access at once. A shared mailbox at the domain becomes one person, whoever reads it.
 - **An alias of a removed person is another address** that ID cannot tell is the same person. Removing a member stops that one address. This is why domain mode is off by default.
 - **Narrowing to `listed`** ends no session and no grant, and existing members stay members.
-
-**The public mail list.** Anyone can get an address at a free mail provider, so no firm can hold one. ID keeps a list generated from the maintained `free-email-domains` package. It refuses to add or enable such a domain (`public_mail_domain`), to import such an address (`public_mail`), and to admit one. The match is exact, so a subdomain of a listed domain is not listed. A false positive has no override: [Not yet](#not-yet).
 
 ## What a sign-in by email is worth
 
@@ -129,7 +129,7 @@ ID decides who signs in. A directory is only a provider to it, so staff stop any
 | Cut someone off everywhere | `users_disable` | `POST /users/{userId}/disable` | Every session, grant and stored token ends, and no sign-in works anywhere. Undo: `users_enable`; sessions are not restored |
 | Give their address to someone else | `users_retireemail`, after disabling | `POST /users/{userId}/retire-email` | The address is free. The next holder is a new user with a new `sub`. Terminal |
 
-**What a removed or disabled person sees.** The sign-in page stays uniform, so nobody can use it to check whether an address was removed. A new request sends no link: it sends a short mail, "Your access was removed", within the same limits. An old link or code shows **Your access was removed**.
+**What a removed or disabled person sees.** The sign-in page stays uniform, so nobody can use it to check whether an address was removed. A new request sends no mail. An old link or code shows **Your access was removed**.
 
 **An address stays blocked until staff retire it.** A disabled person keeps their address. Listing it for someone else is refused as `disabled`, and a directory identity that asserts it gets `email_conflict`, until `users_retireemail`.
 
@@ -143,12 +143,10 @@ A **client** is the address ID sees for the request: `cf-connecting-ip`. Limits 
 | --- | --- |
 | Mail to one address from one client | 1 a minute, 5 an hour |
 | Mail to one address, from anyone | 50 a day |
-| Mail for one organisation | 5,000 an hour |
 | Mail to an address no user holds (domain mode) | 100 an hour per client, 500 a day per organisation |
-| A link and its code | 10 minutes |
-| Tries at a code, per request | 3 |
-| Wrong codes | 30 an hour per client, 1,000 an hour per organisation |
-| Posts to the sign-in pages | 60 every 10 seconds per client and process |
+| A link and its code | 30 minutes |
+| Tries at a code, per request | 3. The third wrong code ends the request, its link included |
+| Posts to `/login` | 300 every 10 seconds per client and process |
 | Mail waiting to send | 5 at a time, 500 waiting, 22 seconds to finish on shutdown |
 | Addresses per import | 1,000 |
 | A domain check | 5 seconds |
@@ -156,7 +154,9 @@ A **client** is the address ID sees for the request: `cf-connecting-ip`. Limits 
 
 - **Beyond a limit the person sees the usual page and gets no mail.** Nothing tells them why, and ID logs `limited` with the limit's name.
 - **New addresses.** Beyond the new-address budgets a new person gets no mail, so a firm-wide start uses `members_import` first: a listed person is not a new address.
-- **A spent wrong-code budget also blocks a right code.** The link still works.
+- **A full queue says so.** Over 500 waiting, the page answers `503` with **We can't send email just now**. That depends on no address.
+- **The daily limit has no reset.** A person at 50 mails a day gets no mail until the oldest passes a day. [`signin_diagnose`](/docs/admin#why-did-someone-get-no-mail) shows the count.
+- **A link opened after the application's request ended** still signs in. The page then says to go back to the application and start again from there.
 - **The one-minute limit is shared** with the mailbox code of a directory connection. A person who asks for a link and picks the directory within the minute is told no code is waiting, and to wait.
 
 ## Errors
@@ -165,8 +165,7 @@ A **client** is the address ID sees for the request: `cf-connecting-ip`. Limits 
 
 | Code | Meaning | What to do |
 | --- | --- | --- |
-| `public_mail_domain` (409) | The domain is a public mail provider. Adding or enabling it is refused | Use the firm's own domain |
-| `domain_not_verified` (409) | `admission: domain` needs every active domain proved, none public mail, and at least one. `details` names them | Verify or remove each domain named, then ask again |
+| `domain_not_verified` (409) | `admission: domain` needs every active domain proved, and at least one. `details` names them | Verify or remove each domain named, then ask again |
 | `platform_magic_link` (409) | The platform organisation can never use links | Staff sign in through its directory |
 | `domain_verification_failed` (409) | The TXT record was not found. `expected` names it | Publish the record, wait for DNS, ask again. On a proved domain this also clears the proof |
 
@@ -175,12 +174,13 @@ A **client** is the address ID sees for the request: `cf-connecting-ip`. Limits 
 | Page | Code in ID | Meaning | What to do |
 | --- | --- | --- | --- |
 | This link can't sign you in here | `magic_link_elsewhere` | The link was opened in another browser, was used, expired, belongs to a firm whose links went off or back on, or its person is no longer admitted | Type the code where they asked, or ask for a new link |
-| That code didn't work | `magic_link_code_refused` | A wrong code, three tries spent, ten minutes passed, a spent budget, or no request from this browser | Check the mail and try again, or ask for a new link |
+| That code didn't work | `magic_link_code_refused` | A wrong code, three tries spent, 30 minutes passed, or no request from this browser | Check the mail and try again, or ask for a new link |
 | Your access was removed | `magic_link_access_removed` | A link or code for a removed member or disabled person | Ask the firm's administrator. Staff reinstate or enable them |
 | That code didn't work | `connect_directory_code_refused` | The code that connects a directory is wrong, used or spent | Check the mail and try again, or sign in with the company account again |
 | Start again | `connect_directory_unavailable` | No code is waiting in this browser | Sign in with the company account again. If they just did, wait a minute |
 | We couldn't connect your company sign-in | `connect_directory_refused` | The person, the firm or its directory changed since the mail | Start again, or ask the administrator |
-| Too many sign-in attempts | `sign_in_rate_limited` | Over 60 posts in 10 seconds from one client to one process | Wait a few seconds, then try again |
+| Too many sign-in attempts | `sign_in_rate_limited` | Over 300 posts in 10 seconds from one client to one process | Wait a few seconds, then try again |
+| We can't send email just now | `magic_link_queue_full` | The queue of mail waiting to send is full | Try again in a minute |
 
 A sign-in that fails inside ID's own call ends with the same friendly page, and ID logs `page_auth_call_failed`. One cause is a race: a person's first directory sign-in and their first link sign-in for a new address arriving together, where one of the two ends this way. Ask again.
 
@@ -201,13 +201,17 @@ A sign-in that fails inside ID's own call ends with the same friendly page, and 
 | `identity.linked` | | A second method was added to an account, by a mailbox proof or a directory connection |
 | `domain.verification_lost` | | A proved domain's record is gone, and the proof was cleared |
 
-[Why can't someone sign in](/docs/id/onboard#why-cant-someone-sign-in) shows the diagnosis, including `magic_link_not_admitted` and `magic_link_suppressed`.
+[Why can't someone sign in](/docs/id/onboard#why-cant-someone-sign-in) shows the diagnosis, including `magic_link_not_listed`, `magic_link_address_limit` and `magic_link_suppressed`.
 
 ## Deliverability
 
 Postmark answers `406` for an address it suppressed after a hard bounce, a spam complaint or by hand. ID logs `magic_link_send_failed` with that `errorCode`, and the request row names the address for seven days. The person sees the usual page and gets no mail. Staff reactivate the address in that server's suppression list in Postmark. Postmark pauses a server past 10% bounces, which would stop sign-in by email in that environment, and that is why made-up addresses are admitted only under the new-address budgets.
 
 A person whose address belongs to another firm's directory also sees **Check your email** and gets no mail. That is the admission rule, not a delivery fault.
+
+**A firm's mail gateway can hold or rewrite a sign-in mail.** Before a firm's first sign-in by link, its IT team allows the sender, and a pilot of about 20 people signs in first: [onboard](/docs/id/onboard#turn-on-sign-in-by-link).
+
+A request's `sent` status means no failure has been recorded. Whether the mail arrived is in that server's Activity in Postmark.
 
 The sender, the domain records and Postmark's approval are in the [runbook](https://github.com/Rieranthony/answerable-monorepo/blob/main/infra/README.md#send-mail-through-postmark), which is the one copy.
 
@@ -216,8 +220,7 @@ The sender, the domain records and Postmark's approval are in the [runbook](http
 Each of these is open and tracked in `docs/02-plan.md`.
 
 - **A Postmark webhook for bounces and suppressions.** Not yet. Meanwhile ID logs `magic_link_send_failed`, and the request row names a suppressed address.
-- **Alerting.** Not yet. Nothing pages on a send failure, a spent budget or a full queue.
+- **Alerting.** Not yet. Nothing pages on a send failure or a full queue.
 - **A separate Postmark stream for first-time addresses.** Not yet. Meanwhile the new-address budgets bound the bounces.
-- **Refreshing the public mail list on a schedule.** Not yet. The list changes with ID's release, and a firm whose domain is newly listed fails closed.
 - **Re-checking a domain's proof on a schedule.** Not yet. Meanwhile run `domains_verify` again by hand.
-- **An override for a false positive on the public mail list.** Not yet. A firm whose own domain is on the list cannot add it, so it cannot sign in either way until the domain comes off the list, upstream and in a release of ID. A domain routed before the list grew keeps its directory sign-in and loses its links.
+- **Clearing one address's daily limit.** Not yet. Meanwhile it clears itself within a day.

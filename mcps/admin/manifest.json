@@ -3202,6 +3202,14 @@
               "enabled": {
                 "type": "boolean"
               },
+              "admission": {
+                "type": "string",
+                "enum": [
+                  "listed",
+                  "domain"
+                ],
+                "description": "Who may ask for a link: listed, its effective members; domain, also anyone at a proved domain"
+              },
               "suppressed": {
                 "type": "boolean",
                 "description": "Whether Postmark refused the newest send as a suppressed address, which staff reactivate in Postmark"
@@ -3334,6 +3342,7 @@
             },
             "required": [
               "enabled",
+              "admission",
               "suppressed",
               "lastRequest",
               "directoryConnection",

@@ -2643,6 +2643,14 @@
                         "enabled": {
                           "type": "boolean"
                         },
+                        "admission": {
+                          "type": "string",
+                          "enum": [
+                            "listed",
+                            "domain"
+                          ],
+                          "description": "Who may ask for a link: listed, its effective members; domain, also anyone at a proved domain"
+                        },
                         "suppressed": {
                           "type": "boolean"
                         },
@@ -2771,6 +2779,7 @@
                       },
                       "required": [
                         "enabled",
+                        "admission",
                         "suppressed",
                         "lastRequest",
                         "directoryConnection",

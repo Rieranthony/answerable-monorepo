@@ -8,6 +8,7 @@ import {
 } from "../../services/diagnostics.ts";
 import type { AppEnvironment } from "../context.ts";
 import {
+  magicLinkAdmissions,
   magicLinkPurposes,
   magicLinkSendStatuses,
   userStatuses,
@@ -40,6 +41,11 @@ const signInDiagnosisSchema = z.object({
   }),
   magicLink: z.object({
     enabled: z.boolean(),
+    admission: z
+      .enum(magicLinkAdmissions)
+      .describe(
+        "Who may ask for a link: listed, its effective members; domain, also anyone at a proved domain",
+      ),
     suppressed: z.boolean(),
     lastRequest: z
       .object({

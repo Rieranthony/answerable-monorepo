@@ -171,7 +171,7 @@ test("each read sends its filters to ID as the query string and answers ID's row
       email: "ada@newco.example", routing: { domain: "newco.example", routesTo: { organizationId: newco.id, slug: "newco" }, matchesThisOrganization: true },
       organization: { id: newco.id, slug: "newco", status: "active" }, provider: { configured: true, kind: "entra", issuer: entraIssuer },
       magicLink: {
-        enabled: false, suppressed: false, directoryConnection: null, requestsInLastDay: 50, dailyLimit: 50,
+        enabled: false, admission: "listed", suppressed: false, directoryConnection: null, requestsInLastDay: 50, dailyLimit: 50,
         lastRequest: { id: mailed, purpose: "link", sendStatus: "sent", postmarkErrorCode: null, postmarkHttpStatus: null, createdAt: "2026-11-04T10:00:00.000Z" },
       },
       user: { id: ada.userId, status: "active" }, membership: { memberId: ada.id, effective: true, validFrom: null, validUntil: null },

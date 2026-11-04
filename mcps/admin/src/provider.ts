@@ -233,7 +233,8 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
       organization: z.object({ id: z.uuid(), slug: z.string(), status }),
       provider: z.object({ configured: z.boolean(), kind: z.enum(["entra", "google", "oidc"]).nullable(), issuer: z.string().nullable() }).describe("The organisation's directory"),
       magicLink: z.object({
-        enabled: z.boolean(), suppressed: z.boolean().describe("Whether Postmark refused the newest send as a suppressed address, which staff reactivate in Postmark"),
+        enabled: z.boolean(), admission: z.enum(["listed", "domain"]).describe("Who may ask for a link: listed, its effective members; domain, also anyone at a proved domain"),
+        suppressed: z.boolean().describe("Whether Postmark refused the newest send as a suppressed address, which staff reactivate in Postmark"),
         lastRequest: z.object({
           id: z.uuid(), purpose: z.enum(["link", "connect_directory"]),
           sendStatus: z.enum(["sent", "failed"]).describe("sent: no failure has been recorded; delivery is in Postmark's Activity. failed: Postmark refused the send, or never answered"),

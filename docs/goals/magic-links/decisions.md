@@ -12,6 +12,23 @@ The owner decided D1 to D4 on 2 November 2026, corrected D4 the same day, then a
 | D5 | Stopping someone from the admin MCP | Add `users.disable`, `users.enable`, `members.remove` and `members.reinstate`. ID is the authority, and a directory is only a provider to it. |
 | D6 | A disabled person's address | It stays blocked until staff deliberately retire it. A sign-in no longer frees it. |
 
+## Changed by the owner on 4 November 2026
+
+A last audit before the first staging release. These replace what they contradict below and in the [design](design.md).
+
+- **A new firm's links start off**, and staff turn them on. D0 holds: the two stay independent, per firm, set by staff.
+- **The access-removed mail goes.** A removed person who asks gets the usual page and no mail. An old link or code still shows the error.
+- **Postmark's DNS records are by hand in Cloudflare**, not in Terraform.
+- **A link and its code last 30 minutes**, by judgement. A person's three tries per request stay; the budgets on wrong codes and the firm's hourly mail cap go.
+- **The public mail list goes.** Domain mode's DNS proof covers what it was for.
+- **The edge rule goes**, and ID's limit on `POST /login` is 300 per 10 s per process.
+- **ID reads `cf-connecting-ip` alone.** `x-forwarded-for` and `TRUSTED_PROXY_CIDRS` go.
+- **The sender comes from ID's own origin**, and `MAIL_FROM`, `MAIL_REPLY_TO` and `MAIL_SUBJECT_PREFIX` go.
+- **The stop tools take an address only.** They need no fresh sign-in; `sso_set` does.
+- **Migrations `0002` to `0012` are squashed**, since none had reached a deployed database, and **the release is one tag**.
+
+Kept by the owner's decision: domain mode, `/connect-directory`, Better Auth's plugin, sliding directory sessions.
+
 ## What D5 and D6 mean in the design
 
 - **A fifth tool, `users.retireemail`.** D6 makes retiring the only way to free an address, so staff need it in the admin MCP too. Role `owner`, because it is terminal. It was not in the owner's list: the owner can drop it and use the admin API instead.

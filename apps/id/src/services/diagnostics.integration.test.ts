@@ -111,6 +111,7 @@ test("a firm with no directory and links on is not a missing provider", async ()
   expect(result.provider.configured).toBe(false);
   expect(result.magicLink).toEqual({
     enabled: true,
+    admission: "listed",
     suppressed: false,
     lastRequest: null,
     directoryConnection: null,
@@ -154,6 +155,7 @@ test("a suppressed address blocks only where a link is the way in, and is shown"
   verdict(suppressed, "magic_link_suppressed");
   expect(suppressed.magicLink).toEqual({
     enabled: true,
+    admission: "listed",
     suppressed: true,
     directoryConnection: null,
     requestsInLastDay: 0,

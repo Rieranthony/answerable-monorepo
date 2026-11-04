@@ -48,6 +48,7 @@ Claude prepares each change, shows you its summary and commits it only once you 
 | `organisations_list` | Organisations, by text in the name or slug and by status | [listOrganizations](/docs/id/admin-api/organizations/listOrganizations) |
 | `organisations_get` | One organisation, its magic-link setting and its SSO provider side by side (`sso: null` when it has none), and every domain routed to it with when its DNS record was seen and the record that proves it | [getOrganization](/docs/id/admin-api/organizations/getOrganization), [listOrganizationDomains](/docs/id/admin-api/domains/listOrganizationDomains), [getSsoProvider](/docs/id/admin-api/sso-provider/getSsoProvider) |
 | `members_list` | An organisation's members, by email, text and whether the membership is in force | [listMembers](/docs/id/admin-api/members/listMembers) |
+| `signin_diagnose` | [Why someone cannot sign in or got no mail](#why-did-someone-get-no-mail): one address against one organisation | [diagnoseSignIn](/docs/id/admin-api/diagnostics/diagnoseSignIn) |
 | `members_get` | One member, their groups and what their entitlements reach | [getMember](/docs/id/admin-api/members/getMember), [getMemberAccess](/docs/id/admin-api/access/getMemberAccess) |
 | `groups_list` | An organisation's groups, by text and status | [listGroups](/docs/id/admin-api/groups/listGroups) |
 | `access_list` | An organisation's entitlements, by client, resource, member, group and status | [listEntitlements](/docs/id/admin-api/entitlements/listEntitlements) |
@@ -89,12 +90,12 @@ Each write is a prepare tool: it changes nothing and returns an intent, which `a
 | --- | --- | --- | --- |
 | `organisations_create` | A new organisation: `slug`, `name`. Refused when the slug is taken | `admin` | [createOrganization](/docs/id/admin-api/organizations/createOrganization) |
 | `organisations_update` | A new `name` | `admin` | [updateOrganization](/docs/id/admin-api/organizations/updateOrganization) |
-| `domains_add` | An email `domain` routed to the organisation. A public mail provider is refused | `admin` | [createOrganizationDomain](/docs/id/admin-api/domains/createOrganizationDomain) |
+| `domains_add` | An email `domain` routed to the organisation | `admin` | [createOrganizationDomain](/docs/id/admin-api/domains/createOrganizationDomain) |
 | `domains_verify` | A domain's DNS TXT record looked for, so that it is proved: [magic links](#magic-links) | `admin` | [verifyOrganizationDomain](/docs/id/admin-api/domains/verifyOrganizationDomain) |
 | `magiclink_enable`, `magiclink_disable` | [Sign-in by email link](/docs/id/magic-links) on or off for the organisation, with or without a directory | `admin` | [enableMagicLink](/docs/id/admin-api/organizations/enableMagicLink), [disableMagicLink](/docs/id/admin-api/organizations/disableMagicLink) |
 | `magiclink_admission` | Who may ask for a link: `listed` (its effective members) or `domain` (also anyone at a proved domain) | `admin`; `domain` needs `owner` | [setMagicLinkAdmission](/docs/id/admin-api/organizations/setMagicLinkAdmission) |
 | `members_import` | Up to 1,000 `addresses` listed as members before their first sign-in; each has its own answer | `admin` | [importMembers](/docs/id/admin-api/members/importMembers) |
-| `sso_set` | The SSO provider, `issuer` and `domain`, through Answerable's Microsoft or Google application. Its preview says that directory sessions and grants end and magic-link ones do not, that people connected to a replaced issuer answer `email_conflict` where a link still signs them in, and that the magic-link setting stays as it is | `admin` | [putSsoProvider](/docs/id/admin-api/sso-provider/putSsoProvider) |
+| `sso_set` | The SSO provider, `issuer` and `domain`, through Answerable's Microsoft or Google application. It needs a [recent company sign-in](#critical-operations). Its preview says that directory sessions and grants end and magic-link ones do not, that people connected to a replaced issuer answer `email_conflict` where a link still signs them in, and whether links stay on or off | `admin` | [putSsoProvider](/docs/id/admin-api/sso-provider/putSsoProvider) |
 | `groups_create` | A group: `slug`, `name` | `admin` | [createGroup](/docs/id/admin-api/groups/createGroup) |
 | `groups_addmember` | `memberId` in `groupId`, until `validUntil` if given, or a new end for a membership | `admin` | [putGroupMember](/docs/id/admin-api/groups/putGroupMember) |
 | `groups_dropmember` | `memberId` out of `groupId` | `admin` | [removeGroupMember](/docs/id/admin-api/groups/removeGroupMember) |
@@ -107,13 +108,13 @@ Each write is a prepare tool: it changes nothing and returns an intent, which `a
 | `organisations_enable` | The organisation enabled again | `owner` | [enableOrganization](/docs/id/admin-api/organizations/enableOrganization) |
 | `staff_grant` | `role` for `memberId` of the platform organisation, through the group whose entitlement carries it | `owner` | [putGroupMember](/docs/id/admin-api/groups/putGroupMember) |
 | `staff_revoke` | `role` taken from `memberId`, out of every group whose entitlement carries it | `owner` | [removeGroupMember](/docs/id/admin-api/groups/removeGroupMember) |
-| `users_disable` | A person (`email` or `userId`) disabled at every organisation: [stopping someone](#stopping-someone) | `admin` | [disableUser](/docs/id/admin-api/users/disableUser) |
+| `users_disable` | A person (`email`) disabled at every organisation: [stopping someone](#stopping-someone) | `admin` | [disableUser](/docs/id/admin-api/users/disableUser) |
 | `users_enable` | A disabled person enabled again; revoked sessions are not restored | `admin` | [enableUser](/docs/id/admin-api/users/enableUser) |
 | `users_retireemail` | The address of a disabled person retired, so that another person can hold it; terminal | `owner` | [retireUserEmail](/docs/id/admin-api/users/retireUserEmail) |
-| `members_remove` | A member (`memberId` or `email`) removed from one organisation | `admin` | [removeMember](/docs/id/admin-api/members/removeMember) |
+| `members_remove` | A member (`email`) removed from one organisation | `admin` | [removeMember](/docs/id/admin-api/members/removeMember) |
 | `members_reinstate` | A removed member reinstated in the organisation; the grants and group assignments removed with them are not restored | `admin` | [reinstateMember](/docs/id/admin-api/members/reinstateMember) |
 
-**Refused at prepare.** A write that would change nothing, or that ID would refuse, answers before anything is recorded: `PRECONDITION_FAILED` for a taken slug, a domain already routed, a member already in the group or not in it, an identical entitlement, an organisation already in that status, a role already held or not held, a person already disabled, enabled or retired, a member already removed or not removed; `INVALID_INPUT` for a scope the resource does not allow, an issuer `sso_set` does not take, or a provider or host client the Toolbox or ID does not know.
+**Refused at prepare.** A write that would change nothing, or that ID would refuse, answers before anything is recorded: `PRECONDITION_FAILED` for a taken slug, a domain already routed, a member already in the group or not in it, an identical entitlement, an organisation already in that status, a role already held or not held, a person already disabled or enabled, a member already removed or not removed; `INVALID_INPUT` for a scope the resource does not allow, an issuer `sso_set` does not take, or a provider or host client the Toolbox or ID does not know.
 
 ### A standalone MCP
 
@@ -135,9 +136,19 @@ Turn magic links off for newco, because it requires its directory only.
 `magiclink_enable`, `magiclink_disable`, `magiclink_admission`, `members_import` and `domains_verify` manage [sign-in by email link](/docs/id/magic-links) for an organisation. They work whether or not it has a directory, and each needs a [recent company sign-in](#critical-operations), because Answerable ID checks that on a person's own session and not on a machine client's. A target in the platform organisation needs `owner`, and the platform organisation can never turn links on.
 
 - **Each preview says what it will not reach.** `magiclink_disable` ends the organisation's link sessions and grants and no directory ones, says a service token already issued lives to its expiry, and says that `magiclink_enable` revives none of it. On an organisation with no directory it says nobody can then sign in. `magiclink_enable` says who may then ask and, with a directory, that a link does not pass through its MFA or conditional access.
-- **`magiclink_admission` to `domain` is an owner's.** It needs every active domain proved and none public mail, and warns of organisation-wide entitlements a new person would have at once. To `listed` it ends nothing.
-- **`members_import` previews with ID's own counts**, names the refused addresses and the reason, and sends no mail.
+- **`magiclink_admission` to `domain` is an owner's.** It needs every active domain proved, and warns of organisation-wide entitlements a new person would have at once. To `listed` it ends nothing.
+- **`members_import` previews how many addresses it will try**, and each is answered at commit: created, added, already a member, or refused with its reason. It sends no mail, and a rerun is safe. Where a directory is connected, its preview says that importing is rarely needed: [turn on sign-in by link](/docs/id/onboard#turn-on-sign-in-by-link).
 - **`domains_verify` names the record to publish** and fails, naming it, when ID does not find it. On a proved domain, a record that is gone clears the proof.
+
+### Why did someone get no mail
+
+```text
+Why did ada@newco.example get no sign-in mail at newco?
+```
+
+`signin_diagnose` takes `organizationId` and `email`. It checks that address against that organisation alone, in order, and `verdict.code` is the first that blocks them: the codes are in [why can't someone sign in](/docs/id/onboard#why-cant-someone-sign-in). It also shows the newest mail for the address, whether Postmark refused it as suppressed, and how many it has had against the day's limit. For `team` and up.
+
+**It does not see delivery.** A `sendStatus` of `sent` means no failure has been recorded. Whether the mail arrived, bounced or sat in a gateway is in that server's Activity in Postmark. **Nor another firm's accounts:** a person holding another firm's directory account is refused a link, and this answer cannot say so.
 
 ### Stopping someone
 
@@ -153,11 +164,11 @@ Staff stop a person here, whatever company directory or sign-in method they came
 | Cut someone off everywhere | `users_disable` | Every session, grant and stored token ends, and no sign-in works at any organisation | `users_enable`. Revoked sessions are not restored |
 | Give their address to someone else | `users_retireemail`, after `users_disable` | The address is free again. The next holder is a new person with a new `sub` | None: terminal |
 
-**Name the person.** `users_disable`, `users_enable` and `users_retireemail` take `email` or `userId`; `members_remove` and `members_reinstate` take `organizationId` and a member's `email` or `memberId`. Give one of the two. The schema marks both optional, because hosts refuse a top-level choice in a tool's input, so giving neither or both answers `INVALID_INPUT` naming both fields. An address is found with the exact `email` filter of [listUsers](/docs/id/admin-api/users/listUsers) or [listMembers](/docs/id/admin-api/members/listMembers), in any case. A person it does not find answers `NOT_FOUND`; an address that was retired finds nobody, so name that person by `userId`.
+**Name the person.** `users_disable`, `users_enable` and `users_retireemail` take `email`; `members_remove` and `members_reinstate` take `organizationId` and a member's `email`. An address names one person, and one member per organisation. It is found with the exact `email` filter of [listUsers](/docs/id/admin-api/users/listUsers) or [listMembers](/docs/id/admin-api/members/listMembers), in any case. A person it does not find answers `NOT_FOUND`, and an address that was retired finds nobody.
 
 **Read the preview.** It names the person and their organisations, says whether it reaches one or all of them, and says what it does not reach: a service token already issued lives to its expiry, and each app's own session is the app's to end. For `users_disable` it counts the sessions that end; for `members_remove` it names the organisations where the person stays.
 
-**Who may.** `admin` for the first four tools, `owner` for `users_retireemail`. A person with a membership in the platform organisation is Answerable staff: acting on them needs `owner` with any of the five, because `staff_revoke` is owner-only and Answerable ID itself protects only the last platform administrator. An admin who aims one at staff gets `PERMISSION_DENIED`. Each also needs a [recent company sign-in](#critical-operations), because Answerable ID checks that on a person's own session and not on a machine client's.
+**Who may.** `admin` for the first four tools, `owner` for `users_retireemail`. A person with a membership in the platform organisation is Answerable staff: acting on them needs `owner` with any of the five, because `staff_revoke` is owner-only and Answerable ID itself protects only the last platform administrator. An admin who aims one at staff gets `PERMISSION_DENIED`. **`users_disable` and `members_remove` need no recent sign-in**, so stopping a leaver in an incident never waits for one. `users_enable`, `members_reinstate` and `users_retireemail` [do](#critical-operations).
 
 **Precondition.** A person already disabled, enabled or retired, a member already removed or not removed, and a retirement before the disable each answer `PRECONDITION_FAILED` at prepare, with the state in `details.preconditions`. A target that changed since prepare answers `INTENT_STALE` at commit: a user is versioned by when ID last changed them, a member by its `ETag`.
 
@@ -242,9 +253,11 @@ A write that ID takes without a precondition says so in its preview's warnings.
 
 ## Critical operations
 
-**Which.** `organisations_disable`, `organisations_enable`, `staff_grant`, `staff_revoke` and `users_retireemail`; any write whose organisation is the platform organisation, since it decides who is staff and how staff sign in; and any of the five tools that [stop someone](#stopping-someone) aimed at a member of Answerable staff. `users_disable`, `users_enable`, `members_remove` and `members_reinstate` aimed at anyone else need the same recent sign-in from an admin.
+**Which.** `organisations_disable`, `organisations_enable`, `staff_grant`, `staff_revoke` and `users_retireemail`; and any write whose organisation is the platform organisation, since it decides who is staff and how staff sign in. A tool that [stops someone](#stopping-someone), aimed at a member of staff, needs the owner role too.
 
-**Who.** An owner (an admin, for the four stopping tools aimed at someone who is not staff) whose last sign-in at their company's directory is within `ADMIN_FRESH_SECONDS`, 1,800 seconds by default. The sign-in time is the token's `upstream_auth_time`. An admin preparing a write to the platform organisation, or aiming a stopping tool at staff, gets `PERMISSION_DENIED`.
+**The same recent sign-in, from an admin.** Any other write that lets people in or changes how a firm signs in: `sso_set`, `users_enable`, `members_reinstate`, and the writes on [magic links](#magic-links). A write that stops one named person never waits for it: `users_disable`, and `members_remove` outside the platform organisation.
+
+**Who.** An owner, or an admin for the writes just above, whose last sign-in at their company's directory is within `ADMIN_FRESH_SECONDS`, 1,800 seconds by default. The sign-in time is the token's `upstream_auth_time`. An admin preparing a write to the platform organisation, or aiming a stopping tool at staff, gets `PERMISSION_DENIED`.
 
 **When it is checked.** At prepare and again at commit, so an intent prepared in time cannot be committed once the window has passed. Older, or no time at all, answers `ADMIN_REAUTHENTICATION_REQUIRED` with `details.upstream_auth_time` and `details.max_age_seconds`, and the refusal is evidence (`capability.denied`, reason `stale_authentication`).
 
@@ -350,7 +363,7 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | `tools/list` is empty | Your token is for another organisation, or lacks `admin` | Sign in again and choose the platform organisation |
 | `tools/list` fails, or a call answers `UPSTREAM_UNAVAILABLE`: `Answerable ID did not answer with your role; try again shortly` | ID did not answer the role read | Retry after `retry.after_ms`; the server log shows `[admin] reading the role failed` |
 | `APPROVAL_REQUIRED` | You committed with `admin_commit`, or `preview_summary` differs from the intent's summary | Show the person the preview, then call `admin_commit_confirmed` with its summary word for word |
-| `ADMIN_REAUTHENTICATION_REQUIRED` | A critical operation, and your last directory sign-in is older than `ADMIN_FRESH_SECONDS`, or unknown | [Sign in again](#sign-in-again), then prepare again |
+| `ADMIN_REAUTHENTICATION_REQUIRED` | A write that asks for a [recent sign-in](#critical-operations), and your last directory sign-in is older than `ADMIN_FRESH_SECONDS`, or unknown | [Sign in again](#sign-in-again), then prepare again |
 | `PERMISSION_DENIED`: `Changing the platform organisation is an owner's critical operation…` | An admin prepared a write to the platform organisation | Ask an owner |
 | `PERMISSION_DENIED`: `<address> is Answerable staff, and acting on staff is an owner's critical operation…` | An admin aimed `users_disable`, `users_enable`, `members_remove` or `members_reinstate` at a member of the platform organisation | Ask an owner |
 | `PERMISSION_DENIED`: `Your access no longer covers admin/<tool>` | Your role fell below the tool's minimum since you prepared | Ask for the role again, then prepare again |
@@ -362,7 +375,6 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | `PRECONDITION_FAILED`: `Answerable ID already holds the <row> (<id>) with status…` | `standalone_enable` found a row for that target that is disabled or lacks scopes | Enable it (`access_enable` for an entitlement) or widen it in ID, then prepare again |
 | Tool result `NOT_FOUND`: `Answerable ID has no resource https://mcp.<zone>/<name>/mcp…` or `…has no client claude-code-<name>…` | The MCP is not served standalone, or no deploy has registered it | Ship it with `serve` `standalone` or `both`; the deploy's register Job registers it |
 | `INVALID_INPUT`: `<resource> is a standalone MCP's resource, and Answerable ID counts an entitlement…` | `access_grant` named a standalone MCP's resource, `<origin>/<name>/mcp`, without `clientId`; ID would count the entitlement towards no token | Prepare again with `clientId` `claude-code-<name>`, or use `standalone_enable` with `everyone: true` |
-| `INVALID_INPUT`: `Name the person: give their email or their userId` (or `by email or by userId, not both`; `member`, `memberId` for the members tools) | A stopping tool got neither or both of the two ways to name someone | Give one of them; `details.field_violations` names both fields |
 | `INVALID_INPUT` | An argument failed the schema, or a rule: an issuer `sso_set` does not take, a scope the resource does not allow, a `principal.id` missing or extra, a provider or host client unknown | Fix the field `details.field_violations` names |
 | `INTENT_STALE` | A target moved since prepare, or ID refused the write's precondition; `details.targets` holds both versions | Prepare again and show the new preview |
 | `INTENT_EXPIRED` | 30 minutes passed since prepare | Prepare again |
@@ -373,14 +385,12 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | Tool result `UPSTREAM_UNAVAILABLE`: `The Toolbox…` | The Toolbox did not answer, or failed | Retry; `toolbox_enable` is safe to repeat |
 | Tool result `UPSTREAM_REJECTED` | ID or the Toolbox refused the machine client or a write; the message is theirs, and `details.upstream` holds the status and code, such as `409 conflict` for a domain another organisation holds or `platform_application_missing` for a directory without Answerable's application | Fix what the message names, such as `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` or the client's capabilities |
 | `PRECONDITION_FAILED`: `Magic links are already on` or `off for organisation <name>`, or `Organisation <name> already admits <mode>` | The write would change nothing | Nothing is needed |
-| `PRECONDITION_FAILED`: `The platform organisation can never use magic links…` | `magiclink_enable` or `magiclink_admission` `domain` aimed at the platform organisation | Staff sign in through its directory |
+| Tool result `UPSTREAM_REJECTED` with `details.upstream.code` `platform_magic_link` | `magiclink_enable` or `magiclink_admission` `domain` committed on the platform organisation | Staff sign in through its directory |
 | `PRECONDITION_FAILED`: `Every active domain must be proved first: <domain>`, or `Organisation <name> has no active domain` | `magiclink_admission` `domain` with an unproved domain, or none | `domains_add`, publish the record, `domains_verify`, then prepare again |
 | `PRECONDITION_FAILED`: `Answerable ID did not find the TXT record at <name> with the value <value>…` | `domains_verify` committed before the record reached DNS; on a proved domain the proof is also cleared | Publish the record, wait, prepare again |
-| `PRECONDITION_FAILED`: `Importing these addresses would change nothing…` | Every address is already a member or refused; the message counts them | Fix the refused addresses, or nothing is needed |
 | `PERMISSION_DENIED`: `Opening an organisation to anyone at its domains is an owner's…` | An admin prepared `magiclink_admission` `domain` | Ask an owner |
-| Tool result `UPSTREAM_REJECTED` with `details.upstream.code` `public_mail_domain` | `domains_add` named a public mail provider | Use the organisation's own domain |
-| Tool result `NOT_FOUND`: `Answerable ID has no user with the address <address>…` or `Organisation <id> has no member with the address <address>…` | The exact address finds nobody, or its holder's address was retired | Check the address with `members_list`; name a retired person by `userId` |
-| `PRECONDITION_FAILED`: `<address> is already disabled`, `is already enabled`, `is already retired`, `is not disabled…`, `was already removed from…`, `is not removed from…`, or `<address>'s address was retired, which is permanent…` | The stop would change nothing, or ID would refuse it: `users_retireemail` needs `users_disable` committed first, and a retired person cannot be enabled | Nothing is needed; or `users_disable` first |
+| Tool result `NOT_FOUND`: `Answerable ID has no user with the address <address>…` or `Organisation <id> has no member with the address <address>…` | The exact address finds nobody, or its holder's address was retired | Check the address with `members_list` |
+| `PRECONDITION_FAILED`: `<address> is already disabled`, `is already enabled`, `is not disabled…`, `was already removed from…` or `is not removed from…` | The stop would change nothing, or ID would refuse it: `users_retireemail` needs `users_disable` committed first | Nothing is needed; or `users_disable` first |
 | Tool result `UPSTREAM_REJECTED`: `Answerable ID refused the client credentials of admin-mcp (400); check … the client's platform:read and platform:users capability…` | The machine client has no capability for `platform:users` on ID's admin API: it was registered before the scope existed, and register has not run since | Run the deploy's register Job, or add the scope by hand as [Register the admin MCP](/docs/admin/setup#register-the-admin-mcp) shows |
 | Tool result `UPSTREAM_REJECTED` with `details.upstream.code` `last_platform_administrator` | `users_disable` of the last effective platform administrator: ID keeps one | Make another platform administrator first |
 | Tool result `NOT_FOUND` | The organisation, member, group, entitlement, resource or client does not exist in ID | Take ids from the list tools |

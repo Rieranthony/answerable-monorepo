@@ -56,6 +56,8 @@ Old code reads `sso_providers` with `limit(1)` and native SSO reads by organisat
 - **Release N:** `kind`, the new index, every filter, and the refusals that only matter once rows exist: no admin authority from a magic-link session, and `/auth/sso/link` and `/reauthenticate` refused by kind. No magic-link rows exist. N is the previous image during N+1's rollout and after a tag back, so it must be safe on N+1's data.
 - **Release N+1:** the trigger, the backfill and the feature.
 
+**Superseded on 4 November 2026:** no environment had these migrations and staging has no users, so they were squashed and ship in one tag ([decisions](decisions.md)). The previous image's directory sign-in can still fail on those rows during that one rollout, which is the risk accepted, with nobody on staging to meet it. Its health, its login page and its admin reads were measured staying up.
+
 Also, `runMigrations` must accept a database ahead of its image, or a tag back fails. That landed in W0. An image from before W0 refuses a newer database, so the first tag should be a commit with W0 and no migration.
 
 ## States

@@ -122,7 +122,7 @@ The variables ID reads, with their development defaults, from the repository's i
 
 <Configuration group={["ID", "ID migration"]} />
 
-**Sign-in mail.** `POSTMARK_SERVER_TOKEN` is required in production: ID refuses to start without it, and the deploy refuses to apply it unset. Without one, outside production, ID prints each [sign-in link](/docs/id/magic-links) on its standard output. `POSTMARK_API_URL` is for a fake Postmark in a test and must be `https:` in production. `MAIL_FROM`, `MAIL_REPLY_TO` and `MAIL_SUBJECT_PREFIX` set the sender, the reply address and a prefix such as `[staging]`.
+**Sign-in mail.** `POSTMARK_SERVER_TOKEN` is required in production: ID refuses to start without it, and the deploy refuses to apply it unset. Without one, outside production, ID prints each [sign-in link](/docs/id/magic-links) on its standard output. `POSTMARK_API_URL` is for a fake Postmark in a test and must be `https:` in production. The sender comes from `BETTER_AUTH_URL`: `sign-in@id.answerable.org` in production, so it always matches the domain Postmark verifies. Replies go to `support@answerable.org`.
 
 ## Get a staff token
 
@@ -205,11 +205,14 @@ curl --get "https://id.answerable.org/api/admin/v1/organizations/$ORG/sign-in-di
 | `domain_not_allowed`      | Email domain does not route here.                        | Check this tenant's active domain assignment.             |
 | `user_disabled`           | The user linked to this tenant's membership is disabled. | Ask platform staff to review the account.                 |
 | `membership_revoked`      | This tenant's membership was revoked.                    | Review whether to reinstate it.                           |
-| `magic_link_not_admitted` | Links are the way in and admission would refuse this address: the switch, the mode, the public mail list or the person. | `magicLink.admitted` is false. Turn links on, list the person, or see [who may ask](/docs/id/magic-links#who-may-ask). |
+| `magic_link_not_listed`   | Links are the way in, the firm admits its listed members only, and this address is no effective member here. | List the person, or see [who may ask](/docs/id/magic-links#who-may-ask). |
+| `magic_link_address_limit` | Links are the way in and this address has had 50 mails in the last day. | Wait: the count falls as the oldest passes a day. [Not yet](/docs/id/magic-links#not-yet) can staff clear it. |
 | `magic_link_suppressed`   | Links are the way in and Postmark refused the last send to this address as suppressed (406). | Staff reactivate the address in Postmark: [deliverability](/docs/id/magic-links#deliverability). |
 | `authentication_required` | Local checks found no blocker.                           | Complete a real IdP authentication, or a link's confirmation, to establish identity. |
 
-**Links in the answer.** `magicLink` has `enabled`, `admitted`, `suppressed`, `lastRequest` (the newest sign-in mail to this exact address, kept seven days, with Postmark's code) and `directoryConnection`: a directory sign-in this address has made and not yet connected, waiting on the code mailed to it. `admitted` is one bit about this address and nothing more. It reads a global account in one case: in `domain` mode, on the organisation's own proved domain, it is false for an address whose holder is disabled or has another firm's account, which is no more than that mailbox would show by asking for a link.
+**Links in the answer.** `magicLink` has `enabled`, `admission`, `suppressed`, `requestsInLastDay`, `dailyLimit`, `lastRequest` (the newest sign-in mail to this exact address, kept seven days, with Postmark's code) and `directoryConnection`: a directory sign-in this address has made and not yet connected, waiting on the code mailed to it. A `sendStatus` of `sent` means no failure has been recorded: whether the mail arrived is in that server's Activity in Postmark. In the admin MCP this answer is [`signin_diagnose`](/docs/admin#why-did-someone-get-no-mail).
+
+**It reads this tenant alone.** A person who holds another firm's directory account is refused a link, and this answer cannot say so. In `domain` mode `magic_link_not_listed` does not apply.
 
 **Tenant visibility.** `user` and `membership` are null unless this tenant has a membership for the exact email. A null user does not mean the email is globally unused. Routing names only this organisation, never another tenant. Account issuers, directory IDs and retired-email state are excluded for all callers, including staff. Platform-wide user inspection remains a separate permission-controlled API.
 
@@ -262,9 +265,9 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/domains" \
   -d '{"domain":"contoso.com"}'
 ```
 
-**One owner.** A domain routes to at most one active organisation. To move it, disable or delete the old row first, then add the new one. Sign-in with an email outside the organisation's active domains is refused. A public mail provider cannot be routed: it answers `public_mail_domain`.
+**One owner.** A domain routes to at most one active organisation. To move it, disable or delete the old row first, then add the new one. Sign-in with an email outside the organisation's active domains is refused.
 
-**Where the person goes next.** The address's domain finds the organisation, and the organisation decides what the person sees: its directory if it has only that, a page asking for a link if it has only links, and a choice page, **Continue with Microsoft** (or Google, or company sign-in) beside **Email me a sign-in link**, if it has both. Every new organisation has [sign-in by email link](/docs/id/magic-links) on, so routing a domain to a new organisation already lets its listed members ask for a link.
+**Where the person goes next.** The address's domain finds the organisation, and the organisation decides what the person sees: its directory if it has only that, a page asking for a link if it has only links, and a choice page, **Continue with Microsoft** (or Google, or company sign-in) beside **Email me a sign-in link**, if it has both. A new organisation's [sign-in by email link](/docs/id/magic-links) is off, so routing a domain to it lets nobody ask for a link until [staff turn links on](#turn-on-sign-in-by-link).
 
 **Prove the domain.** The answer carries a `verificationRecord`: a TXT record at `_answerable-challenge.<domain>`. Publish it, then call [verifyOrganizationDomain](/docs/id/admin-api/domains/verifyOrganizationDomain). A proof is what lets a firm open links to anyone at the domain ([who may ask](/docs/id/magic-links#who-may-ask)); nothing else depends on it, and nothing re-checks it on a schedule: [Not yet.](/docs/id/magic-links#not-yet)
 
@@ -332,6 +335,15 @@ curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provi
 **Retries.** Set `SSO_OPERATION_KEY` once and reuse it with identical input. PUT and delete require keys; retries return receipts. Use `If-None-Match: *` for creation or the current provider ETag in `If-Match` to refuse stale updates, retaining the original header on retry. For own credentials, omit `clientSecret` on an update to keep the stored secret.
 
 **One row per organisation.** `PUT` creates or replaces it. `GET` returns `oidc.credentials` (`platform` or `own`), `clientId` and `hasClientSecret`, never the secret. See [sign-in checks](/docs/id/sign-in#what-is-checked). Guest opt-in: [Not yet.](/docs/id#today-and-next)
+
+## Turn on sign-in by link
+
+For a firm with no directory, or one that wants links beside it. A firm that requires its directory leaves them off, and a link never passes through its MFA or conditional access.
+
+1. **Ask the firm's IT team to allow the sender**, `sign-in@id.answerable.org`, on its mail gateway, before anyone signs in. A gateway can quarantine the mail or rewrite the link.
+2. **List the people**, unless the firm has a directory: `members_import`, or [importMembers](/docs/id/admin-api/members/importMembers). At a firm with a directory, people become members at their first directory sign-in, and a person imported first has to prove their mailbox with a code at that sign-in.
+3. **Turn links on**: `magiclink_enable`, or [enableMagicLink](/docs/id/admin-api/organizations/enableMagicLink).
+4. **Pilot with about 20 people**, on real mailboxes, phones included, before the firm starts. Postmark's Activity shows what arrived; `signin_diagnose` shows why someone got no mail.
 
 ## Register what they may use
 
@@ -463,7 +475,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/access?resource=
 | A domain no longer belongs here  | `DELETE /organizations/{org}/domains/{domainId}`                                                                                                     | Sign-in routing is removed; no confirmation needed                                                                                                                                                                                                                                                   |
 | Product access must be removed   | `DELETE /users/{userId}` or `DELETE /organizations/{org}` with `?confirm=<id>` and no body                                                           | Terminal tombstones deny ordinary reads/authority; identifying fields and UUID history remain. Remove owned clients/resources and policy references first                                                                                                                                            |
 
-**In the admin MCP.** `users_disable`, `users_enable` and `users_retireemail` take a person's `email` or `userId`; `members_remove` and `members_reinstate` take an `organizationId` and a member's `email` or `memberId`. Each finds the person with the exact `email` filter of [listUsers](/docs/id/admin-api/users/listUsers) or [listMembers](/docs/id/admin-api/members/listMembers). The first four need the `admin` role. `users_retireemail`, which cannot be undone, needs `owner`, and so does any of the five on a member of Answerable staff. Each needs a recent company sign-in. [Stopping someone](/docs/admin#stopping-someone) has the previews and the errors.
+**In the admin MCP.** `users_disable`, `users_enable` and `users_retireemail` take a person's `email`; `members_remove` and `members_reinstate` take an `organizationId` and a member's `email`. Each finds the person with the exact `email` filter of [listUsers](/docs/id/admin-api/users/listUsers) or [listMembers](/docs/id/admin-api/members/listMembers). The first four need the `admin` role. `users_retireemail`, which cannot be undone, needs `owner`, and so does any of the five on a member of Answerable staff. Each needs a recent company sign-in. [Stopping someone](/docs/admin#stopping-someone) has the previews and the errors.
 
 **What stopping does not reach.** A service token already issued lives to its expiry, and each app's own session is the app's to end: ending it belongs to each app's integration, such as [App and service OAuth](/docs/id/oauth). No company directory can tell Answerable ID that someone left, so removing the member in ID is the staff step.
 
@@ -525,7 +537,7 @@ See [all admin error codes](/docs/id/manage#errors), including confirmation and 
 | A scheduled re-check of a domain's DNS proof    | [Not yet.](/docs/id/magic-links#not-yet) |
 | Organisations configuring their own SSO         | [Not yet.](/docs/id#today-and-next) |
 | Guest accounts, opted in per organisation       | [Not yet.](/docs/id#today-and-next) |
-| A Postmark webhook, alerting and a public mail list override | [Not yet.](/docs/id/magic-links#not-yet) |
+| A Postmark webhook, alerting and clearing an address's daily limit | [Not yet.](/docs/id/magic-links#not-yet) |
 | SCIM provisioning                               | [Not yet.](/docs/id#today-and-next) |
 
 **Group operation keys.** Set `GROUP_CREATE_KEY` and `GROUP_MEMBER_KEY` once for their respective creation and membership commands, and reuse it with identical input after a lost response. Use a different key for each separate command. Group PATCH accepts the optional current getGroup ETag in If-Match. Membership PUT accepts optional If-Match from getGroupMember; omitted preconditions use the current row. Keep the original precondition when retrying a key.
