@@ -1023,7 +1023,7 @@ describe("sign-in by emailed link", () => {
       const again = await newBrowser()
       await signInByLink(again, sam!)
       expect(await sessionOf(again)).toMatchObject({ user: { id: successor, email: sam } })
-      step("12. stopping: a disabled person lost the link session, an old link and an old code said access was removed, the next request got the short mail, and retiring the address let a new user, with a new id, sign in")
+      step("12. stopping: a disabled person lost the link session, an old link and an old code said access was removed, the next request got no mail, and retiring the address let a new user, with a new id, sign in")
     })
   })
 })
