@@ -30,6 +30,10 @@ export function MailboxCodeEmail({ firmName, code, expiry }: MailboxCodeProps) {
         <Text style={codeText}>{code}</Text>
       </Box>
       <Paragraph>{`The code expires in ${expiry}.`}</Paragraph>
+      <Paragraph>
+        Do not give this code to anyone. Nobody at your firm or at this service
+        will ask for it.
+      </Paragraph>
       <Closing>
         If this was not you, tell your administrator: someone may be using your
         company sign-in.

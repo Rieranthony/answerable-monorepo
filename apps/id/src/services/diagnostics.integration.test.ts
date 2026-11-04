@@ -40,7 +40,7 @@ afterAll(async () => {
 });
 const issuer = "https://id.example.com";
 const email = "person@example.com";
-async function seed(provider = true) {
+async function seed(provider = true, account = provider) {
   const db = connection.db;
   const org = await createOrganization(db, { slug: "alpha", name: "Alpha" });
   await createOrganizationDomain(db, {
@@ -60,13 +60,14 @@ async function seed(provider = true) {
   await db
     .insert(users)
     .values({ id: userId, name: "Person", email, status: "active" });
-  await db.insert(accounts).values({
-    id: createId(),
-    userId,
-    accountId: "subject",
-    providerId: org.slug,
-    issuer,
-  });
+  if (account)
+    await db.insert(accounts).values({
+      id: createId(),
+      userId,
+      accountId: "subject",
+      providerId: org.slug,
+      issuer,
+    });
   await db
     .insert(members)
     .values({ id: memberId, userId, organizationId: org.id });
@@ -107,8 +108,10 @@ test("a firm with no directory and links on is not a missing provider", async ()
   expect(result.provider.configured).toBe(false);
   expect(result.magicLink).toEqual({
     enabled: true,
+    admitted: true,
     suppressed: false,
     lastRequest: null,
+    directoryConnection: null,
   });
 });
 test("a suppressed address blocks only where a link is the way in, and is shown", async () => {
@@ -144,7 +147,9 @@ test("a suppressed address blocks only where a link is the way in, and is shown"
   verdict(suppressed, "magic_link_suppressed");
   expect(suppressed.magicLink).toEqual({
     enabled: true,
+    admitted: true,
     suppressed: true,
+    directoryConnection: null,
     lastRequest: {
       id,
       purpose: "access_removed",
@@ -154,10 +159,11 @@ test("a suppressed address blocks only where a link is the way in, and is shown"
       createdAt: expect.any(String),
     },
   });
-  // Another address's row says nothing about this one.
+  // Another address's row says nothing about this one, and admission refuses it: no such person.
   const other = await diagnoseSignIn(db, org.id, "other@example.com");
   expect(other.magicLink.lastRequest).toBeNull();
-  verdict(other, "authentication_required");
+  expect(other.magicLink.admitted).toBe(false);
+  verdict(other, "magic_link_not_admitted");
 
   await createSsoProvider(db, {
     organizationId: org.id,
@@ -262,9 +268,153 @@ test("diagnosis reports revoked admission rather than a successful sign-in", asy
     .update(members)
     .set({ status: "revoked", revokedAt: new Date() })
     .where(eq(members.id, memberId));
-  expect((await diagnoseSignIn(db, org.id, email)).verdict.code).toBe(
-    "membership_revoked",
-  );
+  const result = await diagnoseSignIn(db, org.id, email);
+  expect(result.verdict.code).toBe("membership_revoked");
+  // Admission tells a removed person so by mail; that is not being admitted.
+  expect(result.magicLink.admitted).toBe(false);
+});
+test("whether a directory's sign-in meets a held address depends on its token, so it is left to the token", () => {
+  expect(tokenOnlyCodes).toContain("email_conflict");
+});
+
+test("where a link is the only way in, a person admission would refuse is told apart from one it would not", async () => {
+  const { db, org } = await seed(false);
+  const member = await diagnoseSignIn(db, org.id, email);
+  expect(member.magicLink.admitted).toBe(true);
+  verdict(member, "authentication_required");
+  // No such person, in a firm that lists its members.
+  const stranger = await diagnoseSignIn(db, org.id, "nobody@example.com");
+  expect(stranger.magicLink.admitted).toBe(false);
+  verdict(stranger, "magic_link_not_admitted");
+  // An account no row of this firm names makes a stranger of a member too.
+  await db.insert(accounts).values({
+    id: createId(),
+    userId: member.user!.id,
+    accountId: "subject",
+    providerId: "another-firm",
+    issuer,
+  });
+  verdict(await diagnoseSignIn(db, org.id, email), "magic_link_not_admitted");
+});
+test("a domain the public mail list holds admits nobody, whatever row is left behind", async () => {
+  const { db, org } = await seed(false);
+  await createOrganizationDomain(db, {
+    organizationId: org.id,
+    domain: "gmail.com",
+  });
+  const userId = createId();
+  await db.insert(users).values({
+    id: userId,
+    name: "Public",
+    email: "person@gmail.com",
+    status: "active",
+  });
+  await db
+    .insert(members)
+    .values({ id: createId(), userId, organizationId: org.id });
+  const result = await diagnoseSignIn(db, org.id, "person@gmail.com");
+  expect(result.routing.matchesThisOrganization).toBe(true);
+  expect(result.magicLink.admitted).toBe(false);
+  verdict(result, "magic_link_not_admitted");
+});
+test("with links off, or a directory beside them, admission blocks nothing, and is still shown", async () => {
+  const { db, org } = await seed(false);
+  await db
+    .update(ssoProviders)
+    .set({ enabled: false })
+    .where(eq(ssoProviders.organizationId, org.id));
+  verdict(await diagnoseSignIn(db, org.id, email), "provider_not_found");
+  await db
+    .update(ssoProviders)
+    .set({ enabled: true })
+    .where(eq(ssoProviders.organizationId, org.id));
+  await createSsoProvider(db, {
+    organizationId: org.id,
+    providerId: org.slug,
+    issuer,
+    domain: "example.com",
+    oidc: { clientId: "client" },
+  });
+  const stranger = await diagnoseSignIn(db, org.id, "nobody@example.com");
+  expect(stranger.magicLink.admitted).toBe(false);
+  verdict(stranger, "authentication_required");
+});
+test("an address no parser accepts is admitted by nobody", async () => {
+  const { db, org } = await seed(false);
+  // Its domain is this firm's, so only the parser stands between it and admission.
+  const result = await diagnoseSignIn(db, org.id, "not an address@example.com");
+  expect(result.routing.matchesThisOrganization).toBe(true);
+  expect(result.magicLink.admitted).toBe(false);
+});
+test("a code an address may be holding for a directory is shown, and only a live one", async () => {
+  const { db, org } = await seed(false);
+  const [row] = await db
+    .select({ id: ssoProviders.id })
+    .from(ssoProviders)
+    .where(eq(ssoProviders.organizationId, org.id));
+  const connection = {
+    organizationId: org.id,
+    providerId: row!.id,
+    providerRevision: 1,
+    purpose: "connect_directory" as const,
+    email,
+    clientHash: "client",
+    browserHash: "browser",
+    codeHmac: "hmac",
+    directoryIssuer: issuer,
+    directorySubject: "subject",
+    directoryUserId: "subject",
+    expiresAt: new Date(Date.now() + 60_000),
+    sendStatus: "sent" as const,
+  };
+  const live = createId();
+  const never = [
+    { expiresAt: new Date(Date.now() - 1_000) },
+    { sendStatus: "failed" as const },
+    { attempts: 3 },
+  ];
+  for (const change of never) {
+    await db
+      .insert(magicLinkRequests)
+      .values({ ...connection, ...change, id: createId() });
+    expect(
+      (await diagnoseSignIn(db, org.id, email)).magicLink.directoryConnection,
+    ).toBeNull();
+  }
+  await db
+    .insert(magicLinkRequests)
+    .values({ ...connection, id: live, attempts: 1 });
+  const shown = await diagnoseSignIn(db, org.id, email);
+  expect(shown.magicLink.directoryConnection).toEqual({
+    id: live,
+    sendStatus: "sent",
+    attempts: 1,
+    expiresAt: expect.any(String),
+  });
+  // It is this address's and this firm's, and a link's request is not one.
+  expect(
+    (await diagnoseSignIn(db, org.id, "other@example.com")).magicLink
+      .directoryConnection,
+  ).toBeNull();
+  const other = await createOrganization(db, { slug: "beta", name: "Beta" });
+  expect(
+    (await diagnoseSignIn(db, other.id, email)).magicLink.directoryConnection,
+  ).toBeNull();
+  await db.delete(magicLinkRequests).where(eq(magicLinkRequests.id, live));
+  await db.insert(magicLinkRequests).values({
+    id: createId(),
+    organizationId: org.id,
+    providerId: row!.id,
+    providerRevision: 1,
+    purpose: "access_removed",
+    email,
+    clientHash: "client",
+    expiresAt: new Date(Date.now() + 60_000),
+    sendStatus: "sent",
+  });
+  expect(
+    (await diagnoseSignIn(db, org.id, email)).magicLink.directoryConnection,
+  ).toBeNull();
 });
 
 const diagnoseSignIn = (db: Database, org: string, email: string) =>

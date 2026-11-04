@@ -40,6 +40,11 @@ const signInDiagnosisSchema = z.object({
   }),
   magicLink: z.object({
     enabled: z.boolean(),
+    admitted: z
+      .boolean()
+      .describe(
+        "Whether this address may ask this firm for a link now: its switch, its admission, the public mail list and the person",
+      ),
     suppressed: z.boolean(),
     lastRequest: z
       .object({
@@ -51,6 +56,17 @@ const signInDiagnosisSchema = z.object({
         createdAt: z.iso.datetime(),
       })
       .nullable(),
+    directoryConnection: z
+      .object({
+        id: z.uuid(),
+        sendStatus: z.enum(magicLinkSendStatuses),
+        attempts: z.number().int(),
+        expiresAt: z.iso.datetime(),
+      })
+      .nullable()
+      .describe(
+        "A directory sign-in this address has made and not yet connected: it is waiting on the code mailed to it. Null when none is live",
+      ),
   }),
   user: z
     .object({
@@ -79,7 +95,7 @@ export const routes = {
     operationId: "diagnoseSignIn",
     summary: "Diagnose sign-in by email",
     description:
-      "Inspect tenant-local configuration and membership. Current platform:read or org:users authority is rechecked inside the read transaction. Routing identifies only this organisation; user and membership are null unless this tenant has a membership for the exact email. Global accounts and retired-email state are excluded, including for staff. A null user does not mean the email is globally unused. authentication_required means local checks found no blocker; a real IdP authentication or a magic link's confirmation must establish identity and account conflicts. provider describes the directory; magicLink is the organisation's setting and the newest sign-in mail for this exact email, kept for seven days. magic_link_suppressed means a link is the way in and Postmark refused the last send as a suppressed address (406), which staff reactivate in Postmark. Windows affect grants, not admission; revoked membership requires reinstatement. Responses use no-store. validation_failed rejects malformed input; not_found means the organisation is unavailable.",
+      "Inspect tenant-local configuration and membership. Current platform:read or org:users authority is rechecked inside the read transaction. Routing identifies only this organisation; user and membership are null unless this tenant has a membership for the exact email. Global accounts and retired-email state are excluded, including for staff. A null user does not mean the email is globally unused. authentication_required means local checks found no blocker; a real IdP authentication or a magic link's confirmation must establish identity and account conflicts. provider describes the directory; magicLink is the organisation's setting and the newest sign-in mail for this exact email, kept for seven days. magic_link_not_admitted means a link is the way in and admission would refuse this address: its firm's switch and mode, the public mail list and the person, which magicLink.admitted reports in every case. That one field reads a global account: in domain mode, on this organisation's own proved domain, it is false for an address whose holder is disabled or has another firm's account, which is no more than those mailboxes would show by asking for a link. magic_link_suppressed means a link is the way in and Postmark refused the last send as a suppressed address (406), which staff reactivate in Postmark. magicLink.directoryConnection is a directory sign-in this address has made and not yet connected, waiting on the code mailed to it. Windows affect grants, not admission; revoked membership requires reinstatement. Responses use no-store. validation_failed rejects malformed input; not_found means the organisation is unavailable.",
     tag: "Diagnostics",
     platformScope: "platform:read",
     orgScope: "org:users",

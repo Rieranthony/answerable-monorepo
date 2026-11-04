@@ -1556,9 +1556,10 @@ describe("choosing a links-only firm on the selection page", () => {
     expect(text).not.toContain("Work email");
   });
 
-  test("a firm with a directory still starts its sign-in", async () => {
+  test("a firm with only a directory still starts its sign-in", async () => {
     const mine = await firm(true);
     const theirs = await firm(true);
+    await setOff(theirs.id);
     await flow.allowClient(mine.id);
     await flow.allowClient(theirs.id);
     const person = await flow.directorySignIn(mine);

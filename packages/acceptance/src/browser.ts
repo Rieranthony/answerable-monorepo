@@ -41,6 +41,7 @@ const unavailable = (page: Page) => page.getByRole("heading", { name: "Organisat
 
 /**
  * ID's first pages for one person: email and company sign-in, unless the browser context already holds the person's ID session, and the organisation chooser, where it continues with the person's organisation.
+ * An organisation with magic links on as well asks which way: everyone here signs in at the directory.
  * Answers `"unavailable"` when ID ends the sign-in at its error page instead, for a person removed from their organisation.
  */
 async function chooseOrganisation(page: Page, authorizationUrl: string, email: string) {
@@ -51,7 +52,12 @@ async function chooseOrganisation(page: Page, authorizationUrl: string, email: s
   if (await field.isVisible()) {
     await field.fill(email)
     await page.getByRole("button", { name: /continue/i }).click()
-    await chooser.or(unavailable(page)).waitFor()
+    const directory = page.getByRole("button", { name: /^Continue with / })
+    await chooser.or(unavailable(page)).or(directory).waitFor()
+    if (await directory.isVisible()) {
+      await directory.click()
+      await chooser.or(unavailable(page)).waitFor()
+    }
     if (await unavailable(page).isVisible()) return "unavailable" as const
   }
   await page.getByRole("button", { name: "Continue", exact: true }).click()

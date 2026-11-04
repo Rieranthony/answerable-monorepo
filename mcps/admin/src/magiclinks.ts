@@ -158,7 +158,7 @@ export function magicLinkWrites({ calls, role, platform, fresh, organisation, is
             "Sends no mail. Each person's account is made at their first sign-in. A removed member and a disabled person stay as they are.",
             ...(wide.length ? [`${plural(wide.length, "organisation-wide entitlement")} ${wide.length === 1 ? "exists" : "exist"}, so each new member has access at once: ${reach(wide)}.`] : []),
             ...(row.magicLink.enabled ? [] : ["Magic links are off here, so nobody listed can sign in by link until magiclink_enable."]),
-            ...(directory ? ["A directory is connected: until connecting it to an existing person is built, a listed person's first directory sign-in answers email_conflict, so list people here only when they sign in by link."] : []),
+            ...(directory ? ["A directory is connected: a listed person's first directory sign-in asks for a code from their mailbox, once, which connects it to the person listed here. That works whether links are on or off."] : []),
             noPrecondition("importing members"),
           ],
           quantities: [

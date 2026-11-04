@@ -4,13 +4,15 @@ import { Input } from "../ui/input.tsx";
 
 const link = "underline underline-offset-4";
 
-function CodeForm({ query }: { query: string }) {
+export function CodeForm({
+  action,
+  submit = "Sign in",
+}: {
+  action: string;
+  submit?: string;
+}) {
   return (
-    <form
-      method="post"
-      action={`/magic-link/code?${query}`}
-      class="mt-8 flex flex-col gap-4"
-    >
+    <form method="post" action={action} class="mt-8 flex flex-col gap-4">
       <label class="flex flex-col gap-2 text-sm/6">
         Code
         <Input
@@ -23,7 +25,7 @@ function CodeForm({ query }: { query: string }) {
           class="text-sm"
         />
       </label>
-      <Button type="submit">Sign in</Button>
+      <Button type="submit">{submit}</Button>
     </form>
   );
 }
@@ -40,7 +42,7 @@ export function CheckEmail({ email, query }: { email: string; query: string }) {
         the link in this browser. If you read your email somewhere else, enter
         the code here.
       </p>
-      <CodeForm query={query} />
+      <CodeForm action={`/magic-link/code?${query}`} />
       <p class="mt-4 text-sm/6">
         <a href={`/login?${query}`} class={link}>
           Use another email
@@ -59,7 +61,7 @@ export function CodeRefused({ query }: { query: string }) {
         {title}
       </h1>
       <p class="text-muted-foreground mt-2 text-sm/6">{body}</p>
-      <CodeForm query={query} />
+      <CodeForm action={`/magic-link/code?${query}`} />
       <p class="mt-4 text-sm/6">
         <a href={`/login?${query}`} class={link}>
           Ask for a new link

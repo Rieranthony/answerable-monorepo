@@ -65,6 +65,8 @@ export const flowResponse = z.object({
   ),
   selectedMemberId: z.uuid().nullable(),
   status: z.enum(["selection", "consent"]),
+  /** How this session signed in: only a directory's can connect another account. */
+  authenticationMethod: z.enum(["directory", "magic_link"]),
 });
 const invalid = () =>
   new APIError("BAD_REQUEST", {
@@ -359,6 +361,14 @@ export function createUserOAuthFlow(
               isNull(organizations.deletedAt),
             ),
           );
+        const [origin] = await tx
+          .select({ kind: ssoProviders.kind })
+          .from(sessions)
+          .innerJoin(
+            ssoProviders,
+            eq(ssoProviders.id, sessions.authenticationProviderId),
+          )
+          .where(eq(sessions.id, session.session.id));
         const selected = flow.grantId
           ? (
               await tx
@@ -379,6 +389,8 @@ export function createUserOAuthFlow(
           memberships,
           selectedMemberId: selected ?? null,
           status: flow.status,
+          authenticationMethod:
+            origin?.kind === "magic_link" ? "magic_link" : "directory",
         } satisfies z.infer<typeof flowResponse>;
       }
       const granted = acceptedDecision!.grantedScopes!;

@@ -3,9 +3,9 @@ import type {
   PlatformWriteContext,
 } from "../../services/platform-context.ts";
 import type { TenantMemberContext } from "../../services/tenant-context.ts";
-import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
+import { and, eq, isNull, notInArray, sql, type SQL } from "drizzle-orm";
 import type { Executor } from "../client.ts";
-import { grantContexts } from "../schema/index.ts";
+import { grantContexts, ssoProviders } from "../schema/index.ts";
 
 /** Irreversibly revoke the live grant contexts `where` selects. Callers add
  * `.returning(…)` when the rows are audit effects. */
@@ -69,6 +69,33 @@ export function revokeOrganizationGrantContexts(
   return revokeGrantContexts(
     executor,
     eq(grantContexts.organizationId, organizationId),
+  ).returning({ id: grantContexts.id, userId: grantContexts.userId });
+}
+
+/** A directory command's revocation: everything but this firm's magic-link origin, since links
+ * and a directory are independent. */
+export function revokeDirectoryGrantContexts(
+  context: PlatformWriteContext,
+  organizationId: string,
+) {
+  const { tx: executor } = context;
+  return revokeGrantContexts(
+    executor,
+    and(
+      eq(grantContexts.organizationId, organizationId),
+      notInArray(
+        grantContexts.authenticationProviderId,
+        executor
+          .select({ id: ssoProviders.id })
+          .from(ssoProviders)
+          .where(
+            and(
+              eq(ssoProviders.organizationId, organizationId),
+              eq(ssoProviders.kind, "magic_link"),
+            ),
+          ),
+      ),
+    )!,
   ).returning({ id: grantContexts.id, userId: grantContexts.userId });
 }
 

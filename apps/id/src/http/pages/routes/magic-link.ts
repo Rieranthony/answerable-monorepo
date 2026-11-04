@@ -26,7 +26,7 @@ import {
 
 /** A token is 32 letters; nothing much longer can be one. */
 const maxTokenLength = 128;
-const codePattern = /^\d{8}$/;
+export const codePattern = /^\d{8}$/;
 
 const renderElsewhere = (context: PageContext) =>
   context.render(jsx(LinkElsewhere, {}), { title: "Sign in" });
@@ -48,14 +48,14 @@ const renderRemoved = (context: PageContext) =>
     { title: "Can't sign in" },
   );
 
-const whoAsked = (context: PageContext) => ({
+export const whoAsked = (context: PageContext) => ({
   requestId: context.get("requestId"),
   ip: context.get("clientIp"),
   userAgent: context.req.header("user-agent") ?? null,
 });
 
 /** The pages answer with the same words; this keeps a failure visible to operators. */
-function logFailure(context: PageContext, path: string, error: unknown) {
+export function logFailure(context: PageContext, path: string, error: unknown) {
   logEvent("page", "page_auth_call_failed", {
     requestId: context.get("requestId"),
     path,
@@ -191,6 +191,7 @@ export function registerMagicLink(app: Hono<AppEnvironment>) {
           browser,
           client: context.get("clientIp") ?? "unresolved",
           code,
+          purpose: "link",
         },
         whoAsked(context),
       );

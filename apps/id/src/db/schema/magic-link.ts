@@ -18,7 +18,8 @@ import { magicLinkPurposes, magicLinkSendStatuses } from "./vocabulary.ts";
  * One sign-in email ID tried to send: a stranger writes no row. Better Auth's `verifications`
  * holds the token's hash, and this row what binds it to a browser and a code. The sweep
  * removes a row seven days after it was made; until then diagnosis can read it, so staff can
- * see a suppressed address.
+ * see a suppressed address. `connect_directory` is the other proof of a directory added after
+ * a magic link: its code connects an account, signs nobody in, and has no token.
  */
 export const magicLinkRequests = pgTable(
   "magic_link_requests",
@@ -27,8 +28,9 @@ export const magicLinkRequests = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    /** The magic-link row and its revision at issue. No key, as a session's origin has
-     * none: an insert here must take no lock on a row that commands update. */
+    /** The magic-link row and its revision at issue, or on `connect_directory` the directory's
+     * row and revision. No key, as a session's origin has none: an insert here must take no
+     * lock on a row that commands update. */
     providerId: uuid("provider_id").notNull(),
     providerRevision: integer("provider_revision").notNull(),
     purpose: text("purpose", { enum: magicLinkPurposes }).notNull(),
@@ -48,6 +50,11 @@ export const magicLinkRequests = pgTable(
     newAddress: boolean("new_address").default(false).notNull(),
     /** The signed query of the authorisation this sign-in resumes. */
     pendingOauthQuery: text("pending_oauth_query"),
+    /** The verified directory identity a `connect_directory` code connects, and nothing more
+     * of that sign-in: what `accounts` keys on. */
+    directoryIssuer: text("directory_issuer"),
+    directorySubject: text("directory_subject"),
+    directoryUserId: text("directory_user_id"),
     expiresAt: timestampColumn("expires_at").notNull(),
     sendStatus: text("send_status", { enum: magicLinkSendStatuses })
       .default("sending")
@@ -79,10 +86,11 @@ export const magicLinkRequests = pgTable(
       magicLinkSendStatuses,
     ),
     // A link has its token, browser and code. Word that access was removed has none, and
-    // nothing to resume.
+    // nothing to resume. A directory's connection has a browser, a code and the identity, and
+    // no token, since its code signs nobody in; it is never a new address.
     check(
       "magic_link_requests_purpose_fields_check",
-      sql`(${table.purpose} = 'link' and ${table.tokenIdentifier} is not null and ${table.browserHash} is not null and ${table.codeHmac} is not null) or (${table.purpose} = 'access_removed' and ${table.tokenIdentifier} is null and ${table.browserHash} is null and ${table.codeHmac} is null and ${table.pendingOauthQuery} is null)`,
+      sql`(${table.purpose} = 'link' and ${table.tokenIdentifier} is not null and ${table.browserHash} is not null and ${table.codeHmac} is not null and ${table.directoryIssuer} is null and ${table.directorySubject} is null and ${table.directoryUserId} is null) or (${table.purpose} = 'access_removed' and ${table.tokenIdentifier} is null and ${table.browserHash} is null and ${table.codeHmac} is null and ${table.pendingOauthQuery} is null and ${table.directoryIssuer} is null and ${table.directorySubject} is null and ${table.directoryUserId} is null) or (${table.purpose} = 'connect_directory' and ${table.tokenIdentifier} is null and ${table.browserHash} is not null and ${table.codeHmac} is not null and ${table.directoryIssuer} is not null and ${table.directorySubject} is not null and ${table.directoryUserId} is not null and not ${table.newAddress})`,
     ),
     check(
       "magic_link_requests_send_error_check",

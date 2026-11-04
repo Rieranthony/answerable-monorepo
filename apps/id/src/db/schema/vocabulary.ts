@@ -19,7 +19,11 @@ export const magicLinkAdmissions = ["listed", "domain"] as const;
 export type MagicLinkAdmissionMode = (typeof magicLinkAdmissions)[number];
 
 /** What a sign-in request mailed: a link and a code, or word that access was removed. */
-export const magicLinkPurposes = ["link", "access_removed"] as const;
+export const magicLinkPurposes = [
+  "link",
+  "access_removed",
+  "connect_directory",
+] as const;
 
 /** A request is `sending` from before the send until its answer. Only `sent` can sign in. */
 export const magicLinkSendStatuses = ["sending", "sent", "failed"] as const;

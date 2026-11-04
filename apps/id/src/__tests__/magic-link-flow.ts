@@ -16,12 +16,30 @@ import { domainVerificationRecord } from "../services/domain-verification.ts";
 import { proveDomain } from "../services/domains.ts";
 import { setMagicLinkAdmission } from "../services/organizations.ts";
 import type { AdminFixture } from "./admin.ts";
+import type { OidcClaims } from "./oidc-issuer.ts";
 import { magicLinkFirms } from "./magic-link.ts";
 import { codeIn, tokenIn } from "./magic-link-requests.ts";
 import { inPlatformWrite } from "./platform-context.ts";
 
 export const cookieOf = (setCookies: string[]) =>
   setCookies.map((value) => value.split(";", 1)[0]).join("; ");
+
+/** A browser's cookies after a response: a new value replaces the old, and an expired one goes. */
+export function cookiesAfter(held: string, setCookies: string[]) {
+  const jar = new Map(
+    held
+      .split("; ")
+      .filter(Boolean)
+      .map((pair) => [pair.slice(0, pair.indexOf("=")), pair] as const),
+  );
+  for (const line of setCookies) {
+    const pair = line.split(";", 1)[0]!;
+    const name = pair.slice(0, pair.indexOf("="));
+    if (/max-age=0/i.test(line)) jar.delete(name);
+    else jar.set(name, pair);
+  }
+  return [...jar.values()].join("; ");
+}
 
 /** A browser and what it does on the sign-in pages, through the real app. */
 export function magicLinkFlow(fixture: AdminFixture) {
@@ -100,23 +118,26 @@ export function magicLinkFlow(fixture: AdminFixture) {
       body: new URLSearchParams(fields),
     });
 
-  /** Ask for a link, and wait until the job has run. */
+  /** Ask for a link, and wait until the job has run. A firm with a directory as well needs
+   * `method`, which is the choice page's button. */
   async function ask(
     email: string,
     {
       cookie,
       query = "",
       headers,
+      method,
     }: {
       cookie?: string;
       query?: string;
       headers?: Record<string, string>;
+      method?: "link";
     } = {},
   ) {
     const before = fixture.mail.transport.sent.length;
     const response = await post(
       `/login${query ? `?${query}` : ""}`,
-      { email },
+      { email, ...(method ? { method } : {}) },
       { cookie, headers },
     );
     await fixture.mail.settled();
@@ -133,6 +154,99 @@ export function magicLinkFlow(fixture: AdminFixture) {
       code: mail && codeIn(mail)!,
     };
   }
+
+  /** From a sign-in that went to the directory, through it and back, as a browser follows it:
+   * the directory's redirect to the callback is a top-level GET, carrying the browser's cookies. */
+  async function throughDirectory(
+    started: Response,
+    claims: OidcClaims,
+    { cookie = "", client }: { cookie?: string; client?: string } = {},
+  ) {
+    expect(new URL(started.headers.get("location")!).origin).toBe(
+      fixture.issuer.origin,
+    );
+    fixture.issuer.enqueue({
+      email_verified: true,
+      auth_time: Math.floor(Date.now() / 1000),
+      ...claims,
+    });
+    const held = cookiesAfter(cookie, started.headers.getSetCookie());
+    const upstream = await fetch(started.headers.get("location")!, {
+      redirect: "manual",
+    });
+    const callback = new URL(upstream.headers.get("location")!);
+    const response = await fixture.app.request(
+      callback.pathname + callback.search,
+      {
+        headers: {
+          cookie: held,
+          accept: "text/html",
+          "sec-fetch-mode": "navigate",
+          "cf-connecting-ip": client ?? nextClient(),
+        },
+      },
+    );
+    return {
+      response,
+      cookie: cookiesAfter(held, response.headers.getSetCookie()),
+    };
+  }
+
+  /** The mail a connection's request queued, once its row says what became of the send. */
+  async function sendOf(email: string, before: number) {
+    for (let waited = 0; waited < 200; waited++) {
+      const rows = await requestsOf(email);
+      if (rows.at(-1)?.sendStatus !== "sending") break;
+      await Bun.sleep(10);
+    }
+    return fixture.mail.transport.sent
+      .slice(before)
+      .find((message) => message.to === email);
+  }
+
+  /**
+   * A browser chooses the directory, the directory verifies this person, and the callback
+   * answers: the page asking for a code, or a refusal.
+   */
+  async function signInByDirectory(
+    email: string,
+    subject: string,
+    {
+      cookie,
+      query = "",
+      client,
+      claims,
+    }: {
+      cookie?: string;
+      query?: string;
+      client?: string;
+      claims?: Partial<OidcClaims>;
+    } = {},
+  ) {
+    const before = fixture.mail.transport.sent.length;
+    const started = await post(
+      `/login${query ? `?${query}` : ""}`,
+      { email, method: "directory" },
+      {
+        cookie,
+        headers: client ? { "cf-connecting-ip": client } : undefined,
+      },
+    );
+    const answer = await throughDirectory(
+      started,
+      { sub: subject, email, name: "Person", ...claims },
+      { cookie, client },
+    );
+    const mail = await sendOf(email, before);
+    return { ...answer, mail, code: mail && codeIn(mail)! };
+  }
+
+  const openConnection = (cookie = "") =>
+    fixture.app.request("/connect-directory", {
+      headers: cookie ? { cookie } : {},
+    });
+  const enterConnectionCode = (code: string, cookie = "", headers = {}) =>
+    post("/connect-directory", { code }, { cookie, headers });
 
   const open = async (token: string, cookie = "") =>
     fixture.app.request(`/magic-link?token=${token}`, {
@@ -190,6 +304,11 @@ export function magicLinkFlow(fixture: AdminFixture) {
     openToDomain,
     post,
     ask,
+    throughDirectory,
+    sendOf,
+    signInByDirectory,
+    openConnection,
+    enterConnectionCode,
     open,
     follow,
     enter,

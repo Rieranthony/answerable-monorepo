@@ -3068,7 +3068,7 @@
       "name": "sso_set",
       "version": "2026-10-01",
       "kind": "mutate",
-      "description": "Prepare setting or replacing an organisation's SSO provider in Answerable ID, through Answerable's own Microsoft or Google application: a Microsoft Entra issuer https://login.microsoftonline.com/<tenant id>/v2.0 or https://accounts.google.com. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. A directory with its own credentials needs a client secret, which no tool takes. Magic links stay as they are.",
+      "description": "Prepare setting or replacing an organisation's SSO provider in Answerable ID, through Answerable's own Microsoft or Google application: a Microsoft Entra issuer https://login.microsoftonline.com/<tenant id>/v2.0 or https://accounts.google.com. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. A directory with its own credentials needs a client secret, which no tool takes. Directory sessions and grants end when it changes; magic links, their sessions and their grants stay as they are.",
       "scopes": [
         "admin"
       ],

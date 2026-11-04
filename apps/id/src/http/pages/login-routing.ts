@@ -46,3 +46,13 @@ export function pendingOAuthQuery(params: URLSearchParams): string | null {
   if (!params.has("client_id") || !params.has("sig")) return null;
   return params.toString();
 }
+
+/** What a failed sign-in's error page adds to the signed query it carries. */
+const errorPageParams = ["firm", "error", "error_description"];
+
+/** The authorisation a failed sign-in's error page carries: all but what was added to it. */
+export function pendingOfErrorPage(params: URLSearchParams) {
+  const pending = new URLSearchParams(params);
+  for (const name of errorPageParams) pending.delete(name);
+  return pendingOAuthQuery(pending);
+}

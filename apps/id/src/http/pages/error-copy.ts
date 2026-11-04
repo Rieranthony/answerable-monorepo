@@ -121,6 +121,18 @@ export const ERRORS: Record<string, ErrorDescription> = {
     title: "Your access was removed",
     body: "This sign-in can't be used because your access has ended. Ask your administrator for help.",
   },
+  connect_directory_code_refused: {
+    title: "That code didn't work",
+    body: "Check the code in your email and try again. A code lasts ten minutes and three tries, then you need to sign in with your company account again.",
+  },
+  connect_directory_unavailable: {
+    title: "Start again",
+    body: "No code is waiting in this browser. Sign in with your company account again. If you've only just done that, wait a minute first.",
+  },
+  connect_directory_refused: {
+    title: "We couldn't connect your company sign-in",
+    body: "Your access or your organisation's sign-in has changed since you started. Start again, or ask your administrator for help.",
+  },
 };
 
 export function describeError(code?: string | null): ErrorDescription {

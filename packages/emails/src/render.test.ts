@@ -55,6 +55,8 @@ describe("what each email says", () => {
 
       The code expires in 10 minutes.
 
+      Do not give this code to anyone. Nobody at your firm or at this service will ask for it.
+
       If this was not you, tell your administrator: someone may be using your company sign-in."
     `)
   })
@@ -108,6 +110,16 @@ describe("what each email says", () => {
     expect(`${html}\n${text}`.replace(/<!DOCTYPE[^>]*>/i, "")).not.toMatch(
       /https?:\/\//i,
     )
+  })
+
+  test("the mailbox-code email tells the reader not to hand the code over, in both parts", () => {
+    const { html, text } = renderEmail(mailbox)
+    for (const part of [html, text.replace(/\s+/g, " ")]) {
+      expect(part).toContain("Do not give this code to anyone.")
+      expect(part).toContain(
+        "Nobody at your firm or at this service will ask for it.",
+      )
+    }
   })
 
   test("no email carries the brand name or a brand device", () => {

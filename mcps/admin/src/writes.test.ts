@@ -154,7 +154,8 @@ test("sso_set sets a Microsoft or Google provider through Answerable's applicati
     changes: [{ path: `organizations[${newco.id}].ssoProvider`, from: null, to: { issuer: entraIssuer, domain: "newco.example", credentials: "platform" } }],
     effects: ["permission_change"],
     warnings: [
-      "When the provider changes, including when it is first set, Answerable ID revokes every grant of the organisation, magic-link grants included: its people sign in to each application again.",
+      "When the provider changes, including when it is first set, Answerable ID ends its directory sessions and grants: people who signed in through a directory sign in to each application again. Magic-link sessions and grants do not end.",
+      "A member with no directory account yet connects it at their first directory sign-in, once, with a code from their mailbox.",
       "The organisation's magic-link setting stays as it is: magiclink_disable is how an organisation requires its directory only.",
     ],
     quantities: [],
@@ -167,6 +168,10 @@ test("sso_set sets a Microsoft or Google provider through Answerable's applicati
     summary: `Replace the SSO provider of organisation “Newco” (newco): ${entraIssuer} for newco.example → ${google} for newco.example, through Answerable's Google application`,
     changes: [{ from: { issuer: entraIssuer, domain: "newco.example", credentials: "platform" }, to: { issuer: google, domain: "newco.example", credentials: "platform" } }],
   })
+  // A new issuer's subjects are new, and an account does not carry over; a new domain alone leaves them.
+  expect(replace.preview.warnings).toContain(`People connected to ${entraIssuer} keep that account, which does not carry over: their sign-in through ${google} answers email_conflict. Where links are on, a magic link still signs them in.`)
+  const sameIssuer = await prepare("sso_set", { organizationId: newco.id, issuer: entraIssuer, domain: "mail.newco.example" })
+  expect(sameIssuer.preview.warnings!.join()).not.toContain("does not carry over")
   await committed(replace)
   expect(writes()[1]).toMatchObject({ ifMatch: `"${created.results.ssoProviderId}:1"`, ifNoneMatch: null })
   expect(id.received.at(-1)).toMatchObject({ request: `PUT /api/admin/v1/organizations/${newco.id}/sso-provider` })

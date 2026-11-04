@@ -38,6 +38,7 @@ const flow: OAuthFlow = {
   ],
   selectedMemberId: memberId,
   status: "selection",
+  authenticationMethod: "directory",
 };
 type Reply = {
   data?: unknown;
@@ -309,7 +310,7 @@ test("organisation selection validates membership and forwards the correct actio
             organizationSlug: "tenant",
             oauth_query: query,
             callbackURL: "http://localhost:47300/authorize?" + query,
-            errorCallbackURL: "http://localhost:47300/error",
+            errorCallbackURL: `http://localhost:47300/error?${query}&firm=tenant`,
           },
     );
     for (const reply of [{ status: 400 }, { throws: true }, { data: {} }])

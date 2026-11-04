@@ -1294,6 +1294,13 @@
                         "selection",
                         "consent"
                       ]
+                    },
+                    "authenticationMethod": {
+                      "type": "string",
+                      "enum": [
+                        "directory",
+                        "magic_link"
+                      ]
                     }
                   },
                   "required": [
@@ -1303,7 +1310,8 @@
                     "grantedScopes",
                     "memberships",
                     "selectedMemberId",
-                    "status"
+                    "status",
+                    "authenticationMethod"
                   ],
                   "additionalProperties": false
                 }

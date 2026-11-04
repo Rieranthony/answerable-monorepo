@@ -4,9 +4,12 @@ import type {
 } from "@better-auth/sso";
 import type { DBTransactionAdapter } from "better-auth";
 
+import { noteRefusedIdentity } from "../auth/refused-identity.ts";
+
 type ProviderRow = {
   id: string;
   organizationId: string;
+  revision: number;
 };
 
 type OrganizationRow = {
@@ -42,6 +45,17 @@ export function classifyIssuer(issuer: string) {
     return { kind: "google" as const };
   }
   return { kind: "oidc" as const };
+}
+
+/**
+ * What `accounts.directory_id` holds for a verified sign-in at this address: a tenant is in its
+ * issuer, and a Google directory's hosted domain is the address's own, since sign-in refuses
+ * any other.
+ */
+export function directoryIdOf(issuerUrl: string, domain: string) {
+  const issuer = classifyIssuer(issuerUrl);
+  if (issuer.kind === "entra") return issuer.tenantId;
+  return issuer.kind === "google" ? domain : undefined;
 }
 
 export const federationFailureCodes = [
@@ -247,8 +261,20 @@ export async function resolveFederatedUser(
     where: [{ field: "email", value: email }],
   });
   // Any holder keeps the address, a disabled person included: staff free it by
-  // retiring it once the previous holder is disabled.
-  if (emailUser) return reject("email_conflict", "Email is already in use");
+  // retiring it once the previous holder is disabled. This transaction rolls back, so what a
+  // mailbox proof would need of this verified sign-in leaves it in memory.
+  if (emailUser) {
+    noteRefusedIdentity({
+      organizationId: provider.organizationId,
+      providerId: provider.id,
+      providerRevision: provider.revision,
+      email,
+      issuer: input.accountKey.issuer,
+      subject: input.accountKey.accountId,
+      directoryUserId,
+    });
+    return reject("email_conflict", "Email is already in use");
+  }
 
   const user = await database.create<{ id: string }>({
     model: "user",

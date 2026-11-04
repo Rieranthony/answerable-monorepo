@@ -167,7 +167,13 @@ function enqueue() {
 }
 test("organisation login forwards state and session cookies through the issuer", async () => {
   enqueue();
-  const completed = await finishSso(await page("/login?organization=tenant"));
+  // The firm has both ways in, so the page asks which.
+  const chosen = await page("/login?organization=tenant");
+  expect(chosen.status).toBe(200);
+  expect(await chosen.text()).toContain("Continue with company sign-in");
+  const completed = await finishSso(
+    await page("/login?organization=tenant", "", { method: "directory" }),
+  );
   expect(completed.headers.get("location")).toBe(
     fixture.environment.betterAuthUrl + "/login?organization=tenant",
   );
@@ -227,6 +233,7 @@ test("email login carries the signed OAuth query through SSO to selection", asyn
   const completed = await finishSso(
     await page(login.pathname + login.search, "", {
       email: "tenantadmin@tenant.example.com",
+      method: "directory",
     }),
   );
   const selection = new URL(completed.headers.get("location")!);
@@ -409,7 +416,7 @@ test("email routing preserves SSO request headers, cookies and OAuth query", asy
     });
     const response = await f.app.request(
       "/login" + suffix,
-      post({ email: "person@second.example.com" }),
+      post({ email: "person@second.example.com", method: "directory" }),
     );
     expect(response.status).toBe(302);
     expect(response.headers.getSetCookie()).toEqual([
@@ -423,7 +430,7 @@ test("email routing preserves SSO request headers, cookies and OAuth query", asy
       organizationSlug: "tenant",
       loginHint: "person@second.example.com",
       callbackURL: "http://localhost:47300/login" + (suffix || "?"),
-      errorCallbackURL: "http://localhost:47300/error",
+      errorCallbackURL: `http://localhost:47300/error?${suffix ? `${query}&` : ""}firm=tenant`,
       ...(suffix ? { oauth_query: query } : {}),
     });
   }
@@ -446,7 +453,10 @@ test("login accepts a post from its own origin or one that names none", async ()
     });
     const response = await f.app.request(
       "/login",
-      postFrom(extra, { email: "person@second.example.com" }),
+      postFrom(extra, {
+        email: "person@second.example.com",
+        method: "directory",
+      }),
     );
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("https://issuer.example");
@@ -489,10 +499,16 @@ test("login routes an address of 254 characters and refuses a longer one", async
   const f = scriptedFixture({
     "/auth/sign-in/sso": { data: { url: "https://issuer.example" } },
   });
-  const accepted = await f.app.request("/login", post({ email: atBound }));
+  const accepted = await f.app.request(
+    "/login",
+    post({ email: atBound, method: "directory" }),
+  );
   expect(accepted.status).toBe(302);
   expect(f.requests).toHaveLength(1);
-  const refused = await f.app.request("/login", post({ email: "a" + atBound }));
+  const refused = await f.app.request(
+    "/login",
+    post({ email: "a" + atBound, method: "directory" }),
+  );
   expect(refused.status).toBe(200);
   expect(refused.headers.get("location")).toBeNull();
   expect(await refused.text()).toContain("We couldn&#39;t sign you in");
@@ -507,7 +523,10 @@ test("typed email SSO failures retain the form, address and footer", async () =>
   ]) {
     const response = await scriptedFixture({
       "/auth/sign-in/sso": reply,
-    }).app.request("/login", post({ email: "person@second.example.com" }));
+    }).app.request(
+      "/login",
+      post({ email: "person@second.example.com", method: "directory" }),
+    );
     expect(response.status).toBe(200);
     const text = await response.text();
     for (const value of [
@@ -543,6 +562,7 @@ test("a second organisation domain signs in with a normalised login hint", async
   });
   const started = await page("/login", "", {
     email: " Person@SECOND.EXAMPLE.COM ",
+    method: "directory",
   });
   const url = new URL(started.headers.get("location")!);
   expect(url.origin).toBe(fixture.issuer.origin);

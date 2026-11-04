@@ -24,14 +24,20 @@ export function readSignInCookie(context: PageContext) {
   return held !== undefined && value.test(held) ? held : null;
 }
 
+/** This browser's value, or a new one for `holdSignInCookie` to give it. */
+export const signInCookieValue = (context: PageContext) =>
+  readSignInCookie(context) ?? randomBytes(32).toString("base64url");
+
 /**
  * Keep this browser's value and renew it, or give it one. A reload keeps its flow, and the
  * cookie outlives the newest link. `SameSite=Lax` and not `Strict`, or a link opened from a
- * mail client arrives without it.
+ * mail client arrives without it, and so does a directory's redirect to the SSO callback, a
+ * top-level GET from another site.
  */
-export function holdSignInCookie(context: PageContext) {
-  const browser =
-    readSignInCookie(context) ?? randomBytes(32).toString("base64url");
+export function holdSignInCookie(
+  context: PageContext,
+  browser = signInCookieValue(context),
+) {
   const { name, secure } = cookieFor(context);
   setCookie(context, name, browser, {
     path: "/",

@@ -83,6 +83,50 @@ export async function usersWithForeignAccounts(
 }
 
 /**
+ * The holder a directory sign-in may connect to by proving this mailbox, or null, which leaves
+ * `email_conflict`: an active person, an effective member here, whose only account, if any, is
+ * this firm's own magic-link one. Any other account refuses, a directory's of this firm or
+ * another, live or removed, and a tombstone: it may be a different person's history. It reads
+ * no switch and no admission, because the code never signs anyone in: a directory sign-in
+ * still makes the session, so the platform organisation has no exception and links off strand
+ * nobody. In protocol scope, as above.
+ */
+export async function holderAwaitingDirectory(
+  tx: Executor,
+  organizationId: string,
+  email: string,
+) {
+  const [user] = await tx
+    .select({ id: users.id, status: users.status })
+    .from(users)
+    .where(eq(users.email, email));
+  // A retired or erased person is disabled too: the table's checks say so.
+  if (user?.status !== "active") return null;
+  const [member] = await tx
+    .select({ effective: isEffective(members) })
+    .from(members)
+    .where(
+      and(
+        eq(members.organizationId, organizationId),
+        eq(members.userId, user.id),
+      ),
+    );
+  if (!member?.effective) return null;
+  const [other] = await tx
+    .select({ id: accounts.id })
+    .from(accounts)
+    .leftJoin(ssoProviders, eq(ssoProviders.providerId, accounts.providerId))
+    .where(
+      and(
+        eq(accounts.userId, user.id),
+        sql`not coalesce(${ssoProviders.organizationId} = ${organizationId} and ${ssoProviders.kind} = 'magic_link' and ${accounts.deletedAt} is null, false)`,
+      ),
+    )
+    .limit(1);
+  return other ? null : user.id;
+}
+
+/**
  * The one admission check, read from current state in the caller's transaction, which
  * must be in protocol scope for RLS to show members. Holds no locks of its own, so a
  * caller that goes on to sign someone in takes its locks first.

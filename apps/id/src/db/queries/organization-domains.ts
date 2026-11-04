@@ -61,18 +61,17 @@ export async function organizationAcceptsDomain(
 /** How the firm offers sign-in. One read, the same whatever the address it was asked for. */
 const signInMethods = (db: Executor) => ({
   slug: organizations.slug,
-  directory: sql<boolean>`${exists(
-    db
-      .select({ id: ssoProviders.id })
-      .from(ssoProviders)
-      .where(
-        and(
-          eq(ssoProviders.organizationId, organizations.id),
-          eq(ssoProviders.kind, "oidc"),
-          isNull(ssoProviders.deletedAt),
-        ),
+  /** The live directory's issuer, which says what its button is called. */
+  directory: sql<string | null>`(${db
+    .select({ issuer: ssoProviders.issuer })
+    .from(ssoProviders)
+    .where(
+      and(
+        eq(ssoProviders.organizationId, organizations.id),
+        eq(ssoProviders.kind, "oidc"),
+        isNull(ssoProviders.deletedAt),
       ),
-  )}`,
+    )})`,
   magicLink: sql<boolean>`${exists(
     db
       .select({ id: ssoProviders.id })
@@ -110,8 +109,8 @@ export async function findDomainSignInRoute(db: Executor, domain: string) {
   return route ?? null;
 }
 
-/** Whether `?organization=<slug>` names a firm whose only way in is a link. */
-export async function organizationUsesLinksOnly(db: Executor, slug: string) {
+/** How the firm with this slug offers sign-in, or nothing for no such active firm. */
+export async function findOrganizationSignInRoute(db: Executor, slug: string) {
   const [route] = await db
     .select(signInMethods(db))
     .from(organizations)
@@ -122,7 +121,7 @@ export async function organizationUsesLinksOnly(db: Executor, slug: string) {
         isNull(organizations.deletedAt),
       ),
     );
-  return route !== undefined && route.magicLink && !route.directory;
+  return route ?? null;
 }
 
 export type DomainQuery = PageQuery & { status?: LifecycleStatus };

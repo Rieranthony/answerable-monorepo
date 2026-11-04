@@ -13,7 +13,7 @@ export type AppEnvironment = {
     requestId: string;
     clientIp: string | null;
     environment: Environment;
-    magicLinks?: Pick<MagicLinkRequests, "request">;
+    magicLinks?: Pick<MagicLinkRequests, "request" | "connectDirectory">;
     txtResolver: TxtResolver;
     principal?: Principal;
     bearerClaims?: BearerClaims;

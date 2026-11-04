@@ -1,4 +1,6 @@
+import { capturingRefusedIdentity } from "./auth/refused-identity.ts";
 import { createPagesApp, isPagePath } from "./http/pages/index.ts";
+import { askMailboxToConnect } from "./http/pages/routes/connect-directory.ts";
 import { getIP } from "@better-auth/core/utils/ip";
 import { sql } from "drizzle-orm";
 import { Hono } from "hono";
@@ -38,7 +40,7 @@ export type AppServices = {
   metrics?: OperationalMetrics;
   /** Where `POST /login` hands a request for a link; the runtime always supplies it. A test
    * that does not ask for mail gets the same page and sends none. */
-  magicLinks?: Pick<MagicLinkRequests, "request">;
+  magicLinks?: Pick<MagicLinkRequests, "request" | "connectDirectory">;
   /** How a domain's proof is looked up: the system's resolver unless a test brings its own. */
   txtResolver?: TxtResolver;
 };
@@ -215,9 +217,13 @@ export function createApp(services: AppServices) {
 
     const headers = new Headers(context.req.raw.headers);
     headers.set("x-request-id", context.get("requestId"));
-    const response = await context
-      .get("auth")
-      .handler(new Request(context.req.raw, { headers }));
+    const { response, identity } = await capturingRefusedIdentity(() =>
+      context.get("auth").handler(new Request(context.req.raw, { headers })),
+    );
+    if (identity) {
+      const answer = await askMailboxToConnect(context, response, identity);
+      if (answer) return answer;
+    }
     logRejectedSignIn(context, response);
     if (
       context.req.path === "/auth/oauth2/token" &&

@@ -51,8 +51,12 @@ describe("POST /login routes by the domain's firm", () => {
     expect(code).toMatch(/^\d{8}$/);
   });
 
-  test("a live directory goes to the directory, links on or off, and sends no mail", async () => {
+  test("a live directory with links off goes to the directory and sends no mail", async () => {
     const organization = await firm(true);
+    await fixture.db
+      .update(ssoProviders)
+      .set({ enabled: false })
+      .where(eq(ssoProviders.id, organization.magicLink.id));
     const { email } = await flow.listed(organization);
     const sent = fixture.mail.transport.sent.length;
     const { response, setCookies } = await flow.ask(email);
@@ -152,7 +156,10 @@ describe("POST /login routes by the domain's firm", () => {
       auth: fixture.auth,
       db: fixture.db,
       environment: fixture.environment,
-      magicLinks: { request: () => false },
+      magicLinks: {
+        request: () => false,
+        connectDirectory: fixture.mail.requests.connectDirectory,
+      },
     });
     const form = () => ({
       method: "POST",
@@ -214,6 +221,7 @@ describe("the client's budget", () => {
           queued++;
           return true;
         },
+        connectDirectory: fixture.mail.requests.connectDirectory,
       },
     });
     for (let index = 0; index < 61; index++)
@@ -336,8 +344,12 @@ describe("?organization=<slug>", () => {
     expect(text).not.toContain('role="alert"');
   });
 
-  test("a firm with a directory starts its sign-in, and one with neither says so", async () => {
+  test("a firm with only a directory starts its sign-in, and one with neither says so", async () => {
     const directory = await firm(true);
+    await fixture.db
+      .update(ssoProviders)
+      .set({ enabled: false })
+      .where(eq(ssoProviders.id, directory.magicLink.id));
     expect(
       (await fixture.app.request(`/login?organization=${directory.slug}`))
         .status,

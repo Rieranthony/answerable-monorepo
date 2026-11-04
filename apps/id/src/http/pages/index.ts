@@ -7,6 +7,7 @@ import type { AppEnvironment } from "../context.ts";
 import fontPath from "./fonts/PublicSans-Variable.woff2" with { type: "file" };
 import { Document } from "./views/layout.tsx";
 import { registerLogin } from "./routes/login.ts";
+import { registerConnectDirectory } from "./routes/connect-directory.ts";
 import { registerMagicLink } from "./routes/magic-link.ts";
 import { registerOAuth } from "./routes/oauth.ts";
 import { registerSecurity } from "./routes/security.ts";
@@ -24,6 +25,7 @@ const pages = [
   "/login",
   "/magic-link",
   "/magic-link/code",
+  "/connect-directory",
   "/sign-out",
   "/authorize",
   "/consent",
@@ -86,6 +88,7 @@ export function createPagesApp(): Hono<AppEnvironment> {
   });
   registerLogin(app);
   registerMagicLink(app);
+  registerConnectDirectory(app);
   registerOAuth(app);
   registerSecurity(app);
   registerError(app);

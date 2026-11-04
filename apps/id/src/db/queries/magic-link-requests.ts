@@ -1,6 +1,9 @@
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 
-import { magicLinkIssuer } from "../../auth/magic-link.ts";
+import {
+  magicLinkCodeAttempts,
+  magicLinkIssuer,
+} from "../../auth/magic-link.ts";
 import type { PlatformWriteContext } from "../../services/platform-context.ts";
 import type { TenantReadContext } from "../../services/tenant-context.ts";
 import type { Executor } from "../client.ts";
@@ -60,6 +63,35 @@ export async function readLastMagicLinkRequest(
     .orderBy(desc(magicLinkRequests.createdAt), desc(magicLinkRequests.id))
     .limit(1);
   return row ? { ...row, createdAt: row.createdAt.toISOString() } : null;
+}
+
+/** The code this address may be holding for a directory sign-in it has yet to connect here. */
+export async function readDirectoryConnection(
+  context: TenantReadContext<"memberAccess">,
+  email: string,
+) {
+  const { tx, organizationId } = context;
+  const [row] = await tx
+    .select({
+      id: magicLinkRequests.id,
+      sendStatus: magicLinkRequests.sendStatus,
+      attempts: magicLinkRequests.attempts,
+      expiresAt: magicLinkRequests.expiresAt,
+    })
+    .from(magicLinkRequests)
+    .where(
+      and(
+        eq(magicLinkRequests.organizationId, organizationId),
+        eq(magicLinkRequests.email, email),
+        eq(magicLinkRequests.purpose, "connect_directory"),
+        ne(magicLinkRequests.sendStatus, "failed"),
+        sql`${magicLinkRequests.expiresAt} > statement_timestamp()`,
+        lt(magicLinkRequests.attempts, magicLinkCodeAttempts),
+      ),
+    )
+    .orderBy(desc(magicLinkRequests.createdAt), desc(magicLinkRequests.id))
+    .limit(1);
+  return row ? { ...row, expiresAt: row.expiresAt.toISOString() } : null;
 }
 
 /**

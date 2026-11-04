@@ -8,8 +8,9 @@ import {
   serviceOrigin,
   type PageContext,
 } from "../gateway.ts";
-import { organizationUsesLinksOnly } from "../../../db/queries/organization-domains.ts";
-import { LoginForm } from "../views/login.tsx";
+import { findOrganizationSignInRoute } from "../../../db/queries/organization-domains.ts";
+import { classifyIssuer } from "../../../services/federation.ts";
+import { ChooseSignIn, LoginForm } from "../views/login.tsx";
 import { OAuthRequest, type OAuthFlow } from "../views/oauth-request.tsx";
 import { renderSignIn, startSignIn } from "./login.ts";
 
@@ -65,16 +66,28 @@ export function registerOAuth(app: Hono<AppEnvironment>) {
     );
     if (!member) return renderFlow(context, false, accessUnavailable);
     const query = new URL(context.req.url).searchParams.toString();
-    // A firm whose only way in is a link has no sign-in to start, so it asks for the address.
-    // `POST /login` never redirects on a session, and the new session a link makes is what
-    // the provider resumes this query on. If this read fails, sign-in starts as for any firm.
-    if (
-      !member.authenticated &&
-      (await organizationUsesLinksOnly(context.get("db"), member.slug).catch(
-        () => false,
-      ))
-    )
-      return renderSignIn(context, jsx(LoginForm, { query }));
+    // A firm whose only way in is a link has no sign-in to start, so it asks for the address;
+    // a firm with both asks which, unless this is the answer. `POST /login` never redirects on
+    // a session, and the new session a link makes is what the provider resumes this query on.
+    // If this read fails, sign-in starts as for any firm.
+    if (!member.authenticated && body.method !== "directory") {
+      const route = await findOrganizationSignInRoute(
+        context.get("db"),
+        member.slug,
+      ).catch(() => null);
+      if (route?.magicLink && route.directory === null)
+        return renderSignIn(context, jsx(LoginForm, { query }));
+      if (route?.magicLink)
+        return renderSignIn(
+          context,
+          jsx(ChooseSignIn, {
+            directory: classifyIssuer(route.directory!).kind,
+            directoryAction: `/authorize?${query}`,
+            member: member.memberId,
+            query,
+          }),
+        );
+    }
     try {
       const result = member.authenticated
         ? await callAuth(context, {

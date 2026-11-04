@@ -1,7 +1,8 @@
 import {
   findDomainSignInRoute,
-  organizationUsesLinksOnly,
+  findOrganizationSignInRoute,
 } from "../../../db/queries/organization-domains.ts";
+import { classifyIssuer } from "../../../services/federation.ts";
 import { createClientBudget } from "../../../lib/client-budget.ts";
 import { DirectoryLogos } from "../views/directory-logos.tsx";
 import { verifyOAuthQueryParams } from "@better-auth/oauth-provider";
@@ -25,7 +26,7 @@ import {
 } from "../login-routing.ts";
 import { describeError, type ErrorDescription } from "../error-copy.ts";
 import { holdSignInCookie } from "../sign-in-cookie.ts";
-import { LoginForm, SignedIn } from "../views/login.tsx";
+import { ChooseSignIn, LoginForm, SignedIn } from "../views/login.tsx";
 import { CheckEmail } from "../views/magic-link.tsx";
 
 export async function startSignIn(
@@ -33,8 +34,12 @@ export async function startSignIn(
   identity: { organizationSlug: string; loginHint?: string },
   callbackURL: string,
   origin: string | null,
+  pending = pendingOAuthQuery(new URL(context.req.url).searchParams),
 ) {
-  const pending = pendingOAuthQuery(new URL(context.req.url).searchParams);
+  // A failure names the firm and carries the signed query, so that the error page can offer a
+  // link and the SSO callback can keep the application's place when it asks for a mailbox code.
+  const failure = new URLSearchParams(pending ?? "");
+  failure.set("firm", identity.organizationSlug);
   const result = await callAuth(context, {
     method: "POST",
     path: "/auth/sign-in/sso",
@@ -42,12 +47,25 @@ export async function startSignIn(
     body: {
       ...identity,
       callbackURL,
-      errorCallbackURL: `${serviceOrigin(context)}/error`,
+      errorCallbackURL: `${serviceOrigin(context)}/error?${failure}`,
       ...(pending ? { oauth_query: pending } : {}),
     },
   });
   applyCookies(context, result.setCookies);
   return result;
+}
+
+/**
+ * The signed query to resume with, or null. Refusing one costs the person their place in the
+ * application, not the sign-in: an expired signature, or one past the bound.
+ */
+export async function resumableQuery(
+  context: PageContext,
+  pending: string | null,
+) {
+  if (pending === null || pending.length > maxPendingQueryLength) return null;
+  const { secret } = await context.get("auth").$context;
+  return (await verifyOAuthQueryParams(pending, secret)) ? pending : null;
 }
 
 export function renderSignIn(context: PageContext, view: Child) {
@@ -83,15 +101,27 @@ async function renderLogin(context: PageContext, message?: ErrorDescription) {
       }),
     );
   }
-  // A firm whose only way in is a link has no sign-in to start: it asks for the address.
-  // If this read fails, sign-in starts as it does for any firm and answers for itself.
-  const linksOnly =
-    route.mode === "auto" &&
-    (await organizationUsesLinksOnly(
-      context.get("db"),
-      route.organizationSlug,
-    ).catch(() => false));
-  if (route.mode === "auto" && !message && !linksOnly) {
+  // A firm whose only way in is a link has no sign-in to start: it asks for the address. A firm
+  // with both asks which, since nothing may redirect past the link. If this read fails, sign-in
+  // starts as it does for any firm and answers for itself.
+  const firm =
+    route.mode === "auto"
+      ? await findOrganizationSignInRoute(
+          context.get("db"),
+          route.organizationSlug,
+        ).catch(() => null)
+      : null;
+  if (firm?.magicLink && firm.directory !== null)
+    return renderSignIn(
+      context,
+      jsx(ChooseSignIn, {
+        directory: classifyIssuer(firm.directory).kind,
+        directoryAction: `/login?${query}`,
+        query: query.toString(),
+        message,
+      }),
+    );
+  if (route.mode === "auto" && !message && !firm?.magicLink) {
     try {
       const result = await startSignIn(
         context,
@@ -118,8 +148,7 @@ async function renderLogin(context: PageContext, message?: ErrorDescription) {
 
 /**
  * The same page whatever becomes of this address, and the work that depends on it runs after
- * the response. Only a signed query within the bound is kept: refusing it costs the person
- * their place in the application, not the sign-in.
+ * the response.
  */
 async function askForLink(
   context: PageContext,
@@ -127,17 +156,11 @@ async function askForLink(
   query: URLSearchParams,
 ) {
   const browser = holdSignInCookie(context);
-  const pending = pendingOAuthQuery(query);
-  const { secret } = await context.get("auth").$context;
-  const resumable =
-    pending !== null &&
-    pending.length <= maxPendingQueryLength &&
-    (await verifyOAuthQueryParams(pending, secret));
   context.get("magicLinks")?.request({
     address: email,
     browser,
     client: context.get("clientIp") ?? "unresolved",
-    pendingQuery: resumable ? pending : null,
+    pendingQuery: await resumableQuery(context, pendingOAuthQuery(query)),
   });
   return context.render(jsx(CheckEmail, { email, query: query.toString() }), {
     title: "Sign in",
@@ -175,23 +198,55 @@ export function registerLogin(app: Hono<AppEnvironment>) {
       typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     let message = describeError();
     const domain = email.slice(email.lastIndexOf("@") + 1);
+    const start = async (identity: Parameters<typeof startSignIn>[1]) => {
+      const result = await startSignIn(
+        context,
+        identity,
+        `${serviceOrigin(context)}/login?${query}`,
+        context.req.header("origin") ?? null,
+      );
+      if (result.ok && result.data?.url)
+        return context.redirect(result.data.url, 302);
+      message = describeError(result.data?.code);
+    };
+    // The choice page of `?organization=` names a firm and no address.
+    const named = email ? null : decideLoginRoute(query);
+    if (body.method === "directory" && named?.mode === "auto") {
+      try {
+        const answer = await start({
+          organizationSlug: named.organizationSlug,
+        });
+        if (answer) return answer;
+      } catch {
+        message = describeError();
+      }
+    }
     if (isLoginAddress(email)) {
       try {
         const route = await findDomainSignInRoute(context.get("db"), domain);
         if (!route) {
           message = describeError("provider_not_found");
-        } else if (route.magicLink && !route.directory) {
+        } else if (
+          route.magicLink &&
+          (route.directory === null || body.method === "link")
+        ) {
           return await askForLink(context, email, query);
-        } else {
-          const result = await startSignIn(
+        } else if (route.magicLink && body.method !== "directory") {
+          return renderSignIn(
             context,
-            { organizationSlug: route.slug, loginHint: email },
-            `${serviceOrigin(context)}/login?${query}`,
-            context.req.header("origin") ?? null,
+            jsx(ChooseSignIn, {
+              directory: classifyIssuer(route.directory!).kind,
+              directoryAction: `/login?${query}`,
+              email,
+              query: query.toString(),
+            }),
           );
-          if (result.ok && result.data?.url)
-            return context.redirect(result.data.url, 302);
-          message = describeError(result.data?.code);
+        } else {
+          const answer = await start({
+            organizationSlug: route.slug,
+            loginHint: email,
+          });
+          if (answer) return answer;
         }
       } catch {
         message = describeError();

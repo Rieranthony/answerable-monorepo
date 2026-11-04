@@ -7,7 +7,7 @@ import { type TenantReadContext } from "./tenant-context.ts";
 import { isDeepStrictEqual } from "node:util";
 import * as queries from "../db/queries/sso-providers.ts";
 import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
-import { revokeOrganizationGrantContexts } from "../db/queries/grant-contexts.ts";
+import { revokeDirectoryGrantContexts } from "../db/queries/grant-contexts.ts";
 import { recordCommandEvent } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
 import { assertRevision } from "../http/admin/revision.ts";
@@ -108,7 +108,7 @@ export async function putSsoProvider(
         providerId: organization.slug,
       });
   const revokedGrantContexts = changed
-    ? await revokeOrganizationGrantContexts(context, organizationId)
+    ? await revokeDirectoryGrantContexts(context, organizationId)
     : [];
   // An unchanged command's receipt is its record; it writes no audit event.
   if (changed)
@@ -149,7 +149,7 @@ export async function deleteSsoProvider(
     await queries.deleteSsoProvider(context, organizationId),
     notFound,
   );
-  const revokedGrantContexts = await revokeOrganizationGrantContexts(
+  const revokedGrantContexts = await revokeDirectoryGrantContexts(
     context,
     organizationId,
   );

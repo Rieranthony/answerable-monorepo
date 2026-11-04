@@ -278,7 +278,7 @@ test("members_import names what it cannot reach: links off, a directory connecte
     "Sends no mail. Each person's account is made at their first sign-in. A removed member and a disabled person stay as they are.",
     "1 organisation-wide entitlement exists, so each new member has access at once: https://toolbox.test/mcp.",
     "Magic links are off here, so nobody listed can sign in by link until magiclink_enable.",
-    "A directory is connected: until connecting it to an existing person is built, a listed person's first directory sign-in answers email_conflict, so list people here only when they sign in by link.",
+    "A directory is connected: a listed person's first directory sign-in asks for a code from their mailbox, once, which connects it to the person listed here. That works whether links are on or off.",
     noPrecondition("importing members"),
   ])
   const receipt = await committed(client, intent)
@@ -423,5 +423,5 @@ test("descriptions no longer imply a directory is the only way in", async () => 
   const description = (name: string) => tools.find(tool => tool.name === name)!.description!
   expect(description("organisations_create")).toContain("A directory is one way in, not the only one")
   expect(description("domains_add")).toContain("a magic link, its directory, or the choice of both")
-  expect(description("sso_set")).toContain("Magic links stay as they are")
+  expect(description("sso_set")).toContain("magic links, their sessions and their grants stay as they are")
 })

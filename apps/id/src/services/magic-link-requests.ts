@@ -7,6 +7,8 @@ import {
 import type { DBAdapter } from "better-auth";
 import { eq, sql } from "drizzle-orm";
 
+import type { RefusedIdentity } from "../auth/refused-identity.ts";
+
 import type { Auth } from "../auth.ts";
 import { authenticationTransaction } from "../auth/database-adapter.ts";
 import {
@@ -19,7 +21,11 @@ import {
 } from "../auth/magic-link.ts";
 import type { Database, Executor } from "../db/client.ts";
 import { withDatabaseScope } from "../db/isolation.ts";
-import { magicLinkRequests, verifications } from "../db/schema/index.ts";
+import {
+  magicLinkRequests,
+  organizations,
+  verifications,
+} from "../db/schema/index.ts";
 import type { Environment } from "../env.ts";
 import { errorFields } from "../http/problem.ts";
 import { createBoundedQueue } from "../lib/bounded-queue.ts";
@@ -27,6 +33,7 @@ import { createId } from "../lib/id.ts";
 import { logEvent } from "../lib/log.ts";
 import {
   admitMagicLink,
+  holderAwaitingDirectory,
   parseMagicLinkAddress,
   type MagicLinkAddress,
 } from "./magic-link-admission.ts";
@@ -84,6 +91,11 @@ export type MagicLinkRequest = {
 };
 
 type Parsed = Omit<MagicLinkRequest, "address"> & { address: MagicLinkAddress };
+
+/** A directory sign-in refused for its address, asking that mailbox for the other proof. */
+export type DirectoryConnectionRequest = Omit<MagicLinkRequest, "address"> & {
+  identity: RefusedIdentity;
+};
 
 type LimitName =
   | "address_client_minute"
@@ -288,6 +300,61 @@ export function createMagicLinkRequests({
     } as const;
   }
 
+  /** The other proof of a directory: no token, and what was verified of the sign-in. */
+  async function reserveConnection(
+    tx: Executor,
+    requestId: string,
+    { identity, browser, client, pendingQuery }: DirectoryConnectionRequest,
+  ) {
+    const { email, organizationId, providerId, providerRevision } = identity;
+    await lockMagicLinkAddress(tx, email);
+    if (!(await holderAwaitingDirectory(tx, organizationId, email)))
+      return { outcome: "conflict" } as const;
+    const clientHash = keys.clientHash(client);
+    const limit = await exceededLimit(
+      tx,
+      email,
+      clientHash,
+      organizationId,
+      false,
+    );
+    if (limit) return { outcome: "limited", limit, organizationId } as const;
+    const [firm] = await tx
+      .select({ name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId));
+    const code = newMagicLinkCode();
+    const rendered = renderEmail({
+      template: "mailbox-code",
+      firmName: firm!.name,
+      code,
+      expiresInMinutes: magicLinkTtlMinutes,
+    });
+    await tx.insert(magicLinkRequests).values({
+      id: requestId,
+      organizationId,
+      providerId,
+      providerRevision,
+      purpose: "connect_directory",
+      email,
+      clientHash,
+      browserHash: magicLinkBrowserHash(browser),
+      codeHmac: keys.codeHmac(requestId, code),
+      pendingOauthQuery: pendingQuery,
+      directoryIssuer: identity.issuer,
+      directorySubject: identity.subject,
+      directoryUserId: identity.directoryUserId,
+      expiresAt: sql`statement_timestamp() + make_interval(mins => ${magicLinkTtlMinutes})`,
+    });
+    return {
+      outcome: "reserved",
+      organizationId,
+      purpose: "connect_directory",
+      tokenIdentifier: null,
+      message: { to: email, ...rendered } satisfies Message,
+    } as const;
+  }
+
   /** Record the send's answer. A link that failed loses its token with the same commit. */
   function finish(
     requestId: string,
@@ -343,7 +410,24 @@ export function createMagicLinkRequests({
       });
       return { outcome: "limited", limit: reservation.limit } as const;
     }
-    const { purpose, tokenIdentifier, message } = reservation;
+    return deliver(requestId, reservation);
+  }
+
+  /** The send, outside any transaction, and its answer. */
+  async function deliver(
+    requestId: string,
+    {
+      organizationId,
+      purpose,
+      tokenIdentifier,
+      message,
+    }: {
+      organizationId: string;
+      purpose: (typeof magicLinkRequests.$inferSelect)["purpose"];
+      tokenIdentifier: string | null;
+      message: Message;
+    },
+  ) {
     // A transport refuses an address it cannot send to by throwing; that is a failed send.
     const result = await transport.send(message).catch(() => unsent);
     await finish(requestId, tokenIdentifier, result);
@@ -363,9 +447,9 @@ export function createMagicLinkRequests({
     return { outcome: "sent", requestId, purpose } as const;
   }
 
-  const queue = createBoundedQueue<Parsed>({
+  const queue = createBoundedQueue<() => Promise<unknown>>({
     ...limits,
-    run,
+    run: (job) => job(),
     onError: (error) =>
       logEvent("magic link", "magic_link_job_failed", errorFields(error)),
     onOverflow: (dropped) =>
@@ -384,7 +468,35 @@ export function createMagicLinkRequests({
      */
     request(request: MagicLinkRequest) {
       const parsed = parse(request);
-      return parsed !== null && queue.enqueue(parsed);
+      return parsed !== null && queue.enqueue(() => run(parsed));
+    },
+    /**
+     * Ask a mailbox for the code that connects a directory. The row commits before this
+     * answers, because the page that follows looks for it, and the send goes through the same
+     * queue. `conflict` is an address no code can help, `limited` sends nothing new: the
+     * browser may hold an earlier request's code.
+     */
+    async connectDirectory(request: DirectoryConnectionRequest) {
+      const requestId = createId();
+      const { adapter } = await auth.$context;
+      const reservation = await authenticationTransaction(
+        adapter as DBAdapter,
+        (_, tx) => reserveConnection(tx, requestId, request),
+      );
+      if (reservation.outcome === "conflict") return "conflict" as const;
+      if (reservation.outcome === "limited") {
+        log({
+          outcome: "limited",
+          limit: reservation.limit,
+          requestId,
+          organizationId: reservation.organizationId,
+        });
+        return "limited" as const;
+      }
+      // A send that will never run must not hold a limit or look as if it might.
+      if (!queue.enqueue(() => deliver(requestId, reservation)))
+        await finish(requestId, null, unsent);
+      return "reserved" as const;
     },
     /** One request now, for what must wait for its outcome. */
     async process(request: MagicLinkRequest) {

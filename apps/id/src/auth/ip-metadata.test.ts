@@ -172,6 +172,7 @@ for (const path of [
   "/login",
   "/magic-link",
   "/magic-link/code",
+  "/connect-directory",
   "/assets/tailwind.css",
   "/healthz",
   "/readyz",

@@ -51,7 +51,8 @@ async function failures(tx: Executor, query: ReturnType<typeof sql>) {
 /**
  * One code from one browser. Every comparison is counted and committed first, because a
  * refusal in the sign-in transaction rolls back, and a count that rolled back would make the
- * limit no limit. A row at three is ended for its link as well.
+ * limit no limit. A row at three is ended for its link as well. The failure budgets add up
+ * every purpose's attempts.
  *
  * The answer is the row the code matched, or null, and nothing says why it is null: a browser
  * with no row, a spent budget and a wrong code look alike.
@@ -59,7 +60,13 @@ async function failures(tx: Executor, query: ReturnType<typeof sql>) {
 export async function attemptMagicLinkCode(
   db: Database,
   environment: Pick<Environment, "betterAuthSecret" | "betterAuthSecrets">,
-  input: { browser: string; client: string; code: string },
+  input: {
+    browser: string;
+    client: string;
+    code: string;
+    /** A code answers only the page it was mailed for: purposes never cross. */
+    purpose: "link" | "connect_directory";
+  },
   who: MagicLinkClient,
 ) {
   const keys = magicLinkKeys(environment);
@@ -76,7 +83,7 @@ export async function attemptMagicLinkCode(
               magicLinkRequests.browserHash,
               magicLinkBrowserHash(input.browser),
             ),
-            eq(magicLinkRequests.purpose, "link"),
+            eq(magicLinkRequests.purpose, input.purpose),
             eq(magicLinkRequests.sendStatus, "sent"),
             sql`${magicLinkRequests.expiresAt} > statement_timestamp()`,
             lt(magicLinkRequests.attempts, magicLinkCodeAttempts),

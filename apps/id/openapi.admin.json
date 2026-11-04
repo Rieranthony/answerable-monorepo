@@ -2521,7 +2521,7 @@
           }
         ],
         "summary": "Diagnose sign-in by email",
-        "description": "Inspect tenant-local configuration and membership. Current platform:read or org:users authority is rechecked inside the read transaction. Routing identifies only this organisation; user and membership are null unless this tenant has a membership for the exact email. Global accounts and retired-email state are excluded, including for staff. A null user does not mean the email is globally unused. authentication_required means local checks found no blocker; a real IdP authentication or a magic link's confirmation must establish identity and account conflicts. provider describes the directory; magicLink is the organisation's setting and the newest sign-in mail for this exact email, kept for seven days. magic_link_suppressed means a link is the way in and Postmark refused the last send as a suppressed address (406), which staff reactivate in Postmark. Windows affect grants, not admission; revoked membership requires reinstatement. Responses use no-store. validation_failed rejects malformed input; not_found means the organisation is unavailable.",
+        "description": "Inspect tenant-local configuration and membership. Current platform:read or org:users authority is rechecked inside the read transaction. Routing identifies only this organisation; user and membership are null unless this tenant has a membership for the exact email. Global accounts and retired-email state are excluded, including for staff. A null user does not mean the email is globally unused. authentication_required means local checks found no blocker; a real IdP authentication or a magic link's confirmation must establish identity and account conflicts. provider describes the directory; magicLink is the organisation's setting and the newest sign-in mail for this exact email, kept for seven days. magic_link_not_admitted means a link is the way in and admission would refuse this address: its firm's switch and mode, the public mail list and the person, which magicLink.admitted reports in every case. That one field reads a global account: in domain mode, on this organisation's own proved domain, it is false for an address whose holder is disabled or has another firm's account, which is no more than those mailboxes would show by asking for a link. magic_link_suppressed means a link is the way in and Postmark refused the last send as a suppressed address (406), which staff reactivate in Postmark. magicLink.directoryConnection is a directory sign-in this address has made and not yet connected, waiting on the code mailed to it. Windows affect grants, not admission; revoked membership requires reinstatement. Responses use no-store. validation_failed rejects malformed input; not_found means the organisation is unavailable.",
         "tags": [
           "Diagnostics"
         ],
@@ -2643,6 +2643,10 @@
                         "enabled": {
                           "type": "boolean"
                         },
+                        "admitted": {
+                          "type": "boolean",
+                          "description": "Whether this address may ask this firm for a link now: its switch, its admission, the public mail list and the person"
+                        },
                         "suppressed": {
                           "type": "boolean"
                         },
@@ -2660,7 +2664,8 @@
                                   "type": "string",
                                   "enum": [
                                     "link",
-                                    "access_removed"
+                                    "access_removed",
+                                    "connect_directory"
                                   ]
                                 },
                                 "sendStatus": {
@@ -2714,12 +2719,56 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "directoryConnection": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "sendStatus": {
+                                  "type": "string",
+                                  "enum": [
+                                    "sending",
+                                    "sent",
+                                    "failed"
+                                  ]
+                                },
+                                "attempts": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "expiresAt": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "sendStatus",
+                                "attempts",
+                                "expiresAt"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "A directory sign-in this address has made and not yet connected: it is waiting on the code mailed to it. Null when none is live"
                         }
                       },
                       "required": [
                         "enabled",
+                        "admitted",
                         "suppressed",
-                        "lastRequest"
+                        "lastRequest",
+                        "directoryConnection"
                       ]
                     },
                     "user": {
@@ -2811,6 +2860,7 @@
                             "domain_not_allowed",
                             "user_disabled",
                             "membership_revoked",
+                            "magic_link_not_admitted",
                             "magic_link_suppressed",
                             "authentication_required"
                           ]
@@ -2825,6 +2875,7 @@
                               "domain_not_allowed",
                               "user_disabled",
                               "membership_revoked",
+                              "magic_link_not_admitted",
                               "magic_link_suppressed",
                               "authentication_required"
                             ]
@@ -2840,7 +2891,8 @@
                               "personal_account",
                               "hosted_domain_mismatch",
                               "email_unverified",
-                              "identity_conflict"
+                              "identity_conflict",
+                              "email_conflict"
                             ]
                           }
                         }
@@ -17752,7 +17804,7 @@
           }
         },
         "summary": "Import organisation members",
-        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Create up to 1,000 people before their first sign-in, so that their sub exists first: a user and an active membership at once, and no account, which the first sign-in makes. Addresses are normalised and de-duplicated. One transaction, answering per address and never all or nothing: created; added, an existing user gains a membership; alreadyMember; or refused with a reason: invalid; outside_domains, not one of this organisation's active domains; public_mail; disabled, an existing disabled user; removed, a revoked member, whom only reinstateMember brings back; other_firm, an account from another organisation's directory or magic-link row. Works with magic links off and with a directory connected. A replay with the same Idempotency-Key answers the receipt, not the per-address answers; member.imported is audited per membership made. Until a person connects their directory, their directory sign-in answers email_conflict: Not yet. validation_failed rejects a malformed or oversized list and not_found means the organisation is missing.",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Create up to 1,000 people before their first sign-in, so that their sub exists first: a user and an active membership at once, and no account, which the first sign-in makes. Addresses are normalised and de-duplicated. One transaction, answering per address and never all or nothing: created; added, an existing user gains a membership; alreadyMember; or refused with a reason: invalid; outside_domains, not one of this organisation's active domains; public_mail; disabled, an existing disabled user; removed, a revoked member, whom only reinstateMember brings back; other_firm, an account from another organisation's directory or magic-link row. Works with magic links off and with a directory connected. A replay with the same Idempotency-Key answers the receipt, not the per-address answers; member.imported is audited per membership made. A person's first directory sign-in asks for a code from their mailbox, once, which connects it to this user. validation_failed rejects a malformed or oversized list and not_found means the organisation is missing.",
         "tags": [
           "Members"
         ],
@@ -31588,7 +31640,7 @@
           }
         },
         "summary": "Put the SSO provider",
-        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Accepts the strong If-Match ETag from getSsoProvider for conditional replacement; conflicting/malformed headers return 400; stale state returns 412. Committed replay precedes the original precondition. Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. A real configuration change, including first creation, irreversibly revokes existing tenant grant contexts in the same audited transaction; unchanged configuration preserves them. Other tenants and global browser sessions are preserved. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider. Omit oidc, or send oidc.credentials \"platform\", to sign the organisation in through Answerable's Google or Microsoft application; generic issuers require oidc.clientId. platform_credentials_unsupported rejects a generic issuer without own credentials; platform_application_missing means the service has no application for that directory.",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Accepts the strong If-Match ETag from getSsoProvider for conditional replacement; conflicting/malformed headers return 400; stale state returns 412. Committed replay precedes the original precondition. Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. A real configuration change, including first creation, irreversibly revokes the tenant’s grant contexts in the same audited transaction, and moves the provider’s revision, which ends directory sessions’ standing; unchanged configuration preserves them. Magic-link sessions and grant contexts are not touched: the two methods are independent. Other tenants and global browser sessions are preserved. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider. Omit oidc, or send oidc.credentials \"platform\", to sign the organisation in through Answerable's Google or Microsoft application; generic issuers require oidc.clientId. platform_credentials_unsupported rejects a generic issuer without own credentials; platform_application_missing means the service has no application for that directory.",
         "tags": [
           "SSO provider"
         ],
@@ -32281,7 +32333,7 @@
           }
         ],
         "summary": "Delete the SSO provider",
-        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Delete the organisation’s SSO configuration and return no content, preventing future sign-in through that provider and irreversibly revoking existing tenant grant contexts in the same audited transaction. Recreating the provider does not restore old grants. Other tenants and global browser sessions are preserved. Prefer putSsoProvider to replace its configuration; validation_failed rejects malformed ids and not_found means the organisation or provider is missing. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Delete the organisation’s SSO configuration and return no content, preventing future sign-in through that provider and irreversibly revoking the tenant’s grant contexts in the same audited transaction. Magic-link sessions and grant contexts are not touched, so an organisation with links off and no directory then has no way in. Recreating the provider does not restore old grants. Other tenants and global browser sessions are preserved. Prefer putSsoProvider to replace its configuration; validation_failed rejects malformed ids and not_found means the organisation or provider is missing. Product deletion retains rows with terminal deletedAt markers; identifying data can remain. Ordinary reads and authority exclude deleted rows. Enabling cannot restore them. Physical cleanup and its retention period are deferred.",
         "tags": [
           "SSO provider"
         ],

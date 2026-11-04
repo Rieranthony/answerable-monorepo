@@ -138,6 +138,7 @@ export async function createAdminFixture(
           running.push(requests.process(request));
           return true;
         },
+        connectDirectory: requests.connectDirectory,
       },
       txtResolver: async (name) => {
         dns.lookups.push(name);

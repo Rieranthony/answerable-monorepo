@@ -468,7 +468,7 @@ describe("what it makes", () => {
     ).toBe(1);
   });
 
-  test("today, a person it made with a directory connected gets email_conflict from that directory, until connecting it is built", async () => {
+  test("a person it made with a directory connected is asked for a code from their mailbox, once, and no account exists until then", async () => {
     const of = await firm(true);
     const email = address(of, "imported-person");
     await answered(await importing(of.id, [email]));
@@ -485,9 +485,7 @@ describe("what it makes", () => {
       callbackURL,
       errorCallbackURL: `${fixture.trustedOrigin}/error`,
     });
-    expect(new URL(signedIn.location!).searchParams.get("error")).toBe(
-      "email_conflict",
-    );
+    expect(signedIn.location).toBe("/connect-directory");
     const user = (await holder(email))!;
     expect(
       await fixture.db

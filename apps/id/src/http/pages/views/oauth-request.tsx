@@ -20,6 +20,8 @@ export type OAuthFlow = {
   }[];
   selectedMemberId: string | null;
   status: "selection" | "consent";
+  /** How this session signed in: only a directory's can connect another account. */
+  authenticationMethod: "directory" | "magic_link";
 };
 export function OAuthRequest({
   consent,
@@ -129,7 +131,7 @@ export function OAuthRequest({
             <>
               <p class="mt-6 text-sm/6">
                 Choose the organisation you want to use. Each organisation
-                requires its own company sign-in.
+                requires its own sign-in.
               </p>
               <ul class="mt-4 space-y-4">
                 {flow.memberships.map((member) => (
@@ -156,11 +158,13 @@ export function OAuthRequest({
                   No organisation is available for this account.
                 </p>
               )}
-              <p class="mt-6 text-sm/6">
-                <a href="/security" class="underline underline-offset-4">
-                  Connect another work account
-                </a>
-              </p>
+              {flow.authenticationMethod === "directory" && (
+                <p class="mt-6 text-sm/6">
+                  <a href="/security" class="underline underline-offset-4">
+                    Connect another work account
+                  </a>
+                </p>
+              )}
             </>
           ) : (
             <p class="mt-6 text-sm/6">

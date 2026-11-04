@@ -1,15 +1,21 @@
 import type { ErrorDescription } from "../error-copy.ts";
+import { LinkForm } from "./login.tsx";
+
 export function ErrorView({
   description,
   details,
+  query = "",
+  offersLink = false,
 }: {
   description: ErrorDescription;
   details: string | null;
+  /** The signed query this sign-in was resuming, when it verified. */
+  query?: string;
+  /** The firm this sign-in was for has links on, so a person IT blocks can still get in. */
+  offersLink?: boolean;
 }) {
   return (
     <section aria-labelledby="error-heading">
-      {/* SSO redirects to the bare errorCallbackURL, so the signed OAuth query
-          is unavailable here. Keep the recovery link deliberately plain. */}
       <h1 id="error-heading" class="text-xl/6 font-bold">
         {description.title}
       </h1>
@@ -19,8 +25,9 @@ export function ErrorView({
           {details}
         </p>
       )}
+      {offersLink && <LinkForm query={query} />}
       <a
-        href="/login"
+        href={query ? `/login?${query}` : "/login"}
         class="mt-8 inline-block text-sm/6 underline underline-offset-4"
       >
         Try another email
