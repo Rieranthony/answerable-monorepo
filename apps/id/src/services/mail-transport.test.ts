@@ -40,7 +40,7 @@ describe("which transport", () => {
       expect(init.headers["X-Postmark-Server-Token"]).toBe("the-server-token");
       expect(JSON.parse(init.body as string)).toMatchObject({
         From: "Answerable ID <sign-in@id.example.com>",
-        ReplyTo: "support@answerable.org",
+        ReplyTo: "info@answerable.org",
         To: message.to,
         Subject: "Sign in to Acme",
       });

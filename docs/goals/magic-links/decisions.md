@@ -53,7 +53,7 @@ Kept by the owner's decision: domain mode, `/connect-directory`, Better Auth's p
 - Thin `fetch` client for Postmark, not the `postmark` package.
 - In-process bounded queue, not a durable outbox: a link lasts 10 minutes, Postmark has no idempotency key, and a retry after a crash could send twice.
 - No Postmark webhook in the first release: Postmark suppresses bounced addresses itself, and send errors are stored for diagnosis. It comes with the alerting work.
-- Sender `Answerable ID <sign-in@id.answerable.org>`, Reply-To `support@answerable.org`, staging on `id.answerable-staging.uk`.
+- Sender `Answerable ID <sign-in@id.answerable.org>`, Reply-To `info@answerable.org`, staging on `id.answerable-staging.uk`.
 - A magic-link session has no admin authority.
 - Domain mode requires every active domain of the firm to have passed a DNS TXT check.
 - ID reads `cf-connecting-ip` first and `x-forwarded-for` otherwise, and Cloudflare's ranges are not in ID's proxy list, though they stay in Traefik's.

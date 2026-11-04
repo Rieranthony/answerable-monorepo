@@ -23,7 +23,7 @@ export function createMailTransport(
       serverToken: environment.postmarkServerToken,
       endpoint: environment.postmarkApiUrl,
       from: `Answerable ID <${environment.mailFromAddress}>`,
-      replyTo: "support@answerable.org",
+      replyTo: "info@answerable.org",
     });
   if (environment.nodeEnv === "production")
     throw new Error("POSTMARK_SERVER_TOKEN is required in production");

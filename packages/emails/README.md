@@ -8,7 +8,7 @@ import { createPostmarkTransport, renderEmail } from "@answerable/emails"
 const transport = createPostmarkTransport({
   serverToken: process.env.POSTMARK_SERVER_TOKEN!,
   from: "Answerable ID <sign-in@id.answerable.org>",
-  replyTo: "support@answerable.org",
+  replyTo: "info@answerable.org",
 })
 
 const email = renderEmail({

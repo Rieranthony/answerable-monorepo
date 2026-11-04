@@ -703,7 +703,7 @@ describe("people sign in by email over https, in Chromium through Traefik", () =
     expect(kept.map(mail => mail.tag).sort()).toEqual(["mailbox-code", "sign-in", "sign-in", "sign-in"])
     for (const mail of kept) {
       expect(mail.from).toBe(`Answerable ID <sign-in@${hosts.id}>`)
-      expect(mail.replyTo).toBe("support@answerable.org")
+      expect(mail.replyTo).toBe("info@answerable.org")
       expect(mail.tracking).toEqual({ opens: false, links: "None" })
       expect(mail.html.length).toBeGreaterThan(0)
     }

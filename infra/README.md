@@ -91,7 +91,7 @@ PostgreSQL's lock table holds `max_locks_per_transaction` × (`max_connections` 
 
 ## Send mail through Postmark
 
-ID mails sign-in links and codes through Postmark, from `Answerable ID <sign-in@<ID's host>>`, derived from `BETTER_AUTH_URL`: `sign-in@id.answerable.org` in production, `sign-in@id.answerable-staging.uk` in staging. Reply-To is `support@answerable.org`. ID refuses to start in production without the server's token, and the deploy refuses to apply `id-env` without it, so do this before the first tag that ships magic links.
+ID mails sign-in links and codes through Postmark, from `Answerable ID <sign-in@<ID's host>>`, derived from `BETTER_AUTH_URL`: `sign-in@id.answerable.org` in production, `sign-in@id.answerable-staging.uk` in staging. Reply-To is `info@answerable.org`. ID refuses to start in production without the server's token, and the deploy refuses to apply `id-env` without it, so do this before the first tag that ships magic links.
 
 1. **Account and servers.** An account with two-factor authentication. Two **Live** servers, one for staging and one for production, each with open tracking and link tracking off (ID sends `TrackOpens` false and `TrackLinks` `None` itself). **Sandbox servers do not deliver**: a sandbox server would pass every check here and send nothing.
 2. **Sender domains.** In each server, add the domain: `id.answerable-staging.uk` to the staging server, `id.answerable.org` to the production one. Postmark then shows each domain's DNS Settings.
@@ -119,7 +119,7 @@ ID mails sign-in links and codes through Postmark, from `Answerable ID <sign-in@
    - **406.** Postmark answers 406 for an address it suppressed (a hard bounce, a spam complaint or a manual suppression). ID logs `magic_link_send_failed` with `errorCode` 406, and the row in `magic_link_requests` names the address for seven days. Staff reactivate the address in that server's suppression list in Postmark; ID has nothing to change.
    - **DKIM.** Rotate each domain's DKIM key every six months: take the new host and value from Postmark's DNS Settings, change the TXT record in Cloudflare, and verify again as in step 4.
    - **DMARC.** Once two clean weeks of reports show only Postmark, change the TXT record to `p=quarantine`, and after two more to `p=reject`.
-   - **Replies.** `support@answerable.org` is the Reply-To of every mail, so someone must read it.
+   - **Replies.** `info@answerable.org` is the Reply-To of every mail, so someone must read it.
 
 The fake Postmark that the kind stack and the acceptance run is `startFakePostmark` in `packages/acceptance`; the real one is checked by hand on staging, with a real mailbox, before anyone relies on it ([the plan](../docs/goals/magic-links/task_plan.md), W10).
 

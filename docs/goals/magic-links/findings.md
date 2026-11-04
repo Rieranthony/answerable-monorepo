@@ -36,7 +36,7 @@ Verified against Better Auth 1.7.15 as installed, and ID at `cfc2b200`. Docs: ht
 
 ## Postmark and scanners (full research with links: scratchpad `magic/audits/postmark.md`)
 
-- **Domain:** dedicated subdomain `id.answerable.org`; staging `id.answerable-staging.uk`. From `Answerable ID <sign-in@id.answerable.org>`, Reply-To `support@answerable.org`. Postmark advises against `no-reply@`.
+- **Domain:** dedicated subdomain `id.answerable.org`; staging `id.answerable-staging.uk`. From `Answerable ID <sign-in@id.answerable.org>`, Reply-To `info@answerable.org`. Postmark advises against `no-reply@`.
 - **DNS:** DKIM TXT at `<selector>._domainkey.id…`, Return-Path CNAME to `pm.mtasv.net` with `proxied = false`, DMARC TXT on the subdomain from `p=none` to `reject`. No SPF on the From domain per Postmark. Exact hosts come from Postmark's DNS Settings page. Check the apex's existing records first.
 - **Account:** one Live Server per environment. Sends are limited to verified domains until account approval (error 412); approval under 24 hours on weekdays. A Server's type cannot change later.
 - **Sending:** `TrackOpens: false`, `TrackLinks: "None"` on every message; turn tracking off on the Server too, since server-level open tracking overrides a per-message false. No idempotency key. Message content, links included, stays in Activity for 45 days and cannot be disabled, so links must expire quickly and access to Activity must be limited.

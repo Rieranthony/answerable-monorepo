@@ -122,7 +122,7 @@ The variables ID reads, with their development defaults, from the repository's i
 
 <Configuration group={["ID", "ID migration"]} />
 
-**Sign-in mail.** `POSTMARK_SERVER_TOKEN` is required in production: ID refuses to start without it, and the deploy refuses to apply it unset. Without one, outside production, ID prints each [sign-in link](/docs/id/magic-links) on its standard output. `POSTMARK_API_URL` is for a fake Postmark in a test and must be `https:` in production. The sender comes from `BETTER_AUTH_URL`: `sign-in@id.answerable.org` in production, so it always matches the domain Postmark verifies. Replies go to `support@answerable.org`.
+**Sign-in mail.** `POSTMARK_SERVER_TOKEN` is required in production: ID refuses to start without it, and the deploy refuses to apply it unset. Without one, outside production, ID prints each [sign-in link](/docs/id/magic-links) on its standard output. `POSTMARK_API_URL` is for a fake Postmark in a test and must be `https:` in production. The sender comes from `BETTER_AUTH_URL`: `sign-in@id.answerable.org` in production, so it always matches the domain Postmark verifies. Replies go to `info@answerable.org`.
 
 ## Get a staff token
 
