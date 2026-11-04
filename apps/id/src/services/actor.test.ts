@@ -37,7 +37,7 @@ for (const principal of [
       await (
         await app.request("/", {
           headers: {
-            "x-forwarded-for": " 192.0.2.1 , 198.51.100.1",
+            "cf-connecting-ip": "192.0.2.1",
             "user-agent": "test",
           },
         })

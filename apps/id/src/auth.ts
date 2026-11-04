@@ -186,11 +186,10 @@ export function createAuth(db: Database, environment: Environment) {
     advanced: {
       ipAddress: {
         // Cloudflare overwrites cf-connecting-ip on every request and only
-        // Cloudflare can reach Traefik (authenticated origin pulls), so it
-        // wins. X-Forwarded-For remains for a path with no Cloudflare in
-        // front, such as the local stack.
-        ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"],
-        trustedProxies: environment.trustedProxyCidrs,
+        // Cloudflare can reach Traefik (authenticated origin pulls), so the
+        // header names the client. Better Auth takes one valid address from
+        // it and nothing else.
+        ipAddressHeaders: ["cf-connecting-ip"],
       },
       database: {
         generateId: createId,

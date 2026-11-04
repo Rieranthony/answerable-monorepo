@@ -24,7 +24,7 @@ const sessionSchema = z.object({
     .string()
     .nullable()
     .describe(
-      "The client address resolved at sign-in from CF-Connecting-IP, or from X-Forwarded-For through the trusted proxies when that header names no client. Descriptive metadata, not proof of client origin.",
+      "The client address at sign-in, from CF-Connecting-IP. Descriptive metadata, not proof of client origin.",
     ),
   userAgent: z
     .string()

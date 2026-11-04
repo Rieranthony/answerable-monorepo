@@ -13,7 +13,7 @@ const message = {
 };
 
 describe("which transport", () => {
-  test("a token: Postmark, with the sender settings, and nothing else reaches the network", async () => {
+  test("a token: Postmark, from ID's address with the fixed reply address, and nothing else reaches the network", async () => {
     const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async () =>
       Response.json({
         ErrorCode: 0,
@@ -24,9 +24,7 @@ describe("which transport", () => {
         testEnvironment({
           nodeEnv: "production",
           postmarkServerToken: "the-server-token",
-          mailFrom: "ID <sign-in@id.example.com>",
-          mailReplyTo: "help@example.com",
-          mailSubjectPrefix: "[staging]",
+          mailFromAddress: "sign-in@id.example.com",
         }),
       );
       expect(await transport.send(message)).toEqual({
@@ -41,10 +39,10 @@ describe("which transport", () => {
       expect(url).toBe("https://api.postmarkapp.com/email");
       expect(init.headers["X-Postmark-Server-Token"]).toBe("the-server-token");
       expect(JSON.parse(init.body as string)).toMatchObject({
-        From: "ID <sign-in@id.example.com>",
-        ReplyTo: "help@example.com",
+        From: "Answerable ID <sign-in@id.example.com>",
+        ReplyTo: "support@answerable.org",
         To: message.to,
-        Subject: "[staging] Sign in to Acme",
+        Subject: "Sign in to Acme",
       });
     } finally {
       fetchSpy.mockRestore();

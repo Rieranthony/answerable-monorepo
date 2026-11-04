@@ -196,8 +196,8 @@ describe("POST /login routes by the domain's firm", () => {
     const text = await response.text();
     expect(text).toContain("check your junk or quarantine folder");
     expect(text).toContain("You can ask again after a minute");
-    expect(text).toContain("ask your IT team to allow email from");
-    expect(text).toContain("sign-in@id.example.com");
+    // The bare address, as an IT team types it into an allow list.
+    expect(text).toContain("allow email from sign-in@id.example.com.");
   });
 
   test("a request the queue takes for an address nobody can have costs nothing, and the page is the usual one", async () => {

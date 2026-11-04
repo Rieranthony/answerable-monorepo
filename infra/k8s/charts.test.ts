@@ -200,9 +200,8 @@ describe("charts/answerable", () => {
         }
       })
 
-      test("ID takes TRUSTED_PROXY_CIDRS from the ConfigMap trusted-proxies, and its pods carry the checksum of id-env", () => {
+      test("ID's pods carry the checksum of id-env", () => {
         const id = named(manifests, "Deployment", "id")!
-        expect(env(id, "TRUSTED_PROXY_CIDRS")).toEqual({ name: "TRUSTED_PROXY_CIDRS", valueFrom: { configMapKeyRef: { name: "trusted-proxies", key: "cidrs" } } })
         expect(id.spec.template.metadata.annotations).toEqual({ "checksum/id-env": "" })
         expect(containersOf(id)[0].envFrom).toEqual([{ secretRef: { name: "id-env" } }])
         for (const server of registered) expect(named(manifests, "Deployment", server)!.spec.template.metadata.annotations, server).toBeUndefined()
@@ -384,15 +383,9 @@ describe("charts/answerable", () => {
     })
   }
 
-  test("staging's mail does not read as production's: its own sender on id.<zone> and a [staging] prefix; production sets neither and keeps ID's defaults; no Civo overlay points ID at a fake Postmark", () => {
+  test("no Civo overlay points ID at a fake Postmark or holds its token", () => {
     const id = (file: string) => named(renderSupplied("answerable", [file], { "image.tag": tag }), "Deployment", "id")!
-    expect(env(id("values-civo-staging.yaml"), "MAIL_FROM")).toEqual({ name: "MAIL_FROM", value: `Answerable ID <sign-in@${environments["values-civo-staging.yaml"].id}>` })
-    expect(env(id("values-civo-staging.yaml"), "MAIL_SUBJECT_PREFIX")).toEqual({ name: "MAIL_SUBJECT_PREFIX", value: "[staging]" })
-    expect(env(id("values-civo-production.yaml"), "MAIL_FROM")).toBeUndefined()
-    expect(env(id("values-civo-production.yaml"), "MAIL_SUBJECT_PREFIX")).toBeUndefined()
-    // Neither sets the reply address: both keep support@answerable.org, which someone watches.
     for (const file of Object.keys(environments)) {
-      expect(env(id(file), "MAIL_REPLY_TO"), file).toBeUndefined()
       expect(env(id(file), "POSTMARK_API_URL"), file).toBeUndefined()
       expect(env(id(file), "POSTMARK_SERVER_TOKEN"), file).toBeUndefined()
     }
@@ -561,12 +554,11 @@ describe("charts/platform", () => {
   })
 
   for (const [name, values] of [["the defaults", []], ...overlays("platform").map(file => [file, [file]])] as [string, string[]][]) {
-    test(`${name}: Traefik keeps forwarded headers only from Terraform's trusted addresses and appends its peer, refuses conflicting TLS options, and listens on 443 only`, () => {
-      const manifests = renderSupplied("platform", values, { "traefik.ports.websecure.forwardedHeaders.trustedIPs": "{203.0.113.0/24,10.10.0.0/24}", "traefik.service.annotations.kubernetes\\.civo\\.com/firewall-id": "fw" })
+    test(`${name}: Traefik trusts no peer's forwarded headers, refuses conflicting TLS options, and listens on 443 only`, () => {
+      const manifests = renderSupplied("platform", values, { "traefik.service.annotations.kubernetes\\.civo\\.com/firewall-id": "fw" })
       const deployment = manifests.find(manifest => manifest.kind === "Deployment" && manifest.metadata.name === "platform-traefik")!
       const args: string[] = deployment.spec.template.spec.containers.find((container: { name: string }) => container.name === "platform-traefik").args
-      expect(args).toContain("--entryPoints.websecure.forwardedHeaders.trustedIPs=203.0.113.0/24,10.10.0.0/24")
-      expect(args.filter(arg => /notAppendXForwardedFor=true|forwardedHeaders\.insecure/.test(arg))).toEqual([])
+      expect(args.filter(arg => arg.includes("forwardedHeaders"))).toEqual([])
       expect(args).toContain("--core.strictTLSOptions=true")
       expect(args).toContain("--providers.kubernetescrd.defaultTLSResourcesNamespace=answerable")
       // No Ingress names a TLS option, so none may reach across providers.

@@ -60,7 +60,6 @@ beforeEach(async () => {
   runtime = login.connection;
   clock = databaseClock(runtime.pool);
   await assertRuntimeRole(runtime.db);
-  fixture.environment.trustedProxyCidrs = ["10.0.0.0/8"];
   nativeAuth = createAuth(runtime.db, fixture.environment);
   app = createApp({
     db: runtime.db,
@@ -898,7 +897,7 @@ test("native sign-in commits the client address with session and audit", async (
     app,
     { providerId: "tenant", callbackURL: `${fixture.trustedOrigin}/callback` },
     undefined,
-    { "x-forwarded-for": "192.0.2.44, 10.0.0.1", "x-request-id": "ip-proof" },
+    { "cf-connecting-ip": "192.0.2.44", "x-request-id": "ip-proof" },
   );
   expect(result.response.status).toBe(302);
   const [event] = await fixture.db

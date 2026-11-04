@@ -68,19 +68,13 @@ run "sizes_staging_small" {
   }
 }
 
-# Cloudflare's ranges reach the load balancer's firewall (IPv4, the load balancer has no IPv6) and the trusted-proxies
-# ConfigMap ID reads, after which come the private network and the pod range.
-run "admits_and_trusts_cloudflare" {
+# Cloudflare's ranges reach the load balancer's firewall (IPv4, the load balancer has no IPv6).
+run "admits_cloudflare" {
   command = plan
 
   assert {
     condition     = module.ingress_firewall.https_sources == tolist(sort(["173.245.48.0/20", "103.21.244.0/22", "104.16.0.0/13"]))
     error_message = "The load balancer must admit exactly the IPv4 ranges Cloudflare publishes."
-  }
-
-  assert {
-    condition     = module.platform.trusted_proxy_cidrs == "10.10.0.0/24,10.42.0.0/16"
-    error_message = "TRUSTED_PROXY_CIDRS must be the private network and the pod range, without Cloudflare's ranges."
   }
 }
 
@@ -191,123 +185,4 @@ run "outputs_the_admin_kubeconfig_as_a_sensitive_value" {
     condition     = output.kube_server == "https://74.220.1.2:6443" && !issensitive(output.kube_server)
     error_message = "kube_server must be the cluster's API endpoint, a public value."
   }
-}
-
-# Postmark's DNS records for the mail domain id.answerable-staging.uk: none until the owner gives their values in envs/staging.tfvars, and
-# then exactly the DKIM and DMARC TXT records and the Return-Path CNAME, DNS-only, under id.answerable-staging.uk. These runs pass the
-# values themselves, so that they hold whatever the tfvars carries.
-run "writes_no_mail_record_without_the_values" {
-  command = plan
-
-  variables {
-    mail_records = null
-  }
-
-  assert {
-    condition     = length(module.edge.mail_records) == 0 && length(output.mail_records) == 0
-    error_message = "Without mail_records, staging must write no mail record."
-  }
-
-  assert {
-    condition     = output.hostnames == tolist(["admin-mcp.answerable-staging.uk", "id.answerable-staging.uk", "mcp.answerable-staging.uk", "toolbox.answerable-staging.uk"])
-    error_message = "Without mail_records, staging's zone must hold its four service records and no other."
-  }
-}
-
-run "writes_postmarks_records_for_the_mail_domain_when_given_the_values" {
-  command = plan
-
-  variables {
-    mail_records = {
-      dkim_host        = "20260101000000pm._domainkey.id.answerable-staging.uk"
-      dkim_value       = "k=rsa;p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDexample"
-      return_path_host = "pm-bounces.id.answerable-staging.uk"
-      dmarc_value      = "v=DMARC1; p=none; rua=mailto:dmarc@answerable-staging.uk"
-    }
-  }
-
-  assert {
-    condition     = output.mail_records == tolist(["CNAME pm-bounces.id.answerable-staging.uk", "TXT 20260101000000pm._domainkey.id.answerable-staging.uk", "TXT _dmarc.id.answerable-staging.uk"])
-    error_message = "staging must write Postmark's three records under id.answerable-staging.uk: the Return-Path CNAME, the DKIM TXT and the DMARC TXT."
-  }
-
-  assert {
-    condition     = output.hostnames == tolist(["admin-mcp.answerable-staging.uk", "id.answerable-staging.uk", "mcp.answerable-staging.uk", "toolbox.answerable-staging.uk"])
-    error_message = "The mail records must leave the four service hostnames as they are."
-  }
-}
-
-run "refuses_mail_records_off_the_mail_domain" {
-  command = plan
-
-  variables {
-    mail_records = {
-      dkim_host        = "20260101000000pm._domainkey.answerable-staging.uk"
-      dkim_value       = "k=rsa;p=MIGfMA0G"
-      return_path_host = "pm-bounces.id.answerable-staging.uk"
-      dmarc_value      = "v=DMARC1; p=none"
-    }
-  }
-
-  expect_failures = [var.mail_records]
-}
-
-run "refuses_a_return_path_host_off_the_mail_domain" {
-  command = plan
-
-  variables {
-    mail_records = {
-      dkim_host        = "20260101000000pm._domainkey.id.answerable-staging.uk"
-      dkim_value       = "k=rsa;p=MIGfMA0G"
-      return_path_host = "pm-bounces.answerable-staging.uk"
-      dmarc_value      = "v=DMARC1; p=none"
-    }
-  }
-
-  expect_failures = [var.mail_records]
-}
-
-run "refuses_a_dkim_value_that_is_not_a_public_key" {
-  command = plan
-
-  variables {
-    mail_records = {
-      dkim_host        = "20260101000000pm._domainkey.id.answerable-staging.uk"
-      dkim_value       = "v=spf1 include:spf.protection.outlook.com ~all"
-      return_path_host = "pm-bounces.id.answerable-staging.uk"
-      dmarc_value      = "v=DMARC1; p=none"
-    }
-  }
-
-  expect_failures = [var.mail_records]
-}
-
-run "refuses_a_dmarc_value_that_is_not_dmarc" {
-  command = plan
-
-  variables {
-    mail_records = {
-      dkim_host        = "20260101000000pm._domainkey.id.answerable-staging.uk"
-      dkim_value       = "k=rsa;p=MIGfMA0G"
-      return_path_host = "pm-bounces.id.answerable-staging.uk"
-      dmarc_value      = "v=spf1 -all"
-    }
-  }
-
-  expect_failures = [var.mail_records]
-}
-
-run "refuses_a_quoted_dmarc_value" {
-  command = plan
-
-  variables {
-    mail_records = {
-      dkim_host        = "20260101000000pm._domainkey.id.answerable-staging.uk"
-      dkim_value       = "k=rsa;p=MIGfMA0G"
-      return_path_host = "pm-bounces.id.answerable-staging.uk"
-      dmarc_value      = "v=DMARC1; p=none; rua=\"mailto:dmarc@answerable-staging.uk\""
-    }
-  }
-
-  expect_failures = [var.mail_records]
 }

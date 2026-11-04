@@ -18,11 +18,6 @@ output "hostnames" {
   value       = module.edge.hostnames
 }
 
-output "mail_records" {
-  description = "Postmark's DNS records Terraform writes for the mail domain id.<zone>, as <type> <name>; empty until envs/<environment>.tfvars carries them."
-  value       = module.edge.mail_records
-}
-
 output "database_name" {
   description = "The Civo database's name, for `civo database show` and `civo database credential`."
   value       = module.database.name

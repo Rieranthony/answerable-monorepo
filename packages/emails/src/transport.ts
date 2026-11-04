@@ -42,8 +42,6 @@ export type PostmarkTransportOptions = {
   from: string
   /** Where replies go. */
   replyTo: string
-  /** Put before every subject with a space, for an environment that must not read as production: `[staging]`. */
-  subjectPrefix?: string
   /**
    * Where the email call goes. Default Postmark's own, `https://api.postmarkapp.com/email`. For a fake Postmark that a
    * test or the kind stack runs: it receives the server token, so a real deployment must never set it to anything but
@@ -77,7 +75,6 @@ export function createPostmarkTransport({
   serverToken,
   from,
   replyTo,
-  subjectPrefix,
   endpoint = ENDPOINT,
   fetch: send = fetch,
   timeoutMs = 10_000,
@@ -125,7 +122,7 @@ export function createPostmarkTransport({
         From: from,
         To: to,
         ReplyTo: replyTo,
-        Subject: subjectPrefix ? `${subjectPrefix} ${subject}` : subject,
+        Subject: subject,
         HtmlBody: html,
         TextBody: text,
         Tag: tag,

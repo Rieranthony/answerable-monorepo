@@ -1,6 +1,6 @@
 # Production on Civo, in the answerable-production account (D28), behind Cloudflare on answerable.org (D12). The pipeline
-# sets the images staging verified and idEnvChecksum; Terraform writes the ConfigMap trusted-proxies and the Secrets
-# postgres-admin and origin-tls; everything else about the environment is here.
+# sets the images staging verified and idEnvChecksum; Terraform writes the Secrets postgres-admin and origin-tls;
+# everything else about the environment is here.
 
 hostnames:
   id: id.answerable.org

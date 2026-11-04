@@ -180,7 +180,7 @@ async function askForLink(
     jsx(CheckEmail, {
       email,
       query: query.toString(),
-      sender: context.get("environment").mailFrom,
+      sender: context.get("environment").mailFromAddress,
     }),
     { title: "Sign in" },
   );

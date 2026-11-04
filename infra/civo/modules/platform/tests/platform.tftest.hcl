@@ -1,7 +1,6 @@
 # The cluster's platform layer: the two namespaces under the restricted Pod Security Standard, the objects the
-# answerable chart and its Jobs read (trusted-proxies, postgres-admin, origin-tls), and the platform chart (Traefik, D31)
-# installed with the values only Terraform knows: the load balancer's firewall and reserved address, the ranges Traefik
-# trusts for X-Forwarded-For on the websecure entry point, and the origin-pull CA certificate.
+# answerable chart and its Jobs read (postgres-admin, origin-tls), and the platform chart (Traefik, D31) installed with
+# the values only Terraform knows: the load balancer's firewall and reserved address, and the origin-pull CA certificate.
 mock_provider "kubernetes" {}
 mock_provider "helm" {}
 
@@ -9,9 +8,6 @@ variables {
   chart_path                = "../../../../charts/platform"
   load_balancer_firewall_id = "44444444-4444-4444-8444-444444444444"
   load_balancer_ip          = "192.0.2.10"
-  trusted_proxy_cidrs       = ["173.245.48.0/20", "2400:cb00::/32", "10.10.0.0/24"]
-  network_cidr              = "10.10.0.0/24"
-  pod_cidr                  = "10.42.0.0/16"
   origin_pull_ca_pem        = "placeholder: origin-pull CA certificate"
   database_admin_url        = "postgres://civo:secret@10.10.0.7:5432/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem"
   origin_certificate_pem    = "placeholder: origin certificate"
@@ -32,31 +28,6 @@ run "creates_the_namespaces_under_the_restricted_standard" {
       namespace.metadata[0].labels["pod-security.kubernetes.io/enforce"] == "restricted"
     ])
     error_message = "Both namespaces must enforce the restricted Pod Security Standard; nothing in either needs more."
-  }
-}
-
-# ID's TRUSTED_PROXY_CIDRS: Traefik's trusted peers (Cloudflare and the private network), then the pod range Traefik
-# reaches ID from.
-run "writes_the_trusted_proxies_configmap" {
-  command = plan
-
-  assert {
-    condition = (
-      kubernetes_config_map_v1.trusted_proxies.metadata[0].name == "trusted-proxies"
-      && kubernetes_config_map_v1.trusted_proxies.metadata[0].namespace == "answerable"
-      && keys(kubernetes_config_map_v1.trusted_proxies.data) == tolist(["cidrs"])
-    )
-    error_message = "The ConfigMap must be answerable/trusted-proxies with the one key cidrs."
-  }
-
-  assert {
-    condition     = kubernetes_config_map_v1.trusted_proxies.data["cidrs"] == "10.10.0.0/24,10.42.0.0/16"
-    error_message = "cidrs must be the private network then the pod range, comma-separated, without Traefik's other trusted ranges."
-  }
-
-  assert {
-    condition     = output.trusted_proxy_cidrs == "10.10.0.0/24,10.42.0.0/16"
-    error_message = "The module must report the ConfigMap's cidrs."
   }
 }
 
@@ -87,7 +58,7 @@ run "writes_the_origin_tls_secret" {
       && kubernetes_secret_v1.origin_tls.metadata[0].namespace == "answerable"
       && kubernetes_secret_v1.origin_tls.type == "kubernetes.io/tls"
     )
-    error_message = "The Secret must be answerable/origin-tls of type kubernetes.io/tls, which the three Ingresses name."
+    error_message = "The Secret must be answerable/origin-tls of type kubernetes.io/tls, which every Ingress names."
   }
 
   assert {
@@ -131,20 +102,11 @@ run "installs_the_platform_chart_with_the_load_balancer_wiring" {
 
   assert {
     condition = (
-      yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["traefik"]["ports"]["websecure"]["forwardedHeaders"]["trustedIPs"]
-      == ["173.245.48.0/20", "2400:cb00::/32", "10.10.0.0/24"]
-    )
-    error_message = "Traefik's websecure entry point must trust X-Forwarded-For only from the ranges it was given, as a list, without the pod range."
-  }
-
-  assert {
-    condition = (
       keys(yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])) == ["originPull", "traefik"]
       && keys(yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["originPull"]) == ["caPem"]
-      && keys(yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["traefik"]) == ["ports", "service"]
-      && keys(yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["traefik"]["ports"]) == ["websecure"]
+      && keys(yamldecode(helm_release.platform.values[length(helm_release.platform.values) - 1])["traefik"]) == ["service"]
     )
-    error_message = "Terraform owns the origin-pull CA, the Traefik Service annotations and websecure's trusted ranges, nothing else."
+    error_message = "Terraform owns the origin-pull CA and the Traefik Service annotations, nothing else."
   }
 }
 
@@ -191,34 +153,4 @@ run "refuses_a_load_balancer_address_that_is_not_ipv4" {
   }
 
   expect_failures = [var.load_balancer_ip]
-}
-
-run "refuses_trusting_everyone" {
-  command = plan
-
-  variables {
-    trusted_proxy_cidrs = ["0.0.0.0/0"]
-  }
-
-  expect_failures = [var.trusted_proxy_cidrs]
-}
-
-run "refuses_a_pod_range_that_is_everyone" {
-  command = plan
-
-  variables {
-    pod_cidr = "0.0.0.0/0"
-  }
-
-  expect_failures = [var.pod_cidr]
-}
-
-run "refuses_a_private_network_as_wide_as_the_internet" {
-  command = plan
-
-  variables {
-    network_cidr = "0.0.0.0/0"
-  }
-
-  expect_failures = [var.network_cidr]
 }

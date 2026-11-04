@@ -58,7 +58,7 @@ async function request(
   }
 
   headers.set("x-request-id", "organizations-http-test");
-  headers.set("x-forwarded-for", "192.0.2.55");
+  headers.set("cf-connecting-ip", "192.0.2.55");
   headers.set("user-agent", "organisation-test");
   if (body !== undefined) headers.set("content-type", "application/json");
   return fixture.app.request("/api/admin/v1/organizations" + path, {

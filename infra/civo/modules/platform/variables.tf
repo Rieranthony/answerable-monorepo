@@ -44,41 +44,6 @@ variable "load_balancer_ip" {
   }
 }
 
-variable "trusted_proxy_cidrs" {
-  description = "The peers whose X-Forwarded-* headers Traefik's websecure entry point trusts (ports.websecure.forwardedHeaders.trustedIPs): Cloudflare's ranges, the peer Traefik would see with PROXY protocol, and the private network the load balancer forwards from, the peer it sees without."
-  type        = list(string)
-
-  validation {
-    condition     = length(var.trusted_proxy_cidrs) > 0 && alltrue([for cidr in var.trusted_proxy_cidrs : can(cidrhost(cidr, 0))])
-    error_message = "List at least one range, each a CIDR."
-  }
-
-  validation {
-    condition     = alltrue([for cidr in var.trusted_proxy_cidrs : try(tonumber(split("/", cidr)[1]) > 0, false)])
-    error_message = "Trusting X-Forwarded-For from the whole internet would let any client choose its own address."
-  }
-}
-
-variable "network_cidr" {
-  description = "The private network, from which the load balancer connects to Traefik: ID trusts it as a proxy hop."
-  type        = string
-
-  validation {
-    condition     = can(cidrhost(var.network_cidr, 0)) && try(tonumber(split("/", var.network_cidr)[1]) > 0, false)
-    error_message = "The private network must be a CIDR narrower than the whole internet."
-  }
-}
-
-variable "pod_cidr" {
-  description = "The cluster's pod range, from which Traefik reaches the services: ID trusts it as a proxy hop after the private network."
-  type        = string
-
-  validation {
-    condition     = can(cidrhost(var.pod_cidr, 0)) && try(tonumber(split("/", var.pod_cidr)[1]) > 0, false)
-    error_message = "The pod range must be a CIDR narrower than the whole internet."
-  }
-}
-
 variable "database_admin_url" {
   description = "The database administrator's URL, from the database module: OPS_DATABASE_ADMIN_URL in the postgres-admin Secret."
   type        = string

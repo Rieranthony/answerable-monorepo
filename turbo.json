@@ -137,8 +137,7 @@
         "DATABASE_*",
         "BETTER_AUTH_*",
         "MICROSOFT_*",
-        "GOOGLE_CLIENT_*",
-        "TRUSTED_PROXY_CIDRS"
+        "GOOGLE_CLIENT_*"
       ]
     },
     "web#dev": {

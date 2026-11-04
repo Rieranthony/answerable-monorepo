@@ -114,7 +114,7 @@ Bun runs in production behind Cloudflare, with TLS at Cloudflare's edge and agai
 
 ## Ingress admission
 
-The service is reachable only through the ingress proxies in `TRUSTED_PROXY_CIDRS`; the rule, the address resolution and the `403 untrusted_ingress` refusal are in [ID's README](../apps/id/README.md#http-surface).
+The service is reachable only through Cloudflare, and takes the client address from `cf-connecting-ip`; the rule and the `403 untrusted_ingress` refusal are in [ID's README](../apps/id/README.md#http-surface).
 
 Browser authorisation and callbacks must be reachable from the browser. An in-process allowlist does not prove network isolation: the deployed ingress ([`12-deployment.md`](12-deployment.md#network-and-ingress)) admits only Cloudflare's origin pulls, and its proof waits for the first staging run.
 

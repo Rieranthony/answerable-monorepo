@@ -26,20 +26,6 @@ resource "kubernetes_namespace_v1" "platform" {
   }
 }
 
-# The hops ID skips in X-Forwarded-For (TRUSTED_PROXY_CIDRS, read from this ConfigMap's key cidrs): the private network the
-# load balancer connects from, then the pod range Traefik reaches the services from (D31). Cloudflare's ranges are not
-# hops here: ID reads CF-Connecting-IP first, and takes the address Cloudflare reports as the client's, whatever it is.
-resource "kubernetes_config_map_v1" "trusted_proxies" {
-  metadata {
-    name      = "trusted-proxies"
-    namespace = kubernetes_namespace_v1.answerable.metadata[0].name
-  }
-
-  data = {
-    cidrs = join(",", [var.network_cidr, var.pod_cidr])
-  }
-}
-
 # The database administrator's URL for the bootstrap Job, which creates the databases and logins. It never leaves the
 # cluster and Terraform's state.
 resource "kubernetes_secret_v1" "postgres_admin" {
@@ -53,7 +39,7 @@ resource "kubernetes_secret_v1" "postgres_admin" {
   }
 }
 
-# The origin's certificate from Cloudflare's Origin CA and its key, which the three Ingresses serve.
+# The origin's certificate from Cloudflare's Origin CA and its key, which every Ingress serves.
 resource "kubernetes_secret_v1" "origin_tls" {
   metadata {
     name      = "origin-tls"
@@ -73,9 +59,7 @@ locals {
   # - originPull.caPem: charts/platform renders it as the Secret cloudflare-origin-pull-ca (key ca.crt) that Traefik's
   #   default TLS option verifies Cloudflare's client certificate against (D19).
   # - traefik: the upstream Traefik chart's keys (traefik/traefik-helm-chart, values.yaml at v41.7.1) under the
-  #   dependency's name, the Service's annotations and the websecure entry point's trusted ranges for X-Forwarded-*.
-  #   Traefik keeps a trusted peer's X-Forwarded-For and appends the peer's address, so ID's right-to-left walk is
-  #   unchanged (D22, D31); an untrusted peer's X-Forwarded-* headers are deleted (README.md).
+  #   dependency's name, the Service's annotations.
   cloud_values = yamlencode({
     originPull = {
       caPem = var.origin_pull_ca_pem
@@ -85,13 +69,6 @@ locals {
         annotations = {
           "kubernetes.civo.com/firewall-id"  = var.load_balancer_firewall_id
           "kubernetes.civo.com/ipv4-address" = var.load_balancer_ip
-        }
-      }
-      ports = {
-        websecure = {
-          forwardedHeaders = {
-            trustedIPs = var.trusted_proxy_cidrs
-          }
         }
       }
     }

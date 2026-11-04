@@ -18,7 +18,7 @@ The certificate Traefik serves is the Secret `origin-tls` in `answerable`, which
 | Value | Who passes it | Empty |
 | --- | --- | --- |
 | `originPull.caPem` | Terraform, from its edge module's origin-pull CA; the kind stack, its stand-in's | The render fails on the Civo overlays (`originPull.caRequired`), naming the value. Elsewhere no Secret is rendered, and Traefik refuses every client certificate |
-| `traefik.ports.websecure.forwardedHeaders.trustedIPs`, `traefik.service.annotations` | Terraform | Traefik keeps no forwarded header; the load balancer has no firewall |
+| `traefik.service.annotations` | Terraform | The load balancer has no firewall |
 
 A `caPem` that is not PEM fails the render too.
 

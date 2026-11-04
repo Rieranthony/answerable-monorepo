@@ -38,7 +38,7 @@ export function CheckEmail({
 }: {
   email: string;
   query: string;
-  /** Who the mail comes from, as a firm's IT team would allow it. */
+  /** The address the mail comes from, which a firm's IT team would allow. */
   sender: string;
 }) {
   return (

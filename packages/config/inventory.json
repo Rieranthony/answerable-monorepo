@@ -38,7 +38,7 @@
         "name": "BETTER_AUTH_URL",
         "secret": false,
         "local": "http://localhost:47300",
-        "doc": "ID's origin: the issuer, the pages' origin and the base of the admin API's audience",
+        "doc": "ID's origin: the issuer, the pages' origin, the base of the admin API's audience and the domain sign-in mail comes from",
         "source": "chart",
         "optional": false
       },
@@ -100,29 +100,6 @@
         "optional": true
       },
       {
-        "name": "MAIL_FROM",
-        "secret": false,
-        "fallback": "Answerable ID <sign-in@id.answerable.org>",
-        "doc": "Who sign-in mail comes from: a domain Postmark has verified for this server",
-        "source": "operator",
-        "optional": true
-      },
-      {
-        "name": "MAIL_REPLY_TO",
-        "secret": false,
-        "fallback": "support@answerable.org",
-        "doc": "Where replies to sign-in mail go",
-        "source": "operator",
-        "optional": true
-      },
-      {
-        "name": "MAIL_SUBJECT_PREFIX",
-        "secret": false,
-        "doc": "Put before every subject, for an environment that must not read as production: [staging]",
-        "source": "operator",
-        "optional": true
-      },
-      {
         "name": "BETTER_AUTH_TRUSTED_ORIGINS",
         "secret": false,
         "fallback": "",
@@ -144,13 +121,6 @@
         "fallback": "false",
         "doc": "true keeps the root bearer working after a person holds platform:write; for break-glass only",
         "source": "operator",
-        "optional": true
-      },
-      {
-        "name": "TRUSTED_PROXY_CIDRS",
-        "secret": false,
-        "doc": "The ingress proxies' networks, IPv4 or IPv6, separated by commas; production requires them",
-        "source": "cluster",
         "optional": true
       },
       {

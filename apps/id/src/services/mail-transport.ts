@@ -15,21 +15,15 @@ import type { Environment } from "../env.ts";
 export function createMailTransport(
   environment: Pick<
     Environment,
-    | "nodeEnv"
-    | "postmarkServerToken"
-    | "postmarkApiUrl"
-    | "mailFrom"
-    | "mailReplyTo"
-    | "mailSubjectPrefix"
+    "nodeEnv" | "postmarkServerToken" | "postmarkApiUrl" | "mailFromAddress"
   >,
 ): Transport {
   if (environment.postmarkServerToken)
     return createPostmarkTransport({
       serverToken: environment.postmarkServerToken,
       endpoint: environment.postmarkApiUrl,
-      from: environment.mailFrom,
-      replyTo: environment.mailReplyTo,
-      subjectPrefix: environment.mailSubjectPrefix,
+      from: `Answerable ID <${environment.mailFromAddress}>`,
+      replyTo: "support@answerable.org",
     });
   if (environment.nodeEnv === "production")
     throw new Error("POSTMARK_SERVER_TOKEN is required in production");

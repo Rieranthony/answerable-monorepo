@@ -45,7 +45,7 @@ function fakeFetch(...answers: Answer[]) {
 
 const transport = (
   answers: Answer[],
-  options: { subjectPrefix?: string; endpoint?: string } = {},
+  options: { endpoint?: string } = {},
 ) => {
   const { fetch, calls } = fakeFetch(...answers)
   return {
@@ -136,16 +136,6 @@ describe("the request", () => {
       messageId: "msg-again",
     })
     expect(retried.calls.map((call) => call.url)).toEqual([endpoint, endpoint])
-  })
-
-  test("puts a prefix before the subject, for an environment that is not production", async () => {
-    const { transport: postmark, calls } = transport([ok()], {
-      subjectPrefix: "[staging]",
-    })
-    await postmark.send(message)
-    expect(JSON.parse(calls[0]!.init.body as string).Subject).toBe(
-      "[staging] Sign in to Acme Surveyors",
-    )
   })
 })
 

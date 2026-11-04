@@ -12,8 +12,3 @@ output "release" {
   description = "The platform chart's release name."
   value       = helm_release.platform.name
 }
-
-output "trusted_proxy_cidrs" {
-  description = "The trusted-proxies ConfigMap's cidrs, ID's TRUSTED_PROXY_CIDRS: the private network, then the pod range."
-  value       = kubernetes_config_map_v1.trusted_proxies.data["cidrs"]
-}

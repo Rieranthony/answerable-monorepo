@@ -1,4 +1,3 @@
-import { findInvalidTrustedProxies } from "@better-auth/core/utils/ip";
 import { defineConfig } from "@answerable/config";
 import { z } from "zod";
 
@@ -35,9 +34,6 @@ const applicationSecrets = z.string().transform((value, context) => {
 /** The largest value a Postgres integer setting accepts. */
 const maxInt32 = 2_147_483_647;
 
-/** A value that goes in a mail header: no line break can start another. */
-const headerValue = z.string().regex(/^\P{Cc}+$/u);
-
 /** An http or https URL: `z.url()` alone takes any scheme, `javascript:` included. */
 const httpUrl = z.url({ protocol: /^https?$/ });
 
@@ -70,7 +66,7 @@ export const idConfig = defineConfig(
       // One spelling of the origin, without a trailing slash, for the issuer, the pages and the admin audience.
       schema: z.url().transform((url) => url.replace(/\/+$/, "")),
       local: "http://localhost:47300",
-      doc: "ID's origin: the issuer, the pages' origin and the base of the admin API's audience",
+      doc: "ID's origin: the issuer, the pages' origin, the base of the admin API's audience and the domain sign-in mail comes from",
       source: "chart",
     },
     BETTER_AUTH_SECRET: {
@@ -119,23 +115,6 @@ export const idConfig = defineConfig(
       doc: "The URL of Postmark's email call, in place of https://api.postmarkapp.com/email. It exists for a fake Postmark that tests run, and only the kind stack sets it; production requires https, since the server token goes in the request",
       source: "operator",
     },
-    MAIL_FROM: {
-      schema: headerValue,
-      fallback: "Answerable ID <sign-in@id.answerable.org>",
-      doc: "Who sign-in mail comes from: a domain Postmark has verified for this server",
-      source: "operator",
-    },
-    MAIL_REPLY_TO: {
-      schema: z.email(),
-      fallback: "support@answerable.org",
-      doc: "Where replies to sign-in mail go",
-      source: "operator",
-    },
-    MAIL_SUBJECT_PREFIX: {
-      schema: headerValue.optional(),
-      doc: "Put before every subject, for an environment that must not read as production: [staging]",
-      source: "operator",
-    },
     BETTER_AUTH_TRUSTED_ORIGINS: {
       schema: z.string(),
       fallback: "",
@@ -154,18 +133,6 @@ export const idConfig = defineConfig(
       fallback: "false",
       doc: "true keeps the root bearer working after a person holds platform:write; for break-glass only",
       source: "operator",
-    },
-    TRUSTED_PROXY_CIDRS: {
-      schema: z
-        .string()
-        .transform((value) => value.split(",").map((entry) => entry.trim()))
-        .refine(
-          (entries) => findInvalidTrustedProxies(entries).length === 0,
-          "Expected valid proxy IP addresses or CIDRs",
-        )
-        .optional(),
-      doc: "The ingress proxies' networks, IPv4 or IPv6, separated by commas; production requires them",
-      source: "cluster",
     },
     DATABASE_POOL_MAX: {
       schema: z.coerce.number().int().min(1).max(maxInt32),
@@ -205,8 +172,6 @@ export const idConfig = defineConfig(
         new URL(environment.POSTMARK_API_URL).protocol !== "https:"
       )
         issue("POSTMARK_API_URL", "Required to be https in production");
-      if (!environment.TRUSTED_PROXY_CIDRS?.length)
-        issue("TRUSTED_PROXY_CIDRS", "Required in production");
       const origins = environment.BETTER_AUTH_TRUSTED_ORIGINS.split(",").map(
         (origin) => origin.trim(),
       );

@@ -5913,7 +5913,7 @@
                             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
                           },
                           "ipAddress": {
-                            "description": "The client address resolved at sign-in from CF-Connecting-IP, or from X-Forwarded-For through the trusted proxies when that header names no client. Descriptive metadata, not proof of client origin.",
+                            "description": "The client address at sign-in, from CF-Connecting-IP. Descriptive metadata, not proof of client origin.",
                             "type": [
                               "string",
                               "null"
@@ -36685,7 +36685,7 @@
                             ]
                           },
                           "ip": {
-                            "description": "The client address resolved from CF-Connecting-IP, or from X-Forwarded-For through the trusted proxies when that header names no client, for events written while serving a request; otherwise null. Descriptive metadata, never proof of client origin.",
+                            "description": "The client address from CF-Connecting-IP, for events written while serving a request; otherwise null. Descriptive metadata, never proof of client origin.",
                             "type": [
                               "string",
                               "null"
@@ -37176,7 +37176,7 @@
                             ]
                           },
                           "ip": {
-                            "description": "The client address resolved from CF-Connecting-IP, or from X-Forwarded-For through the trusted proxies when that header names no client, for events written while serving a request; otherwise null. Descriptive metadata, never proof of client origin.",
+                            "description": "The client address from CF-Connecting-IP, for events written while serving a request; otherwise null. Descriptive metadata, never proof of client origin.",
                             "type": [
                               "string",
                               "null"
@@ -37629,7 +37629,7 @@
                             ]
                           },
                           "ip": {
-                            "description": "The client address resolved from CF-Connecting-IP, or from X-Forwarded-For through the trusted proxies when that header names no client, for events written while serving a request; otherwise null. Descriptive metadata, never proof of client origin.",
+                            "description": "The client address from CF-Connecting-IP, for events written while serving a request; otherwise null. Descriptive metadata, never proof of client origin.",
                             "type": [
                               "string",
                               "null"

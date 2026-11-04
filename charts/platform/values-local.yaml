@@ -20,9 +20,3 @@ traefik:
   ports:
     websecure:
       hostPort: 48443
-      # The stand-in reaches Traefik from 127.0.0.1, so its X-Forwarded-For is kept, as Cloudflare's would be. The
-      # laptop's requests arrive from the Docker network's gateway, untrusted, as a visitor's would: Traefik drops
-      # their X-Forwarded-For and appends the gateway's address.
-      forwardedHeaders:
-        trustedIPs:
-          - 127.0.0.1/32

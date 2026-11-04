@@ -4,49 +4,9 @@ import { createApp } from "../__tests__/app.ts";
 import { createAuth } from "../auth.ts";
 import { createDatabase } from "../db/client.ts";
 import { testEnvironment } from "../__tests__/support.ts";
-const environment = testEnvironment({ trustedProxyCidrs: ["10.0.0.0/8"] });
+const environment = testEnvironment();
 const connection = createDatabase(environment);
 afterAll(() => connection.close());
-
-for (const spoof of [false, true])
-  test(
-    spoof
-      ? "spoofed leftmost forwarding entries cannot change the native rate-limit key"
-      : "distinct clients have distinct native rate-limit keys",
-    async () => {
-      const auth = createAuth(connection.db, environment);
-      const context = await auth.$context;
-      context.rateLimit.enabled = true;
-      context.rateLimit.max = 1;
-      const keys: string[] = [];
-      const counts = new Map<string, number>();
-      const options: BetterAuthOptions = context.options;
-      options.rateLimit = {
-        customStorage: {
-          consume: async (key, rule) => {
-            keys.push(key);
-            const count = (counts.get(key) ?? 0) + 1;
-            counts.set(key, count);
-            return count <= rule.max
-              ? { allowed: true, retryAfter: null }
-              : { allowed: false, retryAfter: rule.window };
-          },
-        },
-      };
-      for (const [index, address] of ["192.0.2.1", "198.51.100.7"].entries()) {
-        const response = await auth.handler(
-          new Request(`${environment.betterAuthUrl}/auth/get-session`, {
-            headers: {
-              "x-forwarded-for": `${address}, ${spoof ? "203.0.113.5, " : ""}10.0.0.1`,
-            },
-          }),
-        );
-        expect(response.status).toBe(spoof && index === 1 ? 429 : 200);
-      }
-      expect(keys).toHaveLength(2);
-      expect(keys[0] === keys[1]).toBe(spoof);
-    },
-  );
 
 // Each request is counted against the key of the client address it resolves
 // to; a limit of one makes a repeated key answer 429.
@@ -102,18 +62,18 @@ for (const [name, send] of [
   ["the sign-in pages", throughPages],
 ] as const) {
   const clientKey = (address: string) => expect.stringContaining(address);
-  test(`${name}: cf-connecting-ip decides the client address over X-Forwarded-For`, async () => {
+  test(`${name}: cf-connecting-ip names the client, and X-Forwarded-For changes nothing`, async () => {
     // Rotating forwarded entries cannot move a client to a new key, and
     // another client behind the same forwarded entries gets its own.
     const { keys, statuses } = await sendCounted(
       [
         {
           "cf-connecting-ip": "198.51.100.7",
-          "x-forwarded-for": "192.0.2.1, 10.0.0.1",
+          "x-forwarded-for": "192.0.2.1",
         },
         {
           "cf-connecting-ip": "198.51.100.7",
-          "x-forwarded-for": "192.0.2.2, 10.0.0.1",
+          "x-forwarded-for": "192.0.2.2",
         },
         {
           "cf-connecting-ip": "198.51.100.7",
@@ -121,7 +81,7 @@ for (const [name, send] of [
         },
         {
           "cf-connecting-ip": "198.51.100.8",
-          "x-forwarded-for": "192.0.2.1, 10.0.0.1",
+          "x-forwarded-for": "192.0.2.1",
         },
       ],
       send,
@@ -130,7 +90,6 @@ for (const [name, send] of [
     expect(keys[0]).toEqual(clientKey("198.51.100.7"));
     expect(new Set(keys.slice(0, 3)).size).toBe(1);
     expect(keys[3]).toEqual(clientKey("198.51.100.8"));
-    expect(keys[3]).not.toBe(keys[0]);
     // The pages answer 200 whatever the service says to their session read.
     if (send === direct)
       expect(statuses.map((status) => status === 429)).toEqual([
@@ -141,28 +100,18 @@ for (const [name, send] of [
       ]);
   });
 
-  test(`${name}: without cf-connecting-ip, or when it names no client, the forwarded walk decides`, async () => {
+  test(`${name}: without one valid address in cf-connecting-ip nothing names the client, whatever X-Forwarded-For says`, async () => {
     const { keys } = await sendCounted(
       [
-        { "x-forwarded-for": "192.0.2.1, 10.0.0.1" },
-        // A proxy address, a malformed value and an empty one name no client.
-        {
-          "cf-connecting-ip": "10.0.0.7",
-          "x-forwarded-for": "192.0.2.1, 10.0.0.1",
-        },
-        {
-          "cf-connecting-ip": "not-an-address",
-          "x-forwarded-for": "192.0.2.1, 10.0.0.1",
-        },
-        { "cf-connecting-ip": "", "x-forwarded-for": "192.0.2.1, 10.0.0.1" },
-        { "x-forwarded-for": "198.51.100.7, 10.0.0.1" },
+        { "x-forwarded-for": "192.0.2.1" },
+        { "cf-connecting-ip": "not-an-address", "x-forwarded-for": "192.0.2.1" },
+        { "cf-connecting-ip": "", "x-forwarded-for": "192.0.2.1" },
+        { "cf-connecting-ip": "192.0.2.1, 198.51.100.7" },
       ],
       send,
     );
-    expect(keys).toHaveLength(5);
-    expect(keys[0]).toEqual(clientKey("192.0.2.1"));
-    expect(new Set(keys.slice(0, 4)).size).toBe(1);
-    expect(keys[4]).toEqual(clientKey("198.51.100.7"));
+    // Better Auth's fallback outside production: production refuses them, below.
+    expect(keys).toEqual(Array(4).fill(clientKey("127.0.0.1")));
   });
 }
 
@@ -212,6 +161,44 @@ for (const path of [
       expect(result.headers["cache-control"]).toBe("no-store");
     }
   });
+
+test("production refuses a request whose cf-connecting-ip names no client, whatever X-Forwarded-For says", async () => {
+  // Better Auth captures NODE_ENV at module load, so production needs a fresh process.
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      "-e",
+      `
+    import { createApp } from "./src/app.ts";
+    import { createAuth } from "./src/auth.ts";
+    import { createDatabase } from "./src/db/client.ts";
+    import { testEnvironment } from "./src/__tests__/support.ts";
+    const environment = testEnvironment({ nodeEnv: "production" });
+    const connection = createDatabase(environment);
+    const app = createApp({ auth: createAuth(connection.db, environment), db: connection.db, environment });
+    const statuses = [];
+    for (const headers of [
+      { "x-forwarded-for": "192.0.2.1" },
+      { "cf-connecting-ip": "not-an-address", "x-forwarded-for": "192.0.2.1" },
+      { "cf-connecting-ip": "", "x-forwarded-for": "192.0.2.1" },
+      { "cf-connecting-ip": "192.0.2.1, 198.51.100.7" },
+      { "cf-connecting-ip": "198.51.100.7" },
+    ]) statuses.push((await app.request("/auth/get-session", { headers })).status);
+    await connection.close();
+    console.log(JSON.stringify(statuses));
+  `,
+    ],
+    {
+      cwd: import.meta.dir + "/../..",
+      env: { ...process.env, NODE_ENV: "production", TEST: "" },
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  const output = await new Response(child.stdout).text();
+  expect(await child.exited).toBe(0);
+  expect(JSON.parse(output)).toEqual([403, 403, 403, 403, 200]);
+});
 
 // The process-level checks above exercise the native resolver in production;
 // this isolates the app's admission branch for in-process coverage.
@@ -272,12 +259,12 @@ for (const { route, limit, request } of [
     import { createAuth } from "./src/auth.ts";
     import { createDatabase } from "./src/db/client.ts";
     import { testEnvironment } from "./src/__tests__/support.ts";
-    const environment = testEnvironment({ nodeEnv: "production", trustedProxyCidrs: ["10.0.0.0/8"] });
+    const environment = testEnvironment({ nodeEnv: "production" });
     const connection = createDatabase(environment);
     const app = createApp({ auth: createAuth(connection.db, environment), db: connection.db, environment });
     const send = async (client) => {
       const { path, method, headers, body } = ${request};
-      const response = await app.request(path, { method, body, headers: { ...headers, "x-forwarded-for": client + ", 10.0.0.1" } });
+      const response = await app.request(path, { method, body, headers: { ...headers, "cf-connecting-ip": client } });
       await response.arrayBuffer();
       return response.status;
     };
@@ -318,7 +305,7 @@ describe("a steady rate under a rule's stated rate is never refused, over many w
             method: "POST",
             headers: {
               "content-type": "application/json",
-              "x-forwarded-for": "198.51.100.9",
+              "cf-connecting-ip": "198.51.100.9",
             },
             body: JSON.stringify({
               email: "person@unknown.example.com",
@@ -334,7 +321,7 @@ describe("a steady rate under a rule's stated rate is never refused, over many w
           new Request(`${environment.betterAuthUrl}/auth/oauth2/userinfo`, {
             headers: {
               authorization: "Bearer not-a-real-token",
-              "x-forwarded-for": "198.51.100.9",
+              "cf-connecting-ip": "198.51.100.9",
             },
           }),
         ),

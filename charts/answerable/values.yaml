@@ -1,7 +1,7 @@
 # Defaults: production-shaped. Each environment's overlay (values-civo-<environment>.yaml) sets its hostnames, network and
 # sizes; the pipeline sets image.tag, the digests and idEnvChecksum. The chart creates no namespace, Secret or ConfigMap:
-# Terraform creates the namespace and writes trusted-proxies, postgres-admin and origin-tls; the deploy writes id-env from
-# the GitHub environment; the ops Jobs write postgres-ca and the generated Secrets.
+# Terraform creates the namespace and writes postgres-admin and origin-tls; the deploy writes id-env from the GitHub
+# environment; the ops Jobs write postgres-ca and the generated Secrets.
 
 image:
   # sha-<40 hex> from the pipeline, local on a laptop: every image's tag unless it has a digest, and the release's version
@@ -41,12 +41,6 @@ ingress:
   # name no TLS option: Traefik's default one, which charts/platform renders here, demands Cloudflare's origin-pull
   # client certificate (D19).
   tlsSecret: origin-tls
-
-# ID's TRUSTED_PROXY_CIDRS: key cidrs of this ConfigMap, comma-separated, the hops whose X-Forwarded-For entries ID skips
-# when a request has no CF-Connecting-IP (the private network the load balancer connects from, the pod range). Terraform
-# writes it; ID's pods do not start without it.
-trustedProxies:
-  configMap: trusted-proxies
 
 # The SHA-256 of id-env's values, which the deploy computes and sets: a changed value changes ID's pod template, so a
 # rotated secret rolls ID on the next deploy.

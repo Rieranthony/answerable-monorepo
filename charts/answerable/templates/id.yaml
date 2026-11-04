@@ -4,12 +4,6 @@
   value: {{ include "answerable.idUrl" . | quote }}
 - name: BETTER_AUTH_TRUSTED_ORIGINS
   value: {{ join "," .Values.id.trustedOrigins | quote }}
-# The hops whose X-Forwarded-For entries ID skips, which Terraform writes.
-- name: TRUSTED_PROXY_CIDRS
-  valueFrom:
-    configMapKeyRef:
-      name: {{ .Values.trustedProxies.configMap }}
-      key: cidrs
 {{ include "answerable.secretEnv" (dict "name" "DATABASE_URL" "secret" "id-database" "key" "DATABASE_URL") }}
 {{- end -}}
 {{- /*

@@ -54,9 +54,8 @@ function toEnvironment(environment: ReturnType<typeof idConfig.read>) {
     betterAuthSecrets: environment.BETTER_AUTH_SECRETS,
     postmarkServerToken: environment.POSTMARK_SERVER_TOKEN,
     postmarkApiUrl: environment.POSTMARK_API_URL,
-    mailFrom: environment.MAIL_FROM,
-    mailReplyTo: environment.MAIL_REPLY_TO,
-    mailSubjectPrefix: environment.MAIL_SUBJECT_PREFIX,
+    /** Who sign-in mail comes from: on ID's own host, the domain Postmark verifies, so the sender always matches the DNS. */
+    mailFromAddress: `sign-in@${new URL(environment.BETTER_AUTH_URL).hostname}`,
     trustedOrigins: environment.BETTER_AUTH_TRUSTED_ORIGINS.split(",")
       .map((origin) => origin.trim())
       .filter(Boolean),
@@ -66,7 +65,6 @@ function toEnvironment(environment: ReturnType<typeof idConfig.read>) {
     adminResourceIdentifier: `${environment.BETTER_AUTH_URL}/api/admin`,
     rootAdminSecret: environment.ROOT_ADMIN_SECRET,
     rootAdminBreakGlass: environment.ROOT_ADMIN_BREAK_GLASS === "true",
-    trustedProxyCidrs: environment.TRUSTED_PROXY_CIDRS ?? [],
     operationalLogIntervalMs: OPERATIONAL_LOG_INTERVAL_MS,
     protocolSweepIntervalMs: PROTOCOL_SWEEP_INTERVAL_MS,
     protocolSweepBatchSize: PROTOCOL_SWEEP_BATCH,

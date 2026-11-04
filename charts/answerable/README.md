@@ -11,7 +11,6 @@ Answerable ID, the Toolbox, which serves every MCP of `mcps.json`, the admin MCP
 
 | Object | Written by | Read by |
 | --- | --- | --- |
-| ConfigMap `trusted-proxies`, key `cidrs` | Terraform | ID's `TRUSTED_PROXY_CIDRS` (`trustedProxies.configMap`); ID's pods do not start without it |
 | Secret `origin-tls`, type `kubernetes.io/tls` | Terraform (Cloudflare's Origin CA) | Every Ingress (`ingress.tlsSecret`) |
 | Secret `postgres-admin`, key `OPS_DATABASE_ADMIN_URL` | Terraform | The ops bootstrap Job |
 | Secret `id-env` | The deploy, from the GitHub environment | ID (`envFrom`); the register and make-admin Jobs (`ROOT_ADMIN_SECRET`) |
@@ -28,7 +27,7 @@ Answerable ID, the Toolbox, which serves every MCP of `mcps.json`, the admin MCP
 | `idEnvChecksum` | The deploy: the SHA-256 of `id-env`'s values | Nothing rolls ID when a secret changes |
 | `ops.bootstrap`, `ops.register`, `ops.makeAdmin` with `ops.adminEmail` | The deploy (`bootstrap` and `register` every time), `deploy.ts run-job` for one upgrade | No ops Job. `ops.makeAdmin` without `ops.adminEmail` fails the render |
 | `id.staffDomain`, `id.entraTenant` | The overlay | `register` connects no staff directory |
-| `id.env` | The overlay: ID's other non-secret variables | ID's own defaults. Staging sets `MAIL_FROM` to `Answerable ID <sign-in@id.answerable-staging.uk>` and `MAIL_SUBJECT_PREFIX` to `[staging]`, so that its mail does not read as production's; production sets neither |
+| `id.env` | The overlay: ID's other non-secret variables | ID's own defaults |
 | `id.extraEgress` | The overlay (the kind stack sets it) | ID reaches HTTPS outside the private ranges and nothing else. The kind stack adds its company directories and its fake Postmark |
 
 The Toolbox and the admin MCP render at zero replicas until their client Secret exists; `ops register` writes it and scales them up. `helm template` has no cluster to look in, so it always shows them at zero.

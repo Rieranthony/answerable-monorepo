@@ -13,10 +13,9 @@ hostnames:
   mcp: mcp.127-0-0-1.sslip.io
 publicPort: "48443"
 
-# The stack writes what Terraform writes on Civo (infra/k8s/local/stack.ts): the Secret origin-tls, from its own CA; the
-# ConfigMap trusted-proxies, 127.0.0.1/32, where Cloudflare's stand-in reaches Traefik from (an nginx beside Traefik in its
-# pod, infra/k8s/local/edge.yaml); and the Secret postgres-admin. The test itself plays a visitor and connects straight to
-# Traefik from the Docker network's gateway, which is not trusted.
+# The stack writes what Terraform writes on Civo (infra/k8s/local/stack.ts): the Secret origin-tls, from its own CA, and the
+# Secret postgres-admin. Cloudflare's stand-in for the pods is an nginx beside Traefik in its pod
+# (infra/k8s/local/edge.yaml); the test itself plays Cloudflare on the host and connects straight to Traefik.
 
 # The edge's certificate comes from the stack's CA, which the services must trust to call the issuer.
 extraCaConfigMap: local-ca

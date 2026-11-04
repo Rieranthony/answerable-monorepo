@@ -46,7 +46,7 @@ test("integration: root locks after a human administrator and supports break-gla
   const headers = {
     "Idempotency-Key": crypto.randomUUID(),
     Authorization: `Bearer ${secret}`,
-    "x-forwarded-for": "192.0.2.1, 192.0.2.2",
+    "cf-connecting-ip": "192.0.2.1",
     "user-agent": "root-test",
   };
   const me = "/api/admin/v1/me";
@@ -83,7 +83,7 @@ test("integration: root locks after a human administrator and supports break-gla
     actorId: "root",
     outcome: "success",
     targetId: "getAdminMe",
-    ip: "127.0.0.1",
+    ip: "192.0.2.1",
     userAgent: "root-test",
     requestId: response.headers.get("x-request-id"),
   });

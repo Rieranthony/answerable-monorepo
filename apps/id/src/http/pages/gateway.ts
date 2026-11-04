@@ -17,12 +17,7 @@ export function authCallHeaders(context: PageContext) {
     accept: "application/json",
     "x-request-id": context.get("requestId"),
   });
-  for (const name of [
-    "cookie",
-    "user-agent",
-    "cf-connecting-ip",
-    "x-forwarded-for",
-  ]) {
+  for (const name of ["cookie", "user-agent", "cf-connecting-ip"]) {
     const value = context.req.header(name);
     if (value !== undefined) headers.set(name, value);
   }

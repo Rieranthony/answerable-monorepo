@@ -336,8 +336,8 @@ describe("sign-in by emailed link", () => {
       expect(seen.buttons).toEqual(["Sign in"])
       const mail = await mailTo(ada!, since)
       expect(mail).toMatchObject({
-        // The sender and the reply address are ID's configuration; the subject and the tag are the template's.
-        from: "Answerable ID <sign-in@id.example.com>", replyTo: "support@example.com", subject: "Sign in to Alpha Firm", tag: tags.link, tracking: { opens: false, links: "None" },
+        // The sender's address is the fixture's, and the reply address fixed in ID; the subject and the tag are the template's.
+        from: "Answerable ID <sign-in@id.example.com>", replyTo: "support@answerable.org", subject: "Sign in to Alpha Firm", tag: tags.link, tracking: { opens: false, links: "None" },
       })
       expect(mail.code).toMatch(/^\d{8}$/)
       expect(mail.link).toStartWith(`${origin}/magic-link?token=`)

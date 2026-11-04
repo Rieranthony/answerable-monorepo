@@ -3,7 +3,7 @@
 // standard output. stack.test.ts runs it after the root lock, once a deploy has registered the MCP.
 import { connect, intentSchema, serveCallback, signIn, signInRefused, tool } from "@answerable/acceptance"
 import { chromium } from "@playwright/test"
-import { hosts, origin, startBrowserEdge } from "./stack"
+import { asCloudflare, hosts, origin, startBrowserEdge } from "./stack"
 
 /** What stack.test.ts hands over: the MCP, made by bun mcp with notes.add as example is, and its scopes; the staff member and the client organisation's person; and the stack's certificates. */
 export type StandaloneSignInInput = {
@@ -25,12 +25,13 @@ const mcpResource = `${origin(hosts.mcp)}/${input.mcp}/mcp`
 const callback = "http://localhost:47700/callback"
 const tls = { ca: input.stackCa, ...input.originPullCert }
 
-// The MCP SDK and the kit call fetch themselves: the stack's origins take the origin-pull certificate, as through Cloudflare.
+// The MCP SDK and the kit call fetch themselves: the stack's origins take the origin-pull certificate and CF-Connecting-IP, as through Cloudflare.
 const original = globalThis.fetch
 const stackOrigins = new Set(Object.values(hosts).map(origin))
 globalThis.fetch = Object.assign((request: string | URL | Request, init?: RequestInit) => {
   const url = new URL(request instanceof Request ? request.url : String(request))
-  return stackOrigins.has(url.origin) ? original(request, { ...init, tls }) : original(request, init)
+  if (!stackOrigins.has(url.origin)) return original(request, init)
+  return original(request, { ...init, headers: asCloudflare(init?.headers ?? (request instanceof Request ? request.headers : undefined)), tls })
 }, original)
 
 const edge = startBrowserEdge({ stackCa: input.stackCa, originPullCert: input.originPullCert, serverCert: input.edgeCert })

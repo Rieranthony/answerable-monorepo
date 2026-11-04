@@ -26,8 +26,8 @@ infra/
 | `cluster` | `civo_vpc_firewall`, `civo_kubernetes_cluster` | The API (6443) from `0.0.0.0/0` in one rule, [authenticated by the cluster](#who-can-reach-the-kubernetes-api); from the private network only the node ports, the kubelet and Cilium's tunnel and health checks, never 6443 and never every port ([the ports and their sources](modules/cluster/README.md)); k3s with Cilium; Civo's Traefik removed, and the apply fails if it is installed anyway; at least two nodes |
 | `database` | `civo_vpc_firewall`, `civo_database` | PostgreSQL 17; 5432 from the private network, not the nodes alone ([a known limit](#known-limits)); outbound to the private network only; 1, 3 or 5 nodes; `prevent_destroy`; the sensitive [administrator's URL](modules/database/README.md#the-administrators-url) on Civo's default database `postgres`, its login percent-encoded |
 | `ingress-firewall` | `civo_vpc_firewall`, `civo_vpc_reserved_ip` | 443 from exactly Cloudflare's IPv4 ranges; no port 80; outbound to the private network only |
-| `edge` | four `cloudflare_dns_record`s, [Postmark's mail records](#mail-records) when given, zone settings, origin pulls, three `cloudflare_ruleset`s, [the certificates](#certificates) | Proxied A records for exactly the four hostnames (`id`, `toolbox`, `admin-mcp` and `mcp`, where the Toolbox serves each standalone MCP), each one label under the zone, and no mail record without `mail_records`; Full (strict), TLS 1.2 minimum, HSTS; no browser check, no challenge and no cache (except `/assets/`) on those hostnames; never `www` or the apex; the origin-pull CA, its client certificate (`client_auth`) and their upload; the Origin CA request for exactly the four hostnames, `origin-ecc`, 5475 days |
-| `platform` | the `answerable` and `platform` namespaces, ConfigMap `trusted-proxies`, Secrets `postgres-admin` and `origin-tls`, `helm_release.platform` | The restricted Pod Security Standard enforced on both namespaces; the three objects' names, keys, type and namespace; Traefik's Service names the firewall and claims the reserved address; Traefik's websecure entry point trusts `X-Forwarded-For` only from the ranges given; the chart's `values-civo-<environment>.yaml` must exist; `originPull.caPem` from the edge module ([what Terraform writes](modules/platform/README.md)) |
+| `edge` | four `cloudflare_dns_record`s, zone settings, origin pulls, two `cloudflare_ruleset`s, [the certificates](#certificates) | Proxied A records for exactly the four hostnames (`id`, `toolbox`, `admin-mcp` and `mcp`, where the Toolbox serves each standalone MCP), each one label under the zone; Full (strict), TLS 1.2 minimum, HSTS; no browser check, no challenge and no cache (except `/assets/`) on those hostnames; never `www` or the apex; the origin-pull CA, its client certificate (`client_auth`) and their upload; the Origin CA request for exactly the four hostnames, `origin-ecc`, 5475 days |
+| `platform` | the `answerable` and `platform` namespaces, Secrets `postgres-admin` and `origin-tls`, `helm_release.platform` | The restricted Pod Security Standard enforced on both namespaces; the two Secrets' names, keys, type and namespace; Traefik's Service names the firewall and claims the reserved address; the chart's `values-civo-<environment>.yaml` must exist; `originPull.caPem` from the edge module ([what Terraform writes](modules/platform/README.md)) |
 | `deployer` | ServiceAccount `deployer`, its Role and binding, a token Secret | Manages only what `helm upgrade` of `charts/answerable` and the deploy touch, in `answerable`; no wildcards, no `escalate`, `bind`, `impersonate` or `exec`; Kubernetes' own API groups only |
 | `github` | three environment secrets | Writes `KUBE_SERVER`, `KUBE_CA` and `KUBE_TOKEN` into the environment the owner created, and nothing else; the environment's policy and reviewer are the owner's ([the GitHub environment](#the-github-environment)) |
 
@@ -87,14 +87,13 @@ The zone's Cloudflare token needs these permissions, on that zone only:
 | Permission | Used by |
 | --- | --- |
 | **Zone > Zone > Read** | Looking the zone up by name: the `cloudflare_zone` data source calls `GET /zones?name=…`, which accepts only Zone Read ([List Zones](https://developers.cloudflare.com/api/resources/zones/methods/list/)) |
-| Zone > DNS > Edit | The four service records and Postmark's three mail records |
+| Zone > DNS > Edit | The four service records |
 | Zone > SSL and Certificates > Edit | Authenticated origin pulls (the setting and the zone's client certificate), and the Origin CA certificate, whose create, get and revoke calls ask for exactly this permission ([Origin CA](https://developers.cloudflare.com/ssl/origin-configuration/origin-ca/)) |
 | Zone > Zone Settings > Edit | SSL mode, HTTPS redirect, TLS versions, HSTS |
 | **Zone > Config Rules > Edit** | The `http_config_settings` ruleset (no browser check or challenge) |
 | **Zone > Cache Rules > Edit** | The `http_request_cache_settings` ruleset (no cache except `/assets/`) |
-| **Zone > Zone WAF > Edit** | The `http_ratelimit` ruleset (a limit per client address on ID's sign-in form) |
 
-The last three are the ones easiest to miss ([config rules](https://developers.cloudflare.com/rules/configuration-rules/create-api/), [cache rules](https://developers.cloudflare.com/cache/how-to/cache-rules/create-api/), [rate limiting rules](https://developers.cloudflare.com/waf/rate-limiting-rules/create-api/)). An environment whose token predates the rate limit needs Zone WAF Edit added to the token in Cloudflare's console before its next tag, or Terraform fails at that ruleset; editing a token's permissions keeps its value, so the GitHub secret stays as it is.
+The last two are the ones easiest to miss ([config rules](https://developers.cloudflare.com/rules/configuration-rules/create-api/), [cache rules](https://developers.cloudflare.com/cache/how-to/cache-rules/create-api/)).
 
 `GH_SECRETS_TOKEN` is a fine-grained personal access token for this repository alone, with an expiry in the owner's calendar. GitHub's [fine-grained permission tables](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens) name what the github module's calls need:
 
@@ -127,19 +126,9 @@ The owner creates each environment (`staging`, `production`) by hand, once, befo
 
 - **The cluster's address and credential**: `KUBE_SERVER` (the cluster's `api_endpoint`), `KUBE_CA` (the cluster CA, PEM, from the deployer's token Secret) and `KUBE_TOKEN` (the deployer's token). A new cluster or a rotated token reaches GitHub in the same apply.
 
-## Mail records
+## What Terraform owns in the zone
 
-ID sends its mail from `id.<zone>`. Postmark verifies that domain with three records, which the edge module writes **only when `mail_records` is set** in `envs/<environment>.tfvars`; the owner copies the values in from the domain's DNS Settings page in Postmark once they have added it ([the runbook](../README.md#send-mail-through-postmark)). They are public. Both tfvars files carry the block commented out.
-
-| Record | Name | Value | Proxied |
-| --- | --- | --- | --- |
-| TXT, DKIM | `<selector>._domainkey.id.<zone>` | `mail_records.dkim_value`, which starts `k=rsa;` | No |
-| CNAME, Return-Path | `mail_records.return_path_host`, one label under `id.<zone>` (Postmark shows `pm-bounces`) | `pm.mtasv.net`, fixed in the module | **No**: a proxied one does not verify |
-| TXT, DMARC | `_dmarc.id.<zone>` | `mail_records.dmarc_value`, which starts `v=DMARC1; p=` | No |
-
-- **No SPF record.** Postmark asks for none on the From domain, and the apex's Microsoft 365 records are not the module's: every name it writes is under `id.<zone>`, and the variable's validation refuses a host anywhere else, the apex above all.
-- **A TXT record's content is written as Cloudflare keeps it.** Cloudflare's DNS documentation says TXT content consists of quoted strings, that it adds the quotes to content saved without them, and the API's create call that a string over 255 bytes is split automatically; the provider (5.28.0) documents nothing about quoting and normalises nothing. So the module writes the value in quotes, in strings of at most 255 bytes joined by a space (a 2048-bit DKIM key is 392 characters, so two), and a plan then shows no change. The tests prove the content; they cannot prove Cloudflare's answer. **After the first apply with values, read `infra/civo/terraform.sh <environment> plan`: it must show no changes.** If it shows the content differing only in its quotes or its split, correct `local.txt_content` in `modules/edge/main.tf`.
-- **Absent values write nothing.** `terraform test` holds the module to exactly its four proxied A records without `mail_records`, and to exactly three more with it.
+The four proxied A records and nothing else. A `cloudflare_dns_record` manages the one record it created, by that record's ID, and no resource here reads or replaces the zone's other records, so a record made by hand stays as it is through every apply: production's `www`, which Vercel serves, the apex's mail records, and Postmark's records under `id.<zone>`, which the owner adds by hand ([the runbook](../README.md#send-mail-through-postmark)).
 
 ## Certificates
 
@@ -186,7 +175,7 @@ infra/civo/terraform.sh <environment> apply -input=false -auto-approve -target=m
 infra/civo/terraform.sh <environment> apply -input=false -auto-approve
 ```
 
-The kubernetes and helm providers are configured from the cluster's kubeconfig, which does not exist until the cluster does, so the targeted apply creates the cluster, the database and the firewalls first. The full apply then creates the rest: the edge and its certificates, the namespaces, the three objects, the platform chart, the deployer and the GitHub environment's rules and secrets. Afterwards both steps are no-ops unless something changed; a cluster that is ever replaced needs the targeted step again, which is why it always runs.
+The kubernetes and helm providers are configured from the cluster's kubeconfig, which does not exist until the cluster does, so the targeted apply creates the cluster, the database and the firewalls first. The full apply then creates the rest: the edge and its certificates, the namespaces, the two Secrets, the platform chart, the deployer and the GitHub environment's rules and secrets. Afterwards both steps are no-ops unless something changed; a cluster that is ever replaced needs the targeted step again, which is why it always runs.
 
 Then pin the cluster's version: write the version the apply created the cluster with into `kubernetes_version` in `envs/<environment>.tfvars`, in a commit.
 
@@ -203,15 +192,12 @@ Each of these could not be proved without a Civo account. Record the answer in [
 | Does the load balancer work with outbound limited to the private network? | As above | Widen its egress rule |
 | Do `kubectl logs` and `exec` work? The control plane reaches each kubelet on 10250, admitted from the private network only | The deploy's logs of a failed Job | Admit 10250 from the control plane's address |
 | Does Civo's Cilium tunnel over VXLAN (UDP 8472)? | Pods on different nodes reach each other, for example the Toolbox calling ID through its Service | Admit Geneve (UDP 6081), or nothing for native routing |
-| What address does Traefik see? No PROXY protocol is configured, so it should be the load balancer's private address, which is why the private range is in Traefik's `trustedIPs` and in the `trusted-proxies` ConfigMap | Read `X-Forwarded-For` at ID through the audit API | Enable `kubernetes.civo.com/loadbalancer-enable-proxy-protocol` with Traefik's `ports.websecure.proxyProtocol.trustedIPs` |
-| Is the pod range k3s's default 10.42.0.0/16? | A node's `spec.podCIDR` | Set `pod_cidr` |
-| Does a plan show no change after the mail records exist? Cloudflare quotes TXT content and splits it at 255 bytes ([Mail records](#mail-records)) | `infra/civo/terraform.sh <environment> plan` after the first tag with `mail_records` | Correct `local.txt_content` in `modules/edge/main.tf` to the form the plan shows the API holding |
 
-**Answered on the first staging run (23 October 2026, `reports/staging-evidence.md`):** the object store honours `use_lockfile` once the SDK's trailing checksum is off; the database serves TLS, with a private `dbaas-ca` root valid for one year whose leaf names do not cover the private address; Civo's marketplace Traefik is absent under its manifest name; Cloudflare accepted the ECDSA origin-pull certificate. The load balancer path works: the smoke test passed 8 of 8 through Cloudflare the same day. Still open: Traefik's seen address.
+**Answered on the first staging run (23 October 2026, `reports/staging-evidence.md`):** the object store honours `use_lockfile` once the SDK's trailing checksum is off; the database serves TLS, with a private `dbaas-ca` root valid for one year whose leaf names do not cover the private address; Civo's marketplace Traefik is absent under its manifest name; Cloudflare accepted the ECDSA origin-pull certificate. The load balancer path works: the smoke test passed 8 of 8 through Cloudflare the same day.
 | Does the Civo database serve TLS at all? Civo's pages never mention SSL, TLS or a certificate | The first `bootstrap` Job: it sends PostgreSQL's SSLRequest, fetches the certificate chain on first use and logs its fingerprint, or fails | Stop and bring it back to the owner: every database connection is `verify-full` by design |
 | Which certificate does the database present, and does it name the private address that `postgres-admin` and the services use? | The first `bootstrap` Job connects with `verify-full` against the CA it stored | Switch the host in `modules/database` (output `admin_url`) and the services to the database's `dns_endpoint` |
 | Do standbys and backups work with the database's outbound traffic limited to the private network? | The restore drill ([B7](../../docs/goals/civo-deploy/briefs/b7.md)) | Widen the database firewall's egress |
-| Does the platform chart accept the values Terraform sets (`originPull.caPem`, `traefik.service.annotations`, `traefik.ports.websecure.forwardedHeaders.trustedIPs`)? | The full apply's `helm_release.platform` succeeds; the smoke test reaches the reserved address | Match the keys in `modules/platform/main.tf` to the chart |
+| Does the platform chart accept the values Terraform sets (`originPull.caPem`, `traefik.service.annotations`)? | The full apply's `helm_release.platform` succeeds; the smoke test reaches the reserved address | Match the keys in `modules/platform/main.tf` to the chart |
 
 ## Day two
 

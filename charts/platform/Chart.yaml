@@ -6,8 +6,7 @@ version: 0.3.0
 kubeVersion: ">=1.29.0-0"
 dependencies:
   # Traefik v3.7.14 (D31), in place of the retired ingress-nginx. Terraform's values address the dependency by this
-  # name: traefik.service.annotations and traefik.ports.websecure.forwardedHeaders.trustedIPs. It is an OCI chart, so
-  # `helm dependency build` needs no repository added.
+  # name: traefik.service.annotations. It is an OCI chart, so `helm dependency build` needs no repository added.
   - name: traefik
     version: 41.7.1
     repository: oci://ghcr.io/traefik/helm

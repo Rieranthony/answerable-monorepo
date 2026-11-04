@@ -24,7 +24,6 @@ const production = {
   ...requiredEnvironment,
   NODE_ENV: "production",
   BETTER_AUTH_TRUSTED_ORIGINS: "https://auth.example.com",
-  TRUSTED_PROXY_CIDRS: "10.0.0.0/8, 2001:db8::/32",
   POSTMARK_SERVER_TOKEN: "postmark-token",
 };
 
@@ -44,13 +43,9 @@ describe("unit: environment", () => {
       "MICROSOFT_CLIENT_SECRET",
       "POSTMARK_SERVER_TOKEN",
       "POSTMARK_API_URL",
-      "MAIL_FROM",
-      "MAIL_REPLY_TO",
-      "MAIL_SUBJECT_PREFIX",
       "BETTER_AUTH_TRUSTED_ORIGINS",
       "ROOT_ADMIN_SECRET",
       "ROOT_ADMIN_BREAK_GLASS",
-      "TRUSTED_PROXY_CIDRS",
       "DATABASE_POOL_MAX",
     ]);
   });
@@ -66,12 +61,9 @@ describe("unit: environment", () => {
       betterAuthSecrets: undefined,
       postmarkServerToken: "postmark-token",
       postmarkApiUrl: undefined,
-      mailFrom: "Answerable ID <sign-in@id.answerable.org>",
-      mailReplyTo: "support@answerable.org",
-      mailSubjectPrefix: undefined,
+      mailFromAddress: "sign-in@localhost",
       trustedOrigins: ["https://auth.example.com"],
       platformApplications: {},
-      trustedProxyCidrs: ["10.0.0.0/8", "2001:db8::/32"],
       operationalLogIntervalMs: 30_000,
       protocolSweepIntervalMs: 60_000,
       protocolSweepBatchSize: 1_000,
@@ -103,36 +95,29 @@ describe("unit: environment", () => {
         rootAdminSecret:
           "development-only-root-admin-secret-never-for-production",
         trustedOrigins: [],
-        trustedProxyCidrs: [],
         openApiEnabled: true,
       });
   });
 
-  test("reads the mail settings, and refuses a line break in a header", () => {
-    expect(
-      parseEnvironment({
-        POSTMARK_SERVER_TOKEN: "postmark-token",
-        MAIL_FROM: "ID <sign-in@id.example.com>",
-        MAIL_REPLY_TO: "help@example.com",
-        MAIL_SUBJECT_PREFIX: "[staging]",
-      }),
-    ).toMatchObject({
-      postmarkServerToken: "postmark-token",
-      mailFrom: "ID <sign-in@id.example.com>",
-      mailReplyTo: "help@example.com",
-      mailSubjectPrefix: "[staging]",
-    });
+  test("sign-in mail comes from ID's own host, without a port, in every environment", () => {
+    for (const [origin, address] of [
+      ["https://id.answerable.org", "sign-in@id.answerable.org"],
+      ["https://id.answerable-staging.uk/", "sign-in@id.answerable-staging.uk"],
+      ["https://id.127-0-0-1.sslip.io:48443", "sign-in@id.127-0-0-1.sslip.io"],
+      ["http://localhost:47300", "sign-in@localhost"],
+    ] as const)
+      expect(
+        parseEnvironment({ BETTER_AUTH_URL: origin }).mailFromAddress,
+      ).toBe(address);
+  });
+
+  test("a blank Postmark token is unset", () => {
     expect(parseEnvironment({ POSTMARK_SERVER_TOKEN: " " })).toMatchObject({
       postmarkServerToken: undefined,
     });
-    for (const [name, value] of [
-      ["MAIL_FROM", "ID <a@b.example>\r\nBcc: c@d.example"],
-      ["MAIL_SUBJECT_PREFIX", "[staging]\nBcc: c@d.example"],
-      ["MAIL_REPLY_TO", "not an address"],
-    ] as const)
-      expect(() => parseEnvironment({ [name]: value })).toThrow(
-        `Invalid ID configuration: ${name}: `,
-      );
+    expect(
+      parseEnvironment({ POSTMARK_SERVER_TOKEN: "postmark-token" }),
+    ).toMatchObject({ postmarkServerToken: "postmark-token" });
   });
 
   test("production refuses to start without the Postmark token, blank included, and names only the variable", () => {
@@ -363,12 +348,11 @@ test("production requires an explicit, valid ID origin; development and test def
 test("production serves no OpenAPI routes", () => {
   expect(parseEnvironment(production).openApiEnabled).toBe(false);
 });
-for (const key of ["BETTER_AUTH_TRUSTED_ORIGINS", "TRUSTED_PROXY_CIDRS"])
-  test(`production requires ${key}`, () => {
-    expect(() => parseEnvironment({ ...production, [key]: undefined })).toThrow(
-      key,
-    );
-  });
+test("production requires BETTER_AUTH_TRUSTED_ORIGINS", () => {
+  expect(() =>
+    parseEnvironment({ ...production, BETTER_AUTH_TRUSTED_ORIGINS: undefined }),
+  ).toThrow("BETTER_AUTH_TRUSTED_ORIGINS");
+});
 for (const origin of [
   "https://example.com/",
   "https://example.com/path",
@@ -381,20 +365,6 @@ for (const origin of [
       parseEnvironment({ ...production, BETTER_AUTH_TRUSTED_ORIGINS: origin }),
     ).toThrow("BETTER_AUTH_TRUSTED_ORIGINS");
   });
-test("rejects an invalid proxy CIDR", () => {
-  expect(() =>
-    parseEnvironment({
-      ...requiredEnvironment,
-      TRUSTED_PROXY_CIDRS: "10.0.0.0/33",
-    }),
-  ).toThrow("TRUSTED_PROXY_CIDRS");
-});
-test("parses IPv4 and IPv6 proxy networks", () => {
-  expect(parseEnvironment(production).trustedProxyCidrs).toEqual([
-    "10.0.0.0/8",
-    "2001:db8::/32",
-  ]);
-});
 
 // The pair check runs before the production-only rules, so one environment proves it.
 test("platform application pairs parse together and blank values are unset", () => {

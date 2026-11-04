@@ -21,7 +21,7 @@ How to set up, ship, roll back, scale, rotate, restore and destroy Answerable's 
 ### Accounts, once per environment
 
 1. **Civo** ([D28](../docs/goals/civo-deploy/decisions.md)). One Civo organisation with two accounts, `answerable-staging` and `answerable-production`, region LON1. You are in each account's Owners team with MFA on your login. Each account's API key ([Civo's page](https://www.civo.com/docs/account/api-keys)) is that environment's `CIVO_TOKEN`.
-2. **Cloudflare.** The zone (`answerable-staging.uk` for staging, `answerable.org` for production) and **one API token scoped to that zone only**, `CLOUDFLARE_API_TOKEN`: Zone > Zone > Read, Zone > DNS > Edit, Zone > SSL and Certificates > Edit, Zone > Zone Settings > Edit, Zone > Config Rules > Edit, Zone > Cache Rules > Edit, Zone > Zone WAF > Edit ([the list and why](civo/README.md#credentials)). **Bot Fight Mode off** in the zone's Security settings: no token can change it, and it would challenge every MCP host.
+2. **Cloudflare.** The zone (`answerable-staging.uk` for staging, `answerable.org` for production) and **one API token scoped to that zone only**, `CLOUDFLARE_API_TOKEN`: Zone > Zone > Read, Zone > DNS > Edit, Zone > SSL and Certificates > Edit, Zone > Zone Settings > Edit, Zone > Config Rules > Edit, Zone > Cache Rules > Edit ([the list and why](civo/README.md#credentials)). **Bot Fight Mode off** in the zone's Security settings: no token can change it, and it would challenge every MCP host.
 3. **Microsoft Entra.** The environment's app registration, with the redirect URIs `https://id.answerable-staging.uk/auth/sso/callback` and `https://id.answerable-staging.uk/login` for staging, or production's in [`docs/06`](../docs/06-deploying-answerable-id.md#platform-applications-microsoft-entra-and-google). Its client ID and secret are `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET`. You also need the **tenant ID of Answerable's own staff directory**. A Google client is optional (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`).
 4. **GitHub.** A fine-grained personal access token for `Rieranthony/answerable-monorepo` alone, with read and write on **Environments** and nothing else, `GH_SECRETS_TOKEN`; put its expiry in your calendar. The bootstrap workflow and Terraform write the environment's secrets with it. Not Administration: that permission would also let the token rename or delete the repository, which is why the environment's policy and reviewer are set by you, once, in step 1.
 
@@ -91,25 +91,34 @@ PostgreSQL's lock table holds `max_locks_per_transaction` × (`max_connections` 
 
 ## Send mail through Postmark
 
-ID mails sign-in links and codes through Postmark, from `Answerable ID <sign-in@id.answerable.org>` (staging: `id.answerable-staging.uk`, subjects prefixed `[staging]`), with Reply-To `support@answerable.org`. ID refuses to start in production without the server's token, and the deploy refuses to apply `id-env` without it, so do this before the first tag that ships magic links. The order matters: the domains first, then the token, because the tag that writes the records is one that requires it, then Postmark's checks.
+ID mails sign-in links and codes through Postmark, from `Answerable ID <sign-in@<ID's host>>`, derived from `BETTER_AUTH_URL`: `sign-in@id.answerable.org` in production, `sign-in@id.answerable-staging.uk` in staging. Reply-To is `support@answerable.org`. ID refuses to start in production without the server's token, and the deploy refuses to apply `id-env` without it, so do this before the first tag that ships magic links.
 
 1. **Account and servers.** An account with two-factor authentication. Two **Live** servers, one for staging and one for production, each with open tracking and link tracking off (ID sends `TrackOpens` false and `TrackLinks` `None` itself). **Sandbox servers do not deliver**: a sandbox server would pass every check here and send nothing.
 2. **Sender domains.** In each server, add the domain: `id.answerable-staging.uk` to the staging server, `id.answerable.org` to the production one. Postmark then shows each domain's DNS Settings.
-3. **The token.** Paste each server's token into its environment yourself, never in chat; `gh` asks for the value:
+3. **Records, by hand in Cloudflare.** In that environment's zone, under DNS > Records, add the three records. No commit and no tag: Terraform owns the zone's four proxied A records and nothing else, and leaves a record it did not make alone ([`infra/civo/README.md`](civo/README.md#what-terraform-owns-in-the-zone)).
+
+   | Type | Name | Content | Proxy status |
+   | --- | --- | --- | --- |
+   | TXT | The DKIM host Postmark shows, `<selector>._domainkey.id.<zone>` | The DKIM value Postmark shows, which starts `k=rsa;` | DNS only |
+   | CNAME | The Return-Path host Postmark shows, one label under `id.<zone>`, such as `pm-bounces.id.<zone>` | `pm.mtasv.net` | **DNS only**: a proxied one does not verify |
+   | TXT | `_dmarc.id.<zone>` | `v=DMARC1; p=none; rua=mailto:<an address that reads the reports>` | DNS only |
+
+   A report address outside the sender's own domain needs that domain's authorisation ([RFC 7489, section 7.1](https://www.rfc-editor.org/rfc/rfc7489#section-7.1)), so staging can stop at `v=DMARC1; p=none`. There is no SPF record on the sender domain: Postmark asks for none, and the apex's Microsoft 365 records are not part of this. Every name here sits under `id.<zone>`, never at the apex.
+4. **Verify in Postmark.** Once the records are live, verify DKIM and the Return-Path on each domain in Postmark.
+5. **The token.** Paste each server's token into its environment yourself, never in chat; `gh` asks for the value:
 
    ```sh
    gh secret set POSTMARK_SERVER_TOKEN --env staging
    gh secret set POSTMARK_SERVER_TOKEN --env production
    ```
 
-   It must be there before the next step's tag, and every tag after it: without it the deploy stops, naming `POSTMARK_SERVER_TOKEN`, once Terraform has applied. The Bootstrap workflow's check of the pasted secrets counts six.
-4. **Records, through Terraform.** From each domain's DNS Settings copy the DKIM host and value and the Return-Path host into `mail_records` in that environment's `infra/civo/envs/<environment>.tfvars` (the commented block there says which is which), in a commit, then tag: the apply writes them DNS-only in Cloudflare ([`infra/civo/README.md`](civo/README.md#mail-records)). Add the DMARC value too. It starts `v=DMARC1; p=none; rua=mailto:<an address that reads the reports>`, and moves to `p=quarantine`, then `p=reject`, each in a commit and a tag of its own, once two clean weeks of reports show only Postmark. A report address outside the sender's own domain needs that domain's authorisation ([RFC 7489, section 7.1](https://www.rfc-editor.org/rfc/rfc7489#section-7.1)), so staging can stop at `v=DMARC1; p=none`. There is no SPF record on the sender domain: Postmark asks for none, and the apex's Microsoft 365 records are not Terraform's.
-5. **Verify in Postmark.** Once the records are live (the tag's apply has run), verify DKIM and the Return-Path on each domain in Postmark.
+   It must be there before the first tag that ships magic links, and every tag after it: without it the deploy stops, naming `POSTMARK_SERVER_TOKEN`, once Terraform has applied. The Bootstrap workflow's check of the pasted secrets counts six.
 6. **Approval to send to anyone.** Once the domains are verified, ask Postmark for approval to send to any recipient. Until it is given, the account is not approved: Postmark answers 412 or 413 ([`packages/emails`](../packages/emails/README.md)), and ID logs `magic_link_send_failed` with that code.
-7. **Operating it.**
+7. **Operating it.** Everything here is by hand, with no tag.
    - **Bounces and complaints.** Keep a server's bounce rate under 10% and its spam complaints under 0.1%: past them Postmark pauses the server, and every sign-in by email in that environment stops. Made-up addresses bounce, which is why ID admits an address no user holds only in a firm's `domain` mode, and then under a budget of its own ([`apps/id/OPERATIONS.md`](../apps/id/OPERATIONS.md)).
    - **406.** Postmark answers 406 for an address it suppressed (a hard bounce, a spam complaint or a manual suppression). ID logs `magic_link_send_failed` with `errorCode` 406, and the row in `magic_link_requests` names the address for seven days. Staff reactivate the address in that server's suppression list in Postmark; ID has nothing to change.
-   - **DKIM.** Rotate each domain's DKIM key every six months: take the new host and value from Postmark's DNS Settings, replace them in the tfvars, commit, tag, and verify again as in step 5.
+   - **DKIM.** Rotate each domain's DKIM key every six months: take the new host and value from Postmark's DNS Settings, change the TXT record in Cloudflare, and verify again as in step 4.
+   - **DMARC.** Once two clean weeks of reports show only Postmark, change the TXT record to `p=quarantine`, and after two more to `p=reject`.
    - **Replies.** `support@answerable.org` is the Reply-To of every mail, so someone must read it.
 
 The fake Postmark that the kind stack and the acceptance run is `startFakePostmark` in `packages/acceptance`; the real one is checked by hand on staging, with a real mailbox, before anyone relies on it ([the plan](../docs/goals/magic-links/task_plan.md), W10).

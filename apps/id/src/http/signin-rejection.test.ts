@@ -20,7 +20,7 @@ async function lines(
       return response;
     });
     const answer = await app.request(path, {
-      headers: { "x-forwarded-for": "192.0.2.1", "user-agent": "agent" },
+      headers: { "cf-connecting-ip": "192.0.2.1", "user-agent": "agent" },
     });
     expect(answer.status).toBe(response.status);
     return log.mock.calls.map(([area, json]) => [area, JSON.parse(json)]);

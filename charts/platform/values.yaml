@@ -1,11 +1,10 @@
 # Defaults for every cluster. The overlays (values-civo-<environment>.yaml, values-local.yaml) add what differs, and
-# Terraform adds, last, what only it knows: the load balancer's firewall and address, the addresses Traefik trusts for
-# forwarded headers, and Cloudflare's origin-pull CA (infra/civo/modules/platform). The chart creates no namespace:
-# Terraform does.
+# Terraform adds, last, what only it knows: the load balancer's firewall and address, and Cloudflare's origin-pull CA
+# (infra/civo/modules/platform). The chart creates no namespace: Terraform does.
 
 # The edge in the cluster (D31): Traefik terminates TLS with the certificate in the Secret origin-tls, which every Ingress
 # of the answerable chart names (Cloudflare's Origin CA, written by Terraform), requires Cloudflare's origin-pull client
-# certificate on every host (templates/tls-options.yaml), and passes X-Forwarded-For on.
+# certificate on every host (templates/tls-options.yaml), and passes CF-Connecting-IP on.
 traefik:
   deployment:
     replicas: 2
@@ -42,15 +41,6 @@ traefik:
             to: websecure
             scheme: https
             permanent: true
-    websecure:
-      # Terraform sets trustedIPs: the addresses that may connect to Traefik with X-Forwarded-* headers it keeps
-      # (Cloudflare's ranges and the load balancer's private network). From any other peer Traefik deletes them. Either
-      # way it appends the peer's address, which ID's walk against TRUSTED_PROXY_CIDRS needs: never set
-      # notAppendXForwardedFor to true.
-      forwardedHeaders:
-        trustedIPs: []
-        insecure: false
-        notAppendXForwardedFor: false
   service:
     annotations: {}
     spec:

@@ -18,7 +18,7 @@ a change ships as a release. Only the pool size is a variable.
 | Request body        | 256 KiB (4 KiB on `POST /login`, `POST /magic-link`, `POST /magic-link/code` and `POST /connect-directory`, 64 KiB on `POST /auth/sign-in/sso`); acquisition deadline 5 s | Does not bound response streaming or socket count                          |
 | Rate limits         | Per client address per process, production only ([docs/06](../../docs/06-deploying-answerable-id.md#operating-it)) | Replicas multiply them; not a volumetric defence                           |
 | Sign-in page posts  | 300 per 10 s per client address per process, in every environment, on `POST /login`: a 429 page. Nothing else limits that path | Replicas multiply it; not a volumetric defence |
-| Client address      | `cf-connecting-ip`; else the rightmost untrusted `x-forwarded-for` address after the proxies in `TRUSTED_PROXY_CIDRS` | Requires proxy-only network access ([README](README.md#http-surface))      |
+| Client address      | `cf-connecting-ip`, one valid address, and nothing else                    | Requires Cloudflare-only network access ([README](README.md#http-surface)) |
 
 **Runtime summaries.** Every 30 seconds each process writes `[id] operations`
 followed by JSON: per route class and HTTP status, the completed handler count,

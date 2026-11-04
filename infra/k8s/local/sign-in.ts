@@ -9,7 +9,7 @@
 // the browser lives and dies with this process.
 import { connect, serveCallback, signIn, tool } from "@answerable/acceptance"
 import { chromium } from "@playwright/test"
-import { hosts, origin, startBrowserEdge } from "./stack"
+import { asCloudflare, hosts, origin, startBrowserEdge } from "./stack"
 
 /** What stack.test.ts hands over: the person, where to make them an owner, root's secret, and the stack's certificates. */
 export type SignInInput = {
@@ -29,12 +29,13 @@ const adminResource = `${origin(hosts.adminMcp)}/mcp`
 const callback = "http://localhost:47700/callback"
 const tls = { ca: input.stackCa, ...input.originPullCert }
 
-// The MCP SDK and the kit call fetch themselves: the stack's origins take the origin-pull certificate, as through Cloudflare.
+// The MCP SDK and the kit call fetch themselves: the stack's origins take the origin-pull certificate and CF-Connecting-IP, as through Cloudflare.
 const original = globalThis.fetch
 const stackOrigins = new Set(Object.values(hosts).map(origin))
 globalThis.fetch = Object.assign((request: string | URL | Request, init?: RequestInit) => {
   const url = new URL(request instanceof Request ? request.url : String(request))
-  return stackOrigins.has(url.origin) ? original(request, { ...init, tls }) : original(request, init)
+  if (!stackOrigins.has(url.origin)) return original(request, init)
+  return original(request, { ...init, headers: asCloudflare(init?.headers ?? (request instanceof Request ? request.headers : undefined)), tls })
 }, original)
 
 // Chromium reaches Traefik through the browser's stand-in for Cloudflare, which presents the origin-pull certificate.

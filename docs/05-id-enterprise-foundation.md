@@ -81,7 +81,7 @@ Recovery must preserve retained keys, reservations, receipts and revocation barr
 
 ## 7. Enterprise and adversarial operation
 
-The service is reachable only through the ingress proxies in `TRUSTED_PROXY_CIDRS`; the rule and the `403 untrusted_ingress` refusal are in [ID's README](../apps/id/README.md#http-surface).
+The service is reachable only through Cloudflare; the rule and the `403 untrusted_ingress` refusal are in [ID's README](../apps/id/README.md#http-surface).
 
 Request-body, pool and statement limits remain in effect. Sensitive human changes/linking need verified upstream authentication within five minutes; broker time is not an acceptable substitute. Machine/root authority remains explicit.
 

@@ -7,7 +7,7 @@ import { directoryPorts, idExtraEgress, postmarkPort } from "./egress"
 import type { MagicLinkSignInInput } from "./magic-link-sign-in"
 import type { SignInInput } from "./sign-in"
 import type { StandaloneSignInInput } from "./standalone-sign-in"
-import { databaseAdmin, declared, exec, hosts, image, images, origin, registered, servedAlone, type Stack, startStack, step, timings } from "./stack"
+import { asCloudflare, databaseAdmin, declared, exec, hosts, image, images, origin, registered, servedAlone, type Stack, startStack, step, timings, visitor } from "./stack"
 
 // bun run infra:test: the images of infra/pipeline/images.json, a kind cluster with charts/platform and charts/answerable as a
 // cloud runs them, a TLS-only PostgreSQL 17 holding only an administrative login, the ops Jobs that bootstrap the databases and
@@ -84,9 +84,9 @@ afterAll(async () => {
   console.log(`\nThe stack, step by step (seconds): ${timings.map(([name, seconds]) => `${name} ${seconds}`).join("; ")}; everything ${total}`)
 })
 
-/** A request through Traefik, as Cloudflare makes it: the origin-pull client certificate, the stack's CA trusted. One that hangs fails after 30 seconds. */
+/** A request through Traefik, as Cloudflare makes it: the origin-pull client certificate and CF-Connecting-IP, the stack's CA trusted. One that hangs fails after 30 seconds. */
 function viaIngress(url: string, init: RequestInit = {}, certificate: { cert: string; key: string } | null = stack!.originPullCert) {
-  return fetch(url, { signal: AbortSignal.timeout(30_000), ...init, tls: { ca: stack!.stackCa, ...(certificate ?? {}) }, redirect: "manual" })
+  return fetch(url, { signal: AbortSignal.timeout(30_000), ...init, headers: asCloudflare(init.headers), tls: { ca: stack!.stackCa, ...(certificate ?? {}) }, redirect: "manual" })
 }
 
 /**
@@ -192,24 +192,20 @@ describe("the edge's checks", () => {
     expect(outcome.error).toEqual(expect.any(String))
   })
 
-  test("a forged X-Forwarded-For through Traefik does not change the address ID records: Traefik drops it and appends its peer", async () => {
+  test("ID records CF-Connecting-IP through Traefik, whatever X-Forwarded-For says, and refuses a request without it", async () => {
     const issuer = origin(hosts.id)
-    const created: Record<string, string> = {}
-    for (const [label, forged] of [["plain", undefined], ["forged", "203.0.113.66"]] as const) {
-      const requestId = `infra-stack-${label}-${Date.now()}`
-      const response = await viaIngress(`${issuer}/api/admin/v1/organizations`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${stack!.secrets.rootAdminSecret}`, "content-type": "application/json", "idempotency-key": requestId, "x-request-id": requestId, ...(forged ? { "x-forwarded-for": forged } : {}) },
-        body: JSON.stringify({ slug: `stack-${label}`, name: `Stack ${label}` }),
-      })
-      expect(response.status, await response.clone().text()).toBeLessThan(300)
-      created[label] = requestId
-    }
+    const requestId = `infra-stack-forged-${Date.now()}`
+    const response = await viaIngress(`${issuer}/api/admin/v1/organizations`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${stack!.secrets.rootAdminSecret}`, "content-type": "application/json", "idempotency-key": requestId, "x-request-id": requestId, "x-forwarded-for": "203.0.113.66" },
+      body: JSON.stringify({ slug: "stack-forged", name: "Stack forged" }),
+    })
+    expect(response.status, await response.clone().text()).toBeLessThan(300)
     const events = await (await viaIngress(`${issuer}/api/admin/v1/audit-events?limit=200`, { headers: { authorization: `Bearer ${stack!.secrets.rootAdminSecret}` } })).json() as { items: { requestId: string | null; ip: string | null }[] }
-    const ipOf = (requestId: string) => events.items.find(event => event.requestId === requestId)?.ip
-    // The laptop reaches Traefik from the Docker network's gateway, the peer Traefik appends.
-    expect(ipOf(created.plain!)).toBe(stack!.dockerGateway)
-    expect(ipOf(created.forged!)).toBe(stack!.dockerGateway)
+    expect(events.items.find(event => event.requestId === requestId)?.ip).toBe(visitor)
+    const refused = await fetch(`${issuer}/auth/get-session`, { signal: AbortSignal.timeout(30_000), headers: { "x-forwarded-for": "203.0.113.66" }, tls: { ca: stack!.stackCa, ...stack!.originPullCert } })
+    expect(refused.status).toBe(403)
+    expect(await refused.json()).toEqual({ error: "untrusted_ingress" })
   })
 
   test("through the edge, as through Cloudflare, ID records the calling pod's own address, whatever CF-Connecting-IP the pod sends", async () => {
@@ -644,7 +640,7 @@ describe("people sign in by email over https, in Chromium through Traefik", () =
     expect(grace.choice.heading).toBe("Sign in")
     expect(grace.choice.buttons).toEqual(["Continue with company sign-in", "Email me a sign-in link"])
     expect(grace.checkEmail.heading).toBe("Check your email")
-    expect(grace.mail).toEqual({ subject: "Sign in to Tenant", from: "Answerable ID <sign-in@id.answerable.org>", tag: "sign-in", hasCode: true })
+    expect(grace.mail).toEqual({ subject: "Sign in to Tenant", from: `Answerable ID <sign-in@${hosts.id}>`, tag: "sign-in", hasCode: true })
     expect(grace.continuePage.text).toContain(`Continue as grace@${stack!.tenant.domain}`)
     expect(grace.signedIn.heading).toBe("Signed in")
     expect(grace.signedIn.text).toContain(`Signed in as grace@${stack!.tenant.domain}`)
@@ -665,7 +661,7 @@ describe("people sign in by email over https, in Chromium through Traefik", () =
 
   test("bob, at a firm with links alone: the link in a second browser signs nobody in; the code from the same mail, typed where he asked, does; the link then no longer works", () => {
     const { bob } = run
-    expect(bob.mail).toMatchObject({ subject: "Sign in to Link Firm", from: "Answerable ID <sign-in@id.answerable.org>" })
+    expect(bob.mail).toMatchObject({ subject: "Sign in to Link Firm", from: `Answerable ID <sign-in@${hosts.id}>` })
     expect(bob.second.page.heading).not.toBe("Sign in")
     expect(bob.second.page.buttons).not.toContain("Continue")
     expect(bob.second.page.text).toContain("Ask for a new link")
@@ -692,7 +688,7 @@ describe("people sign in by email over https, in Chromium through Traefik", () =
     expect(ada.connect.text).toContain(`${tenant.email} already has an account here`)
     expect(signInCookieProblems(ada.cookiesAtConnect, run.host, run.finishedAt)).toEqual([])
     expect(ada.cookiesAtConnect.map(cookie => cookie.name)).toEqual(["__Host-answerable-sign-in"])
-    expect(ada.mail).toEqual({ subject: "Your code to connect your company sign-in", from: "Answerable ID <sign-in@id.answerable.org>", tag: "mailbox-code", hasLink: false })
+    expect(ada.mail).toEqual({ subject: "Your code to connect your company sign-in", from: `Answerable ID <sign-in@${hosts.id}>`, tag: "mailbox-code", hasLink: false })
     // The code made no session. Only the directory's second trip did, in the same browser.
     expect(ada.signedIn.heading).toBe("Signed in")
     expect(ada.signedIn.text).toContain(`Signed in as ${tenant.email}`)
@@ -701,14 +697,13 @@ describe("people sign in by email over https, in Chromium through Traefik", () =
     expect(sessionCookieProblems(ada.cookies, run.host, run.finishedAt)).toEqual([])
   })
 
-  test("the mail the fake kept was sent by a production ID with the settings production has: its sender, its reply address, no prefix, and no tracking", () => {
+  test("the mail the fake kept was sent by a production ID: from ID's own host, with the fixed reply address and no tracking", () => {
     const people = [`grace@${stack!.tenant.domain}`, linkFirm.bob, tenant.email]
     const kept = stack!.postmark.messages().filter(mail => people.includes(mail.to))
     expect(kept.map(mail => mail.tag).sort()).toEqual(["mailbox-code", "sign-in", "sign-in", "sign-in"])
     for (const mail of kept) {
-      expect(mail.from).toBe("Answerable ID <sign-in@id.answerable.org>")
+      expect(mail.from).toBe(`Answerable ID <sign-in@${hosts.id}>`)
       expect(mail.replyTo).toBe("support@answerable.org")
-      expect(mail.subject).not.toContain("[staging]")
       expect(mail.tracking).toEqual({ opens: false, links: "None" })
       expect(mail.html.length).toBeGreaterThan(0)
     }

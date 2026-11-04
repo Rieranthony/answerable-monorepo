@@ -3,26 +3,14 @@
 # application reads, the deployer identity, the Cloudflare zone with its certificates, and the GitHub environment.
 # One root for both environments: envs/<environment>.tfvars holds what differs, and terraform.sh picks the state.
 
-# Cloudflare's published ranges, read at every plan: the load balancer admits them and Traefik trusts their
-# X-Forwarded-For. A change in Cloudflare's list shows up as a plan diff and needs an apply.
+# Cloudflare's published ranges, read at every plan: the load balancer admits them. A change in Cloudflare's list shows
+# up as a plan diff and needs an apply.
 data "cloudflare_ip_ranges" "this" {}
 
 data "cloudflare_zone" "this" {
   filter = {
     name = var.zone_name
   }
-}
-
-locals {
-  # The proxies whose X-Forwarded-For Traefik trusts. Cloudflare connects to the load balancer; the load balancer
-  # connects to Traefik from the private network (it passes TCP through without PROXY protocol, so Traefik sees its
-  # private address). ID trusts only the private network and the pod range Traefik reaches it from (the trusted-proxies
-  # ConfigMap, D31).
-  edge_trusted_cidrs = concat(
-    data.cloudflare_ip_ranges.this.ipv4_cidrs,
-    data.cloudflare_ip_ranges.this.ipv6_cidrs,
-    [module.network.cidr_v4],
-  )
 }
 
 module "network" {
@@ -70,9 +58,6 @@ module "edge" {
   zone_name   = var.zone_name
   origin_ip   = module.ingress_firewall.ip
   hostnames   = var.hostnames
-
-  # Postmark's records for id.<zone>, when the owner has them (envs/<environment>.tfvars).
-  mail_records = var.mail_records
 }
 
 module "platform" {
@@ -83,9 +68,6 @@ module "platform" {
   origin_pull_ca_pem        = module.edge.origin_pull_ca_pem
   load_balancer_firewall_id = module.ingress_firewall.firewall_id
   load_balancer_ip          = module.ingress_firewall.ip
-  trusted_proxy_cidrs       = local.edge_trusted_cidrs
-  network_cidr              = module.network.cidr_v4
-  pod_cidr                  = var.pod_cidr
   database_admin_url        = module.database.admin_url
   origin_certificate_pem    = module.edge.origin_certificate_pem
   origin_private_key_pem    = module.edge.origin_private_key_pem

@@ -16,6 +16,16 @@ const here = join(repo, "infra/k8s/local")
 export const hosts = { id: "id.127-0-0-1.sslip.io", toolbox: "toolbox.127-0-0-1.sslip.io", adminMcp: "admin-mcp.127-0-0-1.sslip.io", mcp: "mcp.127-0-0-1.sslip.io" }
 export const origin = (host: string) => `https://${host}:48443`
 
+/** The address the host's stand-ins for Cloudflare name as the caller's: a visitor, from the range kept for documentation. */
+export const visitor = "192.0.2.1"
+
+/** Headers as Cloudflare passes them on: whatever the caller sent, CF-Connecting-IP is the caller's address. */
+export function asCloudflare(headers?: HeadersInit) {
+  const passed = new Headers(headers)
+  passed.set("cf-connecting-ip", visitor)
+  return passed
+}
+
 /** The images the pipeline builds (infra/pipeline/images.json), built from the repository root and loaded into the cluster under the local tag. */
 export const images = pipelineImages
 export const image = (name: string) => `ghcr.io/rieranthony/answerable/${name}:local`
@@ -179,8 +189,7 @@ async function startDirectory(workdir: string, podHost: string) {
  * `clientCertificates` hang under Bun (measured: a navigation never loads, while the same script under Node loads in under a
  * second), so Chromium is sent here instead: `hostResolverRules` maps the public names to [::1], where this proxy listens
  * on 48443 (Traefik's host port is 127.0.0.1 only), presents `serverCert` (the browser ignores certificate errors), and
- * forwards each request to Traefik with the origin-pull certificate, as Cloudflare does. Traefik sees the Docker network's
- * gateway, an untrusted address, as for any visitor.
+ * forwards each request to Traefik with the origin-pull certificate and CF-Connecting-IP, as Cloudflare does.
  */
 export function startBrowserEdge({ stackCa, originPullCert, serverCert }: { stackCa: string; originPullCert: { cert: string; key: string }; serverCert: { cert: string; key: string } }) {
   const names = new Set(Object.values(hosts))
@@ -191,7 +200,7 @@ export function startBrowserEdge({ stackCa, originPullCert, serverCert }: { stac
     async fetch(request) {
       const url = new URL(request.url)
       if (!names.has(url.hostname)) return new Response("Not a stack hostname", { status: 421 })
-      const headers = new Headers(request.headers)
+      const headers = asCloudflare(request.headers)
       // Bun's fetch fails to connect when given a Host header with a port (measured: ConnectionRefused); the URL names the host.
       headers.delete("host")
       // Traefik answers uncompressed, so the body passes through as it came.
@@ -363,7 +372,7 @@ export async function startStack() {
       await exec(["kind", "create", "cluster", "--config", config.path, "--kubeconfig", kubeconfig, "--wait", "180s"])
       if (config.cpus) await exec(["docker", "update", "--cpus", String(config.cpus), `${cluster}-control-plane`])
     })
-    // The address the laptop's requests reach Traefik from: the IPv4 gateway of kind's Docker network.
+    // The IPv4 gateway of kind's Docker network.
     const gateways = (await exec(["docker", "network", "inspect", "kind", "--format", "{{range .IPAM.Config}}{{.Gateway}} {{end}}"])).stdout.trim().split(/\s+/)
     const dockerGateway = gateways.find(address => /^\d+\.\d+\.\d+\.\d+$/.test(address))
     const podHost = await hostFromPods(dockerGateway)
@@ -415,11 +424,10 @@ export async function startStack() {
       ...sets.flatMap(set => ["--set", set]), "--wait", "--wait-for-jobs", "--timeout", timeout,
     ])
     await step("install charts/answerable with the ops bootstrap", async () => {
-      // What Terraform writes on Civo (trusted-proxies, postgres-admin, origin-tls) and what the deploy writes (id-env);
+      // What Terraform writes on Civo (postgres-admin, origin-tls) and what the deploy writes (id-env);
       // here, throwaway values. The ops Jobs write the rest, the database's certificate authority included: the bootstrap
       // fetches it. local-ca is the stack's alone.
       await apply("answerable", [
-        configMap("trusted-proxies", { cidrs: "127.0.0.1/32" }),
         opaque("postgres-admin", { OPS_DATABASE_ADMIN_URL: `postgres://${databaseAdmin}:${secrets.admin}@${database}/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem` }),
         tls("origin-tls", certificates.publicNames),
         opaque("id-env", { BETTER_AUTH_SECRET: secrets.betterAuthSecret, ROOT_ADMIN_SECRET: secrets.rootAdminSecret, POSTMARK_SERVER_TOKEN: secrets.postmarkServerToken }),
@@ -470,7 +478,7 @@ export async function startStack() {
       throw new Error(`CoreDNS did not settle on ${wanted} for ${name} within 120 s; ID's pod last saw ${last}`)
     }
     return {
-      kubectl, helm, release, next, publishTxt, diagnose: (why: string) => diagnose(kubectl, helmOnly, why), kubeconfig, readSecret, secrets, stop, dockerGateway, podHost,
+      kubectl, helm, release, next, publishTxt, diagnose: (why: string) => diagnose(kubectl, helmOnly, why), kubeconfig, readSecret, secrets, stop, podHost,
       directory: directory.directory, tenant: directory.tenant,
       /** The fake Postmark: its inbox for a process of its own, the token it checks, and its messages. */
       postmark: { inbox: `https://127.0.0.1:${postmarkPort}/fake/messages`, token: secrets.postmarkServerToken, messages: () => postmark!.messages(), waitFor: postmark!.waitFor },
