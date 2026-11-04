@@ -3,6 +3,38 @@ locals {
 
   # Cloudflare's Rules language: a set of quoted names, sorted so the expression is stable.
   host_set = "{${join(" ", [for host in sort(values(var.hostnames)) : "\"${host}\""])}}"
+
+  # Postmark's records for the mail domain id.<zone>, only when the owner has given their public values. Cloudflare keeps
+  # a TXT record's content as quoted character strings of at most 255 bytes: it adds the quotes to content without any
+  # and splits a longer string itself (developers.cloudflare.com, DNS record types and the API's create call), and the
+  # provider (5.28.0) normalises nothing, so content written without quotes, or in one string over 255 bytes, would come
+  # back different and show as drift. So the content is written as Cloudflare keeps it: quoted, in strings of 255.
+  txt_chunks = {
+    for key, value in {
+      dkim  = try(var.mail_records.dkim_value, "")
+      dmarc = try(var.mail_records.dmarc_value, "")
+    } : key => [for index in range(0, ceil(length(value) / 255)) : substr(value, index * 255, 255)]
+  }
+  txt_content = { for key, chunks in local.txt_chunks : key => join(" ", [for chunk in chunks : "\"${chunk}\""]) }
+
+  mail_records = var.mail_records == null ? {} : {
+    dkim = {
+      name    = var.mail_records.dkim_host
+      type    = "TXT"
+      content = local.txt_content["dkim"]
+    }
+    return_path = {
+      name = var.mail_records.return_path_host
+      type = "CNAME"
+      # Postmark's Return-Path target: fixed here, never an input.
+      content = "pm.mtasv.net"
+    }
+    dmarc = {
+      name    = "_dmarc.${var.hostnames["id"]}"
+      type    = "TXT"
+      content = local.txt_content["dmarc"]
+    }
+  }
 }
 
 # The four service hostnames, proxied, to the load balancer's reserved address. Every name is first-level, so
@@ -17,6 +49,22 @@ resource "cloudflare_dns_record" "service" {
   proxied = true
   ttl     = 1
   comment = "${local.prefix} ${replace(each.key, "_", "-")}, managed by Terraform in infra/civo"
+}
+
+# Postmark's DKIM key, Return-Path and DMARC for the mail domain id.<zone>, DNS-only: a proxied CNAME for the
+# Return-Path does not verify, and mail records are never proxied. None until the owner gives the values (variable
+# mail_records). No SPF: Postmark asks for none on the From domain, and the apex's Microsoft 365 records, SPF and DMARC
+# among them, are not written here. A record sits under id.<zone>, never at the apex.
+resource "cloudflare_dns_record" "mail" {
+  for_each = local.mail_records
+
+  zone_id = var.zone_id
+  name    = each.value.name
+  type    = each.value.type
+  content = each.value.content
+  proxied = false
+  ttl     = 1
+  comment = "${local.prefix} mail ${replace(each.key, "_", "-")}, managed by Terraform in infra/civo"
 }
 
 # Zone-wide TLS. Full (strict): Cloudflare verifies the origin's certificate, the Origin CA one below. These settings

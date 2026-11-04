@@ -33,7 +33,7 @@ How to set up, ship, roll back, scale, rotate, restore and destroy Answerable's 
 
 About an hour, most of it Civo creating the cluster and the database. Each step's errors name what to fix.
 
-**1. The GitHub environment.** In the repository's Settings > Environments, create `staging`. Under **Deployment branches and tags** choose **Selected branches and tags** and add the branch `main` and the tag pattern `staging/*`, so that nothing else can use the environment. Paste the five secrets: `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `GH_SECRETS_TOKEN`. Add the Google pair if you have one. For production the tag pattern is `production/*` and you add yourself under **Required reviewers**.
+**1. The GitHub environment.** In the repository's Settings > Environments, create `staging`. Under **Deployment branches and tags** choose **Selected branches and tags** and add the branch `main` and the tag pattern `staging/*`, so that nothing else can use the environment. Paste the six secrets: `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `GH_SECRETS_TOKEN`, `POSTMARK_SERVER_TOKEN` (Postmark's Server API token: [Send mail through Postmark](#send-mail-through-postmark)). Add the Google pair if you have one. For production the tag pattern is `production/*` and you add yourself under **Required reviewers**.
 
 **2. The staff directory.** In `charts/answerable/values-civo-staging.yaml`, set `id.staffDomain` to the staff email domain (`answerable.org`) and `id.entraTenant` to the staff directory's tenant ID; commit and push. Neither is a secret: the register Job uses them to connect your directory to the platform organisation on the first deploy.
 
@@ -79,7 +79,40 @@ claude mcp add --transport http answerable-toolbox https://toolbox.answerable-st
 
 In Claude Code, run `/mcp`, choose `answerable-admin`, **Authenticate** and sign in with your work account; ask Claude to call `admin_whoami`, which answers `owner`. These are the commands `ops-register` prints in its log.
 
+**9. Read the database's lock limit.** A members import takes up to 1,000 advisory locks in one transaction ([`apps/id/README.md`](../apps/id/README.md)), and nobody could read the Civo database's setting before it existed. From a [kubeconfig](#get-a-kubeconfig), with ID's own runtime login, which every role may use for this read; the URL stays in the pod and is not printed, and the connection verifies the database's certificate against the authority the pod mounts (the kind stack runs this exact command):
+
+```sh
+kubectl -n answerable exec deploy/id -c id -- bun -e 'const sql = new Bun.SQL({ url: process.env.DATABASE_URL.split("?")[0], tls: { ca: await Bun.file("/etc/ssl/db/ca.pem").text() } }); console.log((await sql`SHOW max_locks_per_transaction`)[0], (await sql`SHOW max_connections`)[0]); await sql.close()'
+```
+
+PostgreSQL's lock table holds `max_locks_per_transaction` × (`max_connections` + `max_prepared_transactions`) locks for all transactions together ([the documentation](https://www.postgresql.org/docs/17/runtime-config-locks.html)): write both numbers in [`reports/staging-evidence.md`](../reports/staging-evidence.md), and if one import of 1,000 would not fit with the others' locks, say so before the first firm is imported. Not yet read.
+
 **Production differs in three places.** The environment is `production`, with you as its required reviewer; its first ship is a tag `production/<name>` on a commit staging has shipped, and the run waits for your approval; the Entra redirect URIs are production's.
+
+## Send mail through Postmark
+
+ID mails sign-in links and codes through Postmark, from `Answerable ID <sign-in@id.answerable.org>` (staging: `id.answerable-staging.uk`, subjects prefixed `[staging]`), with Reply-To `support@answerable.org`. ID refuses to start in production without the server's token, and the deploy refuses to apply `id-env` without it, so do this before the first tag that ships magic links. The order matters: the domains first, then the token, because the tag that writes the records is one that requires it, then Postmark's checks.
+
+1. **Account and servers.** An account with two-factor authentication. Two **Live** servers, one for staging and one for production, each with open tracking and link tracking off (ID sends `TrackOpens` false and `TrackLinks` `None` itself). **Sandbox servers do not deliver**: a sandbox server would pass every check here and send nothing.
+2. **Sender domains.** In each server, add the domain: `id.answerable-staging.uk` to the staging server, `id.answerable.org` to the production one. Postmark then shows each domain's DNS Settings.
+3. **The token.** Paste each server's token into its environment yourself, never in chat; `gh` asks for the value:
+
+   ```sh
+   gh secret set POSTMARK_SERVER_TOKEN --env staging
+   gh secret set POSTMARK_SERVER_TOKEN --env production
+   ```
+
+   It must be there before the next step's tag, and every tag after it: without it the deploy stops, naming `POSTMARK_SERVER_TOKEN`, once Terraform has applied. The Bootstrap workflow's check of the pasted secrets counts six.
+4. **Records, through Terraform.** From each domain's DNS Settings copy the DKIM host and value and the Return-Path host into `mail_records` in that environment's `infra/civo/envs/<environment>.tfvars` (the commented block there says which is which), in a commit, then tag: the apply writes them DNS-only in Cloudflare ([`infra/civo/README.md`](civo/README.md#mail-records)). Add the DMARC value too. It starts `v=DMARC1; p=none; rua=mailto:<an address that reads the reports>`, and moves to `p=quarantine`, then `p=reject`, each in a commit and a tag of its own, once two clean weeks of reports show only Postmark. A report address outside the sender's own domain needs that domain's authorisation ([RFC 7489, section 7.1](https://www.rfc-editor.org/rfc/rfc7489#section-7.1)), so staging can stop at `v=DMARC1; p=none`. There is no SPF record on the sender domain: Postmark asks for none, and the apex's Microsoft 365 records are not Terraform's.
+5. **Verify in Postmark.** Once the records are live (the tag's apply has run), verify DKIM and the Return-Path on each domain in Postmark.
+6. **Approval to send to anyone.** Once the domains are verified, ask Postmark for approval to send to any recipient. Until it is given, the account is not approved: Postmark answers 412 or 413 ([`packages/emails`](../packages/emails/README.md)), and ID logs `magic_link_send_failed` with that code.
+7. **Operating it.**
+   - **Bounces and complaints.** Keep a server's bounce rate under 10% and its spam complaints under 0.1%: past them Postmark pauses the server, and every sign-in by email in that environment stops. Made-up addresses bounce, which is why ID admits an address no user holds only in a firm's `domain` mode, and then under a budget of its own ([`apps/id/OPERATIONS.md`](../apps/id/OPERATIONS.md)).
+   - **406.** Postmark answers 406 for an address it suppressed (a hard bounce, a spam complaint or a manual suppression). ID logs `magic_link_send_failed` with `errorCode` 406, and the row in `magic_link_requests` names the address for seven days. Staff reactivate the address in that server's suppression list in Postmark; ID has nothing to change.
+   - **DKIM.** Rotate each domain's DKIM key every six months: take the new host and value from Postmark's DNS Settings, replace them in the tfvars, commit, tag, and verify again as in step 5.
+   - **Replies.** `support@answerable.org` is the Reply-To of every mail, so someone must read it.
+
+The fake Postmark that the kind stack and the acceptance run is `startFakePostmark` in `packages/acceptance`; the real one is checked by hand on staging, with a real mailbox, before anyone relies on it ([the plan](../docs/goals/magic-links/task_plan.md), W10).
 
 ## Every ship
 

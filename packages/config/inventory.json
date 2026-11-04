@@ -88,8 +88,15 @@
       {
         "name": "POSTMARK_SERVER_TOKEN",
         "secret": true,
-        "doc": "The Postmark server's API token, for sign-in mail. Unset outside production, ID prints each email; unset in production, it sends none and warns at startup",
+        "doc": "The Postmark server's API token, for sign-in mail. Required in production, where ID refuses to start without it; outside production, unset, ID prints each email instead of sending it",
         "source": "deploy",
+        "optional": true
+      },
+      {
+        "name": "POSTMARK_API_URL",
+        "secret": false,
+        "doc": "The URL of Postmark's email call, in place of https://api.postmarkapp.com/email. It exists for a fake Postmark that tests run, and only the kind stack sets it; production requires https, since the server token goes in the request",
+        "source": "operator",
         "optional": true
       },
       {

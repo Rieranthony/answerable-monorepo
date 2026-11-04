@@ -57,3 +57,41 @@ variable "hostnames" {
     error_message = "www belongs to the web app on Vercel; the edge module must never write it."
   }
 }
+
+variable "mail_records" {
+  description = <<-EOT
+    Postmark's DNS records for the mail domain id.<zone>, which the owner copies from the DNS Settings page of that
+    environment's Postmark domain after adding it; null writes none. dkim_host is <selector>._domainkey.id.<zone>
+    and dkim_value the TXT value that starts k=rsa; return_path_host is Postmark's Return-Path host, one label
+    under id.<zone>, which becomes a DNS-only CNAME to pm.mtasv.net; dmarc_value is the TXT value of
+    _dmarc.id.<zone>, which starts v=DMARC1; p=. Public values, no secret. There is no SPF record: Postmark asks for none on
+    the From domain, and the apex's Microsoft 365 records are not this module's.
+  EOT
+  type = object({
+    dkim_host        = string
+    dkim_value       = string
+    return_path_host = string
+    dmarc_value      = string
+  })
+  default = null
+
+  validation {
+    condition     = var.mail_records == null ? true : can(regex("^[a-z0-9-]+\\._domainkey\\.${replace(var.hostnames["id"], ".", "\\.")}$", var.mail_records.dkim_host))
+    error_message = "dkim_host must be <selector>._domainkey.id.<zone>: one label, then _domainkey, under the mail domain id.<zone>, never the apex."
+  }
+
+  validation {
+    condition     = var.mail_records == null ? true : can(regex("^[a-z0-9-]+\\.${replace(var.hostnames["id"], ".", "\\.")}$", var.mail_records.return_path_host))
+    error_message = "return_path_host must be one label under id.<zone>, such as pm-bounces.id.<zone> (Postmark's DNS Settings page names it), never the apex."
+  }
+
+  validation {
+    condition     = var.mail_records == null ? true : can(regex("^k=rsa; ?p=[A-Za-z0-9+/=]+$", var.mail_records.dkim_value))
+    error_message = "dkim_value must be Postmark's DKIM public key as the TXT value it shows: k=rsa;p= and the base64 key, without quotes."
+  }
+
+  validation {
+    condition     = var.mail_records == null ? true : can(regex("^v=DMARC1; ?p=(none|quarantine|reject)(;|$)", var.mail_records.dmarc_value)) && !strcontains(var.mail_records.dmarc_value, "\"")
+    error_message = "dmarc_value must start v=DMARC1; p=none, quarantine or reject, and carry no quotes (the module quotes it)."
+  }
+}

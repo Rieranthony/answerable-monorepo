@@ -20,7 +20,7 @@ const CLUSTER_ENV = {
   KUBE_CA: Buffer.from(CERTIFICATE).toString("base64"),
   KUBE_TOKEN: "deployer-token-value",
 }
-const ENV = { ...CLUSTER_ENV, BETTER_AUTH_SECRET: "b", ROOT_ADMIN_SECRET: "r" }
+const ENV = { ...CLUSTER_ENV, BETTER_AUTH_SECRET: "b", ROOT_ADMIN_SECRET: "r", POSTMARK_SERVER_TOKEN: "p" }
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -113,7 +113,7 @@ describe("deploy", () => {
     expect(noCluster.err()).toContain("error: KUBE_SERVER is not set")
     const noSecrets = await fixture(() => undefined, { env: CLUSTER_ENV })
     expect(await main(["deploy", "--environment", "staging", "--image-tag", TAG], noSecrets.deps)).toBe(2)
-    expect(noSecrets.err()).toContain("error: BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET are not set")
+    expect(noSecrets.err()).toContain("error: BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET, POSTMARK_SERVER_TOKEN are not set")
   })
 })
 

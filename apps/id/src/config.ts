@@ -38,6 +38,9 @@ const maxInt32 = 2_147_483_647;
 /** A value that goes in a mail header: no line break can start another. */
 const headerValue = z.string().regex(/^\P{Cc}+$/u);
 
+/** An http or https URL: `z.url()` alone takes any scheme, `javascript:` included. */
+const httpUrl = z.url({ protocol: /^https?$/ });
+
 /** Every variable the service reads, with its local values; packages/config/inventory.json lists each one. */
 export const idConfig = defineConfig(
   "ID",
@@ -108,8 +111,13 @@ export const idConfig = defineConfig(
     POSTMARK_SERVER_TOKEN: {
       schema: z.string().optional(),
       secret: true,
-      doc: "The Postmark server's API token, for sign-in mail. Unset outside production, ID prints each email; unset in production, it sends none and warns at startup",
+      doc: "The Postmark server's API token, for sign-in mail. Required in production, where ID refuses to start without it; outside production, unset, ID prints each email instead of sending it",
       source: "deploy",
+    },
+    POSTMARK_API_URL: {
+      schema: httpUrl.optional(),
+      doc: "The URL of Postmark's email call, in place of https://api.postmarkapp.com/email. It exists for a fake Postmark that tests run, and only the kind stack sets it; production requires https, since the server token goes in the request",
+      source: "operator",
     },
     MAIL_FROM: {
       schema: headerValue,
@@ -189,6 +197,14 @@ export const idConfig = defineConfig(
         }
       }
       if (environment.NODE_ENV !== "production") return;
+      if (environment.POSTMARK_SERVER_TOKEN === undefined)
+        issue("POSTMARK_SERVER_TOKEN", "Required in production");
+      // The token travels in this request: no plain http, whoever sets the variable.
+      if (
+        environment.POSTMARK_API_URL !== undefined &&
+        new URL(environment.POSTMARK_API_URL).protocol !== "https:"
+      )
+        issue("POSTMARK_API_URL", "Required to be https in production");
       if (!environment.TRUSTED_PROXY_CIDRS?.length)
         issue("TRUSTED_PROXY_CIDRS", "Required in production");
       const origins = environment.BETTER_AUTH_TRUSTED_ORIGINS.split(",").map(

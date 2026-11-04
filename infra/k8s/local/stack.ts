@@ -1,10 +1,12 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { startFakePostmark } from "@answerable/acceptance"
 import type { DeclaredMcp } from "@answerable/mcp-postgres"
 import { generatedFiles } from "../../../scripts/mcp/generate"
 import pipelineImages from "../../pipeline/images.json"
 import { buildDependencies, charts, helmEnv, repo } from "../helm"
+import { directoryPort, directoryPorts, idExtraEgress, postmarkPort } from "./egress"
 
 /** The kind cluster's name: one stack per machine at a time. */
 const cluster = "answerable-local"
@@ -24,10 +26,6 @@ export const declared = (JSON.parse(readFileSync(join(charts, "answerable/mcps.j
 export const servedAlone = declared.filter(mcp => mcp.serve !== "toolbox")
 /** The servers the register Job starts. */
 export const registered = ["toolbox", "admin-mcp"]
-
-/** The company directories' ports on the host (apps/id/scripts/stack-directories.ts): the platform organisation's, then a client organisation's. */
-const directoryPort = 47_710
-const directoryPorts = [directoryPort, directoryPort + 1]
 
 /** The Entra tenant register is given: ID has no Microsoft client in the stack, so it never reaches Entra. */
 const entraTenant = "00000000-0000-4000-8000-0000000000e1"
@@ -58,7 +56,7 @@ export type KeyPair = { cert: string; key: string }
  * openssl.cnf plays no part. On Civo, Terraform makes the origin certificate and the origin-pull CA, and the database
  * comes with its own.
  */
-async function makeCertificates(directory: string) {
+async function makeCertificates(directory: string, podHost: string) {
   const path = (name: string) => join(directory, name)
   const read = (name: string) => readFileSync(path(name), "utf8")
   const openssl = (...args: string[]) => exec(["openssl", ...args])
@@ -89,6 +87,8 @@ async function makeCertificates(directory: string) {
     publicNames: await issue("public-names", hosts.id, stack, ["extendedKeyUsage = serverAuth", `subjectAltName = ${Object.values(hosts).map(host => `DNS:${host}`).join(",")}`]),
     /** What the edge presents to Traefik, as Cloudflare does. */
     originPullClient: await issue("origin-pull-client", "origin-pull.local", originPull, ["extendedKeyUsage = clientAuth"]),
+    /** The fake Postmark's: ID's pods reach it at the host's address from the pods, the browser's driver at 127.0.0.1. */
+    fakePostmark: await issue("fake-postmark", "postmark.stack.test", stack, ["extendedKeyUsage = serverAuth", `subjectAltName = IP:${podHost},IP:127.0.0.1,DNS:localhost`]),
     postgres: await issue("postgres", "postgres.database.svc.cluster.local", database, ["extendedKeyUsage = serverAuth", "subjectAltName = DNS:postgres.database.svc.cluster.local,DNS:postgres.database.svc,DNS:postgres.database"]),
   }
 }
@@ -117,6 +117,8 @@ function generateSecrets() {
     admin: secret(),
     rootAdminSecret: `${secret()}${secret()}`,
     betterAuthSecret: `${secret()}${secret()}`,
+    /** The Postmark server token ID sends and the fake checks: a throwaway, as the deploy writes the owner's into id-env. */
+    postmarkServerToken: `${secret()}${secret()}`,
   }
 }
 
@@ -153,7 +155,8 @@ async function startDirectory(workdir: string, podHost: string) {
   const manifest = join(workdir, "directories.json")
   await Bun.write(plan, JSON.stringify({
     hostname: "0.0.0.0", port: directoryPort, browserHost: "http://127.0.0.1", podHost: `http://${podHost}`,
-    directories: [{ slug: "answerable", person: "staff", signIns: 3 }, { slug: "tenant", person: "ada", signIns: 1 }],
+    // Ada signs in three times: the email proofs (stack.test.ts) have the directory refuse her address once as one a link's account holds and then sign her in, and the standalone MCP's proof signs her in once more.
+    directories: [{ slug: "answerable", person: "staff", signIns: 3 }, { slug: "tenant", person: "ada", signIns: 3 }],
   }))
   const child = Bun.spawn([process.execPath, "apps/id/scripts/stack-directories.ts", plan, manifest], { cwd: repo, stdout: "ignore", stderr: "inherit" })
   const stop = async () => {
@@ -334,11 +337,15 @@ export async function startStack() {
   let created = false
   let nextBuilt = false
   let directory: Awaited<ReturnType<typeof startDirectory>> | undefined
+  let postmark: ReturnType<typeof startFakePostmark> | undefined
   const stop = async () => {
+    postmark?.stop()
     await directory?.stop()
     if (created && !process.env.INFRA_STACK_KEEP) await exec(["kind", "delete", "cluster", "--name", cluster, "--kubeconfig", kubeconfig], { allowFailure: true })
     if (nextBuilt) await exec(["docker", "image", "rm", nextImage], { allowFailure: true })
-    rmSync(workdir, { recursive: true, force: true })
+    // A kept stack keeps its directory too: its kubeconfig and certificates are what read-mail.ts and a curl through the edge need (README, "Keep the cluster for a look").
+    if (created && process.env.INFRA_STACK_KEEP) console.log(`[stack] kept the cluster ${cluster} and its directory ${workdir}; delete both when done`)
+    else rmSync(workdir, { recursive: true, force: true })
   }
 
   const existing = await exec(["kind", "get", "clusters"])
@@ -365,7 +372,10 @@ export async function startStack() {
     await kubectl(["create", "namespace", "platform"])
     await kubectl(["create", "namespace", "database"])
     await apply("default", [{ apiVersion: "v1", kind: "Namespace", metadata: { name: "answerable", labels: { "pod-security.kubernetes.io/enforce": "restricted", "pod-security.kubernetes.io/warn": "restricted", "pod-security.kubernetes.io/audit": "restricted" } } }])
-    const certificates = await step("make the certificates with openssl", () => makeCertificates(workdir))
+    const certificates = await step("make the certificates with openssl", () => makeCertificates(workdir, podHost))
+    // The fake Postmark, beside the directories on this host: https with the stack's CA, which ID's pods trust (local-ca), as production's Postmark is
+    // https. ID's pods reach it at the host's address, the browser's driver at 127.0.0.1.
+    postmark = startFakePostmark({ token: secrets.postmarkServerToken, hostname: "0.0.0.0", port: postmarkPort, tls: certificates.fakePostmark })
     await step("start the database and the edge, and install charts/platform", async () => {
       await apply("database", [
         // The server's certificate, then its authority's: the chain the ops bootstrap fetches and keeps the root of.
@@ -389,7 +399,9 @@ export async function startStack() {
     // ID trusts the directory's two origins and may reach it on this host: what an operator configures for a company directory on a private network.
     const localValues = Bun.YAML.parse(readFileSync(join(charts, "answerable/values-local.yaml"), "utf8")) as { id: { trustedOrigins: string[] } }
     const trustedOrigins = [...localValues.id.trustedOrigins, ...[directory.directory, directory.tenant].flatMap(({ issuer, tokenEndpoint }) => [issuer, new URL(tokenEndpoint).origin])]
-    const extraEgress = [{ to: [{ ipBlock: { cidr: `${podHost}/32` } }], ports: directoryPorts.map(port => ({ port, protocol: "TCP" })) }]
+    const extraEgress = idExtraEgress(podHost)
+    // ID sends its mail to the fake, not to Postmark: POSTMARK_API_URL, which only this stack sets, and which production refuses unless it is https.
+    const postmarkUrl = `https://${podHost}:${postmarkPort}/email`
     const staffDomain = directory.directory.domain
     /**
      * `helm upgrade --install` of charts/answerable, or of `chart`, as the pipeline runs it, with the local values, the
@@ -399,7 +411,7 @@ export async function startStack() {
     const release = (sets: string[], { timeout = helmTimeout, chart = join(charts, "answerable") } = {}) => helm([
       "upgrade", "--install", "answerable", chart, "--namespace", "answerable", "--values", join(charts, "answerable/values-local.yaml"),
       "--set-json", `id.trustedOrigins=${JSON.stringify(trustedOrigins)}`, "--set-json", `id.extraEgress=${JSON.stringify(extraEgress)}`,
-      "--set", `id.staffDomain=${staffDomain}`, "--set", `id.entraTenant=${entraTenant}`,
+      "--set", `id.staffDomain=${staffDomain}`, "--set", `id.entraTenant=${entraTenant}`, "--set-string", `id.env.POSTMARK_API_URL=${postmarkUrl}`,
       ...sets.flatMap(set => ["--set", set]), "--wait", "--wait-for-jobs", "--timeout", timeout,
     ])
     await step("install charts/answerable with the ops bootstrap", async () => {
@@ -410,7 +422,7 @@ export async function startStack() {
         configMap("trusted-proxies", { cidrs: "127.0.0.1/32" }),
         opaque("postgres-admin", { OPS_DATABASE_ADMIN_URL: `postgres://${databaseAdmin}:${secrets.admin}@${database}/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem` }),
         tls("origin-tls", certificates.publicNames),
-        opaque("id-env", { BETTER_AUTH_SECRET: secrets.betterAuthSecret, ROOT_ADMIN_SECRET: secrets.rootAdminSecret }),
+        opaque("id-env", { BETTER_AUTH_SECRET: secrets.betterAuthSecret, ROOT_ADMIN_SECRET: secrets.rootAdminSecret, POSTMARK_SERVER_TOKEN: secrets.postmarkServerToken }),
         configMap("local-ca", { "ca.pem": certificates.stackCa }),
       ])
       await release(["ops.bootstrap=true"])
@@ -431,9 +443,38 @@ export async function startStack() {
       await exec(["kind", "load", "docker-image", nextImage, "--name", cluster])
       return { ...prepared, sets: [`images.mcps.repository=${nextImage.split(":")[0]}`] }
     }
+    /**
+     * Publish a TXT record in the cluster's DNS, as a firm's DNS would hold it: a zone of CoreDNS (kube-system's ConfigMap coredns) answers `name` with
+     * `value`, or with nothing when `value` is null, and CoreDNS restarts to read it, which clears every cache. The zone has no `cache`
+     * plugin, so a later change is seen at once. The stack's cluster is deleted at the end, so nothing needs undoing.
+     */
+    let corefile: string | undefined
+    async function publishTxt(zone: string, name: string, value: string | null) {
+      const configMap = JSON.parse((await kubectl(["get", "configmap", "-n", "kube-system", "coredns", "-o", "json"])).stdout) as { data: { Corefile: string } }
+      corefile ??= configMap.data.Corefile
+      const escaped = name.replaceAll(".", "[.]")
+      const block = value === null ? "" : `\n${zone}:53 {\n    errors\n    log\n    template IN TXT ${zone} {\n        match "^${escaped}[.]$"\n        answer "{{ .Name }} 5 IN TXT \\"${value}\\""\n    }\n}\n`
+      await kubectl(["patch", "configmap", "-n", "kube-system", "coredns", "--type", "merge", "-p", JSON.stringify({ data: { Corefile: corefile + block } })])
+      await kubectl(["rollout", "restart", "-n", "kube-system", "deployment/coredns"])
+      await kubectl(["rollout", "status", "-n", "kube-system", "deployment/coredns", "--timeout=120s"])
+      // The rollout is done, but the Service's address still reaches a terminating CoreDNS pod, which holds the old answer or none, for a few seconds (measured: the
+      // first query from ID's pod timed out, and a later one was answered by the old configuration). So wait until the pod's own resolver, asked eight times in a
+      // row, gets the answer alone: ID's check makes one query and takes what it gets.
+      const wanted = value === null ? "[]" : JSON.stringify([[value]])
+      const script = `import { Resolver } from "node:dns/promises"; const answers = []; for (let i = 0; i < 8; i++) answers.push(JSON.stringify(await new Resolver({ timeout: 2000, tries: 1 }).resolveTxt(${JSON.stringify(name)}).catch(() => []))); console.log(answers.every(answer => answer === ${JSON.stringify(wanted)}) ? "settled" : answers.join(" "))`
+      let last = "no answer"
+      for (const deadline = Date.now() + 120_000; Date.now() < deadline; await Bun.sleep(500)) {
+        last = (await kubectl(["exec", "-n", "answerable", "deploy/id", "-c", "id", "--", "bun", "-e", script], { allowFailure: true })).stdout.trim()
+        if (last === "settled") return
+      }
+      throw new Error(`CoreDNS did not settle on ${wanted} for ${name} within 120 s; ID's pod last saw ${last}`)
+    }
     return {
-      kubectl, helm, release, next, diagnose: (why: string) => diagnose(kubectl, helmOnly, why), kubeconfig, readSecret, secrets, stop, dockerGateway, podHost,
-      directory: directory.directory, tenant: directory.tenant, certificates, stackCa: certificates.stackCa, originPullCert: certificates.originPullClient, edgeCert: certificates.publicNames,
+      kubectl, helm, release, next, publishTxt, diagnose: (why: string) => diagnose(kubectl, helmOnly, why), kubeconfig, readSecret, secrets, stop, dockerGateway, podHost,
+      directory: directory.directory, tenant: directory.tenant,
+      /** The fake Postmark: its inbox for a process of its own, the token it checks, and its messages. */
+      postmark: { inbox: `https://127.0.0.1:${postmarkPort}/fake/messages`, token: secrets.postmarkServerToken, messages: () => postmark!.messages(), waitFor: postmark!.waitFor },
+      certificates, stackCa: certificates.stackCa, originPullCert: certificates.originPullClient, edgeCert: certificates.publicNames,
     }
   } catch (error) {
     // Show what the cluster says before it goes.

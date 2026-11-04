@@ -25,6 +25,7 @@ const production = {
   NODE_ENV: "production",
   BETTER_AUTH_TRUSTED_ORIGINS: "https://auth.example.com",
   TRUSTED_PROXY_CIDRS: "10.0.0.0/8, 2001:db8::/32",
+  POSTMARK_SERVER_TOKEN: "postmark-token",
 };
 
 describe("unit: environment", () => {
@@ -42,6 +43,7 @@ describe("unit: environment", () => {
       "MICROSOFT_CLIENT_ID",
       "MICROSOFT_CLIENT_SECRET",
       "POSTMARK_SERVER_TOKEN",
+      "POSTMARK_API_URL",
       "MAIL_FROM",
       "MAIL_REPLY_TO",
       "MAIL_SUBJECT_PREFIX",
@@ -62,7 +64,8 @@ describe("unit: environment", () => {
       betterAuthUrl: requiredEnvironment.BETTER_AUTH_URL,
       betterAuthSecret: requiredEnvironment.BETTER_AUTH_SECRET,
       betterAuthSecrets: undefined,
-      postmarkServerToken: undefined,
+      postmarkServerToken: "postmark-token",
+      postmarkApiUrl: undefined,
       mailFrom: "Answerable ID <sign-in@id.answerable.org>",
       mailReplyTo: "support@answerable.org",
       mailSubjectPrefix: undefined,
@@ -129,6 +132,75 @@ describe("unit: environment", () => {
     ] as const)
       expect(() => parseEnvironment({ [name]: value })).toThrow(
         `Invalid ID configuration: ${name}: `,
+      );
+  });
+
+  test("production refuses to start without the Postmark token, blank included, and names only the variable", () => {
+    for (const value of [undefined, "", "   "])
+      expect(() =>
+        parseEnvironment({ ...production, POSTMARK_SERVER_TOKEN: value }),
+      ).toThrow(
+        "Invalid ID configuration: POSTMARK_SERVER_TOKEN: Required in production",
+      );
+    // Outside production it stays optional, and a local ID prints each email.
+    for (const NODE_ENV of [undefined, "development", "test"])
+      expect(parseEnvironment({ NODE_ENV }).postmarkServerToken).toBeUndefined();
+  });
+
+  test("the server process exits before it listens when production has no Postmark token, naming the variable and no value", async () => {
+    const withoutToken = Object.fromEntries(
+      Object.entries(production).filter(
+        ([name]) => name !== "POSTMARK_SERVER_TOKEN",
+      ),
+    );
+    const child = Bun.spawn([process.execPath, "src/server.ts"], {
+      cwd: new URL("..", import.meta.url).pathname,
+      env: { PATH: process.env.PATH, ...withoutToken },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [code, out, err] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expect(code).not.toBe(0);
+    expect(err).toContain(
+      "Invalid ID configuration: POSTMARK_SERVER_TOKEN: Required in production",
+    );
+    expect(out).not.toContain("listening");
+  });
+
+  test("POSTMARK_API_URL is a URL of Postmark's email call, and production takes https alone", () => {
+    expect(parseEnvironment({}).postmarkApiUrl).toBeUndefined();
+    expect(
+      parseEnvironment({ POSTMARK_API_URL: "http://127.0.0.1:47712/email" })
+        .postmarkApiUrl,
+    ).toBe("http://127.0.0.1:47712/email");
+    expect(
+      parseEnvironment({
+        ...production,
+        POSTMARK_API_URL: "https://host.docker.internal:47712/email",
+      }).postmarkApiUrl,
+    ).toBe("https://host.docker.internal:47712/email");
+    expect(
+      parseEnvironment({ ...production, POSTMARK_API_URL: " " }).postmarkApiUrl,
+    ).toBeUndefined();
+    // Not a URL, and a scheme that is not http: refused everywhere.
+    for (const value of ["not a url", "ftp://postmark.example/email", "javascript:alert(1)"])
+      for (const NODE_ENV of ["development", "production"])
+        expect(() =>
+          parseEnvironment({ ...production, NODE_ENV, POSTMARK_API_URL: value }),
+        ).toThrow("Invalid ID configuration: POSTMARK_API_URL: ");
+    // Plain http carries the token in the clear: refused in production, whoever sets it.
+    for (const value of [
+      "http://postmark.example/email",
+      "http://127.0.0.1:47712/email",
+    ])
+      expect(() =>
+        parseEnvironment({ ...production, POSTMARK_API_URL: value }),
+      ).toThrow(
+        "Invalid ID configuration: POSTMARK_API_URL: Required to be https in production",
       );
   });
 

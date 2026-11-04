@@ -98,15 +98,19 @@ export function assertImageTag(tag: string): void {
   if (!IMAGE_TAG.test(tag)) throw new UsageError(`--image-tag must be sha- and the 40-character commit SHA, got "${tag}"`)
 }
 
-/** ID's secrets the deploy requires, each a variable of the deploy step: the GitHub environment's secrets of the same names. */
-const ID_ENV_REQUIRED = ["BETTER_AUTH_SECRET", "ROOT_ADMIN_SECRET"] as const
+/**
+ * ID's secrets the deploy requires, each a variable of the deploy step: the GitHub environment's secrets of the same names.
+ * `POSTMARK_SERVER_TOKEN` is the one the owner pastes: ID refuses to start in production without it, so a deploy without
+ * it stops before it touches the cluster. The previous image ignores the variable, so a rollout is safe either way.
+ */
+const ID_ENV_REQUIRED = ["BETTER_AUTH_SECRET", "ROOT_ADMIN_SECRET", "POSTMARK_SERVER_TOKEN"] as const
 /** The platform applications' credentials: each pair both or neither. */
 const ID_ENV_PAIRS = [
   ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"],
   ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
 ] as const
-/** ID's versioned ring of authentication secrets, from its first rotation on (infra/README.md, The application secret), and its Postmark server's token. */
-const ID_ENV_OPTIONAL = ["BETTER_AUTH_SECRETS", "POSTMARK_SERVER_TOKEN"] as const
+/** ID's versioned ring of authentication secrets, from its first rotation on (infra/README.md, The application secret). */
+const ID_ENV_OPTIONAL = ["BETTER_AUTH_SECRETS"] as const
 /**
  * Every variable `id-env` can hold: the deploy's contract with ID. deploy.test.ts holds it to the variables ID's
  * definition says the deploy delivers (packages/config/inventory.json) and to the deploy step of both workflows.
@@ -114,9 +118,9 @@ const ID_ENV_OPTIONAL = ["BETTER_AUTH_SECRETS", "POSTMARK_SERVER_TOKEN"] as cons
 export const ID_ENV_NAMES = [...ID_ENV_REQUIRED, ...ID_ENV_PAIRS.flat(), ...ID_ENV_OPTIONAL]
 
 /**
- * The values of the Secret `id-env`, from the deploy's environment: the two required secrets, each platform
- * application's pair when both halves are set, and `BETTER_AUTH_SECRETS` and `POSTMARK_SERVER_TOKEN` when each is. Refuses
- * an empty required value and half a pair, naming the variables, never a value.
+ * The values of the Secret `id-env`, from the deploy's environment: the three required secrets, each platform
+ * application's pair when both halves are set, and `BETTER_AUTH_SECRETS` when it is. Refuses an empty required value
+ * and half a pair, naming the variables, never a value.
  */
 export function idEnv(env: Deps["env"]): Record<string, string> {
   const value = (name: string) => env[name]?.trim() || undefined

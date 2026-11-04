@@ -1,4 +1,5 @@
-# The environment's Cloudflare zone (D18, D19): four proxied records to the load balancer, TLS strict to the origin,
+# The environment's Cloudflare zone (D18, D19): four proxied records to the load balancer, Postmark's three DNS-only mail
+# records once the owner gives their values, TLS strict to the origin,
 # origin pulls on with the zone's own client certificate, the origin's certificate from Cloudflare's Origin CA, and for
 # the four machine-facing hostnames no browser check, no challenge and no cache except /assets/. Nothing here may
 # touch any other name in the zone, above all production's www, which Vercel serves.
@@ -393,4 +394,286 @@ run "refuses_a_missing_service" {
   }
 
   expect_failures = [var.hostnames]
+}
+
+# Postmark's records for the mail domain id.<zone>. None without values: the owner sends them after adding the domain in
+# Postmark. With them, exactly three DNS-only records under id.<zone>: the DKIM TXT, the Return-Path CNAME to pm.mtasv.net
+# (a proxied one does not verify) and the DMARC TXT. Never SPF, never a name at the apex.
+run "writes_no_mail_record_without_the_values" {
+  command = plan
+
+  assert {
+    condition     = length(cloudflare_dns_record.mail) == 0 && length(output.mail_records) == 0
+    error_message = "Without mail_records the module must write no mail record."
+  }
+
+  assert {
+    condition     = length(cloudflare_dns_record.service) == 4 && toset([for record in cloudflare_dns_record.service : record.name]) == toset(["id.answerable-staging.uk", "toolbox.answerable-staging.uk", "admin-mcp.answerable-staging.uk", "mcp.answerable-staging.uk"])
+    error_message = "Without mail_records the zone must hold exactly today's four service records and no other."
+  }
+}
+
+run "writes_postmarks_three_records_dns_only_when_given_the_values" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.id.answerable-staging.uk"
+      dkim_value       = "k=rsa;p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDexample"
+      return_path_host = "pm-bounces.id.answerable-staging.uk"
+      dmarc_value      = "v=DMARC1; p=none; rua=mailto:dmarc@answerable-staging.uk"
+    }
+  }
+
+  assert {
+    condition     = toset(keys(cloudflare_dns_record.mail)) == toset(["dkim", "return_path", "dmarc"])
+    error_message = "Postmark's three records, DKIM, Return-Path and DMARC, and no other."
+  }
+
+  assert {
+    condition = (
+      cloudflare_dns_record.mail["dkim"].type == "TXT"
+      && cloudflare_dns_record.mail["dkim"].name == "20260101000000pm._domainkey.id.answerable-staging.uk"
+      && cloudflare_dns_record.mail["dkim"].content == "\"k=rsa;p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDexample\""
+      && cloudflare_dns_record.mail["dkim"].proxied == false
+    )
+    error_message = "The DKIM record must be a DNS-only TXT at <selector>._domainkey.id.<zone>, its value quoted as Cloudflare keeps TXT content."
+  }
+
+  assert {
+    condition = (
+      cloudflare_dns_record.mail["return_path"].type == "CNAME"
+      && cloudflare_dns_record.mail["return_path"].name == "pm-bounces.id.answerable-staging.uk"
+      && cloudflare_dns_record.mail["return_path"].content == "pm.mtasv.net"
+      && cloudflare_dns_record.mail["return_path"].proxied == false
+    )
+    error_message = "The Return-Path must be a DNS-only CNAME to pm.mtasv.net: a proxied one does not verify."
+  }
+
+  assert {
+    condition = (
+      cloudflare_dns_record.mail["dmarc"].type == "TXT"
+      && cloudflare_dns_record.mail["dmarc"].name == "_dmarc.id.answerable-staging.uk"
+      && cloudflare_dns_record.mail["dmarc"].content == "\"v=DMARC1; p=none; rua=mailto:dmarc@answerable-staging.uk\""
+      && cloudflare_dns_record.mail["dmarc"].proxied == false
+    )
+    error_message = "The DMARC record must be a DNS-only TXT at _dmarc.id.<zone>, its value quoted."
+  }
+
+  assert {
+    condition = alltrue([
+      for record in cloudflare_dns_record.mail :
+      record.zone_id == "0123456789abcdef0123456789abcdef" && record.ttl == 1 && endswith(record.name, ".id.answerable-staging.uk")
+    ])
+    error_message = "Every mail record sits in the zone, on automatic TTL, under id.<zone>: never the apex, and never an SPF record."
+  }
+
+  assert {
+    condition     = output.mail_records == tolist(["CNAME pm-bounces.id.answerable-staging.uk", "TXT 20260101000000pm._domainkey.id.answerable-staging.uk", "TXT _dmarc.id.answerable-staging.uk"])
+    error_message = "The module must report the three mail records it writes."
+  }
+
+  assert {
+    condition     = length(cloudflare_dns_record.service) == 4 && alltrue([for record in cloudflare_dns_record.service : record.type == "A" && record.proxied])
+    error_message = "The mail records must leave the four proxied service records as they are."
+  }
+}
+
+# A 2048-bit key is 392 characters of base64, over the 255 bytes of one TXT character string. Cloudflare splits a longer
+# string itself and keeps it as quoted strings (developers.cloudflare.com, the API's create call), and the provider
+# normalises nothing, so the content is written as Cloudflare keeps it, or every plan would show drift.
+run "writes_a_key_over_255_bytes_as_two_quoted_strings" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.id.answerable-staging.uk"
+      dkim_value       = "k=rsa;p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAbjQLnP+zepicpUTmu3gKLHiQHT+zNzh2hRGjBhevoB1L9RIvNEVUxTveLruM0rfj0WAK1jHDhaXXzOI8d4VFmtvBtMkA/+SNV1tdpcY4BAEl9l2w/j4kSUt26phkV9mGCE/tCLl4r019GWp0RqhrWACeY2thHbFiEbZamq3/KcXlLZxQjFAjRzRNjAetkcvWBor8df9ikvBioJyjgcieced7mprp4wsNvbb1EKJk753ngVAde2uSronrBZxat0PbZ1humPrSfaC5lovAOaHvNMk5ubjlI6i++J1HhgjF7PbKNYdY9tJ+bPRScpN5d6dI/Yg5HbZ5ztp9x78fAF7oebIDAQAB"
+      return_path_host = "pm-bounces.id.answerable-staging.uk"
+      dmarc_value      = "v=DMARC1; p=none"
+    }
+  }
+
+  assert {
+    condition     = cloudflare_dns_record.mail["dkim"].content == "\"k=rsa;p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAbjQLnP+zepicpUTmu3gKLHiQHT+zNzh2hRGjBhevoB1L9RIvNEVUxTveLruM0rfj0WAK1jHDhaXXzOI8d4VFmtvBtMkA/+SNV1tdpcY4BAEl9l2w/j4kSUt26phkV9mGCE/tCLl4r019GWp0RqhrWACeY2thHbFiEbZamq3/KcXlLZxQjFAjRzRNjAetkcvWBor8df9ikvB\" \"ioJyjgcieced7mprp4wsNvbb1EKJk753ngVAde2uSronrBZxat0PbZ1humPrSfaC5lovAOaHvNMk5ubjlI6i++J1HhgjF7PbKNYdY9tJ+bPRScpN5d6dI/Yg5HbZ5ztp9x78fAF7oebIDAQAB\""
+    error_message = "A DKIM value over 255 bytes must be written as quoted strings of 255 bytes and the rest, separated by a space."
+  }
+
+  assert {
+    condition     = replace(cloudflare_dns_record.mail["dkim"].content, "\" \"", "") == "\"${var.mail_records.dkim_value}\""
+    error_message = "Joining the strings must give back the key exactly."
+  }
+}
+
+run "writes_a_key_of_exactly_255_bytes_as_one_string" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.id.answerable-staging.uk"
+      dkim_value       = "k=rsa;p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAbjQLnP+zepicpUTmu3gKLHiQHT+zNzh2hRGjBhevoB1L9RIvNEVUxTveLruM0rfj0WAK1jHDhaXXzOI8d4VFmtvBtMkA/+SNV1tdpcY4BAEl9l2w/j4kSUt26phkV9mGCE/tCLl4r019GWp0RqhrWACeY2thHbFiEbZamq3/KcXlLZxQjFAjRzRNjAetkcvWBor8df9ikvB"
+      return_path_host = "pm-bounces.id.answerable-staging.uk"
+      dmarc_value      = "v=DMARC1; p=none"
+    }
+  }
+
+  assert {
+    condition     = cloudflare_dns_record.mail["dkim"].content == "\"${var.mail_records.dkim_value}\""
+    error_message = "A value of exactly 255 bytes must stay one quoted string."
+  }
+}
+
+# Production's records sit beside Vercel's DNS-only www; the mail records go under the mail domain and nowhere else.
+run "writes_production_mail_records_under_the_mail_domain_and_never_at_the_apex_or_www" {
+  command = plan
+
+  variables {
+    environment = "production"
+    zone_name   = "answerable.org"
+    hostnames = {
+      id        = "id.answerable.org"
+      toolbox   = "toolbox.answerable.org"
+      admin_mcp = "admin-mcp.answerable.org"
+      mcp       = "mcp.answerable.org"
+    }
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.id.answerable.org"
+      dkim_value       = "k=rsa;p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDexample"
+      return_path_host = "pm-bounces.id.answerable.org"
+      dmarc_value      = "v=DMARC1; p=none; rua=mailto:dmarc@answerable.org"
+    }
+  }
+
+  assert {
+    condition = alltrue([
+      for record in cloudflare_dns_record.mail :
+      endswith(record.name, ".id.answerable.org") && !strcontains(record.name, "www") && record.name != "answerable.org"
+    ])
+    error_message = "Production's mail records must sit under id.answerable.org, never at the apex and never www."
+  }
+
+  assert {
+    condition     = alltrue([for record in cloudflare_dns_record.mail : record.type != "TXT" || !strcontains(record.content, "spf1")])
+    error_message = "No SPF record: Postmark asks for none on the From domain, and the apex's Microsoft 365 records are not this module's."
+  }
+}
+
+run "refuses_a_dkim_host_at_the_apex_or_off_the_mail_domain" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.answerable-staging.uk"
+      dkim_value       = "k=rsa;p=MIGfMA0G"
+      return_path_host = "pm-bounces.id.answerable-staging.uk"
+      dmarc_value      = "v=DMARC1; p=none"
+    }
+  }
+
+  expect_failures = [var.mail_records]
+}
+
+run "refuses_a_dkim_host_that_is_not_a_domainkey_name" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "selector.id.answerable-staging.uk"
+      dkim_value       = "k=rsa;p=MIGfMA0G"
+      return_path_host = "pm-bounces.id.answerable-staging.uk"
+      dmarc_value      = "v=DMARC1; p=none"
+    }
+  }
+
+  expect_failures = [var.mail_records]
+}
+
+run "refuses_a_return_path_host_at_the_apex" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.id.answerable-staging.uk"
+      dkim_value       = "k=rsa;p=MIGfMA0G"
+      return_path_host = "answerable-staging.uk"
+      dmarc_value      = "v=DMARC1; p=none"
+    }
+  }
+
+  expect_failures = [var.mail_records]
+}
+
+run "refuses_a_return_path_host_that_is_the_mail_domain_itself" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.id.answerable-staging.uk"
+      dkim_value       = "k=rsa;p=MIGfMA0G"
+      return_path_host = "id.answerable-staging.uk"
+      dmarc_value      = "v=DMARC1; p=none"
+    }
+  }
+
+  expect_failures = [var.mail_records]
+}
+
+run "refuses_a_return_path_host_beside_the_mail_domain_not_under_it" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.id.answerable-staging.uk"
+      dkim_value       = "k=rsa;p=MIGfMA0G"
+      return_path_host = "pm-bounces.answerable-staging.uk"
+      dmarc_value      = "v=DMARC1; p=none"
+    }
+  }
+
+  expect_failures = [var.mail_records]
+}
+
+run "refuses_a_dkim_value_that_is_not_a_public_key" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.id.answerable-staging.uk"
+      dkim_value       = "v=spf1 include:spf.protection.outlook.com ~all"
+      return_path_host = "pm-bounces.id.answerable-staging.uk"
+      dmarc_value      = "v=DMARC1; p=none"
+    }
+  }
+
+  expect_failures = [var.mail_records]
+}
+
+run "refuses_a_dmarc_value_that_is_not_dmarc" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.id.answerable-staging.uk"
+      dkim_value       = "k=rsa;p=MIGfMA0G"
+      return_path_host = "pm-bounces.id.answerable-staging.uk"
+      dmarc_value      = "v=spf1 -all"
+    }
+  }
+
+  expect_failures = [var.mail_records]
+}
+
+run "refuses_a_quoted_value_which_the_module_quotes_itself" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.id.answerable-staging.uk"
+      dkim_value       = "k=rsa;p=MIGfMA0G"
+      return_path_host = "pm-bounces.id.answerable-staging.uk"
+      dmarc_value      = "v=DMARC1; p=none; rua=\"mailto:dmarc@answerable-staging.uk\""
+    }
+  }
+
+  expect_failures = [var.mail_records]
 }

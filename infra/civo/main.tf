@@ -70,6 +70,9 @@ module "edge" {
   zone_name   = var.zone_name
   origin_ip   = module.ingress_firewall.ip
   hostnames   = var.hostnames
+
+  # Postmark's records for id.<zone>, when the owner has them (envs/<environment>.tfvars).
+  mail_records = var.mail_records
 }
 
 module "platform" {

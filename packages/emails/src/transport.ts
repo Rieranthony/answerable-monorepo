@@ -54,6 +54,12 @@ export type PostmarkTransportOptions = {
   replyTo: string
   /** Put before every subject with a space, for an environment that must not read as production: `[staging]`. */
   subjectPrefix?: string
+  /**
+   * Where the email call goes. Default Postmark's own, `https://api.postmarkapp.com/email`. For a fake Postmark that a
+   * test or the kind stack runs: it receives the server token, so a real deployment must never set it to anything but
+   * `https:`.
+   */
+  endpoint?: string
   /** Replaces the global `fetch`, for a test. */
   fetch?: (input: string, init: RequestInit) => Promise<Response>
   /** How long one attempt may take, answer included. Default 10 seconds. */
@@ -62,6 +68,7 @@ export type PostmarkTransportOptions = {
   retryDelayMs?: number
 }
 
+/** Postmark's email call: what `endpoint` defaults to. */
 const ENDPOINT = "https://api.postmarkapp.com/email"
 
 // One address only: Postmark's `To` takes a comma-separated list, and a sign-in link must go to one person.
@@ -84,13 +91,14 @@ export function createPostmarkTransport({
   from,
   replyTo,
   subjectPrefix,
+  endpoint = ENDPOINT,
   fetch: send = fetch,
   timeoutMs = 10_000,
   retryDelayMs = 1_000,
 }: PostmarkTransportOptions): Transport {
   const attempt = async (body: string): Promise<Attempt> => {
     try {
-      const response = await send(ENDPOINT, {
+      const response = await send(endpoint, {
         method: "POST",
         headers: {
           "X-Postmark-Server-Token": serverToken,

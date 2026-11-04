@@ -95,7 +95,8 @@
     "infra/k8s": {
       "entry": [
         "*.test.ts",
-        "local/*.test.ts"
+        "local/*.test.ts",
+        "local/read-mail.ts"
       ],
       "project": [
         "*.ts",

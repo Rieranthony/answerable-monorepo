@@ -42,9 +42,9 @@ const USAGE = `Usage:
   bun infra/pipeline/src/cli.ts smoke --environment <staging|production> [--wait <seconds>] [--interval <seconds>]
 
 deploy pins the images of infra/pipeline/images.json (id, mcps, ops) by manifest digest: given with --image-digest for
-every one, or looked up with docker buildx from the tag. It writes the Secret id-env from BETTER_AUTH_SECRET
-and ROOT_ADMIN_SECRET, the MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET pair and the
-GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET pair when set, and BETTER_AUTH_SECRETS and POSTMARK_SERVER_TOKEN when set. run-job runs one ops Job on
+every one, or looked up with docker buildx from the tag. It writes the Secret id-env from BETTER_AUTH_SECRET,
+ROOT_ADMIN_SECRET and POSTMARK_SERVER_TOKEN, which it requires, the MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET pair and the
+GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET pair when set, and BETTER_AUTH_SECRETS when set. run-job runs one ops Job on
 the release's own values, with the chart of the commit the release runs, and prints revision=<commit> on standard
 output; make-admin needs --email. deploy and run-job read the cluster from KUBE_SERVER, KUBE_CA and KUBE_TOKEN and
 report on standard error. smoke checks the MCPs of the checkout's charts/answerable/mcps.json and prints its table on

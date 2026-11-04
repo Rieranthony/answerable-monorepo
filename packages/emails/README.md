@@ -34,6 +34,7 @@ const result = await transport.send({ to: "alice@acme.example", ...email })
 ## Transport
 
 - `createPostmarkTransport` is a thin `fetch` client: a 10 second timeout, one retry after `retryDelayMs` on a 429, a 5xx, a network error or a timeout, and none on any other answer. `TrackOpens` is off and `TrackLinks` is `None`; no `Metadata`, and nothing secret in `Tag`. Postmark has no idempotency key, so a retried timeout can send an email twice.
+- `endpoint` replaces Postmark's address (`https://api.postmarkapp.com/email`) with a fake Postmark's, for a test or the kind stack. The server token goes in that request, so a deployment must never set it to anything but `https:`: Answerable ID's `POSTMARK_API_URL` refuses plain `http:` in production.
 - A failed result holds numbers and a flag only: never the token, the link, the code, the address or Postmark's message. `errorCode` 406 (`postmarkErrorCode.inactiveRecipient`) means Postmark suppressed the address; 412 and 413 mean the account is not approved yet.
 - `createLogTransport(log)` writes the recipient, subject and text, link and code included, for local development. `createMemoryTransport()` from `@answerable/emails/testing` keeps what it was sent, and fails when its `failure` is set.
 

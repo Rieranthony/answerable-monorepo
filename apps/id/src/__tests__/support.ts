@@ -22,6 +22,7 @@ export function testEnvironment(
     betterAuthSecret: "test-secret-that-is-at-least-32-characters",
     betterAuthSecrets: undefined,
     postmarkServerToken: undefined,
+    postmarkApiUrl: undefined,
     mailFrom: "Answerable ID <sign-in@id.example.com>",
     mailReplyTo: "support@example.com",
     mailSubjectPrefix: undefined,

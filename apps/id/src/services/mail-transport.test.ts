@@ -67,23 +67,38 @@ describe("which transport", () => {
     }
   });
 
-  test("no token in production: one warning at startup, and every send fails without a word", async () => {
-    const lines = await capturingLogs(async (lines) => {
+  test("a token and POSTMARK_API_URL: the same call, to that URL, with the token in the header", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async () =>
+      Response.json({
+        ErrorCode: 0,
+        MessageID: "fake-id",
+      })) as unknown as typeof fetch);
+    try {
       const transport = createMailTransport(
-        testEnvironment({ nodeEnv: "production" }),
+        testEnvironment({
+          nodeEnv: "production",
+          postmarkServerToken: "the-server-token",
+          postmarkApiUrl: "https://postmark.stack.test:47712/email",
+        }),
       );
-      expect(lines).toEqual([
-        `[id] mail ${JSON.stringify({ level: "error", event: "postmark_server_token_missing" })}`,
-      ]);
-      for (let send = 0; send < 3; send++)
-        expect(await transport.send(message)).toEqual({
-          status: "failed",
-          httpStatus: null,
-          errorCode: null,
-          retried: false,
-        });
-      return lines;
-    });
-    expect(lines).toHaveLength(1);
+      expect(await transport.send(message)).toEqual({
+        status: "sent",
+        messageId: "fake-id",
+      });
+      const [url, init] = fetchSpy.mock.calls[0]! as unknown as [
+        string,
+        RequestInit & { headers: Record<string, string> },
+      ];
+      expect(url).toBe("https://postmark.stack.test:47712/email");
+      expect(init.headers["X-Postmark-Server-Token"]).toBe("the-server-token");
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  test("no token in production is a mistake that is refused, so a production process never prints a working link", () => {
+    expect(() =>
+      createMailTransport(testEnvironment({ nodeEnv: "production" })),
+    ).toThrow("POSTMARK_SERVER_TOKEN is required in production");
   });
 });

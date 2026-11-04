@@ -2,6 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { type Admin, setSsoProvider } from "@answerable/acceptance"
 import { X509Certificate } from "node:crypto"
 import { runSmoke, smokePassed } from "../../pipeline/src/smoke"
+import { type BrowserCookie, sessionCookieProblems, signInCookieProblems } from "./cookies"
+import { directoryPorts, idExtraEgress, postmarkPort } from "./egress"
+import type { MagicLinkSignInInput } from "./magic-link-sign-in"
 import type { SignInInput } from "./sign-in"
 import type { StandaloneSignInInput } from "./standalone-sign-in"
 import { databaseAdmin, declared, exec, hosts, image, images, origin, registered, servedAlone, type Stack, startStack, step, timings } from "./stack"
@@ -10,7 +13,7 @@ import { databaseAdmin, declared, exec, hosts, image, images, origin, registered
 // cloud runs them, a TLS-only PostgreSQL 17 holding only an administrative login, the ops Jobs that bootstrap the databases and
 // the MCPs of charts/answerable/mcps.json and register the servers in ID, a staff member's sign-in through the cluster, and the
 // proofs that the stack behaves as production must. Needs Docker, kind, kubectl and helm, Playwright's Chromium (cd packages/acceptance && bun x playwright install
-// chromium), ports 47700, 47710 and [::1]:48443 on this host, and public DNS for *.127-0-0-1.sslip.io. Deletes its cluster at the end,
+// chromium), ports 47700, 47710 to 47712 and [::1]:48443 on this host, and public DNS for *.127-0-0-1.sslip.io. Deletes its cluster at the end,
 // on failure and on Ctrl-C; set INFRA_STACK_KEEP=1 to keep it for a look (then delete it with kind delete cluster --name
 // answerable-local).
 
@@ -426,6 +429,13 @@ describe("the ops Jobs", () => {
     for (const value of [...await generatedValues(), stack!.secrets.rootAdminSecret]) expect(log.includes(value)).toBe(false)
   })
 
+  test("the runbook's read of the database's lock limit works from ID's pod, with its runtime login and its verified TLS", async () => {
+    const { stdout } = await stack!.kubectl(["exec", "-n", "answerable", "deploy/id", "-c", "id", "--", "bun", "-e", 'const sql = new Bun.SQL({ url: process.env.DATABASE_URL.split("?")[0], tls: { ca: await Bun.file("/etc/ssl/db/ca.pem").text() } }); console.log((await sql`SHOW max_locks_per_transaction`)[0], (await sql`SHOW max_connections`)[0]); await sql.close()'])
+    console.log(`The lock limit, as infra/README.md reads it: ${stdout.trim()}`)
+    expect(stdout).toContain("max_locks_per_transaction")
+    expect(stdout).toContain("max_connections")
+  })
+
   test("a machine-token round trip: the admin MCP's client gets a toolbox:admin token from ID and lists the Toolbox's providers", async () => {
     const clientSecret = (await stack!.readSecret("answerable", "admin-id-client")).ADMIN_ID_CLIENT_SECRET!
     const toolboxAdmin = `${origin(hosts.toolbox)}/admin`
@@ -534,6 +544,233 @@ describe("a staff member signs in through the cluster", () => {
     // The admin MCP reads the role on each request: the same token is an owner's on the next call.
     expect(result.after).toMatchObject({ role: "owner", nextStep: null })
   }), 180_000)
+})
+
+/** Whatever `fetch` made of a URL in a pod, in words: the status it answered, or that it was blocked. */
+const reach = (url: string) => `await fetch(${JSON.stringify(url)}, { signal: AbortSignal.timeout(4000) }).then(r => "answered " + r.status, e => "blocked: " + e.name)`
+
+describe("ID's mail goes to a fake Postmark, and only ID's pods can reach it", () => {
+  test("ID runs in production mode with the throwaway token and POSTMARK_API_URL the stack gives it, and the fake asks for that token", async () => {
+    const environment = JSON.parse((await stack!.kubectl(["get", "deploy", "-n", "answerable", "id", "-o", "jsonpath={.spec.template.spec.containers[0].env}"])).stdout) as { name: string; value?: string }[]
+    expect(environment.find(variable => variable.name === "POSTMARK_API_URL")?.value).toBe(`https://${stack!.podHost}:${postmarkPort}/email`)
+    // The token comes from id-env, as the deploy writes it, and is not in the Deployment.
+    expect(environment.map(variable => variable.name)).not.toContain("POSTMARK_SERVER_TOKEN")
+    expect(Object.keys(await stack!.readSecret("answerable", "id-env")).sort()).toEqual(["BETTER_AUTH_SECRET", "POSTMARK_SERVER_TOKEN", "ROOT_ADMIN_SECRET"])
+    // ID is up in production mode, which is what the token's requirement is about.
+    expect((await stack!.kubectl(["get", "deploy", "-n", "answerable", "id", "-o", "jsonpath={.status.readyReplicas}"])).stdout).toBe("1")
+    expect(JSON.stringify(environment)).not.toContain(stack!.postmark.token)
+    // Without the token, or with another, the fake answers 401, as Postmark does.
+    expect((await fetch(stack!.postmark.inbox, { tls: { ca: stack!.stackCa } })).status).toBe(401)
+    expect((await fetch(stack!.postmark.inbox, { headers: { "X-Postmark-Server-Token": "another" }, tls: { ca: stack!.stackCa } })).status).toBe(401)
+    expect((await fetch(stack!.postmark.inbox, { headers: { "X-Postmark-Server-Token": stack!.postmark.token }, tls: { ca: stack!.stackCa } })).status).toBe(200)
+  })
+
+  test("ID's pod reaches the fake over https, trusting the stack's CA, and nothing else on this host; the Toolbox's pod reaches none of it", async () => {
+    const fake = `https://${stack!.podHost}:${postmarkPort}/email`
+    const elsewhere = `https://${stack!.podHost}:${postmarkPort + 1}/email`
+    const id = await inIdPod(`console.log(JSON.stringify({ fake: ${reach(fake)}, anotherPort: ${reach(elsewhere)} }))`)
+    // 401: the fake answered, over https, with a certificate the pod trusts, and asked for a token.
+    expect(id).toEqual({ fake: "answered 401", anotherPort: expect.stringMatching(/^blocked: /) })
+    const toolbox = await inPod("toolbox", "/app/mcps/toolbox", `console.log(JSON.stringify({ fake: ${reach(fake)} }))`)
+    expect(toolbox.fake).toStartWith("blocked: ")
+  }, 120_000)
+
+  test("the policy in the cluster is the chart's: ID's pods may also reach this host on the directories' ports and the fake's, and no other pod may", async () => {
+    const policy = (name: string) => stack!.kubectl(["get", "networkpolicy", "-n", "answerable", name, "-o", "json"]).then(result => JSON.parse(result.stdout) as { spec: { egress: { to?: unknown[]; ports?: { port: number; protocol: string }[] }[] } })
+    const [id, toolbox, admin] = await Promise.all([policy("id"), policy("toolbox"), policy("admin-mcp")])
+    expect(id.spec.egress).toContainEqual(idExtraEgress(stack!.podHost)[0]!)
+    expect(idExtraEgress(stack!.podHost)[0]!.ports.map(port => port.port)).toEqual([...directoryPorts, postmarkPort])
+    for (const other of [toolbox, admin]) expect(JSON.stringify(other.spec.egress)).not.toContain(`${stack!.podHost}/32`)
+  })
+})
+
+/** A firm with links and no directory, set up with root before the lock: its people sign in by email, and its domain's proof is looked up through DNS. */
+const linkFirm = { slug: "linkfirm", name: "Link Firm", domain: "linkfirm.example.test", bob: "bob@linkfirm.example.test", organizationId: "", domainId: "", record: { name: "", value: "" } }
+
+describe("people sign in by email over https, in Chromium through Traefik", () => {
+  type Run = {
+    host: string
+    /** When the browser run ended, in seconds: the cookies were read before it, and a cookie's lifetime is held against it. */
+    finishedAt: number
+    problems: string[]
+    grace: { choice: Page; checkEmail: Page; mail: Mail; continuePage: Page; signedIn: Page; cookiesAsked: BrowserCookie[]; cookies: BrowserCookie[]; session: { user: { email: string } } | null }
+    bob: { mail: Mail; second: { page: Page; cookies: BrowserCookie[]; session: unknown }; signedIn: { page: Page; cookies: BrowserCookie[]; session: { user: { email: string } } | null }; linkAfter: { page: Page } }
+    ada: {
+      first: { session: { user: { email: string } } | null; cookies: BrowserCookie[] }
+      cookiesBefore: BrowserCookie[]
+      callbacks: { path: string; status: number; setCookie: string[] }[]
+      connect: Page
+      cookiesAtConnect: BrowserCookie[]
+      mail: Mail
+      signedIn: Page
+      cookies: BrowserCookie[]
+      session: { user: { email: string } } | null
+    }
+  }
+  type Page = { heading: string; buttons: string[]; text: string }
+  type Mail = { subject: string; from: string; tag: string | null; hasCode?: boolean; hasLink?: boolean; replyTo?: string | null; tracking?: { opens: unknown; links: unknown } }
+  let run: Run
+
+  test("the browser run: grace by a link, bob by a code, ada by a code and her directory (about two minutes)", () => watched("the sign-ins by email", 330_000, async () => {
+    // Set up as an operator does, with root: a firm with a domain and links, which are on by default, and its people, imported so that each has a user.
+    const { id: organizationId } = await rootAdmin("POST", "/organizations", { slug: linkFirm.slug, name: linkFirm.name }) as { id: string }
+    const domain = await rootAdmin("POST", `/organizations/${organizationId}/domains`, { domain: linkFirm.domain }) as { id: string; verificationRecord: { name: string; value: string } }
+    Object.assign(linkFirm, { organizationId, domainId: domain.id, record: domain.verificationRecord })
+    const imported = (await rootAdmin("POST", `/organizations/${organizationId}/members/import`, { addresses: [linkFirm.bob] })) as { counts: { created: number } }
+    expect(imported.counts.created).toBe(1)
+    const tenantImport = (await rootAdmin("POST", `/organizations/${tenant.organizationId}/members/import`, { addresses: [`grace@${stack!.tenant.domain}`, tenant.email] })) as { counts: { created: number } }
+    expect(tenantImport.counts.created).toBe(2)
+    const input: MagicLinkSignInInput = {
+      grace: `grace@${stack!.tenant.domain}`, bob: linkFirm.bob, ada: tenant.email, directoryName: "company sign-in",
+      postmark: { inbox: stack!.postmark.inbox, token: stack!.postmark.token }, screenshots: process.env.INFRA_STACK_SCREENSHOTS,
+      stackCa: stack!.stackCa, originPullCert: stack!.originPullCert, edgeCert: stack!.edgeCert,
+    }
+    const { stdout } = await step("sign people in by email through the browser", () => exec([process.execPath, "infra/k8s/local/magic-link-sign-in.ts"], { stdin: JSON.stringify(input) }))
+    run = JSON.parse(stdout.trim().split("\n").at(-1)!) as Run
+    expect(run.problems).toEqual([])
+    // Everything about the cookies but their values, which are secrets of the browsers that held them.
+    const attributes = (cookies: BrowserCookie[]) => cookies.map(cookie => ({ ...cookie, value: undefined }))
+    console.log(`The cookies on https, as Chromium read them: ${JSON.stringify({
+      "1 grace, signed in by a link": attributes(run.grace.cookies),
+      "2 bob, signed in by a code": attributes(run.bob.signedIn.cookies),
+      "3 ada, at the connect page, set by the directory's callback": attributes(run.ada.cookiesAtConnect),
+      "3 ada, signed in by the directory": attributes(run.ada.cookies),
+    })}`)
+  }), 360_000)
+
+  test("grace, at a firm with a directory and links: the choice page offers both, the link from the fake's mail signs her in in the browser that asked", () => {
+    const { grace } = run
+    expect(grace.choice.heading).toBe("Sign in")
+    expect(grace.choice.buttons).toEqual(["Continue with company sign-in", "Email me a sign-in link"])
+    expect(grace.checkEmail.heading).toBe("Check your email")
+    expect(grace.mail).toEqual({ subject: "Sign in to Tenant", from: "Answerable ID <sign-in@id.answerable.org>", tag: "sign-in", hasCode: true })
+    expect(grace.continuePage.text).toContain(`Continue as grace@${stack!.tenant.domain}`)
+    expect(grace.signedIn.heading).toBe("Signed in")
+    expect(grace.signedIn.text).toContain(`Signed in as grace@${stack!.tenant.domain}`)
+    expect(grace.session?.user.email).toBe(`grace@${stack!.tenant.domain}`)
+  })
+
+  test("the cookies on https: __Host-answerable-sign-in is Secure, HttpOnly, SameSite=Lax, path / and host-only, and the session's is __Secure-prefixed with the same attributes", () => {
+    // Asking for the link set the sign-in cookie; signing in kept it and added the session's.
+    expect(signInCookieProblems(run.grace.cookiesAsked, run.host, run.finishedAt)).toEqual([])
+    expect(run.grace.cookiesAsked.map(cookie => cookie.name)).toEqual(["__Host-answerable-sign-in"])
+    expect(signInCookieProblems(run.grace.cookies, run.host, run.finishedAt)).toEqual([])
+    expect(sessionCookieProblems(run.grace.cookies, run.host, run.finishedAt)).toEqual([])
+    const [signIn] = run.grace.cookies.filter(cookie => cookie.name === "__Host-answerable-sign-in")
+    expect(signIn).toMatchObject({ name: "__Host-answerable-sign-in", secure: true, httpOnly: true, sameSite: "Lax", path: "/", domain: hosts.id })
+    const [session] = run.grace.cookies.filter(cookie => cookie.name === "__Secure-better-auth.session_token")
+    expect(session).toMatchObject({ name: "__Secure-better-auth.session_token", secure: true, httpOnly: true, sameSite: "Lax", path: "/", domain: hosts.id })
+  })
+
+  test("bob, at a firm with links alone: the link in a second browser signs nobody in; the code from the same mail, typed where he asked, does; the link then no longer works", () => {
+    const { bob } = run
+    expect(bob.mail).toMatchObject({ subject: "Sign in to Link Firm", from: "Answerable ID <sign-in@id.answerable.org>" })
+    expect(bob.second.page.heading).not.toBe("Sign in")
+    expect(bob.second.page.buttons).not.toContain("Continue")
+    expect(bob.second.page.text).toContain("Ask for a new link")
+    expect(bob.second.cookies).toEqual([])
+    expect(bob.second.session).toBeNull()
+    expect(bob.signedIn.page.heading).toBe("Signed in")
+    expect(bob.signedIn.page.text).toContain(`Signed in as ${linkFirm.bob}`)
+    expect(bob.signedIn.session?.user.email).toBe(linkFirm.bob)
+    expect(signInCookieProblems(bob.signedIn.cookies, run.host, run.finishedAt)).toEqual([])
+    expect(sessionCookieProblems(bob.signedIn.cookies, run.host, run.finishedAt)).toEqual([])
+    // Using the code ended the link, and the page says the same as for any link that is not for this browser.
+    expect(bob.linkAfter.page).toEqual(bob.second.page)
+  })
+
+  test("ada, who signed in by a link first, meets her directory: the callback sets the cookie she lacked, the code from her mailbox connects it, the directory signs her in", () => {
+    const { ada } = run
+    expect(ada.first.session?.user.email).toBe(tenant.email)
+    expect(sessionCookieProblems(ada.first.cookies, run.host, run.finishedAt)).toEqual([])
+    // A browser with no cookie at all: the directory's redirect brings her back to the callback, whose response sets it.
+    expect(ada.cookiesBefore).toEqual([])
+    expect(ada.callbacks.length).toBeGreaterThan(0)
+    expect(ada.callbacks.some(callback => callback.setCookie.includes("__Host-answerable-sign-in"))).toBe(true)
+    expect(ada.connect.heading).toBe("Connect your company sign-in")
+    expect(ada.connect.text).toContain(`${tenant.email} already has an account here`)
+    expect(signInCookieProblems(ada.cookiesAtConnect, run.host, run.finishedAt)).toEqual([])
+    expect(ada.cookiesAtConnect.map(cookie => cookie.name)).toEqual(["__Host-answerable-sign-in"])
+    expect(ada.mail).toEqual({ subject: "Your code to connect your company sign-in", from: "Answerable ID <sign-in@id.answerable.org>", tag: "mailbox-code", hasLink: false })
+    // The code made no session. Only the directory's second trip did, in the same browser.
+    expect(ada.signedIn.heading).toBe("Signed in")
+    expect(ada.signedIn.text).toContain(`Signed in as ${tenant.email}`)
+    expect(ada.session?.user.email).toBe(tenant.email)
+    expect(signInCookieProblems(ada.cookies, run.host, run.finishedAt)).toEqual([])
+    expect(sessionCookieProblems(ada.cookies, run.host, run.finishedAt)).toEqual([])
+  })
+
+  test("the mail the fake kept was sent by a production ID with the settings production has: its sender, its reply address, no prefix, and no tracking", () => {
+    const people = [`grace@${stack!.tenant.domain}`, linkFirm.bob, tenant.email]
+    const kept = stack!.postmark.messages().filter(mail => people.includes(mail.to))
+    expect(kept.map(mail => mail.tag).sort()).toEqual(["mailbox-code", "sign-in", "sign-in", "sign-in"])
+    for (const mail of kept) {
+      expect(mail.from).toBe("Answerable ID <sign-in@id.answerable.org>")
+      expect(mail.replyTo).toBe("support@answerable.org")
+      expect(mail.subject).not.toContain("[staging]")
+      expect(mail.tracking).toEqual({ opens: false, links: "None" })
+      expect(mail.html.length).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe("a domain's proof is found by ID's pod through the cluster's DNS, with its NetworkPolicy", () => {
+  const route = () => `${origin(hosts.id)}/api/admin/v1/organizations/${linkFirm.organizationId}/domains/${linkFirm.domainId}/verify`
+  /** The route as an operator calls it, with root: the answer's status and body. */
+  async function verify() {
+    const response = await viaIngress(route(), { method: "POST", headers: { authorization: `Bearer ${stack!.secrets.rootAdminSecret}`, "idempotency-key": crypto.randomUUID() } })
+    return { status: response.status, body: (await response.json()) as { verifiedAt?: string | null; code?: string } }
+  }
+  const storedProof = async () => (await psql(`select coalesce(verified_at::text, 'none') from organization_domains where id = '${linkFirm.domainId}'`, "answerable_id"))[0]
+  const zone = linkFirm.domain
+
+  test("while the cluster's DNS holds no record, the check finds nothing: domain_verification_failed, nothing proved", async () => {
+    expect(linkFirm.record.name).toBe(`_answerable-challenge.${zone}`)
+    const answer = await verify()
+    expect(answer.status).toBe(409)
+    expect(answer.body.code).toBe("domain_verification_failed")
+    expect(await storedProof()).toBe("none")
+  })
+
+  test("a TXT record CoreDNS answers, with the token the domain's row shows, proves it: the pod looked it up, the route answers verifiedAt and the database holds it", async () => {
+    expect(linkFirm.record.value).toMatch(/^answerable-domain-verification=\S+$/)
+    await stack!.publishTxt(zone, linkFirm.record.name, linkFirm.record.value)
+    // What the pod's own resolver sees, as ID's does: the cluster's DNS server first, and the record.
+    const seen = await inIdPod(`
+      import { Resolver } from "node:dns/promises"
+      import { readFileSync } from "node:fs"
+      const resolver = new Resolver({ timeout: 5000, tries: 1 })
+      console.log(JSON.stringify({
+        resolv: readFileSync("/etc/resolv.conf", "utf8").split("\\n").filter(line => /^(nameserver|search|options)/.test(line)),
+        servers: resolver.getServers(),
+        txt: await resolver.resolveTxt(${JSON.stringify(linkFirm.record.name)}).catch(error => "error " + error.code),
+      }))`)
+    console.log(`ID's pod resolves ${linkFirm.record.name}: ${JSON.stringify(seen)}`)
+    expect(seen.txt).toEqual([[linkFirm.record.value]])
+    expect(seen.servers[0]).toMatch(/^10\.96\.0\.10(:53)?$/)
+    const answer = await verify()
+    expect(answer.status).toBe(200)
+    expect(answer.body.verifiedAt).toEqual(expect.any(String))
+    expect(await storedProof()).not.toBe("none")
+    // CoreDNS logged the question from ID's pod.
+    const { stdout: podIp } = await stack!.kubectl(["get", "pods", "-n", "answerable", "-l", "app.kubernetes.io/component=id", "-o", "jsonpath={.items[0].status.podIP}"])
+    const dnsLog = (await stack!.kubectl(["logs", "-n", "kube-system", "-l", "k8s-app=kube-dns", "--tail=-1", "--prefix"])).stdout
+    expect(dnsLog.split("\n").some(line => line.includes(`TXT IN ${linkFirm.record.name}.`) && line.includes(podIp.trim()))).toBe(true)
+  }, 240_000)
+
+  test("a changed answer clears the proof: the check is refused, verifiedAt is gone, and the audit trail records domain.verification_lost", async () => {
+    await stack!.publishTxt(zone, linkFirm.record.name, "answerable-domain-verification=somebody-elses-token")
+    const answer = await verify()
+    expect(answer.status).toBe(409)
+    expect(answer.body.code).toBe("domain_verification_failed")
+    expect(await storedProof()).toBe("none")
+    const events = await rootAdmin("GET", `/audit-events?action=domain.verification_lost&targetId=${linkFirm.domainId}`) as { items: unknown[] }
+    expect(events.items).toHaveLength(1)
+    // And back: the right record proves it again.
+    await stack!.publishTxt(zone, linkFirm.record.name, linkFirm.record.value)
+    expect((await verify()).status).toBe(200)
+    expect(await storedProof()).not.toBe("none")
+  }, 300_000)
 })
 
 describe("running the ops Jobs again", () => {

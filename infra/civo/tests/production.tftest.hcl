@@ -113,3 +113,122 @@ run "plans_the_targeted_first_apply" {
     error_message = "A plan targeting the cluster, the database and the firewalls must stand on its own."
   }
 }
+
+# Postmark's DNS records for the mail domain id.answerable.org: none until the owner gives their values in envs/production.tfvars, and
+# then exactly the DKIM and DMARC TXT records and the Return-Path CNAME, DNS-only, under id.answerable.org. These runs pass the
+# values themselves, so that they hold whatever the tfvars carries.
+run "writes_no_mail_record_without_the_values" {
+  command = plan
+
+  variables {
+    mail_records = null
+  }
+
+  assert {
+    condition     = length(module.edge.mail_records) == 0 && length(output.mail_records) == 0
+    error_message = "Without mail_records, production must write no mail record."
+  }
+
+  assert {
+    condition     = output.hostnames == tolist(["admin-mcp.answerable.org", "id.answerable.org", "mcp.answerable.org", "toolbox.answerable.org"])
+    error_message = "Without mail_records, production's zone must hold its four service records and no other."
+  }
+}
+
+run "writes_postmarks_records_for_the_mail_domain_when_given_the_values" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.id.answerable.org"
+      dkim_value       = "k=rsa;p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDexample"
+      return_path_host = "pm-bounces.id.answerable.org"
+      dmarc_value      = "v=DMARC1; p=none; rua=mailto:dmarc@answerable.org"
+    }
+  }
+
+  assert {
+    condition     = output.mail_records == tolist(["CNAME pm-bounces.id.answerable.org", "TXT 20260101000000pm._domainkey.id.answerable.org", "TXT _dmarc.id.answerable.org"])
+    error_message = "production must write Postmark's three records under id.answerable.org: the Return-Path CNAME, the DKIM TXT and the DMARC TXT."
+  }
+
+  assert {
+    condition     = output.hostnames == tolist(["admin-mcp.answerable.org", "id.answerable.org", "mcp.answerable.org", "toolbox.answerable.org"])
+    error_message = "The mail records must leave the four service hostnames as they are."
+  }
+}
+
+run "refuses_mail_records_off_the_mail_domain" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.answerable.org"
+      dkim_value       = "k=rsa;p=MIGfMA0G"
+      return_path_host = "pm-bounces.id.answerable.org"
+      dmarc_value      = "v=DMARC1; p=none"
+    }
+  }
+
+  expect_failures = [var.mail_records]
+}
+
+run "refuses_a_return_path_host_off_the_mail_domain" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.id.answerable.org"
+      dkim_value       = "k=rsa;p=MIGfMA0G"
+      return_path_host = "pm-bounces.answerable.org"
+      dmarc_value      = "v=DMARC1; p=none"
+    }
+  }
+
+  expect_failures = [var.mail_records]
+}
+
+run "refuses_a_dkim_value_that_is_not_a_public_key" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.id.answerable.org"
+      dkim_value       = "v=spf1 include:spf.protection.outlook.com ~all"
+      return_path_host = "pm-bounces.id.answerable.org"
+      dmarc_value      = "v=DMARC1; p=none"
+    }
+  }
+
+  expect_failures = [var.mail_records]
+}
+
+run "refuses_a_dmarc_value_that_is_not_dmarc" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.id.answerable.org"
+      dkim_value       = "k=rsa;p=MIGfMA0G"
+      return_path_host = "pm-bounces.id.answerable.org"
+      dmarc_value      = "v=spf1 -all"
+    }
+  }
+
+  expect_failures = [var.mail_records]
+}
+
+run "refuses_a_quoted_dmarc_value" {
+  command = plan
+
+  variables {
+    mail_records = {
+      dkim_host        = "20260101000000pm._domainkey.id.answerable.org"
+      dkim_value       = "k=rsa;p=MIGfMA0G"
+      return_path_host = "pm-bounces.id.answerable.org"
+      dmarc_value      = "v=DMARC1; p=none; rua=\"mailto:dmarc@answerable.org\""
+    }
+  }
+
+  expect_failures = [var.mail_records]
+}

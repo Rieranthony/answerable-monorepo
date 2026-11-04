@@ -7,7 +7,7 @@
 - Docker, kind, kubectl, Helm 4, kubeconform (the versions CI pins: `.github/workflows/ci.yml`) and the system `openssl` (OpenSSL 3, or LibreSSL 3.3 on a Mac).
 - Playwright's Chromium: `cd packages/acceptance && bun x playwright install chromium` (`--with-deps` on Linux).
 - Public DNS for `*.127-0-0-1.sslip.io`, which answers `127.0.0.1`.
-- Free ports on this host: `127.0.0.1:48443` (Traefik), `[::1]:48443` (the browser's edge), `47710` and `47711` (the company directories) and `47700` (the OAuth callback).
+- Free ports on this host: `127.0.0.1:48443` (Traefik), `[::1]:48443` (the browser's edge), `47710` and `47711` (the company directories), `47712` (the fake Postmark) and `47700` (the OAuth callback).
 - No cluster named `answerable-local`. One stack per machine at a time.
 
 ## What it does, in order
@@ -15,9 +15,9 @@
 1. **Build** the `id`, `mcps` and `ops` images (`infra/pipeline/images.json`), while the cluster comes up.
 2. **Create** the cluster (`kind.yaml`) and the namespaces `platform`, `database` and `answerable` (restricted Pod Security Standard), as Terraform does in a cloud.
 3. **Start the company directories** on this host (`apps/id/scripts/stack-directories.ts`): the platform organisation's stand-in for Entra or Google on port 47710, whose staff member signs in up to three times, and a client organisation's on 47711, whose person signs in once. The browser reaches them at `127.0.0.1`; ID's pods reach them at `host.docker.internal` (Docker Desktop) or at kind's network gateway (Linux).
-4. **Make the certificates** with `openssl`, in the run's temporary directory, each ECDSA P-256: three authorities (the stack's own, the stand-in for Cloudflare's origin-pull CA, the database's) and the certificates they sign (the four public names, the origin-pull client certificate, the database server's).
+4. **Make the certificates** with `openssl`, in the run's temporary directory, each ECDSA P-256: three authorities (the stack's own, the stand-in for Cloudflare's origin-pull CA, the database's) and the certificates they sign (the four public names, the origin-pull client certificate, the database server's, the fake Postmark's). **Start the fake Postmark** on this host beside the directories (`startFakePostmark` in `packages/acceptance`, port 47712, https with the stack's CA, which ID's pods trust through `local-ca`), asking for a throwaway token.
 5. **Start the database and the edge, and install `charts/platform`.** PostgreSQL 17, TLS only, presenting its certificate and its authority's, holding one administrative login (`dbadmin`, `CREATEDB CREATEROLE`, not a superuser) as a managed database starts (`database.yaml`). The edge is an nginx beside Traefik that plays Cloudflare: it presents the origin-pull certificate (`edge.yaml`, `platform-edge.yaml`). The platform release gets the stand-in's origin-pull CA as `originPull.caPem`, as Terraform passes Cloudflare's, so the chart renders `answerable/cloudflare-origin-pull-ca` as it does on Civo.
-6. **Install `charts/answerable` with `ops.bootstrap=true`.** The test first writes what Terraform writes on Civo, the ConfigMap `trusted-proxies` (`127.0.0.1/32`), the Secrets `postgres-admin` and `origin-tls` (the stack CA's certificate for the four names), and what the deploy writes, `id-env`. The `ops-bootstrap` Job fetches the database's certificate into the ConfigMap `postgres-ca` (trust on first use), creates the databases and their logins, provisions the MCPs of `charts/answerable/mcps.json` and writes the URL Secrets; the migrations run, `toolbox-migrate` migrating every MCP after the Toolbox's database; ID starts. The Toolbox and the admin MCP wait at zero replicas: their client Secrets do not exist yet.
+6. **Install `charts/answerable` with `ops.bootstrap=true`.** The test first writes what Terraform writes on Civo, the ConfigMap `trusted-proxies` (`127.0.0.1/32`), the Secrets `postgres-admin` and `origin-tls` (the stack CA's certificate for the four names), and what the deploy writes, `id-env`, with the throwaway Postmark token that a production ID needs to start. The release sets `id.env.POSTMARK_API_URL` to the fake and `id.extraEgress` to the host's directories and the fake: only this stack sets either. The `ops-bootstrap` Job fetches the database's certificate into the ConfigMap `postgres-ca` (trust on first use), creates the databases and their logins, provisions the MCPs of `charts/answerable/mcps.json` and writes the URL Secrets; the migrations run, `toolbox-migrate` migrating every MCP after the Toolbox's database; ID starts. The Toolbox and the admin MCP wait at zero replicas: their client Secrets do not exist yet.
 7. **Upgrade with `ops.register=true`**, as the first deploy does. The `ops-register` Job mints its own machine client, `ops-register`, with the root secret and goes on as it: it registers the Toolbox, the admin MCP and each standalone MCP in ID, writes the three client Secrets and scales the servers up, and adds the staff domain (`id.staffDomain`); ID has no Microsoft client here, so it skips the Entra provider (`id.entraTenant`) with a line.
 8. **Give the client organisation its domain and directory** with the root secret, as an operator does before the lock.
 
@@ -32,6 +32,8 @@
 | The ops Jobs | Each database owned by its owner login; the serving logins restricted, with `CONNECT` and without `TEMP`; nothing for `PUBLIC`; every URL with a 32-byte password; the client secrets stored; the servers started; no log prints a generated value |
 | The MCPs of `mcps.json` | The bootstrap made each shared MCP's schema, owned by the migrator, with `USAGE` for the Toolbox's serving login, which is a member of no role, and no role named after an MCP; `toolbox-migrate` migrated each as the migrator, which owns its tables, and logged its time; the Toolbox's `/health` lists every MCP; through Traefik on `mcp`, each `standalone` and `both` MCP answers 401 at `/<name>/mcp` naming its metadata, which names its resource and ID, and nothing else on that host is routed; inside the cluster, under another host, the SDK's Host check refuses each MCP's path and the hub; the deploy's smoke test, generated from the list, passes |
 | Machine tokens | The admin MCP's client gets a `toolbox:admin` token from ID and lists the Toolbox's providers |
+| Mail | ID runs in production mode with the throwaway token and `POSTMARK_API_URL`, which the fake asks for (401 without it); ID's pod reaches the fake over https and nothing else new on this host, and the Toolbox's pod reaches none of it; the policy in the cluster is the chart's. In Chromium over https through Traefik: Grace (a firm with a directory and links) sees the choice page, asks for a link, and the link from the fake's mail signs her in in the browser that asked; Bob (links alone) opens his link in a second browser, which signs nobody in, types the code in the first, which does, and the link then no longer works; Ada, who signed in by a link first, meets her directory, which refuses her address as one that someone holds: the callback sets the sign-in cookie her browser lacked, ID mails a code, and the code and the directory sign her in. The cookies are read back from the browser: `__Host-answerable-sign-in` and `__Secure-better-auth.session_token`, each `Secure`, `HttpOnly`, `SameSite=Lax`, path `/` and host-only; no cookie of the plain-http names. Every mail has production's sender, its Reply-To and no tracking |
+| DNS | The route `POST /organizations/{id}/domains/{domainId}/verify` looks a TXT record up from ID's pod through the cluster's own DNS: the stack adds a zone to CoreDNS that answers `_answerable-challenge.<domain>` with the token the domain's row shows (`publishTxt` in `stack.ts`), the route answers with `verifiedAt` and the database holds it, CoreDNS logged the question from ID's pod; a changed answer clears the proof (`domain.verification_lost` in the audit trail) and the original proves it again |
 | Staff sign-in | `register` put the staff domain on the platform organisation; the test connects the company directory through the admin API; a staff member signs in with Chromium through Traefik and the directory; the official MCP client calls `admin_whoami` with no role, root makes them owner, and the next call shows `owner` |
 | Running again | `bootstrap` and `register` once more change no Secret, rotate nothing and keep every password |
 | Fails closed | The `default` TLS option, the only one, keeps every host closed: no Ingress names an option or an issuer, each serves `origin-tls`, and without the option the host opens |
@@ -59,13 +61,28 @@ The run prints each step's wall-clock time at the end, and register's own durati
 
 `INFRA_STACK_CPUS=4 bun run infra:test` gives the node 4 allocatable CPUs, as on a 4-CPU CI runner. The kubelet reserves the rest of Docker's CPUs, and the node's container is held to 4 CPUs of time.
 
+## Screenshots of the email sign-ins
+
+`INFRA_STACK_SCREENSHOTS=<directory> bun run infra:test` keeps a PNG of each page of the sign-ins by email (the choice page, check your email, the link, signed in, the code, connect your company sign-in).
+
 ## Keep the cluster for a look
 
 ```bash
 INFRA_STACK_KEEP=1 bun run infra:test
-kind export kubeconfig --name answerable-local --kubeconfig /tmp/answerable-local
-KUBECONFIG=/tmp/answerable-local kubectl -n answerable get pods
-kind delete cluster --name answerable-local   # when done
+# the last lines name the directory it kept, with the kubeconfig and the certificates
+KUBECONFIG=<that directory>/kubeconfig kubectl -n answerable get pods
+kind delete cluster --name answerable-local   # when done; then delete that directory
 ```
 
-The company directory stops with the test, so a kept cluster cannot sign anyone in again. Traefik demands Cloudflare's client certificate, so Claude Code cannot connect to the stack either: try Claude Code against the admin lane (`apps/web/content/docs/admin/setup.mdx`).
+The company directory stops with the test, so a kept cluster cannot sign anyone in again. The fake Postmark stops too, and ID's pods keep sending to it. To read the mail of a kept stack, serve the same fake again, in a second terminal, and ask ID for a link; the mail is printed as it arrives, link and code included:
+
+```bash
+bun infra/k8s/local/read-mail.ts <that directory>
+# a person who is a member (the test imported grace@tenant.example.test) asks for a link, with Cloudflare's client certificate
+curl --silent --output /dev/null --write-out '%{http_code}\n' --cacert <that directory>/stack-ca.pem \
+  --cert <that directory>/origin-pull-client.pem --key <that directory>/origin-pull-client.key \
+  -H 'Origin: https://id.127-0-0-1.sslip.io:48443' --data-urlencode 'email=grace@tenant.example.test' --data 'method=link' \
+  'https://id.127-0-0-1.sslip.io:48443/login'
+```
+
+The link opens only in the browser that asked, so use the code from the mail where you asked, or read both as a test does. Traefik demands Cloudflare's client certificate, so Claude Code cannot connect to the stack either: try Claude Code against the admin lane (`apps/web/content/docs/admin/setup.mdx`).

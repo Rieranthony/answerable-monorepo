@@ -70,3 +70,38 @@ variable "hostnames" {
   description = "The four service hostnames in the zone, keyed id, toolbox, admin_mcp and mcp (where the Toolbox serves every standalone MCP by path)."
   type        = map(string)
 }
+
+variable "mail_records" {
+  description = <<-EOT
+    Postmark's DNS records for the mail domain id.<zone>: { dkim_host, dkim_value, return_path_host, dmarc_value }, copied from
+    the DNS Settings page of that environment's Postmark domain (infra/README.md, Send mail through Postmark); null, the
+    default, writes none. Public values, no secret. Set in envs/<environment>.tfvars once Postmark shows them.
+  EOT
+  type = object({
+    dkim_host        = string
+    dkim_value       = string
+    return_path_host = string
+    dmarc_value      = string
+  })
+  default = null
+
+  validation {
+    condition     = var.mail_records == null ? true : can(regex("^[a-z0-9-]+\\._domainkey\\.${replace(var.hostnames["id"], ".", "\\.")}$", var.mail_records.dkim_host))
+    error_message = "dkim_host must be <selector>._domainkey.id.<zone>: one label, then _domainkey, under the mail domain id.<zone>, never the apex."
+  }
+
+  validation {
+    condition     = var.mail_records == null ? true : can(regex("^[a-z0-9-]+\\.${replace(var.hostnames["id"], ".", "\\.")}$", var.mail_records.return_path_host))
+    error_message = "return_path_host must be one label under id.<zone>, such as pm-bounces.id.<zone> (Postmark's DNS Settings page names it), never the apex."
+  }
+
+  validation {
+    condition     = var.mail_records == null ? true : can(regex("^k=rsa; ?p=[A-Za-z0-9+/=]+$", var.mail_records.dkim_value))
+    error_message = "dkim_value must be Postmark's DKIM public key as the TXT value it shows: k=rsa;p= and the base64 key, without quotes."
+  }
+
+  validation {
+    condition     = var.mail_records == null ? true : can(regex("^v=DMARC1; ?p=(none|quarantine|reject)(;|$)", var.mail_records.dmarc_value)) && !strcontains(var.mail_records.dmarc_value, "\"")
+    error_message = "dmarc_value must start v=DMARC1; p=none, quarantine or reject, and carry no quotes (the module quotes it)."
+  }
+}

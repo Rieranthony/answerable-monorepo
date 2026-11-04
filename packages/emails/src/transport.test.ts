@@ -46,7 +46,7 @@ function fakeFetch(...answers: Answer[]) {
 
 const transport = (
   answers: Answer[],
-  options: { subjectPrefix?: string } = {},
+  options: { subjectPrefix?: string; endpoint?: string } = {},
 ) => {
   const { fetch, calls } = fakeFetch(...answers)
   return {
@@ -112,6 +112,31 @@ describe("the request", () => {
       expect(JSON.stringify(value), field).not.toContain(link.code)
       expect(JSON.stringify(value), field).not.toContain(TOKEN)
     }
+  })
+
+  test("goes to the endpoint it is given, a fake Postmark's, with the same call and the retry too", async () => {
+    const endpoint = "https://127.0.0.1:47712/email"
+    const { transport: postmark, calls } = transport([ok("msg-fake")], {
+      endpoint,
+    })
+    expect(await postmark.send(message)).toEqual({
+      status: "sent",
+      messageId: "msg-fake",
+    })
+    expect(calls.map((call) => call.url)).toEqual([endpoint])
+    expect(
+      (calls[0]!.init.headers as Record<string, string>)[
+        "X-Postmark-Server-Token"
+      ],
+    ).toBe(TOKEN)
+    const retried = transport([new Error("reset"), ok("msg-again")], {
+      endpoint,
+    })
+    expect(await retried.transport.send(message)).toEqual({
+      status: "sent",
+      messageId: "msg-again",
+    })
+    expect(retried.calls.map((call) => call.url)).toEqual([endpoint, endpoint])
   })
 
   test("puts a prefix before the subject, for an environment that is not production", async () => {

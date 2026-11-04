@@ -77,7 +77,7 @@ The Toolbox and the admin MCP call ID at its public issuer, through Cloudflare, 
 | Who or what | Holds | Reaches |
 | --- | --- | --- |
 | **The owner** | Each Civo account's API key, each zone's Cloudflare token, the Entra app's credentials and a fine-grained GitHub token, pasted once into each GitHub environment and kept in the vendors' consoles | Everything, through GitHub; the Civo dashboard for break-glass |
-| **The `staging` GitHub environment** | The five pasted secrets (`CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `GH_SECRETS_TOKEN`); what `bootstrap.yml` generates (`STATE_ACCESS_KEY_ID`, `STATE_SECRET_ACCESS_KEY`, `BETTER_AUTH_SECRET`, `ROOT_ADMIN_SECRET`); what Terraform writes (`KUBE_SERVER`, `KUBE_CA`, `KUBE_TOKEN`); optionally `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BETTER_AUTH_SECRETS`, `POSTMARK_SERVER_TOKEN` | Deployments from `main` and the tags `staging/*` only. Each workflow step is handed only the secrets it names |
+| **The `staging` GitHub environment** | The six pasted secrets (`CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `GH_SECRETS_TOKEN`, `POSTMARK_SERVER_TOKEN`); what `bootstrap.yml` generates (`STATE_ACCESS_KEY_ID`, `STATE_SECRET_ACCESS_KEY`, `BETTER_AUTH_SECRET`, `ROOT_ADMIN_SECRET`); what Terraform writes (`KUBE_SERVER`, `KUBE_CA`, `KUBE_TOKEN`); optionally `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BETTER_AUTH_SECRETS` | Deployments from `main` and the tags `staging/*` only. Each workflow step is handed only the secrets it names |
 | **The `production` GitHub environment** | The same for production, behind the owner's approval | `main` and `production/*` only, with the owner as required reviewer |
 | **The `deployer` ServiceAccount** | A token Terraform creates and writes into the environment | Only what `helm upgrade` of `charts/answerable` touches in `answerable`: no other namespace, no wildcard, no `escalate`, `bind`, `impersonate` or `exec` |
 
@@ -93,7 +93,7 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 
 | Layer | What it enforces |
 | --- | --- |
-| **Cloudflare** ([D18](goals/civo-deploy/decisions.md), [D19](goals/civo-deploy/decisions.md)) | Proxied A records for the four hostnames; SSL Full (strict); Always Use HTTPS; TLS 1.2 minimum, TLS 1.3 on; HSTS for a year (no subdomains, no preload); zone-level Authenticated Origin Pulls with Answerable's own client certificate, made and uploaded by Terraform; on the four hostnames no Browser Integrity Check, Security Level essentially off, and no cache except `/assets/`; a rate limit per client address on ID's sign-in form, the one rule the free plan allows. Bot Fight Mode is off by hand: the token cannot change it. All of it is Terraform, in the `edge` module, except Bot Fight Mode |
+| **Cloudflare** ([D18](goals/civo-deploy/decisions.md), [D19](goals/civo-deploy/decisions.md)) | Proxied A records for the four hostnames, and, once the owner gives their values, Postmark's three DNS-only mail records under `id.<zone>` ([Mail](#mail)); SSL Full (strict); Always Use HTTPS; TLS 1.2 minimum, TLS 1.3 on; HSTS for a year (no subdomains, no preload); zone-level Authenticated Origin Pulls with Answerable's own client certificate, made and uploaded by Terraform; on the four hostnames no Browser Integrity Check, Security Level essentially off, and no cache except `/assets/`; a rate limit per client address on ID's sign-in form, the one rule the free plan allows. Bot Fight Mode is off by hand: the token cannot change it. All of it is Terraform, in the `edge` module, except Bot Fight Mode |
 | **Load balancer firewall** | TCP 443 from Cloudflare's published IPv4 ranges only, read by Terraform at apply time; no port 80 |
 | **Traefik** ([D31](goals/civo-deploy/decisions.md), [D35](goals/civo-deploy/decisions.md)) | TLS with the Origin CA certificate Terraform requested from Cloudflare (the Secret `origin-tls`, trusted by Cloudflare alone); every TLS connection must present a client certificate signed by the environment's origin-pull CA, through the TLSOption `default`, which applies to every router; strict SNI; `X-Forwarded-For` kept only from Cloudflare's ranges and the private network, and the connecting address appended |
 | **NetworkPolicy** | Default deny in `answerable`; each service admits only Traefik's pods; egress to DNS, the database's network and HTTPS outside the private ranges; the migrations reach DNS and the database only |
@@ -154,7 +154,7 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 
 | Secret in `answerable` | Keys | Written by | Rotated by |
 | --- | --- | --- | --- |
-| `id-env` | `BETTER_AUTH_SECRET`, `ROOT_ADMIN_SECRET`; `MICROSOFT_CLIENT_ID` with `MICROSOFT_CLIENT_SECRET`, the Google pair, `BETTER_AUTH_SECRETS` and `POSTMARK_SERVER_TOKEN` when set | The deploy, from the GitHub environment, on every tag | `bootstrap.yml` with `rotate`, or a new value in the environment; the next tag applies it and rolls ID |
+| `id-env` | `BETTER_AUTH_SECRET`, `ROOT_ADMIN_SECRET`, `POSTMARK_SERVER_TOKEN`; `MICROSOFT_CLIENT_ID` with `MICROSOFT_CLIENT_SECRET`, the Google pair and `BETTER_AUTH_SECRETS` when set | The deploy, from the GitHub environment, on every tag | `bootstrap.yml` with `rotate`, or a new value in the environment; the next tag applies it and rolls ID |
 | `postgres-admin` | `OPS_DATABASE_ADMIN_URL` | Terraform, from the database's administrator login | Civo rotates the administrator; `terraform apply` rewrites the Secret |
 | `origin-tls` | `tls.crt`, `tls.key`: the Origin CA certificate for the four hostnames, 15 years | Terraform | `terraform apply -replace` on its key |
 | `cloudflare-origin-pull-ca` | `ca.crt`, public | The platform chart, from the edge module's CA | `terraform apply -replace` on the CA's key |
@@ -198,6 +198,22 @@ An MCP ships with its commit: nothing outside its folder changes, the image hold
 - **Migrations are expand, then contract** ([D10](goals/civo-deploy/decisions.md)): a migration never breaks the image before it, because that image keeps serving during the rollout and after a rollback. A change that cannot be written that way needs a restore, not a rollback.
 - **Registering again** without a deploy (a rotated client secret) and **the first administrator** are `ops.yml`; registering needs break glass only to mint or rotate register's own client once root has locked.
 
+## Mail
+
+ID signs people in by an emailed link and code, sent through Postmark ([the design](goals/magic-links/design.md)). Nothing else in the deployment sends mail.
+
+| Piece | Where it comes from |
+| --- | --- |
+| **Postmark** | One **Live** server per environment, in an account with two-factor authentication; a Sandbox server delivers nothing. Tracking is off. The owner makes them by hand, in the order of [the runbook](../infra/README.md#send-mail-through-postmark) |
+| **The token** | `POSTMARK_SERVER_TOKEN`, the sixth secret the owner pastes into each GitHub environment. The deploy writes it into `id-env`, refuses to apply `id-env` without it, and ID refuses to start in production without it. The previous image ignores the variable, so a rollout and a rollback are safe |
+| **The sender** | `Answerable ID <sign-in@id.answerable.org>` is ID's default (`MAIL_FROM`), with Reply-To `support@answerable.org`. Staging overrides it in `charts/answerable/values-civo-staging.yaml` through `id.env`: `Answerable ID <sign-in@id.answerable-staging.uk>` and a `[staging]` prefix on every subject, so that its mail never reads as production's |
+| **The records** | DKIM, the Return-Path CNAME to `pm.mtasv.net` and DMARC, DNS-only, at `<selector>._domainkey.id.<zone>`, the host Postmark names and `_dmarc.id.<zone>`. They come from `mail_records` in `infra/civo/envs/<environment>.tfvars`, which is absent until the owner copies Postmark's public values in, and the edge module writes nothing for mail until then. No SPF record: Postmark asks for none on the From domain, and the apex's Microsoft 365 records are not Terraform's ([`infra/civo`](../infra/civo/README.md#mail-records)) |
+| **The address** | `POSTMARK_API_URL` replaces Postmark's endpoint, for a fake Postmark that tests run. Only the kind stack sets it, and production refuses any URL that is not `https:` |
+
+- **Network.** ID's pods reach Postmark with the rule that lets them reach every HTTPS host outside the private ranges (443). Nothing in the chart names Postmark, and the kind stack adds one rule for its fake alone.
+- **Proved locally.** The kind stack runs a fake Postmark on the host beside its fake directories and proves, in Chromium over https through Traefik, a sign-in by link, by code from a second browser and through the two proofs of a directory added to a link's account, with the cookies read from the browser, and that a domain's DNS proof is found by ID's pod through CoreDNS.
+- **Not yet proved.** Real Postmark, its approval to send to anyone and the records' verification are the owner's, by hand on staging, with a real mailbox ([the plan](goals/magic-links/task_plan.md), W10).
+
 ## Observability
 
 | Signal | State |
@@ -234,7 +250,7 @@ Civo's list prices, measured on 10 October 2026 from its pricing page; USD a mon
 | Check | Proves | Needs |
 | --- | --- | --- |
 | `bun run infra:check` | Both charts lint and validate (`helm lint --strict`, `kubeconform` for every overlay); `terraform fmt`, `validate` and `terraform test` with mocked providers for every module and the root (the firewall rules, names, RBAC, the certificates' wiring, the three GitHub secrets and the refusals); `tflint`; `trivy config` (no HIGH or CRITICAL); `actionlint` on the workflows | No cloud account, no Docker |
-| `bun run infra:test` ([the kind stack](../infra/k8s/local/README.md)) | The real images in a kind cluster with both charts, Traefik and a TLS-only PostgreSQL 17, with the stack writing what Terraform and the deploy write: refusal without the origin-pull certificate, the forged-header walk, restricted runtime logins, the bootstrap Job recording the database's certificate and `verify-full` against it, NetworkPolicies, `ops-bootstrap` and `ops-register`, the MCPs of `mcps.json` provisioned and migrated, the Toolbox mounting them and serving them by path on `mcp`, the deploy's smoke test, a machine token, a staff sign-in in Chromium and an admin MCP call, the Jobs again changing nothing | Docker, kind, about four minutes |
+| `bun run infra:test` ([the kind stack](../infra/k8s/local/README.md)) | The real images in a kind cluster with both charts, Traefik and a TLS-only PostgreSQL 17, with the stack writing what Terraform and the deploy write: refusal without the origin-pull certificate, the forged-header walk, restricted runtime logins, the bootstrap Job recording the database's certificate and `verify-full` against it, NetworkPolicies, `ops-bootstrap` and `ops-register`, the MCPs of `mcps.json` provisioned and migrated, the Toolbox mounting them and serving them by path on `mcp`, the deploy's smoke test, a machine token, a staff sign-in in Chromium and an admin MCP call, sign-in by email in Chromium over https against a fake Postmark with the cookies read back, a domain's DNS proof found through CoreDNS, the Jobs again changing nothing | Docker, kind, about four minutes |
 | `infra/k8s/charts.test.ts` | Every overlay renders with its invariants: digests, the restricted security context, hooks, the shared TLS Secret, the trusted-proxies ConfigMap; the chart at 0, 1, 3 and 200 MCPs, with the release Helm stores at 200 measured | Helm |
 | `infra/ops` and `infra/pipeline` suites | The commands against fakes, at 100% line and function coverage | Bun |
 | The smoke test | Each deployed environment through Cloudflare, after every deploy | The environment |
@@ -248,7 +264,7 @@ Civo's list prices, measured on 10 October 2026 from its pricing page; USD a mon
 - **Image signature enforcement in the cluster** (an admission policy); today the signatures are checked by `promote-production.yml` only.
 - **GitOps** as the deploy model, and with it a Kubernetes API closed to the internet.
 - **A secret store with a read audit**, when a second team or a compliance need asks for one ([`Q-SECRET-STORE`](02-plan.md#open-register)); OpenBao was withdrawn ([D29](goals/civo-deploy/decisions.md)).
-- **A second region, Redis, an email provider, KMS-backed token signing** ([`Q-AID-KMS`](02-plan.md#open-register)), scheduled scale-to-zero for staging, Cloudflare Access in front of the admin MCP.
+- **A second region, Redis, KMS-backed token signing** ([`Q-AID-KMS`](02-plan.md#open-register)), scheduled scale-to-zero for staging, Cloudflare Access in front of the admin MCP.
 - **Bot Fight Mode as code** (the token would need Bot Management Edit).
 - **Cloudflare's managed WAF rules as code.** [D18](goals/civo-deploy/decisions.md) names the free managed ruleset; the `edge` module does not set it, so the zone keeps whatever Cloudflare enables by default.
 - **A retention decision** for audit and evidence rows ([`Q-EVIDENCE-RETENTION`](02-plan.md#open-register)).

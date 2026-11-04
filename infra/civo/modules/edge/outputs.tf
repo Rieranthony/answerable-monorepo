@@ -3,6 +3,11 @@ output "hostnames" {
   value       = sort([for record in cloudflare_dns_record.service : record.name])
 }
 
+output "mail_records" {
+  description = "Postmark's DNS records this module writes, as <type> <name>; empty until mail_records is given."
+  value       = sort([for record in cloudflare_dns_record.mail : "${record.type} ${record.name}"])
+}
+
 output "config_ruleset_id" {
   description = "The ID of the zone's http_config_settings ruleset."
   value       = cloudflare_ruleset.config.id

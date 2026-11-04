@@ -19,3 +19,17 @@ hostnames = {
   admin_mcp = "admin-mcp.answerable-staging.uk"
   mcp       = "mcp.answerable-staging.uk"
 }
+
+# Postmark's DNS records for the mail domain id.answerable-staging.uk, which the edge module writes DNS-only when this is set and not
+# before. Absent, no mail record is written. The values are public: add the domain id.answerable-staging.uk in this environment's
+# Postmark account, copy them from its DNS Settings page, uncomment this block and commit it (infra/README.md, Send mail
+# through Postmark). dkim_value is the TXT value that starts k=rsa; without quotes; dkim_host and return_path_host are the
+# hosts Postmark shows, in full; dmarc_value starts v=DMARC1; p=none; staging can stop there, since a report address
+# outside this domain needs that domain's authorisation. No SPF record exists: Postmark
+# asks for none on the From domain.
+# mail_records = {
+#   dkim_host        = "<selector>._domainkey.id.answerable-staging.uk"
+#   dkim_value       = "k=rsa;p=<the public key Postmark shows>"
+#   return_path_host = "pm-bounces.id.answerable-staging.uk"
+#   dmarc_value      = "v=DMARC1; p=none"
+# }

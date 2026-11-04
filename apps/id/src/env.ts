@@ -53,6 +53,7 @@ function toEnvironment(environment: ReturnType<typeof idConfig.read>) {
     betterAuthSecret: environment.BETTER_AUTH_SECRET,
     betterAuthSecrets: environment.BETTER_AUTH_SECRETS,
     postmarkServerToken: environment.POSTMARK_SERVER_TOKEN,
+    postmarkApiUrl: environment.POSTMARK_API_URL,
     mailFrom: environment.MAIL_FROM,
     mailReplyTo: environment.MAIL_REPLY_TO,
     mailSubjectPrefix: environment.MAIL_SUBJECT_PREFIX,

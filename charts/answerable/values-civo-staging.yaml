@@ -23,6 +23,12 @@ id:
   # platform application, whose client ID and secret are the environment's MICROSOFT_* secrets, never values here.
   staffDomain: omniaccelerator.ai
   entraTenant: 999a3be8-1a6c-4f1f-beb1-d6f6c2114bc6
+  # Staging's sign-in mail must not read as production's: its own mail domain, which Postmark verifies for the staging
+  # server (infra/README.md, Send mail through Postmark), and a prefix on every subject. Production keeps ID's
+  # defaults, Answerable ID <sign-in@id.answerable.org>, and no prefix.
+  env:
+    MAIL_FROM: Answerable ID <sign-in@id.answerable-staging.uk>
+    MAIL_SUBJECT_PREFIX: "[staging]"
 
 toolbox:
   autoscaling: { enabled: true, minReplicas: 2, maxReplicas: 3 }

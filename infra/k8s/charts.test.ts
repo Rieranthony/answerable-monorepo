@@ -6,6 +6,7 @@ import type { DeclaredMcp } from "@answerable/mcp-postgres"
 import { databasesFor } from "../ops/src/bootstrap"
 import images from "../pipeline/images.json"
 import { buildDependencies, charts, check, crdSchemas, kubernetesVersion, type Manifest, overlays, render, run, templateArguments } from "./helm"
+import { idExtraEgress, postmarkPort } from "./local/egress"
 
 // The charts' invariants, read from what `helm template` renders for the defaults and for every overlay. Needs `helm` and
 // `kubeconform` on the path and the network for the dependency chart and the schemas; no cluster and no Docker. What the
@@ -382,6 +383,49 @@ describe("charts/answerable", () => {
       expect(policy.spec.ingress).toBeUndefined()
     })
   }
+
+  test("staging's mail does not read as production's: its own sender on id.<zone> and a [staging] prefix; production sets neither and keeps ID's defaults; no Civo overlay points ID at a fake Postmark", () => {
+    const id = (file: string) => named(renderSupplied("answerable", [file], { "image.tag": tag }), "Deployment", "id")!
+    expect(env(id("values-civo-staging.yaml"), "MAIL_FROM")).toEqual({ name: "MAIL_FROM", value: `Answerable ID <sign-in@${environments["values-civo-staging.yaml"].id}>` })
+    expect(env(id("values-civo-staging.yaml"), "MAIL_SUBJECT_PREFIX")).toEqual({ name: "MAIL_SUBJECT_PREFIX", value: "[staging]" })
+    expect(env(id("values-civo-production.yaml"), "MAIL_FROM")).toBeUndefined()
+    expect(env(id("values-civo-production.yaml"), "MAIL_SUBJECT_PREFIX")).toBeUndefined()
+    // Neither sets the reply address: both keep support@answerable.org, which someone watches.
+    for (const file of Object.keys(environments)) {
+      expect(env(id(file), "MAIL_REPLY_TO"), file).toBeUndefined()
+      expect(env(id(file), "POSTMARK_API_URL"), file).toBeUndefined()
+      expect(env(id(file), "POSTMARK_SERVER_TOKEN"), file).toBeUndefined()
+    }
+  })
+
+  // What ID's pods may reach: DNS, the database, HTTPS outside the private ranges, and on the kind stack the host's directories and fake Postmark.
+  // The Civo rule for 443 is the chart's default; the fake Postmark adds one address and three ports to the kind stack's alone.
+  const dns = { to: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "kube-system" } }, podSelector: { matchLabels: { "k8s-app": "kube-dns" } } }], ports: [{ port: 53, protocol: "UDP" }, { port: 53, protocol: "TCP" }] }
+  const publicHttps = { to: [{ ipBlock: { cidr: "0.0.0.0/0", except: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"] } }], ports: [{ port: 443, protocol: "TCP" }] }
+  for (const [file, expected] of Object.entries(environments)) {
+    test(`${file}: ID's pods reach DNS, the database, and HTTPS on 443 outside the private ranges, and nothing else; no fake Postmark is reachable`, () => {
+      const policy = named(renderSupplied("answerable", [file], { "image.tag": tag }), "NetworkPolicy", "id")!
+      expect(policy.spec.egress).toEqual([dns, { to: [{ ipBlock: { cidr: expected.network } }], ports: [{ port: 5432, protocol: "TCP" }] }, publicHttps])
+      expect(JSON.stringify(policy.spec.egress)).not.toContain(String(postmarkPort))
+    })
+  }
+
+  test("the kind stack's ID may also reach this host on the directories' ports and the fake Postmark's, and nothing else new; no other pod may", () => {
+    const host = "192.0.2.10"
+    const rules = idExtraEgress(host)
+    expect(postmarkPort).toBe(47712)
+    expect(rules).toEqual([{ to: [{ ipBlock: { cidr: `${host}/32` } }], ports: [{ port: 47710, protocol: "TCP" }, { port: 47711, protocol: "TCP" }, { port: 47712, protocol: "TCP" }] }])
+    // The stack passes the rules to Helm as values, as this does.
+    const sets = Object.fromEntries(rules.flatMap((rule, r) => [
+      [`id.extraEgress[${r}].to[0].ipBlock.cidr`, rule.to[0]!.ipBlock.cidr],
+      ...rule.ports.flatMap((port, p) => [[`id.extraEgress[${r}].ports[${p}].port`, String(port.port)], [`id.extraEgress[${r}].ports[${p}].protocol`, port.protocol]]),
+    ]))
+    const without = renderSupplied("answerable", ["values-local.yaml"], { "image.tag": tag })
+    const withRules = renderSupplied("answerable", ["values-local.yaml"], { "image.tag": tag, ...sets })
+    const egress = (manifests: Manifest[], name: string) => named(manifests, "NetworkPolicy", name)!.spec.egress
+    expect(egress(withRules, "id")).toEqual([...egress(without, "id"), rules[0]])
+    for (const other of ["toolbox", "admin-mcp", "migrate", "ops"]) expect(egress(withRules, other), other).toEqual(egress(without, other))
+  })
 
   test("id.extraEgress adds to ID's policy alone", () => {
     const extra = { to: [{ ipBlock: { cidr: "192.0.2.10/32" } }], ports: [{ port: 47710, protocol: "TCP" }] }

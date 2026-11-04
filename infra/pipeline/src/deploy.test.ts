@@ -35,6 +35,7 @@ const CLUSTER_ENV = {
 const ID_ENV = {
   BETTER_AUTH_SECRET: "better-auth-secret-value-123",
   ROOT_ADMIN_SECRET: "root-admin-secret-value-789",
+  POSTMARK_SERVER_TOKEN: "postmark-server-token-value-456",
   MICROSOFT_CLIENT_ID: "11111111-2222-3333-4444-555555555555",
   MICROSOFT_CLIENT_SECRET: "microsoft-client-secret-value-012",
 }
@@ -225,26 +226,48 @@ describe("id-env's variables", () => {
   })
 })
 
+describe("the bootstrap workflow's check of the pasted secrets", () => {
+  test("counts six, POSTMARK_SERVER_TOKEN among them, each read from the GitHub environment", async () => {
+    const { jobs } = Bun.YAML.parse(await Bun.file(new URL("../../../.github/workflows/bootstrap.yml", import.meta.url).pathname).text()) as {
+      jobs: Record<string, { env?: Record<string, string>; steps?: { name?: string; env?: Record<string, string>; run?: string }[] }>
+    }
+    const bootstrap = jobs.bootstrap!
+    const check = bootstrap.steps!.find((step) => step.name?.includes("pasted secrets"))!
+    expect(check.name).toBe("Check the six pasted secrets are present")
+    // The five secrets of the earlier step and the sixth: each name is in the loop, and its value reaches the step from the environment.
+    const names = check.run!.match(/for name in ([A-Z_ ]+); do/)![1]!.split(" ")
+    expect(names).toEqual(["CIVO_TOKEN", "CLOUDFLARE_API_TOKEN", "MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET", "GH_TOKEN", "POSTMARK_SERVER_TOKEN"])
+    const env = { ...bootstrap.env, ...check.env }
+    for (const name of names.filter((name) => name !== "GH_TOKEN")) expect(env[name], name).toBe(`\${{ secrets.${name} }}`)
+    expect(env.GH_TOKEN).toBe("${{ secrets.GH_SECRETS_TOKEN }}")
+    // The step tests the value and prints the secret's name; no echo reads the value.
+    expect(check.run!.split("\n").filter((line) => line.includes("echo")).join("\n")).not.toContain("${!name}")
+  })
+})
+
 describe("idEnv and idEnvChecksum", () => {
-  test("hold the two required secrets and the Microsoft pair, trimmed, keys sorted", () => {
+  test("hold the three required secrets and the Microsoft pair, trimmed, keys sorted", () => {
     const values = idEnv({ ...ENV, ROOT_ADMIN_SECRET: ` ${ID_ENV.ROOT_ADMIN_SECRET}\n` })
     expect(values).toEqual(ID_ENV)
     expect(Object.keys(values)).toEqual([...Object.keys(ID_ENV)].sort())
   })
 
-  test("add the Google pair, BETTER_AUTH_SECRETS and POSTMARK_SERVER_TOKEN when set, and leave out the Microsoft pair when it is not", () => {
-    const required = { BETTER_AUTH_SECRET: ID_ENV.BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET: ID_ENV.ROOT_ADMIN_SECRET }
-    const values = idEnv({ ...required, GOOGLE_CLIENT_ID: "google-id", GOOGLE_CLIENT_SECRET: "google-secret", BETTER_AUTH_SECRETS: '[{"version":2}]', POSTMARK_SERVER_TOKEN: "postmark-token" })
+  test("add the Google pair and BETTER_AUTH_SECRETS when set, and leave out the Microsoft pair when it is not", () => {
+    const required = { BETTER_AUTH_SECRET: ID_ENV.BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET: ID_ENV.ROOT_ADMIN_SECRET, POSTMARK_SERVER_TOKEN: ID_ENV.POSTMARK_SERVER_TOKEN }
+    const values = idEnv({ ...required, GOOGLE_CLIENT_ID: "google-id", GOOGLE_CLIENT_SECRET: "google-secret", BETTER_AUTH_SECRETS: '[{"version":2}]' })
     expect(Object.keys(values)).toEqual(["BETTER_AUTH_SECRET", "BETTER_AUTH_SECRETS", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "POSTMARK_SERVER_TOKEN", "ROOT_ADMIN_SECRET"])
     // A secret the environment does not hold reaches the step empty, and id-env leaves it out.
-    expect(idEnv({ ...required, BETTER_AUTH_SECRETS: " ", POSTMARK_SERVER_TOKEN: "" })).toEqual(required)
+    expect(idEnv({ ...required, BETTER_AUTH_SECRETS: " " })).toEqual(required)
   })
 
   test("refuse a required secret that is empty, naming every one, and half a pair", () => {
     expect(() => idEnv({ ...ENV, BETTER_AUTH_SECRET: "", ROOT_ADMIN_SECRET: undefined })).toThrow(
-      "BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET are not set: id-env needs BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET",
+      "BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET are not set: id-env needs BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET, POSTMARK_SERVER_TOKEN",
     )
     expect(() => idEnv({ ...ENV, ROOT_ADMIN_SECRET: " " })).toThrow("ROOT_ADMIN_SECRET is not set")
+    // The sixth pasted secret: ID refuses to start in production without it, so the deploy stops first and names it.
+    for (const missing of [undefined, "", "  \n"])
+      expect(() => idEnv({ ...ENV, POSTMARK_SERVER_TOKEN: missing })).toThrow("POSTMARK_SERVER_TOKEN is not set: id-env needs")
     expect(() => idEnv({ ...ENV, MICROSOFT_CLIENT_SECRET: "" })).toThrow(
       "MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET go together: MICROSOFT_CLIENT_ID is set and MICROSOFT_CLIENT_SECRET is not",
     )
@@ -272,7 +295,7 @@ describe("deploy", () => {
     ])
     expect(f.log()).toContain(`Deployed ${TAG} to staging.`)
     expect(f.log()).toContain(`id is ${DIGESTS.id}`)
-    expect(f.log()).toContain("id-env holds BETTER_AUTH_SECRET, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, ROOT_ADMIN_SECRET.")
+    expect(f.log()).toContain("id-env holds BETTER_AUTH_SECRET, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, POSTMARK_SERVER_TOKEN, ROOT_ADMIN_SECRET.")
   })
 
   test("hands kubectl id-env on standard input, as base64 data in the answerable namespace, and logs no value", async () => {
@@ -400,7 +423,10 @@ describe("deploy", () => {
     await expect(deploy({ environment: "staging", imageTag: TAG }, noCluster.deps)).rejects.toThrow("KUBE_SERVER is not set")
     const noSecret = await fixture(undefined, { env: { ...ENV, ROOT_ADMIN_SECRET: "" } })
     await expect(deploy({ environment: "staging", imageTag: TAG }, noSecret.deps)).rejects.toThrow("ROOT_ADMIN_SECRET is not set")
-    for (const each of [f, noCluster, noSecret]) expect(each.runner.calls).toEqual([])
+    // The sixth pasted secret: ID refuses to start in production without it, so a deploy without it never reaches the cluster.
+    const noToken = await fixture(undefined, { env: { ...ENV, POSTMARK_SERVER_TOKEN: undefined } })
+    await expect(deploy({ environment: "staging", imageTag: TAG }, noToken.deps)).rejects.toThrow("POSTMARK_SERVER_TOKEN is not set")
+    for (const each of [f, noCluster, noSecret, noToken]) expect(each.runner.calls).toEqual([])
   })
 
   test("reports a failed upgrade with the migration and ops Jobs' logs, and only those", async () => {

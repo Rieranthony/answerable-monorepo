@@ -9,7 +9,7 @@ locals {
 }
 
 # The environment itself is the owner's: they create it once, with its deployment policy (the branch main and the tags
-# <environment>/*) and, for production, themselves as the required reviewer, and paste its five secrets. Terraform
+# <environment>/*) and, for production, themselves as the required reviewer, and paste its six secrets. Terraform
 # writes only the three deploy secrets into it. Managing the environment and its policies from here would need a token
 # with the repository's Administration permission, which can also rename or delete the repository (GitHub's permission
 # tables); writing secrets needs Environments: write alone, so that is all GH_SECRETS_TOKEN holds.

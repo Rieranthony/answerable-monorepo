@@ -5,8 +5,9 @@ name: Bootstrap an environment
 # random secrets. Each is written only when it is missing, so the run is safe to repeat. With `rotate`, one of ID's
 # secrets is replaced instead (the next tag applies it). Nothing here is printed.
 #
-# Before running it the owner creates the GitHub environment and pastes five secrets into it: CIVO_TOKEN,
-# CLOUDFLARE_API_TOKEN, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET and GH_SECRETS_TOKEN (infra/README.md, First run).
+# Before running it the owner creates the GitHub environment and pastes six secrets into it: CIVO_TOKEN,
+# CLOUDFLARE_API_TOKEN, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, GH_SECRETS_TOKEN and POSTMARK_SERVER_TOKEN
+# (infra/README.md, First run).
 
 on:
   workflow_dispatch:
@@ -58,13 +59,14 @@ jobs:
         with:
           tools: civo
 
-      - name: Check the five pasted secrets are present
+      - name: Check the six pasted secrets are present
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
           MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
+          POSTMARK_SERVER_TOKEN: ${{ secrets.POSTMARK_SERVER_TOKEN }}
         run: |
-          for name in CIVO_TOKEN CLOUDFLARE_API_TOKEN MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET GH_TOKEN; do
+          for name in CIVO_TOKEN CLOUDFLARE_API_TOKEN MICROSOFT_CLIENT_ID MICROSOFT_CLIENT_SECRET GH_TOKEN POSTMARK_SERVER_TOKEN; do
             if [ -z "${!name}" ]; then
               echo "::error::the environment $ENVIRONMENT has no secret ${name/GH_TOKEN/GH_SECRETS_TOKEN}; paste it first (infra/README.md, First run)"
               exit 1
