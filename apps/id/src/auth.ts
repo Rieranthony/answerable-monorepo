@@ -14,6 +14,7 @@ import { createId } from "./lib/id.ts";
 import { hashClientSecret } from "./services/client-secrets.ts";
 import { logEvent } from "./lib/log.ts";
 import { createSsoOriginBoundary } from "./auth/sso-origin.ts";
+import { sessionRefreshBoundary } from "./auth/session-refresh.ts";
 import { createVerifiedSso } from "./auth/verified-sso.ts";
 import { grantLifetimeSeconds } from "./auth/user-oauth-flow.ts";
 import { magicLinkPlugin } from "./auth/magic-link.ts";
@@ -200,6 +201,8 @@ export function createAuth(db: Database, environment: Environment) {
       // In-process only, from the pages: off the allowlist and server-only. First, since its
       // hook says whether a session is refreshed, and another plugin's hook may read one.
       magicLinkConfirmation(db, ssoOrigin),
+      // Before verified SSO and the provider too, whose hooks and endpoints read the session.
+      sessionRefreshBoundary(),
       // Token-signing keys for ID tokens and JWT access tokens. The model is
       // named in the singular so the plural table is `jwks`, not `jwkss`.
       // The issuer is the bare origin (id.answerable.org), not the /auth

@@ -42,6 +42,7 @@ const directoryPlan = [
   // One before magic links go off and one while they are off.
   { slug: "toggle-both", signIns: 2 },
   { slug: "mover", signIns: 1 },
+  { slug: "due-session", signIns: 1 },
 ]
 
 beforeAll(async () => {
@@ -273,8 +274,8 @@ const onFailure = async <T>(contextsOf: BrowserContext[], body: () => Promise<T>
 
 // ---- the application's authorisation, for the tests that need a token ----
 
-/** What an application does with the token endpoint, as a public client with PKCE. */
-async function appFlow(context: BrowserContext, address: string) {
+/** Where an application sends the browser, as a public client with PKCE. */
+async function authorisation() {
   const metadata = z.object({ authorization_endpoint: z.url(), token_endpoint: z.url() }).parse(await (await fetch(`${origin}/.well-known/oauth-authorization-server`)).json())
   const verifier = randomBytes(32).toString("base64url")
   const state = crypto.randomUUID()
@@ -283,6 +284,12 @@ async function appFlow(context: BrowserContext, address: string) {
     response_type: "code", client_id: app.clientId, redirect_uri: callback, scope: `openid offline_access ${app.scope}`, resource: app.resource,
     code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256", state,
   }).toString()
+  return { metadata, verifier, state, authorize }
+}
+
+/** What an application does with the token endpoint, as a public client with PKCE. */
+async function appFlow(context: BrowserContext, address: string) {
+  const { metadata, verifier, state, authorize } = await authorisation()
   const since = Date.now()
   const page = await context.newPage()
   await page.goto(authorize.href)
@@ -501,6 +508,41 @@ describe("sign-in by emailed link", () => {
         join sso_providers p on p.id = g.authentication_provider_id where u.email = ${dana}`
       expect(grants).toEqual([{ lifetime: 604_800, kind: "magic_link" }])
       step("5. the app's flow: the callback's code became a token with authentication_method magic_link; the session row lasts 24 hours and the grant row 7 days")
+    })
+  })
+
+  // ---- 5b: a directory session that falls due along the way ----
+
+  test("5b. a directory session that falls due during an application's authorisation: each page answers as itself, a reload included, and it ends with a code", async () => {
+    // A refresh sets the session cookie, and on a request carrying an authorisation the provider takes that for a new sign-in and replaces the answer. A session falls due a day
+    // after its last refresh, so a person can meet this in the middle of one authorisation; the application's first request has refreshed it by then in every other case.
+    const steady = await directoryFirm("due-session", "Due Session Firm")
+    const tester = steady.directory.email
+    const expiry = async () => (await query<{ at: string }>`select s.expires_at::text as at from sessions s join users u on u.id = s.user_id where u.email = ${tester}`)[0]!.at
+    const context = await newBrowser()
+    await onFailure([context], async () => {
+      await viaDirectory(context, tester, { choice: true })
+      const { state, authorize } = await authorisation()
+      const page = await context.newPage()
+      await page.goto(authorize.href)
+      const chooser = page.getByRole("heading", { name: "Choose an organisation" })
+      await chooser.waitFor()
+      await query`update sessions set expires_at = now() + interval '5 days' where user_id = (select id from users where email = ${tester})`
+      const due = await expiry()
+      await page.reload()
+      await chooser.waitFor()
+      await page.getByRole("button", { name: /^Continue/ }).click()
+      const consent = page.getByRole("heading", { name: "Access it will receive" })
+      await consent.waitFor()
+      await page.reload()
+      await consent.waitFor()
+      await page.getByRole("button", { name: "Accept", exact: true }).click()
+      await page.waitForURL(`${callback}?**`)
+      const returned = new URL(page.url())
+      expect(returned.searchParams.get("state")).toBe(state)
+      expect(returned.searchParams.get("code")).toBeString()
+      expect(await expiry()).toBe(due)
+      step("5b. a session due for its refresh: the selection page, the consent page and their reloads answered as themselves, the callback got a code, and the session stayed as it was")
     })
   })
 

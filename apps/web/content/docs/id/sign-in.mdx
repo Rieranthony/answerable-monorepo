@@ -121,6 +121,8 @@ Sessions use cookies. Browser calls from another origin need `credentials: "incl
 
 **Authentication time.** When the provider supplies a valid signed `auth_time`, Answerable ID stores it separately from session creation. An absent claim stays unknown. [Sensitive human commands](/docs/id/manage#fresh-authentication) and identity linking require verified upstream authentication within five minutes. Ordinary browsing keeps the normal session lifetime.
 
+**A directory session's life.** Seven days, and a day after its last refresh it gets seven more when an application starts an authorisation or the session is read. The pages of one authorisation leave it as it is.
+
 **Sign-in by link.** Its session lasts 24 hours from creation and is never extended, and its grants last 7 days. It carries no `upstream_auth_time`, has no administrator authority, and offers neither **Verify sign-in** nor **Connect another work account**: both need a directory sign-in. Changing, replacing or removing the organisation's directory revokes directory grants only, so a firm's link sessions stand. Turning links off ends link sessions and grants only. A token says which it was in `authentication_method`: [what a sign-in by email is worth](/docs/id/magic-links#what-a-sign-in-by-email-is-worth).
 
 Signing out ends the session.
