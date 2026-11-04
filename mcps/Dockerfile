@@ -20,7 +20,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache,sharing=locked bun instal
 FROM ${BUN_IMAGE}
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="Answerable MCPs" \
-      org.opencontainers.image.source="https://github.com/Rieranthony/answerable-monorepo" \
+      org.opencontainers.image.source="https://github.com/answerableorg/answerable-monorepo" \
       org.opencontainers.image.revision="${REVISION}"
 WORKDIR /app
 COPY --from=dependencies /app ./

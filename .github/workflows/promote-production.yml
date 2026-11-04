@@ -25,7 +25,7 @@ defaults:
     shell: bash
 
 env:
-  REGISTRY: ghcr.io/rieranthony/answerable
+  REGISTRY: ghcr.io/answerableorg/answerable
   IMAGE_TAG: sha-${{ github.sha }}
 
 jobs:

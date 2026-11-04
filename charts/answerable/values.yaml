@@ -13,15 +13,15 @@ image:
 # <repository>@<digest>, the exact bytes the pipeline verified; without, as <repository>:<image.tag>.
 images:
   id:
-    repository: ghcr.io/rieranthony/answerable/id
+    repository: ghcr.io/answerableorg/answerable/id
     digest: ""
   # The Toolbox, the admin MCP, their migrations and every MCP (mcps/Dockerfile): each Deployment and Job names its command.
   mcps:
-    repository: ghcr.io/rieranthony/answerable/mcps
+    repository: ghcr.io/answerableorg/answerable/mcps
     digest: ""
   # The ops Jobs render only while this names a repository.
   ops:
-    repository: ghcr.io/rieranthony/answerable/ops
+    repository: ghcr.io/answerableorg/answerable/ops
     digest: ""
 
 # The public origins are https://<hostname>, with :<publicPort> when it is not 443 (the kind stack's 48443). mcp is that of the MCPs the

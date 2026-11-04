@@ -19,7 +19,7 @@
 | **PostgreSQL 17** | Civo Database on the environment's private network: `answerable_id`, `answerable_toolbox`, `answerable_admin`, `answerable_mcps` (a schema per shared MCP) and `answerable_mcp_<name>` per MCP with a database of its own | 1 node | [`infra/civo`](../infra/civo/README.md) |
 | **Cluster, network, firewalls, Cloudflare zone, certificates, the GitHub environment's deploy secrets** | One Civo account, one Cloudflare zone and one GitHub environment per environment, Civo region LON1 | 2 nodes (staging), 3 nodes (production), Medium | `infra/civo`, `envs/<environment>.tfvars` |
 | **The state bucket** | Civo object store in the environment's account | one 500 GB block | `bootstrap.yml` |
-| **Images** | GHCR, public: `ghcr.io/rieranthony/answerable/{id,mcps,ops}`, amd64, listed in [`infra/pipeline/images.json`](../infra/pipeline/images.json) | one per image and commit | the Dockerfiles, `deploy-staging.yml` |
+| **Images** | GHCR, public: `ghcr.io/answerableorg/answerable/{id,mcps,ops}`, amd64, listed in [`infra/pipeline/images.json`](../infra/pipeline/images.json) | one per image and commit | the Dockerfiles, `deploy-staging.yml` |
 | **The pipeline** | GitHub Actions: `ci.yml`, `bootstrap.yml`, `deploy-staging.yml`, `promote-production.yml`, `ops.yml` | | [`infra/pipeline`](../infra/pipeline/README.md) |
 
 | Hostname | Staging (zone `answerable-staging.uk`) | Production (zone `answerable.org`) |

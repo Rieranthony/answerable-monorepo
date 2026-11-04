@@ -36,7 +36,7 @@ The hostnames follow from the environment name (`staging` is `answerable-staging
 ## How a deploy runs
 
 1. **Infrastructure.** Terraform applies the environment before anything is deployed (a no-op when nothing changed). It writes what the release expects in `answerable`: the Secrets `postgres-admin` and `origin-tls`, and the platform release.
-2. **Images.** Each image of `images.json` (`id`, `mcps`, `ops`) is built for amd64, which Civo's nodes run, pushed by digest, tagged `ghcr.io/rieranthony/answerable/<image>:sha-<commit>` and signed with cosign.
+2. **Images.** Each image of `images.json` (`id`, `mcps`, `ops`) is built for amd64, which Civo's nodes run, pushed by digest, tagged `ghcr.io/answerableorg/answerable/<image>:sha-<commit>` and signed with cosign.
 3. **`id-env`.** `deploy` builds the Secret `id-env` from the variables above: the three required secrets (`BETTER_AUTH_SECRET`, `ROOT_ADMIN_SECRET` and `POSTMARK_SERVER_TOKEN`), each platform application's pair when both halves are set, and `BETTER_AUTH_SECRETS` when set. An empty required value or half a pair stops the deploy before it touches anything, naming the variables: ID refuses to start in production without the Postmark token, and the previous image, which ignores the variable, keeps serving during the rollout. It is applied on `kubectl`'s standard input and never written to disk or logged; of kubectl's output only the lines that name an applied object are shown, and nothing when the apply fails, because an API error can quote a value. Its values go in as `data`, so a key left out later (a pair, or the ring) is removed.
 4. **Release.** The digests of the tag are looked up (`docker buildx imagetools inspect`) unless given, then `helm upgrade --install answerable charts/answerable --namespace answerable --rollback-on-failure --wait --wait-for-jobs --timeout 10m -f charts/answerable/values-civo-<environment>.yaml --set image.tag=<tag> --set images.<image>.digest=<digest> … --set-string idEnvChecksum=<sha256> --set ops.bootstrap=true --set ops.register=true`. The chart's hook Jobs run first: `ops-bootstrap`, which provisions every MCP of `charts/answerable/mcps.json`, then the migrations (`id-migrate`, `toolbox-migrate`, which also migrates every MCP, `admin-migrate`), each with the owner logins that the services never receive; after the pods are ready, `ops-register`. `--rollback-on-failure` rolls the release back when a Job fails, `ops-register` included, or the pods never become ready, and the script then prints the logs of every migration and ops Job.
 5. **Smoke test.** From the public internet, through Cloudflare, with the checks generated from the checkout's `charts/answerable/mcps.json`: ID's `/healthz`, `/readyz`, discovery (the `issuer` must be the ID hostname), its signing keys; the Toolbox's `/health`, which must list every MCP and no other; the admin MCP's `/health`; the Toolbox's and the admin MCP's protected-resource metadata naming the issuer; and, for each `standalone` and `both` MCP, its metadata at `https://mcp.<zone>/.well-known/oauth-protected-resource/<name>/mcp` naming its resource `https://mcp.<zone>/<name>/mcp` and the issuer.
@@ -85,8 +85,8 @@ The tag must be `sha-` and a full commit SHA: the scripts refuse `latest`, `stag
 Verify an image by hand:
 
 ```bash
-cosign verify ghcr.io/rieranthony/answerable/id@sha256:<64 hex> \
-  --certificate-identity-regexp '^https://github.com/Rieranthony/answerable-monorepo/.github/workflows/deploy-staging.yml@refs/tags/staging/' \
+cosign verify ghcr.io/answerableorg/answerable/id@sha256:<64 hex> \
+  --certificate-identity-regexp '^https://github.com/answerableorg/answerable-monorepo/.github/workflows/deploy-staging.yml@refs/tags/staging/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 

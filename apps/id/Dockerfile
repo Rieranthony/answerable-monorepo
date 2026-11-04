@@ -26,7 +26,7 @@ RUN bun run --filter @answerable/id build
 FROM ${BUN_IMAGE}
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="Answerable ID" \
-      org.opencontainers.image.source="https://github.com/Rieranthony/answerable-monorepo" \
+      org.opencontainers.image.source="https://github.com/answerableorg/answerable-monorepo" \
       org.opencontainers.image.revision="${REVISION}"
 WORKDIR /app
 COPY apps/id/drizzle apps/id/drizzle

@@ -16,7 +16,7 @@ export const RELEASE = "answerable"
 export const CHART = "charts/answerable"
 
 /** Where the images live (`infra/pipeline/images.json`); each is `<registry>/<image>:sha-<commit>`, built for amd64, which Civo's nodes run. */
-export const REGISTRY = "ghcr.io/rieranthony/answerable"
+export const REGISTRY = "ghcr.io/answerableorg/answerable"
 
 /** The public hostnames of one environment: ID, the Toolbox, the admin MCP and `mcp`, where the Toolbox serves each standalone MCP at `/<name>/mcp`. */
 export type Hosts = { id: string; toolbox: string; admin: string; mcp: string }

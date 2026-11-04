@@ -56,7 +56,7 @@ const OTHER_DIGESTS: Digests = {
 }
 const pins = (digests: Digests) => NAMES.map((name) => `--set images.${name}.digest=${digests[name]}`).join(" ")
 const lookups = (tag: string) =>
-  NAMES.map((name) => `docker buildx imagetools inspect ghcr.io/rieranthony/answerable/${name}:${tag} --format {{.Manifest.Digest}}`)
+  NAMES.map((name) => `docker buildx imagetools inspect ghcr.io/answerableorg/answerable/${name}:${tag} --format {{.Manifest.Digest}}`)
 const checksum = (values: Record<string, string>) => createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.entries(values).sort(([a], [b]) => (a < b ? -1 : 1))))).digest("hex")
 const upgradeCommand = (rest: string) =>
   `helm upgrade --install answerable charts/answerable --namespace answerable --rollback-on-failure --wait --wait-for-jobs --timeout 10m -f ${VALUES} --set image.tag=${TAG} ${rest}`
@@ -333,7 +333,7 @@ describe("deploy", () => {
   test("stops before the cluster when a tag cannot be resolved", async () => {
     const f = await fixture(undefined, { docker: () => ({ exitCode: 1, stderr: "ghcr.io/…: manifest unknown\n" }) })
     await expect(deploy({ environment: "staging", imageTag: TAG }, f.deps)).rejects.toThrow(
-      `could not resolve ghcr.io/rieranthony/answerable/id:${TAG} to a manifest digest (exit 1): ghcr.io/…: manifest unknown`,
+      `could not resolve ghcr.io/answerableorg/answerable/id:${TAG} to a manifest digest (exit 1): ghcr.io/…: manifest unknown`,
     )
     expect(f.runner.commands()).toEqual([lookups(TAG)[0]!])
   })

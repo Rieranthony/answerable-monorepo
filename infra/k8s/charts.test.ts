@@ -106,7 +106,7 @@ describe("charts/answerable", () => {
       test("every image is one of infra/pipeline/images.json at the given tag, never latest", () => {
         for (const workload of workloads(manifests)) {
           for (const container of containersOf(workload)) {
-            expect(container.image).toMatch(new RegExp(`^ghcr\\.io/rieranthony/answerable/(${images.map(image => image.name).join("|")}):${tag}$`))
+            expect(container.image).toMatch(new RegExp(`^ghcr\\.io/answerableorg/answerable/(${images.map(image => image.name).join("|")}):${tag}$`))
           }
         }
       })
@@ -433,12 +433,12 @@ describe("charts/answerable", () => {
     const set = Object.fromEntries([["image.tag", tag], ...Object.entries(allJobs), ...Object.entries(digests).map(([image, hex]) => [`images.${image}.digest`, `sha256:${hex}`])])
     const pinned = renderSupplied("answerable", ["values-civo-production.yaml"], set)
     const images = new Set(workloads(pinned).flatMap(workload => containersOf(workload).map((container: { image: string }) => container.image)))
-    expect(images).toEqual(new Set(Object.entries(digests).map(([image, hex]) => `ghcr.io/rieranthony/answerable/${image}@sha256:${hex}`)))
+    expect(images).toEqual(new Set(Object.entries(digests).map(([image, hex]) => `ghcr.io/answerableorg/answerable/${image}@sha256:${hex}`)))
     // Only the mcps image pinned: the others keep the tag.
     const mixed = renderSupplied("answerable", ["values-civo-production.yaml"], { "image.tag": tag, "images.mcps.digest": `sha256:${digests.mcps}` })
     for (const [kind, name] of [...registered.map(server => ["Deployment", server] as const), ["Job", "toolbox-migrate"], ["Job", "admin-migrate"]] as const)
-      expect(containersOf(named(mixed, kind, name)!)[0].image, name).toBe(`ghcr.io/rieranthony/answerable/mcps@sha256:${digests.mcps}`)
-    expect(containersOf(named(mixed, "Deployment", "id")!)[0].image).toBe(`ghcr.io/rieranthony/answerable/id:${tag}`)
+      expect(containersOf(named(mixed, kind, name)!)[0].image, name).toBe(`ghcr.io/answerableorg/answerable/mcps@sha256:${digests.mcps}`)
+    expect(containersOf(named(mixed, "Deployment", "id")!)[0].image).toBe(`ghcr.io/answerableorg/answerable/id:${tag}`)
     // A digest that is not sha256 and 64 hex digits is refused, rather than deployed as something else.
     const bad = run(templateArguments("answerable", [], { "image.tag": tag, "images.id.digest": "sha256:abc" }))
     expect(bad.exitCode).not.toBe(0)

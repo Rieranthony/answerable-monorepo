@@ -8,7 +8,7 @@ provider "civo" {
 provider "cloudflare" {}
 
 locals {
-  github_owner      = "Rieranthony"
+  github_owner      = "answerableorg"
   github_repository = "answerable-monorepo"
 }
 

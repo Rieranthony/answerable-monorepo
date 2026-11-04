@@ -4,6 +4,6 @@ description: "Answerable ID, the Toolbox, which serves every MCP of mcps.json, a
 type: application
 version: 0.3.0
 kubeVersion: ">=1.29.0-0"
-home: https://github.com/Rieranthony/answerable-monorepo
+home: https://github.com/answerableorg/answerable-monorepo
 sources:
-  - https://github.com/Rieranthony/answerable-monorepo
+  - https://github.com/answerableorg/answerable-monorepo

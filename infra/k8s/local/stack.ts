@@ -28,7 +28,7 @@ export function asCloudflare(headers?: HeadersInit) {
 
 /** The images the pipeline builds (infra/pipeline/images.json), built from the repository root and loaded into the cluster under the local tag. */
 export const images = pipelineImages
-export const image = (name: string) => `ghcr.io/rieranthony/answerable/${name}:local`
+export const image = (name: string) => `ghcr.io/answerableorg/answerable/${name}:local`
 
 /** The MCPs the chart renders from charts/answerable/mcps.json, which every proof below reads rather than naming one. */
 export const declared = (JSON.parse(readFileSync(join(charts, "answerable/mcps.json"), "utf8")) as { mcps: DeclaredMcp[] }).mcps
@@ -222,7 +222,7 @@ export function startBrowserEdge({ stackCa, originPullCert, serverCert }: { stac
 }
 
 /** The second release's image of the MCPs: a throwaway name, removed by this name when the stack stops. */
-const nextImage = "ghcr.io/rieranthony/answerable/mcps-next:local"
+const nextImage = "ghcr.io/answerableorg/answerable/mcps-next:local"
 
 /**
  * A next release, as a commit that has the Toolbox serve an MCP alone ships it: `change` applied to the MCPs' declarations, then bun mcp's

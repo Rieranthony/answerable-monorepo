@@ -65,7 +65,7 @@ run "refuses_an_owner_in_the_repository_name" {
   command = plan
 
   variables {
-    repository = "Rieranthony/answerable-monorepo"
+    repository = "answerableorg/answerable-monorepo"
   }
 
   expect_failures = [var.repository]
