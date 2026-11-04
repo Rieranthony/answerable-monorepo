@@ -21,6 +21,7 @@ import {
 } from "../auth/magic-link.ts";
 import type { Database, Executor } from "../db/client.ts";
 import { withDatabaseScope } from "../db/isolation.ts";
+import { addressRequestsInLastDay } from "../db/queries/magic-link-requests.ts";
 import {
   magicLinkRequests,
   organizations,
@@ -115,7 +116,7 @@ export const addressRequestCounts = (email: string, clientHash: string) => sql`
     count(*) filter (where client_hash = ${clientHash} and created_at > statement_timestamp() - interval '1 hour')::int as hour,
     count(*)::int as day
   from ${magicLinkRequests}
-  where email = ${email} and send_status <> 'failed' and created_at > statement_timestamp() - interval '1 day'`;
+  where ${addressRequestsInLastDay(email)}`;
 
 /** What one client has asked for addresses nobody holds, at any firm. It stops at the budget. */
 export const newAddressClientCount = (clientHash: string) => sql`

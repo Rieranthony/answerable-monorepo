@@ -2299,7 +2299,7 @@
       "name": "members_reinstate",
       "version": "2026-10-01",
       "kind": "mutate",
-      "description": "Prepare reinstating a person removed from one organisation in Answerable ID, so that they can sign in to it again. Name the member by memberId or email. A person who is Answerable staff needs the owner role. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. The direct grants and group assignments removed with the membership are not restored.",
+      "description": "Prepare reinstating a person removed from one organisation in Answerable ID, so that they can sign in to it again. A person who is Answerable staff needs the owner role. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. The direct grants and group assignments removed with the membership are not restored.",
       "scopes": [
         "admin"
       ],
@@ -2326,21 +2326,16 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "description": "The organisation's id in Answerable ID, from organisations_list"
           },
-          "memberId": {
-            "description": "The member's id, from members_list; give this or the email, not both",
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-          },
           "email": {
-            "description": "Their address as Answerable ID holds it, in any case; give this or the id, not both",
             "type": "string",
             "format": "email",
-            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "description": "Their address as Answerable ID holds it, in any case"
           }
         },
         "required": [
-          "organizationId"
+          "organizationId",
+          "email"
         ],
         "additionalProperties": false
       },
@@ -2377,7 +2372,7 @@
       "name": "members_remove",
       "version": "2026-10-01",
       "kind": "mutate",
-      "description": "Prepare removing a person from one organisation in Answerable ID: their membership there is revoked, their direct grants and group assignments in it are removed, and they cannot sign in to it. Their other organisations stay as they are. Name the member by memberId or email. A person who is Answerable staff needs the owner role. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. members_reinstate brings the membership back, not the grants and assignments; users_disable stops them everywhere.",
+      "description": "Prepare removing a person from one organisation in Answerable ID: their membership there is revoked, their direct grants and group assignments in it are removed, and they cannot sign in to it. Their other organisations stay as they are. A person who is Answerable staff needs the owner role. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. members_reinstate brings the membership back, not the grants and assignments; users_disable stops them everywhere.",
       "scopes": [
         "admin"
       ],
@@ -2404,21 +2399,16 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "description": "The organisation's id in Answerable ID, from organisations_list"
           },
-          "memberId": {
-            "description": "The member's id, from members_list; give this or the email, not both",
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-          },
           "email": {
-            "description": "Their address as Answerable ID holds it, in any case; give this or the id, not both",
             "type": "string",
             "format": "email",
-            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "description": "Their address as Answerable ID holds it, in any case"
           }
         },
         "required": [
-          "organizationId"
+          "organizationId",
+          "email"
         ],
         "additionalProperties": false
       },
@@ -2657,7 +2647,7 @@
       "name": "organisations_get",
       "version": "2026-10-01",
       "kind": "read",
-      "description": "Read one organisation from Answerable ID: its slug, name and status, and its two ways in side by side, each with its own state. magicLink: whether links are on, who may ask for one and how many effective members it lists. sso: its directory, issuer, domain, whether it signs in through Answerable's platform application or its own credentials and whether a client secret is set, null when it has none. Also every email domain routed to it, each with when it was proved and the DNS record that proves it. Changes nothing.",
+      "description": "Read one organisation from Answerable ID: its slug, name and status, and its two ways in side by side, each with its own state. magicLink: whether links are on and who may ask for one. sso: its directory, issuer, domain, whether it signs in through Answerable's platform application or its own credentials and whether a client secret is set, null when it has none. Also every email domain routed to it, each with when it was proved and the DNS record that proves it. Changes nothing.",
       "scopes": [
         "admin"
       ],
@@ -2806,18 +2796,11 @@
                   "domain"
                 ],
                 "description": "Who may ask for a link: listed, its effective members; domain, also anyone at a proved domain"
-              },
-              "listed": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991,
-                "description": "Its effective members"
               }
             },
             "required": [
               "enabled",
-              "admission",
-              "listed"
+              "admission"
             ],
             "additionalProperties": false,
             "description": "Sign-in by emailed link; independent of the directory"
@@ -3064,11 +3047,431 @@
       }
     },
     {
+      "identity": "admin/signin.diagnose",
+      "name": "signin_diagnose",
+      "version": "2026-10-01",
+      "kind": "read",
+      "description": "Answer why a person cannot sign in to an organisation, or got no sign-in mail: Answerable ID's checks of that address against this organisation alone, in order, with the first that blocks them as verdict.code, or authentication_required when none does. It also shows how the address routes, the organisation's directory, its magic-link setting, the newest sign-in mail for the address and how many it has had in the last day against the daily limit, and the person's membership there. An address outside the organisation shows no person, whoever holds it. A sendStatus of sent means no failure has been recorded: a message's delivery, bounce and suppression history is in Postmark's Activity, not here. Changes nothing.",
+      "scopes": [
+        "admin"
+      ],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "The organisation's id in Answerable ID, from organisations_list"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "description": "The address the person signs in with, in any case"
+          }
+        },
+        "required": [
+          "organizationId",
+          "email"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "routing": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string"
+              },
+              "routesTo": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "organizationId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "slug": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "organizationId",
+                      "slug"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "This organisation, when it holds the domain; null otherwise, whoever else does"
+              },
+              "matchesThisOrganization": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "domain",
+              "routesTo",
+              "matchesThisOrganization"
+            ],
+            "additionalProperties": false
+          },
+          "organization": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "disabled"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "slug",
+              "status"
+            ],
+            "additionalProperties": false
+          },
+          "provider": {
+            "type": "object",
+            "properties": {
+              "configured": {
+                "type": "boolean"
+              },
+              "kind": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "entra",
+                      "google",
+                      "oidc"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "issuer": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "configured",
+              "kind",
+              "issuer"
+            ],
+            "additionalProperties": false,
+            "description": "The organisation's directory"
+          },
+          "magicLink": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "suppressed": {
+                "type": "boolean",
+                "description": "Whether Postmark refused the newest send as a suppressed address, which staff reactivate in Postmark"
+              },
+              "lastRequest": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "purpose": {
+                        "type": "string",
+                        "enum": [
+                          "link",
+                          "connect_directory"
+                        ]
+                      },
+                      "sendStatus": {
+                        "type": "string",
+                        "enum": [
+                          "sent",
+                          "failed"
+                        ],
+                        "description": "sent: no failure has been recorded; delivery is in Postmark's Activity. failed: Postmark refused the send, or never answered"
+                      },
+                      "postmarkErrorCode": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "postmarkHttpStatus": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "purpose",
+                      "sendStatus",
+                      "postmarkErrorCode",
+                      "postmarkHttpStatus",
+                      "createdAt"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The newest sign-in mail for this address at this organisation, kept for seven days"
+              },
+              "directoryConnection": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "sendStatus": {
+                        "type": "string",
+                        "enum": [
+                          "sent",
+                          "failed"
+                        ]
+                      },
+                      "attempts": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "expiresAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "sendStatus",
+                      "attempts",
+                      "expiresAt"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "A directory sign-in this address has made and not yet connected, waiting on the code mailed to it"
+              },
+              "requestsInLastDay": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991,
+                "description": "Its sign-in mails in the last day at this organisation, leaving out those that failed"
+              },
+              "dailyLimit": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991,
+                "description": "How many mails an address gets in a day"
+              }
+            },
+            "required": [
+              "enabled",
+              "suppressed",
+              "lastRequest",
+              "directoryConnection",
+              "requestsInLastDay",
+              "dailyLimit"
+            ],
+            "additionalProperties": false
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "disabled"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The member's user; null when this organisation has no member with this address, which does not mean the address is unused elsewhere"
+          },
+          "membership": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "memberId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "effective": {
+                    "type": "boolean"
+                  },
+                  "validFrom": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "validUntil": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "memberId",
+                  "effective",
+                  "validFrom",
+                  "validUntil"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verdict": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "What blocks them, or authentication_required when these checks found nothing and a real sign-in must decide"
+              },
+              "checked": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The checks made, in order, up to the verdict"
+              },
+              "requiresToken": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "What only a real sign-in can show, which this cannot"
+              }
+            },
+            "required": [
+              "code",
+              "checked",
+              "requiresToken"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "email",
+          "routing",
+          "organization",
+          "provider",
+          "magicLink",
+          "user",
+          "membership",
+          "verdict"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "identity": "admin/sso.set",
       "name": "sso_set",
       "version": "2026-10-01",
       "kind": "mutate",
-      "description": "Prepare setting or replacing an organisation's SSO provider in Answerable ID, through Answerable's own Microsoft or Google application: a Microsoft Entra issuer https://login.microsoftonline.com/<tenant id>/v2.0 or https://accounts.google.com. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. A directory with its own credentials needs a client secret, which no tool takes. Directory sessions and grants end when it changes; magic links, their sessions and their grants stay as they are.",
+      "description": "Prepare setting or replacing an organisation's SSO provider in Answerable ID, through Answerable's own Microsoft or Google application: a Microsoft Entra issuer https://login.microsoftonline.com/<tenant id>/v2.0 or https://accounts.google.com. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. Needs a recent sign-in at your directory. A directory with its own credentials needs a client secret, which no tool takes. Directory sessions and grants end when it changes; magic links, their sessions and their grants stay as they are.",
       "scopes": [
         "admin"
       ],
@@ -3745,12 +4148,9 @@
       "name": "users_disable",
       "version": "2026-10-01",
       "kind": "mutate",
-      "description": "Prepare disabling a person in Answerable ID at every organisation they belong to, not one: their sessions, grants and stored tokens end, and no sign-in works for them. Name them by email or userId. A person who is Answerable staff needs the owner role. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. users_enable reverses the status, not what was revoked; members_remove stops them at one organisation only.",
+      "description": "Prepare disabling a person in Answerable ID, by their address, at every organisation they belong to, not one: their sessions, grants and stored tokens end, and no sign-in works for them. A person who is Answerable staff needs the owner role. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. users_enable reverses the status, not what was revoked; members_remove stops them at one organisation only.",
       "scopes": [
         "admin"
-      ],
-      "errors": [
-        "ADMIN_REAUTHENTICATION_REQUIRED"
       ],
       "risk": "normal",
       "effects": [
@@ -3767,18 +4167,15 @@
         "type": "object",
         "properties": {
           "email": {
-            "description": "Their address as Answerable ID holds it, in any case; give this or the id, not both",
             "type": "string",
             "format": "email",
-            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
-          },
-          "userId": {
-            "description": "Their user id, from members_list or staff_list; give this or the email, not both",
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "description": "Their address as Answerable ID holds it, in any case"
           }
         },
+        "required": [
+          "email"
+        ],
         "additionalProperties": false
       },
       "output": {
@@ -3816,7 +4213,7 @@
       "name": "users_enable",
       "version": "2026-10-01",
       "kind": "mutate",
-      "description": "Prepare enabling a disabled person in Answerable ID, so that they can sign in again where their membership is in force. Name them by email or userId. A person who is Answerable staff needs the owner role. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. Sessions, grants and tokens revoked when they were disabled stay revoked, and a person whose address was retired cannot be enabled.",
+      "description": "Prepare enabling a disabled person in Answerable ID, by their address, so that they can sign in again where their membership is in force. A person who is Answerable staff needs the owner role. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. Sessions, grants and tokens revoked when they were disabled stay revoked.",
       "scopes": [
         "admin"
       ],
@@ -3836,18 +4233,15 @@
         "type": "object",
         "properties": {
           "email": {
-            "description": "Their address as Answerable ID holds it, in any case; give this or the id, not both",
             "type": "string",
             "format": "email",
-            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
-          },
-          "userId": {
-            "description": "Their user id, from members_list or staff_list; give this or the email, not both",
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "description": "Their address as Answerable ID holds it, in any case"
           }
         },
+        "required": [
+          "email"
+        ],
         "additionalProperties": false
       },
       "output": {
@@ -3885,7 +4279,7 @@
       "name": "users_retireemail",
       "version": "2026-10-01",
       "kind": "mutate",
-      "description": "Prepare retiring the address of a disabled person in Answerable ID, for good, so that another person can hold it. Name them by email or userId; users_disable them first. Owner only, with a recent sign-in at your directory. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. It cannot be undone: the next holder of the address is a new person with a new sub.",
+      "description": "Prepare retiring the address of a disabled person in Answerable ID, for good, so that another person can hold it; users_disable them first. Owner only, with a recent sign-in at your directory. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. It cannot be undone: the next holder of the address is a new person with a new sub.",
       "scopes": [
         "admin"
       ],
@@ -3905,18 +4299,15 @@
         "type": "object",
         "properties": {
           "email": {
-            "description": "Their address as Answerable ID holds it, in any case; give this or the id, not both",
             "type": "string",
             "format": "email",
-            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
-          },
-          "userId": {
-            "description": "Their user id, from members_list or staff_list; give this or the email, not both",
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "description": "Their address as Answerable ID holds it, in any case"
           }
         },
+        "required": [
+          "email"
+        ],
         "additionalProperties": false
       },
       "output": {

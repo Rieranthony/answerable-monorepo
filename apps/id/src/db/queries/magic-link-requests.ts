@@ -1,4 +1,14 @@
-import { and, desc, eq, inArray, isNull, lt, ne, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  lt,
+  ne,
+  sql,
+} from "drizzle-orm";
 
 import {
   magicLinkCodeAttempts,
@@ -20,13 +30,16 @@ import {
 import { revokeGrantContexts } from "./grant-contexts.ts";
 
 /** The firm's magic-link setting. A live firm's row exists, as every read assumes; a firm the
- * read cannot see has no setting to report. */
+ * read cannot see has links off. */
 export async function readMagicLinkSetting(
   context: TenantReadContext<"memberAccess">,
 ) {
   const { tx, organizationId } = context;
   const [row] = await tx
-    .select({ enabled: ssoProviders.enabled })
+    .select({
+      enabled: ssoProviders.enabled,
+      admission: ssoProviders.admission,
+    })
     .from(ssoProviders)
     .where(
       and(
@@ -35,7 +48,23 @@ export async function readMagicLinkSetting(
         isNull(ssoProviders.deletedAt),
       ),
     );
-  return row?.enabled ?? false;
+  return { enabled: row?.enabled ?? false, admission: row?.admission };
+}
+
+/** The rows the day's limit counts for one address: what did not fail, in the last day. */
+export const addressRequestsInLastDay = (email: string) =>
+  sql`email = ${email} and send_status <> 'failed' and created_at > statement_timestamp() - interval '1 day'`;
+
+/** How many of those rows this firm's read shows. An address routes to one firm. */
+export async function countAddressRequestsInLastDay(
+  { tx }: TenantReadContext<"memberAccess">,
+  email: string,
+) {
+  const [row] = await tx
+    .select({ day: count() })
+    .from(magicLinkRequests)
+    .where(addressRequestsInLastDay(email));
+  return row!.day;
 }
 
 /** The newest sign-in mail for this exact address at this firm, for diagnosis. */

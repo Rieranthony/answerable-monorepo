@@ -90,13 +90,7 @@ export function createCalls(id: IdAdmin) {
       return upstream(error)
     }
   }
-  /** A POST that changes nothing, with `platform:read`, for a list that does not fit a query; ID's 404 is `NOT_FOUND`, saying what is missing. */
-  async function ask<T>(path: string, body: unknown, { executionId }: ToolContext, missing: string) {
-    const answer = await found(id.manage("POST", path, { body, requestId: executionId, scope: "read" })).catch(upstream)
-    if (answer === undefined) throw new ToolError("NOT_FOUND", missing)
-    return answer.body as T
-  }
-  return { read, need, list, all, version, versioned, write, ask }
+  return { read, need, list, all, version, versioned, write }
 }
 /** ID's admin API as the tools call it. */
 export type Calls = ReturnType<typeof createCalls>

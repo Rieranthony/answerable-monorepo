@@ -21,11 +21,9 @@ import {
   importMembers,
   importRefusals,
   maxImportAddresses,
-  previewImport,
 } from "../../services/member-import.ts";
 import type { Hono } from "hono";
 import { platformCommand, tenantMemberCommand } from "./command.ts";
-import { platformRead } from "./platform-read.ts";
 import { z } from "zod";
 import type { AppEnvironment } from "../context.ts";
 import { pageQuerySchema } from "../pagination.ts";
@@ -91,9 +89,6 @@ const importAnswerSchema = z.object({
     }),
   ),
 });
-const importExample = {
-  body: { addresses: ["ada@acme.example.com", "grace@acme.example.com"] },
-};
 export const routes = {
   listMembers: {
     method: "get",
@@ -166,24 +161,6 @@ export const routes = {
       ...problemResponses(404, 412),
     },
   },
-  previewMemberImport: {
-    method: "post",
-    path: "/organizations/:organizationId/members/import/preview",
-    operationId: "previewMemberImport",
-    summary: "Preview a member import",
-    description:
-      "Answer what importMembers would answer for these addresses now, changing nothing and recording nothing: a POST only because a list of up to 1,000 addresses does not fit a query. Use it to show a person the counts before importMembers; validation_failed rejects a malformed or oversized list and not_found means the organisation is unavailable.",
-    tag: "Members",
-    platformScope: "platform:read",
-    kind: "read",
-    parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
-    requestBody: body(importSchema),
-    example: importExample,
-    responses: {
-      200: { description: "Success", content: json(importAnswerSchema) },
-      ...problemResponses(400, 404),
-    },
-  },
   importMembers: {
     method: "post",
     path: "/organizations/:organizationId/members/import",
@@ -197,7 +174,9 @@ export const routes = {
     freshAuthentication: true,
     parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
     requestBody: body(importSchema),
-    example: importExample,
+    example: {
+      body: { addresses: ["ada@acme.example.com", "grace@acme.example.com"] },
+    },
     responses: {
       200: { description: "Success", content: commandJson(importAnswerSchema) },
       ...problemResponses(404),
@@ -252,21 +231,6 @@ export const routes = {
   },
 } satisfies Record<string, AdminRoute>;
 export function register(app: Hono<AppEnvironment>) {
-  registerRoute(
-    app,
-    routes.previewMemberImport,
-    validate("param", orgParams),
-    validate("json", importSchema),
-    async (context) => {
-      const { addresses } = importSchema.parse(await context.req.json());
-      const organizationId = context.req.param("organizationId")!;
-      return context.json(
-        await platformRead(context, (platform) =>
-          previewImport(platform, organizationId, addresses),
-        ),
-      );
-    },
-  );
   registerRoute(
     app,
     routes.importMembers,

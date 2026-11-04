@@ -40,17 +40,16 @@ const signInDiagnosisSchema = z.object({
   }),
   magicLink: z.object({
     enabled: z.boolean(),
-    admitted: z
-      .boolean()
-      .describe(
-        "Whether this address may ask this firm for a link now: its switch, its admission and the person",
-      ),
     suppressed: z.boolean(),
     lastRequest: z
       .object({
         id: z.uuid(),
         purpose: z.enum(magicLinkPurposes),
-        sendStatus: z.enum(magicLinkSendStatuses),
+        sendStatus: z
+          .enum(magicLinkSendStatuses)
+          .describe(
+            "sent: no failure has been recorded; delivery is in Postmark's Activity. failed: Postmark refused the send, or never answered",
+          ),
         postmarkErrorCode: z.number().int().nullable(),
         postmarkHttpStatus: z.number().int().nullable(),
         createdAt: z.iso.datetime(),
@@ -67,6 +66,16 @@ const signInDiagnosisSchema = z.object({
       .describe(
         "A directory sign-in this address has made and not yet connected: it is waiting on the code mailed to it. Null when none is live",
       ),
+    requestsInLastDay: z
+      .number()
+      .int()
+      .describe(
+        "This address's sign-in mails in the last day at this firm, leaving out those that failed: what dailyLimit counts",
+      ),
+    dailyLimit: z
+      .number()
+      .int()
+      .describe("How many mails an address gets in a day, from any client"),
   }),
   user: z
     .object({
@@ -95,7 +104,7 @@ export const routes = {
     operationId: "diagnoseSignIn",
     summary: "Diagnose sign-in by email",
     description:
-      "Inspect tenant-local configuration and membership. Current platform:read or org:users authority is rechecked inside the read transaction. Routing identifies only this organisation; user and membership are null unless this tenant has a membership for the exact email. Global accounts and retired-email state are excluded, including for staff. A null user does not mean the email is globally unused. authentication_required means local checks found no blocker; a real IdP authentication or a magic link's confirmation must establish identity and account conflicts. provider describes the directory; magicLink is the organisation's setting and the newest sign-in mail for this exact email, kept for seven days. magic_link_not_admitted means a link is the way in and admission would refuse this address: its firm's switch and mode and the person, which magicLink.admitted reports in every case. That one field reads a global account: in domain mode, on this organisation's own proved domain, it is false for an address whose holder is disabled or has another firm's account, which is no more than those mailboxes would show by asking for a link. magic_link_suppressed means a link is the way in and Postmark refused the last send as a suppressed address (406), which staff reactivate in Postmark. magicLink.directoryConnection is a directory sign-in this address has made and not yet connected, waiting on the code mailed to it. Windows affect grants, not admission; revoked membership requires reinstatement. Responses use no-store. validation_failed rejects malformed input; not_found means the organisation is unavailable.",
+      "Inspect tenant-local configuration and membership. Current platform:read or org:users authority is rechecked inside the read transaction. Routing identifies only this organisation; user and membership are null unless this tenant has a membership for the exact email. Global accounts and retired-email state are excluded, including for staff. A null user does not mean the email is globally unused. authentication_required means local checks found no blocker; a real IdP authentication or a magic link's confirmation must establish identity and account conflicts. provider describes the directory; magicLink is the organisation's setting and the newest sign-in mail for this exact email, kept for seven days. magic_link_not_listed means a link is the way in, the organisation lists its members and this address is not an effective member of it; it reads this organisation alone, so in domain mode, and for an account another firm holds, it says nothing and the other fields show the rest. magic_link_address_limit means a link is the way in and this address has had magicLink.dailyLimit mails in the last day, so it gets no more until the oldest passes a day. magic_link_suppressed means a link is the way in and Postmark refused the last send as a suppressed address (406), which staff reactivate in Postmark. A message's delivery, bounces and suppressions are in Postmark's Activity, not here. magicLink.directoryConnection is a directory sign-in this address has made and not yet connected, waiting on the code mailed to it. Windows affect grants, not admission; revoked membership requires reinstatement. Responses use no-store. validation_failed rejects malformed input; not_found means the organisation is unavailable.",
     tag: "Diagnostics",
     platformScope: "platform:read",
     orgScope: "org:users",

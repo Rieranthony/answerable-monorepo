@@ -113,10 +113,8 @@ test("creates, lists, gets and updates with exactly one attributed audit per wri
   const input = { slug: "acme", name: "Acme" };
   const row = await service.createOrganization(db, actor, input);
   expect(await service.getOrganization(db, row.id)).toEqual(row);
-  const { listed, ...magicLink } = row.magicLink;
-  expect(listed).toBe(0);
   expect(await service.listOrganizations(db, { limit: 2 })).toEqual({
-    items: [{ ...row, magicLink }],
+    items: [row],
     nextCursor: null,
   });
   const patch = { name: "Acme Ltd" };
@@ -214,7 +212,7 @@ test("tenant kill switch revokes only machine rows and preserves global sessions
     expiresAt: new Date(Date.now() + 60000),
   });
   expect(await service.enableOrganization(db, actor, row.id)).toMatchObject({
-    row: { ...row, magicLink: { ...row.magicLink, listed: 2 } },
+    row,
     changed: false,
   });
   expect(await service.disableOrganization(db, actor, row.id)).toMatchObject({

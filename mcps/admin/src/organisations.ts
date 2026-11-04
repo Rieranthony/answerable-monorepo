@@ -142,7 +142,7 @@ export function organisationWrites(writes: Writes) {
   type Provider = { id: string; issuer: string; domain: string; oidc: { credentials: "platform" | "own" } }
   const ssoSet = role("admin", defineMutation({
     name: "sso.set", risk: "normal", scopes, errors, effects: ["permission_change"],
-    description: `Prepare setting or replacing an organisation's SSO provider in Answerable ID, through Answerable's own Microsoft or Google application: a Microsoft Entra issuer https://login.microsoftonline.com/<tenant id>/v2.0 or https://accounts.google.com. ${commitWith} A directory with its own credentials needs a client secret, which no tool takes. Directory sessions and grants end when it changes; magic links, their sessions and their grants stay as they are.`,
+    description: `Prepare setting or replacing an organisation's SSO provider in Answerable ID, through Answerable's own Microsoft or Google application: a Microsoft Entra issuer https://login.microsoftonline.com/<tenant id>/v2.0 or https://accounts.google.com. ${commitWith} Needs a recent sign-in at your directory. A directory with its own credentials needs a client secret, which no tool takes. Directory sessions and grants end when it changes; magic links, their sessions and their grants stay as they are.`,
     input: z.object({
       organizationId,
       issuer: z.url().describe("https://login.microsoftonline.com/<tenant id>/v2.0 for Microsoft Entra, or https://accounts.google.com"),
@@ -150,6 +150,7 @@ export function organisationWrites(writes: Writes) {
     }),
     output: z.object({ ssoProviderId: z.uuid(), operationId: z.uuid() }),
     async prepare({ organizationId: id, issuer, domain: signIn }, context) {
+      fresh(context.principal)
       const application = entra.test(issuer) ? "Microsoft" : issuer === google ? "Google" : null
       if (!application) {
         throw invalid("issuer", `sso_set sets only Answerable's own applications: a Microsoft Entra issuer https://login.microsoftonline.com/<tenant id>/v2.0 or ${google}. A directory with its own credentials needs a client secret, which no tool takes: staff set it with Answerable ID's admin API, as https://www.answerable.org/docs/id/onboard#connect-the-directory shows.`)
@@ -171,7 +172,9 @@ export function organisationWrites(writes: Writes) {
             "When the provider changes, including when it is first set, Answerable ID ends its directory sessions and grants: people who signed in through a directory sign in to each application again. Magic-link sessions and grants do not end.",
             ...(now && now.issuer !== issuer ? [`People connected to ${now.issuer} keep that account, which does not carry over: their sign-in through ${issuer} answers email_conflict. Where links are on, a magic link still signs them in.`] : []),
             "A member with no directory account yet connects it at their first directory sign-in, once, with a code from their mailbox.",
-            "The organisation's magic-link setting stays as it is: magiclink_disable is how an organisation requires its directory only.",
+            row.magicLink.enabled
+              ? "Magic links stay on: a magic link does not pass through this directory's MFA or conditional access. magiclink_disable makes the organisation directory-only."
+              : "Magic links stay off.",
           ],
         },
         plan: { organizationId: id, issuer, domain: signIn },

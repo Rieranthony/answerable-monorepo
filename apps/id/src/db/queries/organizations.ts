@@ -35,7 +35,6 @@ import { beforeCursor, cursorPage, optionalEq, contains } from "./lists.ts";
 import { createId } from "../../lib/id.ts";
 import { softDeleteEntitlements } from "./entitlements.ts";
 import { softDeleteAssignments } from "./groups.ts";
-import { isEffective } from "./effective.ts";
 import { memberEvidence } from "./members.ts";
 
 export type OrganizationInput = {
@@ -67,7 +66,7 @@ const magicLinkFields = {
   magicLinkAdmission: ssoProviders.admission,
 };
 
-/** An organisation as a list shows it. A left join, so that a missing row fails in
+/** An organisation as a read shows it. A left join, so that a missing row fails in
  * `shownOrganization` instead of hiding the organisation from a list. */
 const organizationsShown = (tx: Executor) =>
   tx
@@ -88,27 +87,11 @@ function shownOrganization({
   };
 }
 
-/** One organisation, with how many effective members it lists. A list leaves that count out:
- * measured on a page of 100 firms of 5,000 members each, it takes 745 ms and 505,672 buffers
- * against 1 ms without it, every page, in a transaction. */
 async function readLiveOrganization(tx: Executor, id: string) {
-  const [row] = await tx
-    .select({
-      ...magicLinkFields,
-      magicLinkListed: sql<number>`(
-        select count(*)::int from ${members}
-        where ${members.organizationId} = ${organizations.id} and ${isEffective(members)}
-      )`,
-    })
-    .from(organizations)
-    .leftJoin(ssoProviders, liveMagicLink(organizations.id))
-    .where(and(isNull(organizations.deletedAt), eq(organizations.id, id)));
-  const { magicLinkListed: listed, ...shown } = row!;
-  const organization = shownOrganization(shown);
-  return {
-    ...organization,
-    magicLink: { ...organization.magicLink, listed },
-  };
+  const [row] = await organizationsShown(tx).where(
+    and(isNull(organizations.deletedAt), eq(organizations.id, id)),
+  );
+  return shownOrganization(row!);
 }
 
 export async function listOrganizations(

@@ -93,7 +93,7 @@ describe("to domain", () => {
     expect(answer.status).toBe(200);
     expect(organizationSchema.parse(await answer.json())).toMatchObject({
       id: organization.id,
-      magicLink: { enabled: true, admission: "domain", listed: 0 },
+      magicLink: { enabled: true, admission: "domain" },
     });
     expect((await rowOf(organization.id)).admission).toBe("domain");
     const revision = organization.magicLink.revision;
@@ -206,7 +206,7 @@ describe("to listed", () => {
       .where(eq(organizationDomains.organizationId, organization.id));
     const answer = await setAdmission(organization.id, "listed");
     expect(await answer.json()).toMatchObject({
-      magicLink: { admission: "listed", listed: 1 },
+      magicLink: { admission: "listed" },
     });
     const member = await admin(
       `/organizations/${organization.id}/members/${person.memberId}`,
@@ -424,22 +424,12 @@ describe("who may set it", () => {
 });
 
 describe("the organisation's answers", () => {
-  test("one organisation shows the effective count, and a list leaves it out", async () => {
+  test("one organisation and a list show the same setting", async () => {
     const organization = await firm();
-    await flow.listed(organization);
-    await flow.listed(organization);
-    const ended = await flow.listed(organization);
-    await fixture.db.execute(
-      sql`update members set valid_until = now() - interval '1 second' where id = ${ended.memberId}`,
-    );
-    const revoked = await flow.listed(organization);
-    await admin(
-      `/organizations/${organization.id}/members/${revoked.memberId}`,
-      { method: "DELETE" },
-    );
     const one = await (await admin(`/organizations/${organization.id}`)).json();
-    expect(organizationSchema.parse(one)).toMatchObject({
-      magicLink: { enabled: true, admission: "listed", listed: 2 },
+    expect(organizationSchema.parse(one).magicLink).toEqual({
+      enabled: true,
+      admission: "listed",
     });
     const list = await (
       await admin(`/organizations?q=${organization.slug}`)
@@ -452,20 +442,19 @@ describe("the organisation's answers", () => {
 
   test("every command's answer carries it", async () => {
     const organization = await firm();
-    await flow.listed(organization);
     const updated = await admin(`/organizations/${organization.id}`, {
       method: "PATCH",
       body: { name: "Renamed" },
     });
     expect(await updated.json()).toMatchObject({
-      magicLink: { listed: 1, admission: "listed" },
+      magicLink: { admission: "listed" },
     });
     const off = await admin(
       `/organizations/${organization.id}/magic-link/disable`,
       { method: "POST" },
     );
     expect(await off.json()).toMatchObject({
-      magicLink: { enabled: false, listed: 1 },
+      magicLink: { enabled: false },
     });
   });
 });

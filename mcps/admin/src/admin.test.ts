@@ -24,7 +24,7 @@ async function admin(options?: Parameters<typeof createAdmin>[1]) {
 }
 
 const names = async (client: Awaited<ReturnType<TestMcp["connect"]>>) => (await client.listTools()).tools.map(tool => tool.name)
-const reads = ["organisations_list", "organisations_get", "members_list", "members_get", "groups_list", "access_list", "audit_list", "sso_test", "staff_list"]
+const reads = ["organisations_list", "organisations_get", "members_list", "members_get", "groups_list", "access_list", "audit_list", "sso_test", "signin_diagnose", "staff_list"]
 const commits = ["admin_commit", "admin_commit_confirmed"]
 // What each role lists, in the provider's order: the ordinary writes for admin, and the critical ones too for owner.
 const adminTools = [
@@ -312,6 +312,23 @@ test("each critical operation needs a directory sign-in within the window: older
   expect(id.received.filter(({ request }) => !request.startsWith("GET"))).toEqual([])
 })
 
+test("sso_set changes how a firm signs in, so it needs a recent directory sign-in on any organisation, at prepare and at commit, of an admin as of an owner", async () => {
+  const { staff, id } = await admin({ freshSeconds: 60 })
+  const { newco } = seed(id)
+  const operator = staff(["admin", "answerable-admin"])
+  const client = await operator.connect()
+  const args = { organizationId: newco.id, issuer: "https://accounts.google.com", domain: "newco.example" }
+  const intent = await prepared(client, "sso_set", args)
+  setSystemTime(Date.now() + 61_000)
+  expect(errorOf(await confirm(client, intent))).toMatchObject({ code: "ADMIN_REAUTHENTICATION_REQUIRED" })
+  setSystemTime()
+  for (const time of [Math.floor(Date.now() / 1000) - 120, null]) {
+    operator.signedInAt(time)
+    expect(await refusal(client, "sso_set", args), `signed in at ${time}`).toMatchObject({ code: "ADMIN_REAUTHENTICATION_REQUIRED", details: { upstream_auth_time: time, max_age_seconds: 60 } })
+  }
+  expect(id.received.filter(({ request }) => !request.startsWith("GET"))).toEqual([])
+})
+
 test("every write to the platform organisation is an owner's critical operation, whatever the tool's own minimum: an admin is refused each, and an owner needs a recent sign-in", async () => {
   const { staff, id, platform } = await admin({ freshSeconds: 60 })
   const world = seed(id)
@@ -334,8 +351,8 @@ test("every write to the platform organisation is an owner's critical operation,
     ["access_enable", { organizationId: platform, entitlementId: retired.id }],
     ["toolbox_enable", { organizationId: platform, hostClientIds: ["claude-code-toolbox"], providers: ["e2e"] }],
     ["standalone_enable", { organizationId: platform, mcp: "acme", everyone: true }],
-    ["members_remove", { organizationId: platform, memberId: founder.id }],
-    ["members_reinstate", { organizationId: platform, memberId: former.id }],
+    ["members_remove", { organizationId: platform, email: String(founder.email) }],
+    ["members_reinstate", { organizationId: platform, email: String(former.email) }],
     ["magiclink_enable", { organizationId: platform }],
     ["magiclink_disable", { organizationId: platform }],
     ["magiclink_admission", { organizationId: platform, admission: "listed" }],

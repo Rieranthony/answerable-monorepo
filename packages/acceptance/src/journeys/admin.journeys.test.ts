@@ -22,7 +22,7 @@ const refusalText = "Access is unavailable for this organisation. Sign in again 
 // The window A6 gives a critical operation: a company sign-in at most this old.
 const freshSeconds = 10
 
-const reads = ["access_list", "audit_list", "groups_list", "members_get", "members_list", "organisations_get", "organisations_list", "sso_test", "staff_list"]
+const reads = ["access_list", "audit_list", "groups_list", "members_get", "members_list", "organisations_get", "organisations_list", "signin_diagnose", "sso_test", "staff_list"]
 const ordinary = [
   "access_enable", "access_grant", "access_revoke", "domains_add", "domains_verify", "groups_addmember", "groups_create", "groups_dropmember", "magiclink_admission", "magiclink_disable", "magiclink_enable",
   "members_import", "members_reinstate", "members_remove", "organisations_create", "organisations_update", "sso_set", "standalone_enable", "toolbox_enable", "users_disable", "users_enable",
@@ -465,7 +465,7 @@ describe("A5 idempotency", () => {
 })
 
 // Stopping someone, with the machine client's real scopes: ID checks platform:users on these routes, which platform:write does not include. Before A6, which shortens
-// the window a critical operation allows to ten seconds: each tool needs a company sign-in at most 30 minutes old.
+// the window a critical operation allows to ten seconds: the tools that let someone back in need a company sign-in at most 30 minutes old.
 describe("A9 stopping someone", () => {
   const userRow = z.object({ status: z.string(), email: z.string(), retiredEmail: z.string().nullable(), sessionCount: z.number() })
   const memberRow = z.object({ membershipStatus: z.string(), effective: z.boolean() })
@@ -478,7 +478,7 @@ describe("A9 stopping someone", () => {
   // The tenant person's session after A9 signs them in again.
   let again: OAuthSession
 
-  test("members_remove, committed by an admin by the person's address, revokes their membership in one organisation: ID shows it, their refresh stops and a new sign-in is refused; members_reinstate by member id brings it back", async () => {
+  test("members_remove, committed by an admin by the person's address, revokes their membership in one organisation: ID shows it, their refresh stops and a new sign-in is refused; members_reinstate brings it back", async () => {
     const { organizationId, email } = tenant()
     tenantUser = String(claims(tenantSession).sub)
     const removed = await change(colleagueClient, "members_remove", { organizationId, email })
@@ -490,10 +490,10 @@ describe("A9 stopping someone", () => {
     expect(await member(tenantMember)).toEqual({ membershipStatus: "revoked", effective: false })
     expect(await user(tenantUser)).toMatchObject({ status: "active" })
     await refreshRefused(tenantSession, adminHost.clientId, adminResource)
-    expect(await refusal(colleagueClient, "members_remove", { organizationId, memberId: tenantMember })).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("is already removed") })
+    expect(await refusal(colleagueClient, "members_remove", { organizationId, email })).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("is already removed") })
     // ID ends a removed member's sign-in at its error page, after their company sign-in: connecting the account cannot restore the membership.
     expect(await signInRefused(browser, adminTarget(), asTenant())).toContain("Your membership is no longer available")
-    const reinstated = await change(staffClient, "members_reinstate", { organizationId, memberId: tenantMember })
+    const reinstated = await change(staffClient, "members_reinstate", { organizationId, email })
     await audited(staffClient, reinstated.receipt)
     expect(await member(tenantMember)).toEqual({ membershipStatus: "active", effective: true })
     // What was revoked stays revoked: the old refresh token is refused, and the person signs in again.
@@ -513,14 +513,14 @@ describe("A9 stopping someone", () => {
     await audited(staffClient, disabled.receipt)
     expect(await user(tenantUser)).toMatchObject({ status: "disabled", sessionCount: 0 })
     await refreshRefused(again, adminHost.clientId, adminResource)
-    const enabled = await change(colleagueClient, "users_enable", { userId: tenantUser })
+    const enabled = await change(colleagueClient, "users_enable", { email: tenant().email })
     await audited(colleagueClient, enabled.receipt)
     expect(await user(tenantUser)).toMatchObject({ status: "active", sessionCount: 0 })
     await refreshRefused(again, adminHost.clientId, adminResource)
     step(`users_disable: ${before.sessionCount} session${before.sessionCount === 1 ? "" : "s"} ended and the refresh refused; users_enable restored the status and no session`)
   })
 
-  test("users_disable then users_retireemail by an owner frees the spare person's address: ID finds nobody by it, keeps it as retiredEmail, and the person can be neither enabled nor found by it", async () => {
+  test("users_disable then users_retireemail by an owner frees the spare person's address: ID finds nobody by it, keeps it as retiredEmail, and no tool can name them by it", async () => {
     const spare = id.manifest.spares[0]!
     const spareUser = String(claims(person).sub)
     expect(await refusal(staffClient, "users_retireemail", { email: spare.email })).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("is not disabled") })
@@ -530,39 +530,40 @@ describe("A9 stopping someone", () => {
     expect(retired.intent.preview.summary).toContain(`Retire the address ${spare.email}`)
     expect(await user(spareUser)).toMatchObject({ status: "disabled", retiredEmail: spare.email, email: `${spareUser}@retired.invalid` })
     expect(z.object({ items: z.array(z.unknown()) }).parse(await id.admin("GET", `/users?email=${encodeURIComponent(spare.email)}`)).items).toEqual([])
-    expect(await refusal(staffClient, "users_enable", { userId: spareUser })).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("retired") })
-    expect(await refusal(staffClient, "users_disable", { email: spare.email })).toMatchObject({ code: "NOT_FOUND", message: expect.stringContaining("name that person by userId") })
+    expect(await refusal(staffClient, "users_enable", { email: spare.email })).toMatchObject({ code: "NOT_FOUND", message: expect.stringContaining("An address retired with users_retireemail finds nobody") })
+    expect(await refusal(staffClient, "users_disable", { email: spare.email })).toMatchObject({ code: "NOT_FOUND", message: expect.stringContaining("An address retired with users_retireemail finds nobody") })
     step(`users_retireemail: ${spare.email} is free in ID; the retired user keeps it as retiredEmail`)
   })
 
   test("an admin is refused each tool on a member of staff, and the owner is not harmed; an owner may prepare it, and users_retireemail is not listed to an admin", async () => {
     const ownerUser = String(claims(staff).sub)
     const colleagueUser = String(claims(colleague).sub)
-    expect(await refusal(colleagueClient, "users_disable", { userId: ownerUser })).toMatchObject({
+    const ownerEmail = id.manifest.platform!.email
+    expect(await refusal(colleagueClient, "users_disable", { email: ownerEmail })).toMatchObject({
       code: "PERMISSION_DENIED", message: expect.stringContaining(`${id.manifest.platform!.email} is Answerable staff, and acting on staff is an owner's critical operation`),
     })
-    expect(await refusal(colleagueClient, "users_enable", { email: id.manifest.platform!.email })).toMatchObject({ code: "PERMISSION_DENIED" })
-    expect(await refusal(colleagueClient, "members_remove", { organizationId: platformOrganization(), memberId: staffMember })).toMatchObject({ code: "PERMISSION_DENIED" })
-    expect(await refusal(colleagueClient, "members_reinstate", { organizationId: platformOrganization(), memberId: staffMember })).toMatchObject({ code: "PERMISSION_DENIED" })
-    await expect(colleagueClient.callTool({ name: "users_retireemail", arguments: { userId: ownerUser } })).rejects.toThrow("Tool users_retireemail not found")
+    expect(await refusal(colleagueClient, "users_enable", { email: ownerEmail })).toMatchObject({ code: "PERMISSION_DENIED" })
+    expect(await refusal(colleagueClient, "members_remove", { organizationId: platformOrganization(), email: ownerEmail })).toMatchObject({ code: "PERMISSION_DENIED" })
+    expect(await refusal(colleagueClient, "members_reinstate", { organizationId: platformOrganization(), email: ownerEmail })).toMatchObject({ code: "PERMISSION_DENIED" })
+    await expect(colleagueClient.callTool({ name: "users_retireemail", arguments: { email: ownerEmail } })).rejects.toThrow("Tool users_retireemail not found")
     expect(await user(ownerUser)).toMatchObject({ status: "active" })
     expect(memberRow.parse(await id.admin("GET", `/organizations/${platformOrganization()}/members/${staffMember}`))).toEqual({ membershipStatus: "active", effective: true })
     // The owner may aim at staff, here only to prepare: the preview says who they are and warns when it is themselves.
-    const colleagues = await prepare(staffClient, "users_disable", { userId: colleagueUser })
+    const colleagues = await prepare(staffClient, "users_disable", { email: colleaguePerson().email })
     expect(colleagues.preview).toMatchObject({ summary: expect.stringContaining(colleaguePerson().email) })
-    const yourself = z.object({ preview: z.object({ warnings: z.array(z.string()) }) }).parse(await tool(staffClient, "users_disable", { userId: ownerUser }))
+    const yourself = z.object({ preview: z.object({ warnings: z.array(z.string()) }) }).parse(await tool(staffClient, "users_disable", { email: ownerEmail }))
     expect(yourself.preview.warnings).toContain("You are disabling yourself: your sessions end with it, and only another admin can enable you again.")
     expect(await user(colleagueUser)).toMatchObject({ status: "active" })
   })
 })
 
-// Magic links and who may ask for one, with the machine client's real scopes against real ID: an admin's writes go with platform:write, an import with platform:users, and the import's
-// preview with platform:read. Before A6, for the same reason as A9. ID's own suite proves a record found, with a resolver its tests inject; here ID runs the system's resolver, on a name
+// Magic links and who may ask for one, with the machine client's real scopes against real ID: an admin's writes go with platform:write, an import with platform:users, and a
+// diagnosis with platform:read. Before A6, for the same reason as A9. ID's own suite proves a record found, with a resolver its tests inject; here ID runs the system's resolver, on a name
 // nobody publishes, so a domain is proved by writing what that leaves. The admin MCP cannot tell the difference: it reads the answer.
 describe("A10 magic links", () => {
   const firm = "links-firm"
   const domain = "links-firm.example.test"
-  const organizationRow = z.object({ magicLink: z.object({ enabled: z.boolean(), admission: z.enum(["listed", "domain"]), listed: z.number() }) })
+  const organizationRow = z.object({ magicLink: z.object({ enabled: z.boolean(), admission: z.enum(["listed", "domain"]) }) })
   const domainRow = z.object({ id: z.uuid(), domain: z.string(), verifiedAt: z.string().nullable(), verificationRecord: z.object({ type: z.string(), name: z.string(), value: z.string() }) })
   const getRow = z.object({ magicLink: organizationRow.shape.magicLink, domains: z.array(domainRow), sso: z.unknown().nullable() })
   let organizationId: string
@@ -583,7 +584,7 @@ describe("A10 magic links", () => {
     const added = await change(colleagueClient, "domains_add", { organizationId, domain })
     expect(added.receipt.results.verificationRecord).toEqual({ type: "TXT", name: `_answerable-challenge.${domain}`, value: expect.stringMatching(/^answerable-domain-verification=[0-9a-f]{32}$/) })
     const shown = getRow.parse(await tool(colleagueClient, "organisations_get", { organizationId }))
-    expect(shown).toMatchObject({ magicLink: { enabled: false, admission: "listed", listed: 0 }, sso: null, domains: [{ domain, verifiedAt: null, verificationRecord: added.receipt.results.verificationRecord }] })
+    expect(shown).toMatchObject({ magicLink: { enabled: false, admission: "listed" }, sso: null, domains: [{ domain, verifiedAt: null, verificationRecord: added.receipt.results.verificationRecord }] })
   })
 
   test("domains_verify, by an admin, asks the system's resolver for a record nobody published: it says what to publish, and on a proved domain takes the proof away, audited", async () => {
@@ -615,33 +616,34 @@ describe("A10 magic links", () => {
     const narrowed = await change(colleagueClient, "magiclink_admission", { organizationId, admission: "listed" })
     await audited(colleagueClient, narrowed.receipt)
     expect(await read()).toMatchObject({ admission: "listed" })
-    expect((await refusal(staffClient, "magiclink_admission", { organizationId: platformOrganization(), admission: "domain" })).message).toContain("can never use magic links")
+    // The platform organisation's domain is not proved here, so that refuses first; magiclink_enable below meets ID's own refusal.
+    expect(await refusal(staffClient, "magiclink_admission", { organizationId: platformOrganization(), admission: "domain" })).toMatchObject({ code: "PRECONDITION_FAILED" })
     step("magiclink_admission: refused to an admin and when unproved; opened by an owner and narrowed by an admin, one ID audit row each")
   })
 
-  test("members_import, by an admin with the machine client's platform:users: the preview's counts are ID's own, and each address has its answer", async () => {
+  test("members_import, by an admin with the machine client's platform:users: the preview says how many it will try, and the commit's answer holds ID's counts and each refusal", async () => {
     const addresses = ["ada@links-firm.example.test", "ADA@links-firm.example.test", "grace@links-firm.example.test", "someone@elsewhere.example.test", "nonsense"]
     const before = await read()
     const intent = await prepare(colleagueClient, "members_import", { organizationId, addresses })
-    expect(intent.preview.summary).toBe("List 2 people in organisation “Links Firm” (links-firm): 2 new, 0 existing users added; 0 already members, 2 refused")
+    expect(intent.preview.summary).toBe("Try to list 5 addresses in organisation “Links Firm” (links-firm)")
     expect(await read()).toEqual(before)
     const receipt = await confirm(colleagueClient, intent)
     expect(receipt.results).toMatchObject({
       counts: { created: 2, added: 0, alreadyMember: 0, refused: 2 },
       refused: [{ address: "someone@elsewhere.example.test", reason: "outside_domains" }, { address: "nonsense", reason: "invalid" }],
     })
-    expect(await read()).toMatchObject({ listed: 2 })
     const operationId = z.uuid().parse(receipt.results.operationId)
     const events = auditPage.parse(await id.admin("GET", `/audit-events?operationId=${operationId}`)).items
     expect(events.map(event => event.action)).toEqual(["member.imported", "member.imported"])
     expect(events[0]).toMatchObject({ actorType: "client", actorId: "admin-mcp", outcome: "success" })
     const members = z.object({ items: z.array(z.object({ email: z.string(), userId: z.uuid(), effective: z.boolean() })) }).parse(await id.admin("GET", `/organizations/${organizationId}/members`))
     expect(members.items.map(item => [item.email, item.effective]).toSorted()).toEqual([["ada@links-firm.example.test", true], ["grace@links-firm.example.test", true]])
-    expect(await refusal(colleagueClient, "members_import", { organizationId, addresses: ["ada@links-firm.example.test"] })).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("would change nothing") })
+    // A rerun is no refusal. It stays uncommitted here: ID writes no audit row for an import that made nobody, and A7 counts one per committed intent.
+    expect((await prepare(colleagueClient, "members_import", { organizationId, addresses: ["ada@links-firm.example.test"] })).preview.summary).toBe("Try to list 1 address in organisation “Links Firm” (links-firm)")
     step("members_import: 2 people made through the machine client's platform:users, 2 addresses refused one by one, one ID audit row per membership")
   })
 
-  test("magiclink_enable and magiclink_disable, by an admin: the preview says what is not touched, each one ID audit row; the platform organisation can never turn them on", async () => {
+  test("magiclink_enable and magiclink_disable, by an admin: the preview says what is not touched, each one ID audit row; ID refuses the platform organisation at commit", async () => {
     const on = await change(colleagueClient, "magiclink_enable", { organizationId })
     expect((await audited(colleagueClient, on.receipt)).action).toBe("organization.magic_link_enabled")
     expect(await read()).toMatchObject({ enabled: true })
@@ -651,8 +653,23 @@ describe("A10 magic links", () => {
     expect((await audited(colleagueClient, off.receipt)).action).toBe("organization.magic_link_disabled")
     expect(await read()).toMatchObject({ enabled: false })
     expect(await refusal(colleagueClient, "magiclink_enable", { organizationId: platformOrganization() })).toMatchObject({ code: "PERMISSION_DENIED" })
-    expect(await refusal(staffClient, "magiclink_enable", { organizationId: platformOrganization() })).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("can never use magic links") })
-    step("magiclink_enable and magiclink_disable: one ID audit row each; the platform organisation refused to an admin and, by the tool, to an owner")
+    const platformOn = await prepare(staffClient, "magiclink_enable", { organizationId: platformOrganization() })
+    const refused = await staffClient.callTool({ name: "admin_commit_confirmed", arguments: { intent_id: platformOn.intent_id, commit_token: platformOn.commit_token, preview_summary: platformOn.preview.summary } })
+    expect(errorOf(refused)).toMatchObject({ code: "UPSTREAM_REJECTED", message: expect.stringContaining("The platform organisation cannot use magic links"), details: { upstream: { status: 409, code: "platform_magic_link" } } })
+    step("magiclink_enable and magiclink_disable: one ID audit row each; the platform organisation refused to an admin and, by ID at commit, to an owner")
+  })
+
+  test("signin_diagnose, on real ID: a listed person and a stranger are told apart where a link is the way in, with the address's mail counted against the day's limit; an unknown organisation is NOT_FOUND", async () => {
+    await change(colleagueClient, "magiclink_enable", { organizationId })
+    const diagnosis = z.object({
+      verdict: z.object({ code: z.string() }), membership: z.object({ effective: z.boolean() }).nullable(),
+      magicLink: z.object({ enabled: z.boolean(), lastRequest: z.unknown().nullable(), requestsInLastDay: z.number(), dailyLimit: z.number() }),
+    })
+    const diagnose = async (email: string) => diagnosis.parse(await tool(colleagueClient, "signin_diagnose", { organizationId, email }))
+    expect(await diagnose("ADA@links-firm.example.test")).toMatchObject({ verdict: { code: "authentication_required" }, membership: { effective: true }, magicLink: { enabled: true, lastRequest: null, requestsInLastDay: 0, dailyLimit: 50 } })
+    expect(await diagnose("stranger@links-firm.example.test")).toMatchObject({ verdict: { code: "magic_link_not_listed" }, membership: null })
+    expect(await refusal(colleagueClient, "signin_diagnose", { organizationId: crypto.randomUUID(), email: "a@b.example" })).toMatchObject({ code: "NOT_FOUND" })
+    step("signin_diagnose: a listed person and a stranger told apart through the machine client's platform:read")
   })
 })
 

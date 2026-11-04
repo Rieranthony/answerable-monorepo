@@ -170,7 +170,7 @@ test("read returns the JSON with the ETag ID sends, the version a later If-Match
   const id = createFakeId()
   const admin = createIdAdmin(id.config)
   const organisation = id.organisation(crypto.randomUUID(), { name: "Newco" })
-  expect(await admin.read(`/organizations/${organisation.id}`, { requestId: "exec-5" })).toEqual({ body: { ...organisation, magicLink: { ...organisation.magicLink as object, listed: 0 } }, etag: `"${organisation.id}:1"` })
+  expect(await admin.read(`/organizations/${organisation.id}`, { requestId: "exec-5" })).toEqual({ body: organisation, etag: `"${organisation.id}:1"` })
   expect(await admin.read("/audit-events?limit=1")).toEqual({ body: { items: [], nextCursor: null }, etag: null })
   expect(id.scopesAsked).toEqual(["platform:read"])
   expect(id.received[0]).toMatchObject({ requestId: "exec-5", idempotencyKey: null })
@@ -254,13 +254,4 @@ test("a client without a capability for platform:users cannot write with scope u
   await expect(admin.manage("POST", `/users/${person.userId}/disable`, { scope: "users" })).rejects.toThrow(
     "Answerable ID refused the client credentials of toolbox-hub (400); check the client id, the client secret and the client's platform:read and platform:users capability for the admin resource",
   )
-})
-
-test("manage with scope read asks for platform:read alone, for a POST that changes nothing", async () => {
-  const id = createFakeId({ resources: { "https://id.test/api/admin": ["platform:read"] } })
-  const admin = createIdAdmin(id.config)
-  const organisation = id.organisation(crypto.randomUUID(), { name: "Newco" })
-  const answer = await admin.manage("POST", `/organizations/${organisation.id}/members/import/preview`, { body: { addresses: ["a@b.example"] }, scope: "read" })
-  expect(answer.body).toMatchObject({ counts: { refused: 1 } })
-  expect(id.scopesAsked).toEqual(["platform:read"])
 })

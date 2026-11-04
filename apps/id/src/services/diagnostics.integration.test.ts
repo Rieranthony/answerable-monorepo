@@ -26,6 +26,7 @@ import {
   signInVerdictCodes,
   tokenOnlyCodes,
 } from "./diagnostics.ts";
+import { magicLinkLimits } from "./magic-link-requests.ts";
 
 let connection: DatabaseConnection;
 beforeAll(() => {
@@ -110,10 +111,11 @@ test("a firm with no directory and links on is not a missing provider", async ()
   expect(result.provider.configured).toBe(false);
   expect(result.magicLink).toEqual({
     enabled: true,
-    admitted: true,
     suppressed: false,
     lastRequest: null,
     directoryConnection: null,
+    requestsInLastDay: 0,
+    dailyLimit: magicLinkLimits.addressPerDay,
   });
 });
 test("a suppressed address blocks only where a link is the way in, and is shown", async () => {
@@ -152,9 +154,10 @@ test("a suppressed address blocks only where a link is the way in, and is shown"
   verdict(suppressed, "magic_link_suppressed");
   expect(suppressed.magicLink).toEqual({
     enabled: true,
-    admitted: true,
     suppressed: true,
     directoryConnection: null,
+    requestsInLastDay: 0,
+    dailyLimit: magicLinkLimits.addressPerDay,
     lastRequest: {
       id,
       purpose: "link",
@@ -164,11 +167,10 @@ test("a suppressed address blocks only where a link is the way in, and is shown"
       createdAt: expect.any(String),
     },
   });
-  // Another address's row says nothing about this one, and admission refuses it: no such person.
+  // Another address's row says nothing about this one, and the firm does not list it.
   const other = await diagnoseSignIn(db, org.id, "other@example.com");
   expect(other.magicLink.lastRequest).toBeNull();
-  expect(other.magicLink.admitted).toBe(false);
-  verdict(other, "magic_link_not_admitted");
+  verdict(other, "magic_link_not_listed");
 
   await createSsoProvider(db, {
     organizationId: org.id,
@@ -275,33 +277,45 @@ test("diagnosis reports revoked admission rather than a successful sign-in", asy
     .where(eq(members.id, memberId));
   const result = await diagnoseSignIn(db, org.id, email);
   expect(result.verdict.code).toBe("membership_revoked");
-  // An old link tells a removed person so; that is not being admitted.
-  expect(result.magicLink.admitted).toBe(false);
 });
 test("whether a directory's sign-in meets a held address depends on its token, so it is left to the token", () => {
   expect(tokenOnlyCodes).toContain("email_conflict");
 });
 
-test("where a link is the only way in, a person admission would refuse is told apart from one it would not", async () => {
-  const { db, org } = await seed(false);
-  const member = await diagnoseSignIn(db, org.id, email);
-  expect(member.magicLink.admitted).toBe(true);
-  verdict(member, "authentication_required");
-  // No such person, in a firm that lists its members.
-  const stranger = await diagnoseSignIn(db, org.id, "nobody@example.com");
-  expect(stranger.magicLink.admitted).toBe(false);
-  verdict(stranger, "magic_link_not_admitted");
-  // An account no row of this firm names makes a stranger of a member too.
+test("where a link is the only way in, a person the firm does not list is told apart from one it does", async () => {
+  const { db, org, memberId } = await seed(false);
+  verdict(await diagnoseSignIn(db, org.id, email), "authentication_required");
+  verdict(
+    await diagnoseSignIn(db, org.id, "nobody@example.com"),
+    "magic_link_not_listed",
+  );
+  // A membership whose window has closed is not an effective one.
+  await db
+    .update(members)
+    .set({ validUntil: new Date(Date.now() - 1_000) })
+    .where(eq(members.id, memberId));
+  verdict(await diagnoseSignIn(db, org.id, email), "magic_link_not_listed");
+});
+test("it reads this firm's list alone: another firm's account is not its business, and in domain mode the verdict does not apply", async () => {
+  const { db, org, userId } = await seed(false);
   await db.insert(accounts).values({
     id: createId(),
-    userId: member.user!.id,
+    userId,
     accountId: "subject",
     providerId: "another-firm",
     issuer,
   });
-  verdict(await diagnoseSignIn(db, org.id, email), "magic_link_not_admitted");
+  verdict(await diagnoseSignIn(db, org.id, email), "authentication_required");
+  await db
+    .update(ssoProviders)
+    .set({ admission: "domain" })
+    .where(eq(ssoProviders.organizationId, org.id));
+  verdict(
+    await diagnoseSignIn(db, org.id, "nobody@example.com"),
+    "authentication_required",
+  );
 });
-test("with links off, or a directory beside them, admission blocks nothing, and is still shown", async () => {
+test("with links off, or a directory beside them, a person the firm does not list is blocked by nothing here", async () => {
   const { db, org } = await seed(false);
   await db
     .update(ssoProviders)
@@ -319,16 +333,74 @@ test("with links off, or a directory beside them, admission blocks nothing, and 
     domain: "example.com",
     oidc: { clientId: "client" },
   });
-  const stranger = await diagnoseSignIn(db, org.id, "nobody@example.com");
-  expect(stranger.magicLink.admitted).toBe(false);
-  verdict(stranger, "authentication_required");
+  verdict(
+    await diagnoseSignIn(db, org.id, "nobody@example.com"),
+    "authentication_required",
+  );
 });
-test("an address no parser accepts is admitted by nobody", async () => {
+test("an address at its day's limit is told apart where a link is the way in, counted as the limit counts: not what failed, nor what is older than a day", async () => {
   const { db, org } = await seed(false);
-  // Its domain is this firm's, so only the parser stands between it and admission.
-  const result = await diagnoseSignIn(db, org.id, "not an address@example.com");
-  expect(result.routing.matchesThisOrganization).toBe(true);
-  expect(result.magicLink.admitted).toBe(false);
+  const [row] = await db
+    .select({ id: ssoProviders.id })
+    .from(ssoProviders)
+    .where(eq(ssoProviders.organizationId, org.id));
+  const requests = (
+    length: number,
+    fields: Partial<typeof magicLinkRequests.$inferInsert> = {},
+  ) =>
+    db.insert(magicLinkRequests).values(
+      Array.from({ length }, () => {
+        const id = createId();
+        return {
+          id,
+          organizationId: org.id,
+          providerId: row!.id,
+          providerRevision: 1,
+          purpose: "link" as const,
+          tokenIdentifier: `magic-link:${id}`,
+          browserHash: "browser",
+          codeHmac: "code",
+          email,
+          clientHash: "client",
+          expiresAt: new Date(Date.now() + 60_000),
+          ...fields,
+        };
+      }),
+    );
+  const limit = magicLinkLimits.addressPerDay;
+  await requests(limit - 1);
+  await requests(1, { sendStatus: "failed" });
+  await requests(1, { createdAt: new Date(Date.now() - 25 * 3_600_000) });
+  const below = await diagnoseSignIn(db, org.id, email);
+  expect(below.magicLink).toMatchObject({
+    requestsInLastDay: limit - 1,
+    dailyLimit: limit,
+  });
+  verdict(below, "authentication_required");
+  await requests(1);
+  const reached = await diagnoseSignIn(db, org.id, email);
+  expect(reached.magicLink.requestsInLastDay).toBe(limit);
+  verdict(reached, "magic_link_address_limit");
+  expect(
+    (await diagnoseSignIn(db, org.id, "other@example.com")).magicLink
+      .requestsInLastDay,
+  ).toBe(0);
+  // It precedes a suppression, and a directory sign-in reads neither.
+  await requests(1, {
+    sendStatus: "failed",
+    postmarkErrorCode: 406,
+    postmarkHttpStatus: 422,
+    createdAt: new Date(Date.now() + 1_000),
+  });
+  verdict(await diagnoseSignIn(db, org.id, email), "magic_link_address_limit");
+  await createSsoProvider(db, {
+    organizationId: org.id,
+    providerId: org.slug,
+    issuer,
+    domain: "example.com",
+    oidc: { clientId: "client" },
+  });
+  verdict(await diagnoseSignIn(db, org.id, email), "authentication_required");
 });
 test("a code an address may be holding for a directory is shown, and only a live one", async () => {
   const { db, org } = await seed(false);

@@ -55,13 +55,13 @@ const platformIssuer = (value: unknown) => value === "https://accounts.google.co
 // The commands ID guards with platform:users, not platform:write (apps/id/src/http/admin/users.ts, members.ts): a user's disable, enable and email retirement,
 // and a membership's change, removal and reinstatement, and an import.
 const usersCommand = (path: string) => /^\/users\/[^/]+\/(?:disable|enable|retire-email)$/.test(path) || /^\/organizations\/[^/]+\/members\/[^/]+(?:\/reinstate)?$/.test(path)
-// The POST that changes nothing, because its list does not fit a query (apps/id/src/http/admin/members.ts).
-const importPreview = (path: string) => /^\/organizations\/[^/]+\/members\/import\/preview$/.test(path)
 // The fields of a domain that prove it: what to publish, and when it was last seen.
 const domainProof = (domain: unknown) => ({
   verifiedAt: null as string | null,
   verificationRecord: { type: "TXT", name: `_answerable-challenge.${String(domain)}`, value: `answerable-domain-verification=${crypto.randomUUID().replaceAll("-", "")}` },
 })
+// How many mails an address gets in a day (apps/id/src/services/magic-link-requests.ts magicLinkLimits).
+const magicLinkDailyLimit = 50
 // The address ID gives a user whose email is retired (apps/id/src/db/queries/users.ts retiredEmailFor).
 const retiredAddress = (userId: unknown) => `${String(userId)}@retired.invalid`
 
@@ -73,8 +73,9 @@ const retiredAddress = (userId: unknown) => `${String(userId)}@retired.invalid`
  * without it, the second write runs after the first. A method the fake does not implement on a route answers `405`.
  *
  * Every organisation holds its magic-link setting, off and `listed`. `POST .../magic-link/enable` turns it on, and answers `409 platform_magic_link` for the platform organisation's, as
- * `PATCH .../magic-link` does for `domain`. `listed` is its effective members, on one organisation's answer and not a list's. A domain's proof is what `publish` says DNS holds:
- * `POST .../verify` answers `409 domain_verification_failed` without it, and takes a proof it already held.
+ * `PATCH .../magic-link` does for `domain`. A domain's proof is what `publish` says DNS holds:
+ * `POST .../verify` answers `409 domain_verification_failed` without it, and takes a proof it already held. `GET .../sign-in-diagnosis` answers from the organisation's own
+ * rows, with the mail `signInMail` says an address has had.
  *
  * Staff set a service up through the admin API: `rootSecret` is a bearer that works as a platform administrator's until `lockRoot(true)`, or until a
  * member joins the platform organisation's `platform-admins` group without `breakGlass`, after which ID answers it `403 root_locked`; `staffToken`
@@ -121,8 +122,9 @@ export function createFakeId({
   const groups = new Map<string, Stored[]>()
   const providers = new Map<string, Stored>()
   const joined = new Map<string, Map<string, Stored>>()
-  // What DNS holds, by the domain row's id.
+  // What DNS holds, by the domain row's id; and what a diagnosis says of an address's mail, by organisation and address.
   const published = new Set<string>()
+  const signInMail = new Map<string, Record<string, unknown>>()
   const journal = new Map<string, Operation>()
   // The commands running now, by method, path and key; and how many changes ID has made, so that a command knows whether it changed anything.
   const running = new Set<string>()
@@ -264,8 +266,41 @@ export function createFakeId({
     if (platform && organisation === organizationId && group.slug === "platform-admins" && !breakGlass) rootLocked = true
     return tagged(row, 201)
   }
-  // One organisation as ID answers it: its row, with how many effective members it lists.
-  const counted = (row: Stored) => ({ ...row, magicLink: { ...(row.magicLink as object), listed: rows(members, row.id).filter(member => member.effective).length } })
+  // The sign-in diagnosis of an address, as ID answers it (apps/id/src/services/diagnostics.ts): this organisation's rows only, and the mail a test has said it holds.
+  function diagnosis(organisation: Stored, email: string) {
+    const domain = email.slice(email.lastIndexOf("@") + 1)
+    const provider = providers.get(organisation.id)
+    const setting = organisation.magicLink as { enabled: boolean; admission: string }
+    const routed = rows(domains, organisation.id).some(row => row.status === "active" && row.domain === domain)
+    const member = rows(members, organisation.id).find(row => row.email === email)
+    const held = { lastRequest: null, directoryConnection: null, requestsInLastDay: 0, ...signInMail.get(`${organisation.id} ${email}`) }
+    const suppressed = (held.lastRequest as { postmarkErrorCode?: number } | null)?.postmarkErrorCode === 406
+    const checks: [string, boolean][] = [
+      ["provider_not_found", !provider && !setting.enabled],
+      ["organization_disabled", organisation.status !== "active"],
+      ["domain_not_allowed", !routed],
+      ["user_disabled", member?.status === "disabled"],
+      ["membership_revoked", member?.membershipStatus === "revoked"],
+      ["magic_link_not_listed", !provider && setting.admission === "listed" && !member?.effective],
+      ["magic_link_address_limit", !provider && held.requestsInLastDay >= magicLinkDailyLimit],
+      ["magic_link_suppressed", !provider && suppressed],
+      ["authentication_required", true],
+    ]
+    const stop = checks.findIndex(([, applies]) => applies)
+    return {
+      email,
+      routing: { domain, routesTo: routed ? { organizationId: organisation.id, slug: organisation.slug } : null, matchesThisOrganization: routed },
+      organization: { id: organisation.id, slug: organisation.slug, status: organisation.status },
+      provider: { configured: provider !== undefined, kind: provider ? ssoTest(provider).kind : null, issuer: provider?.issuer ?? null },
+      magicLink: { enabled: setting.enabled, suppressed, dailyLimit: magicLinkDailyLimit, ...held },
+      user: member ? { id: member.userId, status: member.status } : null,
+      membership: member ? { memberId: member.id, effective: member.effective, validFrom: member.validFrom, validUntil: member.validUntil } : null,
+      verdict: {
+        code: checks[stop]![0], checked: checks.slice(0, stop + 1).map(([code]) => code),
+        requiresToken: ["directory_mismatch", "guest_account", "personal_account", "hosted_domain_mismatch", "email_unverified", "identity_conflict", "email_conflict"],
+      },
+    }
+  }
   // Each address's answer to an import, and the people to make, as ID decides them (apps/id/src/services/member-import.ts).
   function importAnswers(organisation: string, addresses: string[]) {
     const seen = new Set<string>()
@@ -299,11 +334,11 @@ export function createFakeId({
     if (rest === "") {
       const refusedMethod = unsupported(request, "GET", "PATCH")
       if (refusedMethod) return refusedMethod
-      if (request.method === "GET") return tagged(counted(row))
+      if (request.method === "GET") return tagged(row)
       const refused = precondition(request, row)
       if (refused) return refused
       change(row, body)
-      return tagged(counted(row))
+      return tagged(row)
     }
     if (rest === "/disable" || rest === "/enable") {
       const refusedMethod = unsupported(request, "POST")
@@ -314,7 +349,7 @@ export function createFakeId({
         if (status === "disabled") row.authorizationVersion = Number(row.authorizationVersion) + 1
         changes++
       }
-      return Response.json(counted(row))
+      return Response.json(row)
     }
     if (rest === "/magic-link") {
       const refusedMethod = unsupported(request, "PATCH")
@@ -335,7 +370,7 @@ export function createFakeId({
         row.magicLink = { ...setting, admission }
         changes++
       }
-      return Response.json(counted(row))
+      return Response.json(row)
     }
     if (rest === "/magic-link/enable" || rest === "/magic-link/disable") {
       const refusedMethod = unsupported(request, "POST")
@@ -348,7 +383,7 @@ export function createFakeId({
         row.magicLink = { ...setting, enabled }
         changes++
       }
-      return Response.json(counted(row))
+      return Response.json(row)
     }
     const verify = /^\/domains\/([^/]+)\/verify$/.exec(rest)
     if (verify) {
@@ -370,22 +405,27 @@ export function createFakeId({
       }
       return Response.json(domain)
     }
-    if (rest === "/members/import/preview" || rest === "/members/import") {
+    if (rest === "/members/import") {
       const refusedMethod = unsupported(request, "POST")
       if (refusedMethod) return refusedMethod
       const { addresses } = body as { addresses?: unknown }
       if (!Array.isArray(addresses) || !addresses.length || addresses.length > 1000) return invalid("addresses")
       const answer = importAnswers(organisation, addresses as string[])
-      if (rest === "/members/import") {
-        for (const { address, outcome } of answer.items) {
-          if (outcome !== "created" && outcome !== "added") continue
-          const userId = [...users.values()].find(user => user.email === address)?.id
-          add(members, organisation, memberRow(organisation, { email: address, name: address, ...(userId ? { userId } : {}) }))
-          if (!userId) addUser({ id: rows(members, organisation).at(-1)!.userId, email: address, name: address })
-          changes++
-        }
+      for (const { address, outcome } of answer.items) {
+        if (outcome !== "created" && outcome !== "added") continue
+        const userId = [...users.values()].find(user => user.email === address)?.id
+        add(members, organisation, memberRow(organisation, { email: address, name: address, ...(userId ? { userId } : {}) }))
+        if (!userId) addUser({ id: rows(members, organisation).at(-1)!.userId, email: address, name: address })
+        changes++
       }
       return Response.json(answer)
+    }
+    if (rest === "/sign-in-diagnosis") {
+      const refusedMethod = unsupported(request, "GET")
+      if (refusedMethod) return refusedMethod
+      const email = url.searchParams.get("email")?.toLowerCase() ?? ""
+      if (!host.test(email.slice(email.lastIndexOf("@") + 1))) return invalid("email")
+      return Response.json(diagnosis(row, email))
     }
     if (rest === "/domains") {
       const refusedMethod = unsupported(request, "GET", "POST")
@@ -518,8 +558,7 @@ export function createFakeId({
     const bearer = request.headers.get("Authorization")!.slice(7)
     const token = tokens.get(bearer)!
     if (token.resource !== adminResource) return invalidToken()
-    const write = request.method !== "GET" && !importPreview(path)
-    if (importPreview(path) && !token.scope.split(" ").includes("platform:read")) return problem(403, "insufficient_scope", "Current command authority is required", {}, { "WWW-Authenticate": 'Bearer error="insufficient_scope"' })
+    const write = request.method !== "GET"
     if (write && !token.scope.split(" ").includes(usersCommand(path) ? "platform:users" : "platform:write"))
       return problem(403, "insufficient_scope", "Current command authority is required", {}, { "WWW-Authenticate": 'Bearer error="insufficient_scope"' })
     const fails = failures.get(`${request.method} ${path}`)
@@ -648,7 +687,7 @@ export function createFakeId({
       if (!slug.test(String(body.slug)) || typeof body.name !== "string" || !body.name || body.name.length > 200) return invalid(slug.test(String(body.slug)) ? "name" : "slug")
       if ([...organisations.values()].some(row => row.slug === body.slug)) return conflict("organizations_slug_unique")
       changes++
-      return Response.json(counted(organisation(Bun.randomUUIDv7(), { slug: body.slug, name: body.name })), { status: 201 })
+      return Response.json(organisation(Bun.randomUUIDv7(), { slug: body.slug, name: body.name }), { status: 201 })
     }
     const organisationTable = /^\/organizations\/([^/]+)\/(capabilities|entitlements)$/.exec(path)
     if (organisationTable) {
@@ -853,6 +892,8 @@ export function createFakeId({
     domain: (organizationId: string, domain: string, fields: Record<string, unknown> = {}) => add(domains, organizationId, {
       id: Bun.randomUUIDv7(), organizationId, domain, status: "active", ...domainProof(domain), createdAt: now(), updatedAt: now(), ...fields,
     }),
+    /** Set what a sign-in diagnosis says of an address's mail at an organisation: `lastRequest`, `directoryConnection` or `requestsInLastDay`. */
+    signInMail(organizationId: string, email: string, fields: Record<string, unknown>) { signInMail.set(`${organizationId} ${email}`, fields) },
     /** Say whether DNS holds this domain row's record, which `POST .../verify` looks up. */
     publish(domainId: string, value = true) {
       if (value) published.add(domainId)

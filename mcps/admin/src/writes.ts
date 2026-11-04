@@ -10,13 +10,13 @@ export type Writes = ReturnType<typeof createOrganisations> & {
   role: <Definition extends Tool | Mutation>(minimum: Role | null, tool: Definition) => Definition
   platform: string
   resource: string
-  /** The freshness check of a critical operation: throws `ADMIN_REAUTHENTICATION_REQUIRED` when the caller's directory sign-in is too old. */
+  /** The freshness check, and `fresh.ts` says which writes make it: throws `ADMIN_REAUTHENTICATION_REQUIRED` when the caller's directory sign-in is too old. */
   fresh(principal: UserPrincipal): void
 }
 
 // Every tool needs the admin scope, which ID issues to staff for the admin MCP's resource.
 export const scopes = ["admin"]
-/** Every write that can touch the platform organisation can answer that the caller must sign in again (`createOrganisations`'s guard). */
+/** Every write that can touch the platform organisation can answer that the caller must sign in again (`createOrganisations`'s guard), and so can one that calls `fresh`. */
 export const errors = [reauthenticationRequired]
 /** How every mutation's description ends: what prepare returns and how to commit it. */
 export const commitWith = "Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary."
@@ -26,7 +26,7 @@ export const memberId = z.uuid().describe("The member's id, from members_list")
 export const slug = z.string().max(100).regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Lowercase letters and digits, words joined by single hyphens")
 
 /** ID's rows, as far as the mutations read them. */
-export type Organisation = { id: string; slug: string; name: string; status: "active" | "disabled"; magicLink: { enabled: boolean; admission: "listed" | "domain"; listed: number } }
+export type Organisation = { id: string; slug: string; name: string; status: "active" | "disabled"; magicLink: { enabled: boolean; admission: "listed" | "domain" } }
 export type Group = { id: string; slug: string; name: string; status: "active" | "disabled" }
 export type Member = { id: string; userId: string; email: string; name: string; status: "active" | "disabled"; effective: boolean; membershipStatus: "active" | "revoked" }
 export type Entitlement = { id: string; memberId: string | null; groupId: string | null; clientId: string | null; resource: string | null; scopes: string[]; status: "active" | "disabled" }
@@ -45,7 +45,7 @@ export const invalid = (field: string, message: string) => new ToolError("INVALI
 
 /** A person's row in ID, as far as the tools that stop someone read it: `GET /users/{id}`. */
 export type User = {
-  id: string; name: string; email: string; status: "active" | "disabled"; retiredEmail: string | null; updatedAt: string
+  id: string; name: string; email: string; status: "active" | "disabled"; updatedAt: string
   memberships: { memberId: string; organizationId: string; slug: string; effective: boolean }[]
   sessionCount: number
 }

@@ -1,9 +1,9 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import type { Executor } from "../db/client.ts";
 import { lockOrganization } from "../db/locks.ts";
 import { activeOrganizationDomains } from "../db/queries/organization-domains.ts";
-import { members, organizations, users } from "../db/schema/index.ts";
+import { members, users } from "../db/schema/index.ts";
 import { found } from "../http/problem.ts";
 import { createId } from "../lib/id.ts";
 import { recordCommandEvents } from "./audit.ts";
@@ -13,10 +13,7 @@ import {
   usersWithForeignAccounts,
   type MagicLinkAddress,
 } from "./magic-link-admission.ts";
-import type {
-  PlatformReadContext,
-  PlatformUsersContext,
-} from "./platform-context.ts";
+import type { PlatformUsersContext } from "./platform-context.ts";
 
 /** A call's limit: one transaction must stay inside the statement and idle timeouts. */
 export const maxImportAddresses = 1_000;
@@ -53,33 +50,6 @@ function distinctAddresses(addresses: string[]) {
       );
   }
   return answers;
-}
-
-/** Split the addresses into what this firm can take at all and what it refuses as it stands. */
-async function sortByDomain(
-  tx: Executor,
-  organizationId: string,
-  answers: (ImportAnswer | MagicLinkAddress)[],
-) {
-  const active = new Set(
-    (await activeOrganizationDomains(tx, organizationId)).map(
-      ({ domain }) => domain,
-    ),
-  );
-  const refused = new Map<string, ImportAnswer>();
-  const asked: string[] = [];
-  for (const answer of answers) {
-    if (!("email" in answer)) continue;
-    const { email, domain } = answer;
-    if (!active.has(domain))
-      refused.set(email, {
-        address: email,
-        outcome: "refused",
-        reason: "outside_domains",
-      });
-    else asked.push(email);
-  }
-  return { refused, asked };
 }
 
 /** Everyone holding one of these addresses, a disabled or retired holder included, their
@@ -131,42 +101,6 @@ function answerFor(email: string, person: Person | undefined): ImportAnswer {
   return { address: email, outcome: "added" };
 }
 
-function summary(items: ImportAnswer[]) {
-  const counts = { created: 0, added: 0, alreadyMember: 0, refused: 0 };
-  for (const { outcome } of items) counts[outcome]++;
-  return { counts, items };
-}
-
-/** What `importMembers` would answer now, changing nothing and holding no lock. */
-export async function previewImport(
-  context: PlatformReadContext,
-  organizationId: string,
-  addresses: string[],
-) {
-  const { tx } = context;
-  const [organization] = await tx
-    .select({ id: organizations.id })
-    .from(organizations)
-    .where(
-      and(
-        isNull(organizations.deletedAt),
-        eq(organizations.id, organizationId),
-      ),
-    );
-  found(organization, "Organisation not found");
-  const answers = [...distinctAddresses(addresses).values()];
-  const { refused, asked } = await sortByDomain(tx, organizationId, answers);
-  const people = await readPeople(tx, organizationId, asked);
-  return summary(
-    answers.map((answer) =>
-      "email" in answer
-        ? (refused.get(answer.email) ??
-          answerFor(answer.email, people.get(answer.email)))
-        : answer,
-    ),
-  );
-}
-
 /**
  * Staff list a firm's people before their first sign-in, so that `sub` exists first: a user and
  * an active membership at once, and no account, which the first sign-in makes. One transaction,
@@ -200,11 +134,22 @@ export async function importMembers(
     await lockOrganization(tx, organizationId, "share"),
     "Organisation not found",
   );
-  const { refused, asked: emails } = await sortByDomain(
-    tx,
-    organizationId,
-    answers,
+  const active = new Set(
+    (await activeOrganizationDomains(tx, organizationId)).map(
+      ({ domain }) => domain,
+    ),
   );
+  const refused = new Map<string, ImportAnswer>();
+  const emails: string[] = [];
+  for (const { email, domain } of parsed) {
+    if (active.has(domain)) emails.push(email);
+    else
+      refused.set(email, {
+        address: email,
+        outcome: "refused",
+        reason: "outside_domains",
+      });
+  }
   // Inserting first means nothing can appear between the read and the write.
   const created = emails.length
     ? await tx
@@ -276,11 +221,12 @@ export async function importMembers(
         : [];
     }),
   );
-  return summary(
-    answers.map((answer) =>
-      "email" in answer
-        ? (refused.get(answer.email) ?? results.get(answer.email)!)
-        : answer,
-    ),
+  const items = answers.map((answer) =>
+    "email" in answer
+      ? (refused.get(answer.email) ?? results.get(answer.email)!)
+      : answer,
   );
+  const counts = { created: 0, added: 0, alreadyMember: 0, refused: 0 };
+  for (const { outcome } of items) counts[outcome]++;
+  return { counts, items };
 }

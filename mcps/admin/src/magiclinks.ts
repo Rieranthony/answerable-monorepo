@@ -6,10 +6,9 @@ import {
 } from "./writes"
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`
-const people = (count: number) => (count === 1 ? "1 person" : `${count} people`)
 // What stays out of reach of every one of these writes, which no write to ID reaches.
 const outlives = "A service token already issued lives to its expiry."
-// How much of a list a preview or a receipt spells out.
+// How many refused addresses a receipt spells out.
 const shown = 20
 
 type Domain = { id: string; domain: string; status: "active" | "disabled"; verifiedAt: string | null; verificationRecord: { type: string; name: string; value: string } }
@@ -21,9 +20,10 @@ type ImportAnswer = {
 /**
  * The writes on how an organisation signs in by emailed link, and on who it lists: `magiclink.enable`, `.disable` and `.admission`, `members.import` and
  * `domains.verify`. Each needs a recent directory sign-in, as ID's own route does of a person and does not of a machine client, and a target in the platform
- * organisation needs the owner role, through the organisation's guard. A link does not reach what a directory does, and each preview says what it will not.
+ * organisation needs the owner role, through the organisation's guard. ID refuses links on the platform organisation with `409 platform_magic_link`, which a
+ * commit answers as `UPSTREAM_REJECTED`. A link does not reach what a directory does, and each preview says what it will not.
  */
-export function magicLinkWrites({ calls, role, platform, fresh, organisation, isOwner }: Writes) {
+export function magicLinkWrites({ calls, role, fresh, organisation, isOwner }: Writes) {
   const directoryOf = (id: string, context: ToolContext) => calls.read<{ issuer: string }>(`/organizations/${id}/sso-provider`, context)
   const domainsOf = (id: string, context: ToolContext) => calls.all<Domain>(`/organizations/${id}/domains`, context, missingOrganisation(id))
   // Grants that reach everyone in the organisation, so anyone new has them at once.
@@ -44,7 +44,6 @@ export function magicLinkWrites({ calls, role, platform, fresh, organisation, is
     async prepare({ organizationId: id }, context) {
       fresh(context.principal)
       const { organisation: row, target: version } = await organisation(id, context)
-      if (enabled && id === platform) throw precondition("The platform organisation can never use magic links: staff sign in through its directory", { organizationId: id })
       if (row.magicLink.enabled === enabled) throw precondition(`Magic links are already ${enabled ? "on" : "off"} for organisation ${named(row)}`, { organizationId: id, enabled })
       const directory = await directoryOf(id, context)
       return {
@@ -54,7 +53,7 @@ export function magicLinkWrites({ calls, role, platform, fresh, organisation, is
           changes: [{ path: `organizations[${id}].magicLink.enabled`, from: !enabled, to: enabled }],
           effects: ["permission_change" as const],
           warnings: enabled ? [
-            `Who may ask for a link: ${row.magicLink.admission === "listed" ? `its ${plural(row.magicLink.listed, "effective member")}` : `its ${plural(row.magicLink.listed, "effective member")}, and anyone at a proved domain, whom a first sign-in creates`}.`,
+            `Who may ask for a link: ${row.magicLink.admission === "listed" ? "its effective members" : "its effective members, and anyone at a proved domain, whom a first sign-in creates"}.`,
             ...(directory ? ["A magic link does not pass through the directory's MFA or conditional access, and someone disabled there can still use a link while their mailbox works; remove the member in Answerable ID, with members_remove, to stop both."] : []),
             "Sessions and grants ended when links were turned off stay ended: their people sign in again.",
             noPrecondition("turning magic links on"),
@@ -85,7 +84,6 @@ export function magicLinkWrites({ calls, role, platform, fresh, organisation, is
       fresh(context.principal)
       const { organisation: row, target: version } = await organisation(id, context)
       if (to === "domain" && !await isOwner(context)) throw new ToolError("PERMISSION_DENIED", "Opening an organisation to anyone at its domains is an owner's: a new person would have its organisation-wide access at once")
-      if (to === "domain" && id === platform) throw precondition("The platform organisation can never use magic links: staff sign in through its directory", { organizationId: id })
       if (row.magicLink.admission === to) throw precondition(`Organisation ${named(row)} already admits ${to}; nothing would change`, { organizationId: id, admission: to })
       const domains = (await domainsOf(id, context)).filter(item => item.status === "active")
       const unverified = domains.filter(item => item.verifiedAt === null).map(item => item.domain)
@@ -141,30 +139,23 @@ export function magicLinkWrites({ calls, role, platform, fresh, organisation, is
     async prepare({ organizationId: id, addresses }, context) {
       fresh(context.principal)
       const { organisation: row, target: version } = await organisation(id, context)
-      const answer = await calls.ask<ImportAnswer>(`/organizations/${id}/members/import/preview`, { addresses }, context, missingOrganisation(id))
-      const { created, added, alreadyMember, refused } = answer.counts
-      if (!created && !added) throw precondition(`Importing these addresses would change nothing in organisation ${named(row)}: ${alreadyMember} already members, ${refused} refused`, { organizationId: id, counts: answer.counts, refused: refusedOf(answer) })
       const directory = await directoryOf(id, context)
       const wide = await organisationWide(id, context)
-      const spelled = refusedOf(answer)
       return {
         targets: [version],
         preview: {
-          summary: `List ${people(created + added)} in organisation ${named(row)}: ${created} new, ${added} existing users added; ${alreadyMember} already members, ${refused} refused`,
-          changes: [{ path: `organizations[${id}].magicLink.listed`, from: row.magicLink.listed, to: row.magicLink.listed + created + added }],
+          summary: `Try to list ${addresses.length === 1 ? "1 address" : `${addresses.length} addresses`} in organisation ${named(row)}`,
+          changes: [{ path: `organizations[${id}].members`, from: "as they are", to: "each address listed, unless it is already a member or refused" }],
           effects: ["permission_change" as const],
           warnings: [
-            ...(spelled.length ? [`Refused: ${spelled.map(item => `${item.address} (${item.reason})`).join(", ")}${refused > spelled.length ? `, and ${refused - spelled.length} more` : ""}.`] : []),
+            "Each address is answered at commit: created, added, already a member, or refused with its reason. One refused does not stop the rest, and a rerun is safe: it changes nothing for someone already listed.",
             "Sends no mail. Each person's account is made at their first sign-in. A removed member and a disabled person stay as they are.",
             ...(wide.length ? [`${plural(wide.length, "organisation-wide entitlement")} ${wide.length === 1 ? "exists" : "exist"}, so each new member has access at once: ${reach(wide)}.`] : []),
             ...(row.magicLink.enabled ? [] : ["Magic links are off here, so nobody listed can sign in by link until magiclink_enable."]),
-            ...(directory ? ["A directory is connected: a listed person's first directory sign-in asks for a code from their mailbox, once, which connects it to the person listed here. That works whether links are on or off."] : []),
+            ...(directory ? ["A directory is connected, so importing is rarely needed: people become members at their first directory sign-in. Each person listed here must then prove their mailbox with a code at their first directory sign-in, once. That works whether links are on or off."] : []),
             noPrecondition("importing members"),
           ],
-          quantities: [
-            { name: "created", value: created, unit: "people" }, { name: "added", value: added, unit: "people" },
-            { name: "alreadyMember", value: alreadyMember, unit: "people" }, { name: "refused", value: refused, unit: "addresses" },
-          ],
+          quantities: [{ name: "addresses", value: addresses.length, unit: "addresses" }],
         },
         plan: { addresses },
       }
@@ -172,8 +163,9 @@ export function magicLinkWrites({ calls, role, platform, fresh, organisation, is
     async commit({ intent_id, targets: [version], plan: { addresses }, preview }, context) {
       const done = await calls.write("POST", `/organizations/${version.resource_id}/members/import`, { body: { addresses }, key: intent_id, scope: "users" }, context)
       const answer = done.replayed ? null : done.body as ImportAnswer
+      const refused = (answer?.items ?? []).filter(item => item.outcome === "refused").slice(0, shown).map(({ address, reason }) => ({ address, reason: reason! }))
       return {
-        results: { organizationId: version.resource_id, operationId: done.operationId, counts: answer?.counts ?? null, refused: answer ? refusedOf(answer) : [] },
+        results: { organizationId: version.resource_id, operationId: done.operationId, counts: answer?.counts ?? null, refused },
         applied_changes: preview.changes, effects_performed: preview.effects,
       }
     },
@@ -219,9 +211,3 @@ export function magicLinkWrites({ calls, role, platform, fresh, organisation, is
 
   return [switching(true), switching(false), admission, memberImport, verify]
 }
-
-// The refused addresses of an answer, as far as a preview or a receipt spells them out.
-const refusedOf = ({ items }: ImportAnswer) => items
-  .filter(item => item.outcome === "refused")
-  .slice(0, shown)
-  .map(({ address, reason }) => ({ address, reason: reason! }))

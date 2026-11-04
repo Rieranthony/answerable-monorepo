@@ -1,12 +1,16 @@
 import { ToolError, type UserPrincipal } from "@answerable/mcp"
 
-/** The custom code a critical operation answers when the caller's directory sign-in is older than the freshness window, or unknown. */
+/** The custom code a write that asks for a fresh sign-in answers when the caller's directory sign-in is older than the freshness window, or unknown. */
 export const reauthenticationRequired = "ADMIN_REAUTHENTICATION_REQUIRED"
 
 const span = (seconds: number) => seconds % 60 ? `${seconds} seconds` : seconds === 60 ? "minute" : `${seconds / 60} minutes`
 
 /**
- * Refuse a critical operation unless the caller signed in at their company's directory within `maxAge` seconds, as their token's
+ * Which writes call this, the one rule: a fresh directory sign-in is asked of a write that lets people in or changes how a firm signs in, and of the owner's
+ * critical operations; a write that stops one named person never waits for it, because stopping a leaver in an incident must not first need a browser trip and a
+ * new authorisation. So `users.disable` and `members.remove` do not call it. A write to the platform organisation does, through `writes.ts`'s guard, `members.remove` there included.
+ *
+ * Refuse the write unless the caller signed in at their company's directory within `maxAge` seconds, as their token's
  * `upstream_auth_time` says; a token without one counts as stale. ID fixes that time when it creates an authorisation and keeps it across
  * refreshes (`apps/id/src/auth/user-token-boundary.ts`), so the remedy is a new directory sign-in followed by a new authorisation in the host.
  */

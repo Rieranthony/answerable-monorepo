@@ -156,10 +156,13 @@ test("sso_set sets a Microsoft or Google provider through Answerable's applicati
     warnings: [
       "When the provider changes, including when it is first set, Answerable ID ends its directory sessions and grants: people who signed in through a directory sign in to each application again. Magic-link sessions and grants do not end.",
       "A member with no directory account yet connects it at their first directory sign-in, once, with a code from their mailbox.",
-      "The organisation's magic-link setting stays as it is: magiclink_disable is how an organisation requires its directory only.",
+      "Magic links stay on: a magic link does not pass through this directory's MFA or conditional access. magiclink_disable makes the organisation directory-only.",
     ],
     quantities: [],
   })
+  id.organisation(newco.id, { magicLink: { enabled: false, admission: "listed" } })
+  expect((await prepare("sso_set", { organizationId: newco.id, issuer: entraIssuer, domain: "newco.example" })).preview.warnings!.at(-1)).toBe("Magic links stay off.")
+  id.organisation(newco.id, { magicLink: { enabled: true, admission: "listed" } })
   const created = await committed(first)
   expect(writes()).toEqual([expect.objectContaining({ request: `PUT /api/admin/v1/organizations/${newco.id}/sso-provider`, ifNoneMatch: "*", ifMatch: null })])
   const replace = await prepare("sso_set", { organizationId: newco.id, issuer: google, domain: "newco.example" })

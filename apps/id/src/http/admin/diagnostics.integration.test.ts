@@ -4,6 +4,12 @@ import {
   type AdminFixture,
 } from "../../__tests__/admin.ts";
 import { describeAdminRoutes } from "../../__tests__/admin-routes.ts";
+import { and, eq } from "drizzle-orm";
+import {
+  magicLinkRequests,
+  ssoProviders,
+  users,
+} from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 import { routes } from "./diagnostics.ts";
 import { responseSchema } from "../../__tests__/openapi-response.ts";
@@ -67,8 +73,6 @@ test("validates required email and organisation id", async () => {
 });
 
 test("tenant diagnosis does not expose foreign users, accounts or routing identities", async () => {
-  const { users } = await import("../../db/schema/index.ts");
-  const { eq } = await import("drizzle-orm");
   const [foreign] = await fixture.db
     .select()
     .from(users)
@@ -92,4 +96,38 @@ test("tenant diagnosis does not broaden staff projections", async () => {
   expect(body).not.toHaveProperty("accounts");
   expect(body.user).not.toHaveProperty("retiredEmail");
   expect(await (await request(email, "platformReader")).json()).toEqual(body);
+});
+
+test("a firm's count of an address's mail is what its restricted read shows: its own rows, never another firm's", async () => {
+  const organizationId = fixture.outsider.organizationId;
+  const [row] = await fixture.db
+    .select({ id: ssoProviders.id })
+    .from(ssoProviders)
+    .where(
+      and(
+        eq(ssoProviders.organizationId, organizationId),
+        eq(ssoProviders.kind, "magic_link"),
+      ),
+    );
+  const email = "counted@outsider.example.com";
+  const id = createId();
+  await fixture.db.insert(magicLinkRequests).values({
+    id,
+    organizationId,
+    providerId: row!.id,
+    providerRevision: 1,
+    purpose: "link",
+    tokenIdentifier: `magic-link:${id}`,
+    browserHash: "browser",
+    codeHmac: "code",
+    email,
+    clientHash: "client",
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+  const counted = async (organization: string) =>
+    signInDiagnosisSchema.parse(
+      await (await request(email, "platformReader", organization)).json(),
+    ).magicLink.requestsInLastDay;
+  expect(await counted(organizationId)).toBe(1);
+  expect(await counted(fixture.tenant.organizationId)).toBe(0);
 });

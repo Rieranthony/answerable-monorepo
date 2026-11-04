@@ -2,18 +2,15 @@ import { listMembers } from "../db/queries/members.ts";
 import { type TenantReadContext } from "./tenant-context.ts";
 import { organizationAcceptsDomain } from "../db/queries/organization-domains.ts";
 import { readOrganizationStatus } from "../db/queries/organizations.ts";
-import { withDatabaseScope } from "../db/isolation.ts";
 import {
+  countAddressRequestsInLastDay,
   readDirectoryConnection,
   readMagicLinkSetting,
   readLastMagicLinkRequest,
 } from "../db/queries/magic-link-requests.ts";
 import { readSsoIssuer } from "../db/queries/sso-providers.ts";
 import { classifyIssuer } from "./federation.ts";
-import {
-  admitMagicLink,
-  parseMagicLinkAddress,
-} from "./magic-link-admission.ts";
+import { magicLinkLimits } from "./magic-link-requests.ts";
 
 export const signInVerdictCodes = [
   "provider_not_found",
@@ -21,7 +18,8 @@ export const signInVerdictCodes = [
   "domain_not_allowed",
   "user_disabled",
   "membership_revoked",
-  "magic_link_not_admitted",
+  "magic_link_not_listed",
+  "magic_link_address_limit",
   "magic_link_suppressed",
   "authentication_required",
 ] as const;
@@ -51,9 +49,10 @@ export async function diagnoseSignIn(
     matchesThisOrganization,
     provider,
     memberRows,
-    linksOn,
+    setting,
     lastRequest,
     directoryConnection,
+    requestsInLastDay,
   ] = await Promise.all([
     organizationAcceptsDomain(context, domain),
     readSsoIssuer(context),
@@ -61,29 +60,30 @@ export async function diagnoseSignIn(
     readMagicLinkSetting(context),
     readLastMagicLinkRequest(context, email),
     readDirectoryConnection(context, email),
+    countAddressRequestsInLastDay(context, email),
   ]);
   const membership = memberRows.items[0];
   const suppressed = lastRequest?.postmarkErrorCode === postmarkSuppressed;
-  // The one admission check, whose rules this must not restate: its switch, its mode and the
-  // person. Asked only of this firm's own domains, since an answer about another firm's address
-  // would say who is a member there, and it says only yes or no.
-  const address = parseMagicLinkAddress(email);
-  const admitted =
-    matchesThisOrganization &&
-    address !== null &&
-    (
-      await withDatabaseScope(context.tx, { kind: "protocol" }, (tx) =>
-        admitMagicLink(tx, address),
-      )
-    ).outcome === "admit";
   const checks: [(typeof signInVerdictCodes)[number], boolean][] = [
-    ["provider_not_found", provider === null && !linksOn],
+    ["provider_not_found", provider === null && !setting.enabled],
     ["organization_disabled", organization.status !== "active"],
     ["domain_not_allowed", !matchesThisOrganization],
     ["user_disabled", membership?.status === "disabled"],
     ["membership_revoked", membership?.membershipStatus === "revoked"],
-    // Both only a block where a link is the way in; a directory sign-in reads neither.
-    ["magic_link_not_admitted", provider === null && !admitted],
+    // These only block where a link is the way in; a directory sign-in reads none of them.
+    // Not the admission check: it reads this firm's list alone, deliberately less than admission
+    // does, so that a tenant read shows nothing about another firm. In domain mode it does not
+    // apply, and the rest of the answer shows the person.
+    [
+      "magic_link_not_listed",
+      provider === null &&
+        setting.admission === "listed" &&
+        !membership?.effective,
+    ],
+    [
+      "magic_link_address_limit",
+      provider === null && requestsInLastDay >= magicLinkLimits.addressPerDay,
+    ],
     ["magic_link_suppressed", provider === null && suppressed],
     ["authentication_required", true],
   ];
@@ -116,11 +116,12 @@ export async function diagnoseSignIn(
       issuer: provider ? provider.issuer : null,
     },
     magicLink: {
-      enabled: linksOn,
-      admitted,
+      enabled: setting.enabled,
       suppressed,
       lastRequest,
       directoryConnection,
+      requestsInLastDay,
+      dailyLimit: magicLinkLimits.addressPerDay,
     },
     user: membership
       ? { id: membership.userId, status: membership.status }

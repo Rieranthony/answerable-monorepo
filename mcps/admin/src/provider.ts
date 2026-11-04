@@ -99,7 +99,7 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
 
   const organisationsGet = role("team", defineTool({
     name: "organisations.get",
-    description: "Read one organisation from Answerable ID: its slug, name and status, and its two ways in side by side, each with its own state. magicLink: whether links are on, who may ask for one and how many effective members it lists. sso: its directory, issuer, domain, whether it signs in through Answerable's platform application or its own credentials and whether a client secret is set, null when it has none. Also every email domain routed to it, each with when it was proved and the DNS record that proves it. Changes nothing.",
+    description: "Read one organisation from Answerable ID: its slug, name and status, and its two ways in side by side, each with its own state. magicLink: whether links are on and who may ask for one. sso: its directory, issuer, domain, whether it signs in through Answerable's platform application or its own credentials and whether a client secret is set, null when it has none. Also every email domain routed to it, each with when it was proved and the DNS record that proves it. Changes nothing.",
     scopes,
     input: z.object({ organizationId }),
     output: organisation.extend({
@@ -110,7 +110,6 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
       })).describe("Every email domain routed to the organisation"),
       magicLink: z.object({
         enabled: z.boolean(), admission: z.enum(["listed", "domain"]).describe("Who may ask for a link: listed, its effective members; domain, also anyone at a proved domain"),
-        listed: z.number().int().describe("Its effective members"),
       }).describe("Sign-in by emailed link; independent of the directory"),
       sso: z.object({
         issuer: z.string(), domain: z.string(),
@@ -119,7 +118,7 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
     }),
     async execute({ organizationId }, context) {
       const path = `/organizations/${organizationId}`
-      const row = await need<z.input<typeof organisation> & { magicLink: { enabled: boolean; admission: "listed" | "domain"; listed: number } }>(path, context, missingOrganisation(organizationId))
+      const row = await need<z.input<typeof organisation> & { magicLink: { enabled: boolean; admission: "listed" | "domain" } }>(path, context, missingOrganisation(organizationId))
       const domains = await all<{ id: string; domain: string; status: "active" | "disabled"; verifiedAt: string | null; verificationRecord: { type: string; name: string; value: string } }>(`${path}/domains`, context, missingOrganisation(organizationId))
       const sso = await read<{ issuer: string; domain: string; oidc: { credentials: "platform" | "own"; hasClientSecret: boolean } }>(`${path}/sso-provider`, context)
       return { ...row, domains, sso: sso ?? null }
@@ -220,6 +219,41 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
       `Organisation ${organizationId} has no SSO provider in Answerable ID, or does not exist; organisations_get shows its SSO provider`),
   }))
 
+  const signinDiagnose = role("team", defineTool({
+    name: "signin.diagnose",
+    description: "Answer why a person cannot sign in to an organisation, or got no sign-in mail: Answerable ID's checks of that address against this organisation alone, in order, with the first that blocks them as verdict.code, or authentication_required when none does. It also shows how the address routes, the organisation's directory, its magic-link setting, the newest sign-in mail for the address and how many it has had in the last day against the daily limit, and the person's membership there. An address outside the organisation shows no person, whoever holds it. A sendStatus of sent means no failure has been recorded: a message's delivery, bounce and suppression history is in Postmark's Activity, not here. Changes nothing.",
+    scopes,
+    input: z.object({ organizationId, email: z.email().describe("The address the person signs in with, in any case") }),
+    output: z.object({
+      email: z.string(),
+      routing: z.object({
+        domain: z.string(), routesTo: z.object({ organizationId: z.uuid(), slug: z.string() }).nullable().describe("This organisation, when it holds the domain; null otherwise, whoever else does"),
+        matchesThisOrganization: z.boolean(),
+      }),
+      organization: z.object({ id: z.uuid(), slug: z.string(), status }),
+      provider: z.object({ configured: z.boolean(), kind: z.enum(["entra", "google", "oidc"]).nullable(), issuer: z.string().nullable() }).describe("The organisation's directory"),
+      magicLink: z.object({
+        enabled: z.boolean(), suppressed: z.boolean().describe("Whether Postmark refused the newest send as a suppressed address, which staff reactivate in Postmark"),
+        lastRequest: z.object({
+          id: z.uuid(), purpose: z.enum(["link", "connect_directory"]),
+          sendStatus: z.enum(["sent", "failed"]).describe("sent: no failure has been recorded; delivery is in Postmark's Activity. failed: Postmark refused the send, or never answered"),
+          postmarkErrorCode: z.number().int().nullable(), postmarkHttpStatus: z.number().int().nullable(), createdAt: time,
+        }).nullable().describe("The newest sign-in mail for this address at this organisation, kept for seven days"),
+        directoryConnection: z.object({ id: z.uuid(), sendStatus: z.enum(["sent", "failed"]), attempts: z.number().int(), expiresAt: time }).nullable().describe("A directory sign-in this address has made and not yet connected, waiting on the code mailed to it"),
+        requestsInLastDay: z.number().int().describe("Its sign-in mails in the last day at this organisation, leaving out those that failed"),
+        dailyLimit: z.number().int().describe("How many mails an address gets in a day"),
+      }),
+      user: z.object({ id: z.uuid(), status }).nullable().describe("The member's user; null when this organisation has no member with this address, which does not mean the address is unused elsewhere"),
+      membership: z.object({ memberId: z.uuid(), effective: z.boolean(), validFrom: time.nullable(), validUntil: time.nullable() }).nullable(),
+      verdict: z.object({
+        code: z.string().describe("What blocks them, or authentication_required when these checks found nothing and a real sign-in must decide"),
+        checked: z.array(z.string()).describe("The checks made, in order, up to the verdict"),
+        requiresToken: z.array(z.string()).describe("What only a real sign-in can show, which this cannot"),
+      }),
+    }),
+    execute: ({ organizationId, email }, context) => need(`/organizations/${organizationId}/sign-in-diagnosis?email=${encodeURIComponent(email)}`, context, missingOrganisation(organizationId)),
+  }))
+
   const staffList = role("team", defineTool({
     name: "staff.list",
     description: "List the members of the Answerable platform organisation who can reach this admin MCP, newest first, 20 per page by default and at most 100, each with their staff role (team, admin or owner, or null when they hold none), read from Answerable ID whatever their groups are called. When has_more is true, pass next_cursor as cursor. Changes nothing.",
@@ -239,7 +273,7 @@ export function createAdminProvider({ id, authority, platform, resource, issuer,
     id: "admin", version: "2026-10-01",
     description: "Answerable's staff-only admin MCP: organisations, users and members (including stopping someone), groups, access, single sign-on, the audit log, the Toolbox and standalone MCPs in Answerable ID, each tool behind a staff role.",
     tools: [
-      whoami, organisationsList, organisationsGet, membersList, membersGet, groupsList, accessList, auditList, ssoTest, staffList,
+      whoami, organisationsList, organisationsGet, membersList, membersGet, groupsList, accessList, auditList, ssoTest, signinDiagnose, staffList,
       ...organisationWrites(writes), ...accessWrites(writes, standaloneOrigin), ...toolboxWrites(writes, toolbox), ...standaloneWrites(writes, standaloneOrigin), ...staffWrites(writes), ...userWrites(writes), ...magicLinkWrites(writes),
     ],
   })

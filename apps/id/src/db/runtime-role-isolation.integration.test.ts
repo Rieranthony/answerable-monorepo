@@ -521,7 +521,7 @@ test("restricted organisation readers keep tenant detail, diagnosis and retained
     await inTenantRead(runtime.db, tenant.id, "directory", async (context) =>
       expect(await queries.readOrganization(context)).toEqual({
         ...tenant,
-        magicLink: { enabled: false, admission: "listed", listed: 0 },
+        magicLink: { enabled: false, admission: "listed" },
       }),
     );
     await inTenantRead(runtime.db, tenant.id, "memberAccess", async (context) =>
@@ -558,7 +558,7 @@ test("restricted organisation readers keep tenant detail, diagnosis and retained
   await inTenantRead(runtime.db, tenants[1]!.id, "directory", async (context) =>
     expect(await queries.readOrganization(context)).toEqual({
       ...tenants[1]!,
-      magicLink: { enabled: false, admission: "listed", listed: 0 },
+      magicLink: { enabled: false, admission: "listed" },
     }),
   );
 });

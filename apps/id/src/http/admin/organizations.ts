@@ -35,7 +35,7 @@ import { problemResponses } from "../problem.ts";
 import { validate } from "../validation.ts";
 import { registerRoute, type AdminRoute } from "./route-table.ts";
 
-const listedOrganizationSchema = z.object({
+const organizationSchema = z.object({
   id: z.uuid(),
   revision: z.number().int().positive(),
   name: z.string(),
@@ -50,14 +50,6 @@ const listedOrganizationSchema = z.object({
     admission: z.enum(magicLinkAdmissions).meta({
       description:
         "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates.",
-    }),
-  }),
-});
-const organizationSchema = listedOrganizationSchema.extend({
-  magicLink: listedOrganizationSchema.shape.magicLink.extend({
-    listed: z.number().int().nonnegative().meta({
-      description:
-        "The organisation's effective members. A list leaves this out, since it counts them.",
     }),
   }),
 });
@@ -106,7 +98,7 @@ export const routes = {
     responses: {
       200: {
         description: "Organisations",
-        content: json(pageSchema(listedOrganizationSchema)),
+        content: json(pageSchema(organizationSchema)),
       },
       ...problemResponses(400),
     },

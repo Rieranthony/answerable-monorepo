@@ -4,7 +4,7 @@ import { createAdmin, type FakeId } from "./test/admin"
 import { serving } from "./test/database"
 
 // The five tools that stop someone, against the fake ID and the admin MCP's roles: each is previewed, committed under the intent's key with a
-// platform:users token, and refused for the wrong role, a staff target, an old sign-in and an unknown or ambiguous person.
+// platform:users token, and refused for the wrong role, a staff target and an unknown person; those that let someone back in, for an old sign-in too.
 const login = await serving()
 afterAll(() => login.drop())
 const admins: Awaited<ReturnType<typeof createAdmin>>[] = []
@@ -57,7 +57,7 @@ function people(id: FakeId) {
   return { newco, bare, ada, adaAtBare, grace, user }
 }
 
-test("users_disable names the person and every organisation it reaches, commits one disable under the intent's key with a platform:users token, and users_enable reverses the status; by address or by id", async () => {
+test("users_disable names the person and every organisation it reaches, commits one disable under the intent's key with a platform:users token, and users_enable reverses the status", async () => {
   const { id, staff } = await admin()
   const { ada, user } = people(id)
   user(ada).sessionCount = 2
@@ -86,12 +86,10 @@ test("users_disable names the person and every organisation it reaches, commits 
   // The fake refuses a token without platform:users, so the write could only have been made with the machine client's users token.
   expect(id.scopesAsked).toEqual(["platform:read", "platform:read platform:users"])
   expect(user(ada)).toMatchObject({ status: "disabled", sessionCount: 0 })
-  expect(await refusal(client, "users_disable", { userId: String(ada.userId) })).toMatchObject({
+  expect(await refusal(client, "users_disable", { email: "ada@newco.example" })).toMatchObject({
     code: "PRECONDITION_FAILED", message: "ada@newco.example is already disabled", retry: { policy: "after_state_change" }, details: { preconditions: [{ userId: ada.userId, status: "disabled" }] },
   })
-  const before = id.received.length
-  const enable = await prepared(client, "users_enable", { userId: String(ada.userId) })
-  expect(id.received.slice(before).some(({ request }) => request.startsWith("GET /api/admin/v1/users?"))).toBe(false)
+  const enable = await prepared(client, "users_enable", { email: "ada@newco.example" })
   expect(enable.preview).toEqual({
     summary: expect.stringMatching(/^Enable ada@newco\.example \(Ada Lovelace\) in Answerable ID, so that they can sign in again at the organisations where their membership is in force: (newco, bare|bare, newco)$/),
     changes: [{ path: `users[${ada.userId}].status`, from: "disabled", to: "active" }],
@@ -110,59 +108,44 @@ test("a person who is in no organisation is named as such, and enabling names a 
   const { ada, adaAtBare, user } = people(id)
   const client = await staff(["admin", "answerable-admin"]).connect()
   const nowhere = id.user({ email: "nowhere@example.test", name: "No One", status: "disabled" })
-  const alone = await prepared(client, "users_enable", { userId: String(nowhere.id) })
+  const alone = await prepared(client, "users_enable", { email: String(nowhere.email) })
   expect(alone.preview.summary).toBe("Enable nowhere@example.test (No One) in Answerable ID, so that they can sign in again at the organisations where their membership is in force: no organisation")
   expect(alone.preview.warnings).toEqual(["Revoked sessions, grants and tokens are not restored: the person signs in again.", noPrecondition("enabling a user")])
   user(ada).status = "disabled"
   adaAtBare.effective = false
-  const enable = await prepared(client, "users_enable", { userId: String(ada.userId) })
+  const enable = await prepared(client, "users_enable", { email: "ada@newco.example" })
   expect(enable.preview.summary).toMatch(/: (newco, bare \(not in force\)|bare \(not in force\), newco)$/)
   expect(enable.preview.warnings[1]).toBe("Not in force, and not changed by this: bare. members_reinstate brings back a membership that was removed.")
 })
 
-test("a person is named by exactly one of address and id: neither or both is INVALID_INPUT naming both fields; an address or id ID does not hold is NOT_FOUND, and a retired address says how to find the person", async () => {
+test("a person is named by their address, required and alone: an id is no way to name them, and an address ID does not hold is NOT_FOUND", async () => {
   const { id, staff } = await admin()
   const { newco, ada } = people(id)
   const client = await staff(["admin", "answerable-owner"]).connect()
   for (const name of ["users_disable", "users_enable", "users_retireemail"]) {
-    expect(await refusal(client, name, {}), name).toMatchObject({
-      code: "INVALID_INPUT", message: "Name the person: give their email or their userId", retry: { policy: "after_fix_input" },
-      details: { field_violations: [{ field: "email" }, { field: "userId" }] },
-    })
-    expect(await refusal(client, name, { email: "ada@newco.example", userId: String(ada.userId) }), name).toMatchObject({
-      code: "INVALID_INPUT", message: "Name the person by email or by userId, not both", details: { field_violations: [{ field: "email" }, { field: "userId" }] },
-    })
+    expect(await refusal(client, name, {}), name).toMatchObject({ code: "INVALID_INPUT", retry: { policy: "after_fix_input" } })
+    expect((await refusal(client, name, { userId: String(ada.userId) })).code, name).toBe("INVALID_INPUT")
+    expect((await refusal(client, name, { email: "ada@newco.example", userId: String(ada.userId) })).code, name).toBe("INVALID_INPUT")
     expect(await refusal(client, name, { email: "nobody@newco.example" }), name).toMatchObject({
       code: "NOT_FOUND", retry: { policy: "never" },
-      message: "Answerable ID has no user with the address nobody@newco.example. An address retired with users_retireemail finds nobody: name that person by userId",
+      message: "Answerable ID has no user with the address nobody@newco.example. An address retired with users_retireemail finds nobody",
     })
-    const unknown = crypto.randomUUID()
-    expect(await refusal(client, name, { userId: unknown }), name).toMatchObject({ code: "NOT_FOUND", message: `Answerable ID has no user ${unknown}` })
     expect((await refusal(client, name, { email: "not an address" })).code, name).toBe("INVALID_INPUT")
   }
   for (const name of ["members_remove", "members_reinstate"]) {
-    expect(await refusal(client, name, { organizationId: newco.id }), name).toMatchObject({
-      code: "INVALID_INPUT", message: "Name the member: give their email or their memberId", details: { field_violations: [{ field: "email" }, { field: "memberId" }] },
-    })
-    expect(await refusal(client, name, { organizationId: newco.id, email: "ada@newco.example", memberId: String(ada.id) }), name).toMatchObject({
-      code: "INVALID_INPUT", message: "Name the member by email or by memberId, not both",
-    })
+    expect((await refusal(client, name, { organizationId: newco.id })).code, name).toBe("INVALID_INPUT")
+    expect((await refusal(client, name, { organizationId: newco.id, memberId: String(ada.id) })).code, name).toBe("INVALID_INPUT")
+    expect((await refusal(client, name, { organizationId: newco.id, email: "ada@newco.example", memberId: String(ada.id) })).code, name).toBe("INVALID_INPUT")
     expect(await refusal(client, name, { organizationId: newco.id, email: "nobody@newco.example" }), name).toMatchObject({
       code: "NOT_FOUND", message: `Organisation ${newco.id} has no member with the address nobody@newco.example; members_list lists them`,
     })
     const unknown = crypto.randomUUID()
-    expect(await refusal(client, name, { organizationId: newco.id, memberId: unknown }), name).toMatchObject({
-      code: "NOT_FOUND", message: `Answerable ID has no member ${unknown} in organisation ${newco.id}; members_list lists them`,
-    })
-    expect(await refusal(client, name, { organizationId: unknown, memberId: String(ada.id) }), name).toMatchObject({
-      code: "NOT_FOUND", message: `Answerable ID has no organisation ${unknown}; organisations_list lists them`,
-    })
     expect(await refusal(client, name, { organizationId: unknown, email: "ada@newco.example" }), name).toMatchObject({ code: "NOT_FOUND", message: `Answerable ID has no organisation ${unknown}; organisations_list lists them` })
   }
   expect(writes(id)).toEqual([])
 })
 
-test("users_retireemail is an owner's terminal write: it refuses a person who is not disabled, and one already retired, and previews that the next holder is a new person; a retired person can be named by id only, and cannot be enabled", async () => {
+test("users_retireemail is an owner's terminal write: it refuses a person who is not disabled, and previews that the next holder is a new person; the address then finds nobody, for any tool", async () => {
   const { id, staff } = await admin()
   const { ada, user } = people(id)
   const owner = await staff(["admin", "answerable-owner"]).connect()
@@ -181,7 +164,7 @@ test("users_retireemail is an owner's terminal write: it refuses a person who is
     ],
     effects: [],
     warnings: [
-      "Permanent: nothing gives the address back to this person, and users_enable refuses them afterwards.",
+      "Permanent: nothing gives the address back to this person, and the address then finds nobody, so no tool can name them.",
       "The next holder of the address is a new person with a new sub: nothing of this person's carries over to them.",
       noPrecondition("retiring an address"),
     ],
@@ -193,18 +176,21 @@ test("users_retireemail is an owner's terminal write: it refuses a person who is
     [`POST /api/admin/v1/users/${ada.userId}/disable`, expect.any(String)], [`POST /api/admin/v1/users/${ada.userId}/retire-email`, intent.intent_id],
   ])
   expect(user(ada)).toMatchObject({ retiredEmail: "ada@newco.example", email: `${ada.userId}@retired.invalid` })
-  // The address now finds nobody, so the person is named by id, and the tools still call them by the address they were retired from.
-  expect(errorOf(await call(owner, "users_disable", { email: "ada@newco.example" })).code).toBe("NOT_FOUND")
-  expect(await refusal(owner, "users_retireemail", { userId: String(ada.userId) })).toMatchObject({
-    code: "PRECONDITION_FAILED", message: "ada@newco.example is already retired: its address is free", details: { preconditions: [{ userId: ada.userId, retired: true }] },
-  })
-  expect(await refusal(owner, "users_enable", { userId: String(ada.userId) })).toMatchObject({
-    code: "PRECONDITION_FAILED", message: "ada@newco.example's address was retired, which is permanent: Ada Lovelace cannot be enabled",
-  })
-  expect(await refusal(owner, "users_disable", { userId: String(ada.userId) })).toMatchObject({ code: "PRECONDITION_FAILED", message: "ada@newco.example is already disabled" })
+  for (const name of ["users_disable", "users_enable", "users_retireemail"]) {
+    expect(await refusal(owner, name, { email: "ada@newco.example" }), name).toMatchObject({ code: "NOT_FOUND", message: expect.stringContaining("An address retired with users_retireemail finds nobody") })
+  }
+  // The tombstone members_list shows is still their address in ID, which refuses to enable it.
+  const log = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    const tombstone = `${ada.userId}@retired.invalid`
+    expect(errorOf(await confirm(owner, await prepared(owner, "users_enable", { email: tombstone })))).toMatchObject({
+      code: "UPSTREAM_REJECTED", message: expect.stringContaining("user_email_retired"), details: { upstream: { status: 409, code: "user_email_retired" } },
+    })
+    expect(await refusal(owner, "users_disable", { email: tombstone })).toMatchObject({ code: "PRECONDITION_FAILED", message: `${tombstone} is already disabled` })
+  } finally { log.mockRestore() }
 })
 
-test("members_remove revokes one membership and says the other organisations stay; members_reinstate brings it back, not the grants, and says when the person is disabled everywhere; by address or by member id", async () => {
+test("members_remove revokes one membership and says the other organisations stay; members_reinstate brings it back, not the grants, and says when the person is disabled everywhere", async () => {
   const { id, staff } = await admin()
   const { newco, bare, ada, adaAtBare, user } = people(id)
   const group = id.group(newco.id, { slug: "engineers", name: "Engineers" })
@@ -234,13 +220,13 @@ test("members_remove revokes one membership and says the other organisations sta
   expect(ada).toMatchObject({ membershipStatus: "revoked", effective: false })
   expect(adaAtBare).toMatchObject({ membershipStatus: "active", effective: true })
   expect(id.joined(group.id, ada.id)).toBe(false)
-  expect(await refusal(client, "members_remove", { organizationId: newco.id, memberId: String(ada.id) })).toMatchObject({
+  expect(await refusal(client, "members_remove", { organizationId: newco.id, email: "ada@newco.example" })).toMatchObject({
     code: "PRECONDITION_FAILED", message: "ada@newco.example is already removed from organisation “Newco” (newco)", details: { preconditions: [{ memberId: ada.id, membershipStatus: "revoked" }] },
   })
   expect(await refusal(client, "members_reinstate", { organizationId: bare.id, email: "ada@newco.example" })).toMatchObject({
     code: "PRECONDITION_FAILED", message: "ada@newco.example is not removed from organisation “Bare” (bare): their membership is active",
   })
-  const reinstate = await prepared(client, "members_reinstate", { organizationId: newco.id, memberId: String(ada.id) })
+  const reinstate = await prepared(client, "members_reinstate", { organizationId: newco.id, email: "ada@newco.example" })
   expect(reinstate.targets).toEqual([expect.objectContaining({ resource_type: "member", resource_id: ada.id, version: { kind: "etag", value: `"${ada.id}:2"` } })])
   expect(reinstate.preview).toEqual({
     summary: "Reinstate ada@newco.example (Ada Lovelace) in organisation “Newco” (newco)",
@@ -257,9 +243,9 @@ test("members_remove revokes one membership and says the other organisations sta
   expect(ada).toMatchObject({ membershipStatus: "active", effective: true })
   expect(id.joined(group.id, ada.id)).toBe(false)
   // A person who is disabled everywhere is not signed in by a reinstated membership; an only membership reads as no other organisation.
-  await committed(client, await prepared(client, "users_disable", { userId: String(ada.userId) }))
-  await committed(client, await prepared(client, "members_remove", { organizationId: bare.id, memberId: String(adaAtBare.id) }))
-  const again = await prepared(client, "members_reinstate", { organizationId: bare.id, memberId: String(adaAtBare.id) })
+  await committed(client, await prepared(client, "users_disable", { email: "ada@newco.example" }))
+  await committed(client, await prepared(client, "members_remove", { organizationId: bare.id, email: "ada@newco.example" }))
+  const again = await prepared(client, "members_reinstate", { organizationId: bare.id, email: "ada@newco.example" })
   expect(again.preview.warnings).toEqual([
     expect.stringContaining("Reaches this organisation only."), "ada@newco.example is disabled at every organisation, so reinstating the membership does not let them sign in: users_enable does.", noPrecondition("reinstating a member"),
   ])
@@ -276,13 +262,13 @@ test("a team member sees none of the five, an admin the four that are not termin
   expect(await stopping(await staff(["admin", "answerable-team"]).connect())).toEqual([])
   const operator = await staff(["admin", "answerable-admin"]).connect()
   expect(await stopping(operator)).toEqual(["users_disable", "users_enable", "members_remove", "members_reinstate"])
-  await expect(call(operator, "users_retireemail", { userId: crypto.randomUUID() })).rejects.toThrow("Tool users_retireemail not found")
+  await expect(call(operator, "users_retireemail", { email: "a@b.example" })).rejects.toThrow("Tool users_retireemail not found")
   expect(await stopping(await staff(["admin", "answerable-owner"]).connect())).toEqual(["users_disable", "users_enable", "users_retireemail", "members_remove", "members_reinstate"])
 })
 
 test("acting on someone who is Answerable staff needs the owner role, for each of the five, though four need only admin: an admin is PERMISSION_DENIED and nothing is written; an owner may, and a person who is not staff is an admin's", async () => {
   const { id, staff, platform } = await admin()
-  const { newco, bare, ada } = people(id)
+  const { newco, bare } = people(id)
   // Two members of staff, who are members of client organisations too (the address is the same everywhere): one active, one disabled.
   const boss = id.member(platform, { email: "boss@answerable.test", name: "The Boss" })
   const bossAtNewco = id.member(newco.id, { email: "boss@answerable.test", name: "The Boss", userId: boss.userId })
@@ -290,9 +276,9 @@ test("acting on someone who is Answerable staff needs the owner role, for each o
   const goneAtBare = id.member(bare.id, { email: "gone@answerable.test", name: "Gone", userId: gone.userId, status: "disabled", membershipStatus: "revoked", effective: false })
   const left = id.member(platform, { email: "left@answerable.test", name: "Left", status: "disabled" })
   const aimed: [string, Record<string, unknown>][] = [
-    ["users_disable", { userId: String(boss.userId) }],
+    ["users_disable", { email: "boss@answerable.test" }],
     ["users_enable", { email: "gone@answerable.test" }],
-    ["members_remove", { organizationId: newco.id, memberId: String(bossAtNewco.id) }],
+    ["members_remove", { organizationId: newco.id, email: "boss@answerable.test" }],
     ["members_reinstate", { organizationId: bare.id, email: "gone@answerable.test" }],
   ]
   const operator = await staff(["admin", "answerable-admin"]).connect()
@@ -304,15 +290,15 @@ test("acting on someone who is Answerable staff needs the owner role, for each o
     })
   }
   // The terminal tool is not listed to an admin at all.
-  await expect(call(operator, "users_retireemail", { userId: String(left.userId) })).rejects.toThrow("Tool users_retireemail not found")
+  await expect(call(operator, "users_retireemail", { email: "left@answerable.test" })).rejects.toThrow("Tool users_retireemail not found")
   expect(writes(id)).toEqual([])
   // Someone who is not staff is an admin's.
-  for (const [name, args] of [["users_disable", { userId: String(ada.userId) }], ["members_remove", { organizationId: newco.id, memberId: String(ada.id) }]] as const) {
+  for (const [name, args] of [["users_disable", { email: "ada@newco.example" }], ["members_remove", { organizationId: newco.id, email: "ada@newco.example" }]] as const) {
     expect((await prepared(operator, name, args)).targets, name).toHaveLength(1)
   }
   // An owner prepares and commits each of the five on staff.
   const owner = await staff(["admin", "answerable-owner"]).connect()
-  for (const [name, args] of [...aimed, ["users_retireemail", { userId: String(left.userId) }] as const]) {
+  for (const [name, args] of [...aimed, ["users_retireemail", { email: "left@answerable.test" }] as const]) {
     const intent = await prepared(owner, name, args)
     expect(intent.targets, name).toHaveLength(1)
     await committed(owner, intent)
@@ -329,12 +315,12 @@ test("disabling a member of staff warns that it also ends their access and that 
   const boss = id.member(platform, { email: "boss@answerable.test", name: "The Boss" })
   const self = staff(["admin", "answerable-owner"])
   const client = await self.connect()
-  const other = await prepared(client, "users_disable", { userId: String(boss.userId) })
+  const other = await prepared(client, "users_disable", { email: String(boss.email) })
   expect(other.preview.warnings).toContain("The Boss is Answerable staff: this also ends their access to the admin MCP, and Answerable ID refuses it for the last platform administrator.")
   expect(other.preview.warnings.some(warning => warning.startsWith("You are"))).toBe(false)
-  const disabling = await prepared(client, "users_disable", { userId: String(self.member.userId) })
+  const disabling = await prepared(client, "users_disable", { email: String(self.member.email) })
   expect(disabling.preview.warnings).toContain("You are disabling yourself: your sessions end with it, and only another admin can enable you again.")
-  const removing = await prepared(client, "members_remove", { organizationId: platform, memberId: self.member.id })
+  const removing = await prepared(client, "members_remove", { organizationId: platform, email: String(self.member.email) })
   expect(removing.preview.warnings).toContain("You are removing yourself from this organisation.")
 })
 
@@ -344,26 +330,24 @@ test("the other self warnings: enabling, reinstating and retiring one's own acco
   const client = await self.connect()
   const user = id.userOf(String(self.member.userId))!
   user.status = "disabled"
-  expect((await prepared(client, "users_enable", { userId: String(self.member.userId) })).preview.warnings).toContain("You are enabling yourself.")
-  expect((await prepared(client, "users_retireemail", { userId: String(self.member.userId) })).preview.warnings).toContain("You are retiring your own address.")
+  expect((await prepared(client, "users_enable", { email: String(self.member.email) })).preview.warnings).toContain("You are enabling yourself.")
+  expect((await prepared(client, "users_retireemail", { email: String(self.member.email) })).preview.warnings).toContain("You are retiring your own address.")
   self.member.membershipStatus = "revoked"
-  expect((await prepared(client, "members_reinstate", { organizationId: platform, memberId: self.member.id })).preview.warnings).toContain("You are reinstating yourself.")
+  expect((await prepared(client, "members_reinstate", { organizationId: platform, email: String(self.member.email) })).preview.warnings).toContain("You are reinstating yourself.")
 })
 
-test("each of the five needs a directory sign-in within the window: an old or no sign-in answers ADMIN_REAUTHENTICATION_REQUIRED at prepare, and an intent prepared in time cannot commit once the window has passed", async () => {
+test("what lets someone back in or frees an address needs a directory sign-in within the window: an old or no sign-in answers ADMIN_REAUTHENTICATION_REQUIRED at prepare, and an intent prepared in time cannot commit once the window has passed", async () => {
   const { id, staff } = await admin({ freshSeconds: 60 })
-  const { newco, ada, grace } = people(id)
+  const { newco, grace } = people(id)
   id.userOf(String(grace.userId))!.status = "disabled"
+  const removed = id.member(newco.id, { email: "removed@newco.example", membershipStatus: "revoked", effective: false })
   const owner = staff(["admin", "answerable-owner"])
   const client = await owner.connect()
   const all: [string, Record<string, unknown>][] = [
-    ["users_disable", { userId: String(ada.userId) }],
-    ["users_enable", { userId: String(grace.userId) }],
-    ["users_retireemail", { userId: String(grace.userId) }],
-    ["members_remove", { organizationId: newco.id, memberId: String(ada.id) }],
-    ["members_reinstate", { organizationId: newco.id, memberId: String(grace.id) }],
+    ["users_enable", { email: "grace@newco.example" }],
+    ["users_retireemail", { email: "grace@newco.example" }],
+    ["members_reinstate", { organizationId: newco.id, email: String(removed.email) }],
   ]
-  grace.membershipStatus = "revoked"
   const now = Math.floor(Date.now() / 1000)
   for (const time of [now - 120, null]) {
     owner.signedInAt(time)
@@ -381,33 +365,55 @@ test("each of the five needs a directory sign-in within the window: an old or no
   expect(writes(id)).toEqual([])
 })
 
+test("stopping one named person never waits for a sign-in: with an old or no sign-in, an admin prepares and commits users_disable and members_remove, and an owner users_disable on a member of staff", async () => {
+  const { id, staff, platform } = await admin({ freshSeconds: 60 })
+  const { newco, ada, grace, user } = people(id)
+  const boss = id.member(platform, { email: "boss@answerable.test", name: "The Boss" })
+  const operator = staff(["admin", "answerable-admin"])
+  const client = await operator.connect()
+  const old = Math.floor(Date.now() / 1000) - 120
+  operator.signedInAt(old)
+  await committed(client, await prepared(client, "users_disable", { email: "ada@newco.example" }))
+  operator.signedInAt(null)
+  await committed(client, await prepared(client, "members_remove", { organizationId: newco.id, email: "grace@newco.example" }))
+  expect(user(ada).status).toBe("disabled")
+  expect(grace.membershipStatus).toBe("revoked")
+  const owner = staff(["admin", "answerable-owner"])
+  const ownerClient = await owner.connect()
+  owner.signedInAt(old)
+  await committed(ownerClient, await prepared(ownerClient, "users_disable", { email: "boss@answerable.test" }))
+  expect(user(boss).status).toBe("disabled")
+  // The platform organisation's own membership stays behind the guard: its writes all need the sign-in, and users_disable is what stops a member of staff at once.
+  expect((await refusal(ownerClient, "members_remove", { organizationId: platform, email: "boss@answerable.test" })).code).toBe("ADMIN_REAUTHENTICATION_REQUIRED")
+})
+
 test("a user or a member changed between prepare and commit is INTENT_STALE with the versions: the user by when ID last changed them, the member by ETag", async () => {
   const { id, staff } = await admin()
   const { newco, ada, grace, user } = people(id)
   const client = await staff(["admin", "answerable-admin"]).connect()
-  const disable = await prepared(client, "users_disable", { userId: String(ada.userId) })
+  const disable = await prepared(client, "users_disable", { email: "ada@newco.example" })
   const [before] = disable.targets
   id.revise(String(ada.userId))
   expect(errorOf(await confirm(client, disable))).toMatchObject({
     code: "INTENT_STALE", retry: { policy: "after_reprepare" },
     details: { targets: [{ resource_id: ada.userId, expected: before!.version.value, current: user(ada).updatedAt }] },
   })
-  const remove = await prepared(client, "members_remove", { organizationId: newco.id, memberId: String(grace.id) })
+  const remove = await prepared(client, "members_remove", { organizationId: newco.id, email: "grace@newco.example" })
   id.revise(String(grace.id))
   expect(errorOf(await confirm(client, remove))).toMatchObject({
     code: "INTENT_STALE", details: { targets: [{ resource_id: grace.id, expected: `"${grace.id}:1"`, current: `"${grace.id}:2"` }] },
   })
   expect(writes(id)).toEqual([])
   // Prepared again, both commit.
-  await committed(client, await prepared(client, "users_disable", { userId: String(ada.userId) }))
-  await committed(client, await prepared(client, "members_remove", { organizationId: newco.id, memberId: String(grace.id) }))
+  await committed(client, await prepared(client, "users_disable", { email: "ada@newco.example" }))
+  await committed(client, await prepared(client, "members_remove", { organizationId: newco.id, email: "grace@newco.example" }))
 })
 
 test("ID refusing a stop is the upstream refusal with its code, and a repeated commit answers the stored receipt without a second write", async () => {
   const { id, staff } = await admin()
   const { ada, grace } = people(id)
   const client = await staff(["admin", "answerable-owner"]).connect()
-  const intent = await prepared(client, "users_disable", { userId: String(ada.userId) })
+  const intent = await prepared(client, "users_disable", { email: "ada@newco.example" })
   id.fail(`POST /users/${ada.userId}/disable`, 409, "last_platform_administrator")
   const log = spyOn(console, "error").mockImplementation(() => {})
   try {
@@ -415,7 +421,7 @@ test("ID refusing a stop is the upstream refusal with its code, and a repeated c
       code: "UPSTREAM_REJECTED", retry: { policy: "never" }, message: expect.stringContaining("last_platform_administrator"), details: { upstream: { status: 409, code: "last_platform_administrator" } },
     })
   } finally { log.mockRestore() }
-  const other = await prepared(client, "users_disable", { userId: String(grace.userId) })
+  const other = await prepared(client, "users_disable", { email: "grace@newco.example" })
   const first = await committed(client, other)
   const again = (await confirm(client, other)).structuredContent
   expect(again).toEqual({ ...first, idempotent_replay: true, receipt_id: expect.any(String), intent_id: other.intent_id, status: "committed", committed_by: expect.anything() })
@@ -424,11 +430,11 @@ test("ID refusing a stop is the upstream refusal with its code, and a repeated c
 
 test("a deployment whose machine client has no capability for platform:users cannot write: the commit answers UPSTREAM_REJECTED, and the message names the capability to add", async () => {
   const { id, staff } = await admin({ users: false })
-  const { ada, newco, grace } = people(id)
+  const { newco } = people(id)
   const client = await staff(["admin", "answerable-owner"]).connect()
   const log = spyOn(console, "error").mockImplementation(() => {})
   try {
-    for (const [name, args] of [["users_disable", { userId: String(ada.userId) }], ["members_remove", { organizationId: newco.id, memberId: String(grace.id) }]] as const) {
+    for (const [name, args] of [["users_disable", { email: "ada@newco.example" }], ["members_remove", { organizationId: newco.id, email: "grace@newco.example" }]] as const) {
       expect(errorOf(await confirm(client, await prepared(client, name, args))), name).toMatchObject({
         code: "UPSTREAM_REJECTED", retry: { policy: "never" },
         message: "Answerable ID refused the client credentials of admin-mcp (400); check the client id, the client secret and the client's platform:read and platform:users capability for the admin resource",

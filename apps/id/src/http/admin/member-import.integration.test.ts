@@ -41,36 +41,19 @@ afterAll(async () => {
 });
 
 type Kind = Parameters<AdminFixture["headers"]>[0] | "root";
-function post(
-  path: string,
-  body: unknown,
+function importing(
+  organizationId: string,
+  addresses: string[],
   init: { kind?: Kind; key?: string } = {},
 ) {
   const headers = fixture.headers(init.kind ?? "platformAdmin");
   if (init.key) headers.set("Idempotency-Key", init.key);
   headers.set("content-type", "application/json");
-  return fixture.app.request(`/api/admin/v1${path}`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
-}
-const importing = (
-  organizationId: string,
-  addresses: string[],
-  init: { kind?: Kind; key?: string } = {},
-) =>
-  post(`/organizations/${organizationId}/members/import`, { addresses }, init);
-const previewing = (
-  organizationId: string,
-  addresses: string[],
-  init: { kind?: Kind; key?: string } = {},
-) =>
-  post(
-    `/organizations/${organizationId}/members/import/preview`,
-    { addresses },
-    init,
+  return fixture.app.request(
+    `/api/admin/v1/organizations/${organizationId}/members/import`,
+    { method: "POST", headers, body: JSON.stringify({ addresses }) },
   );
+}
 
 type Answer = {
   counts: Record<"created" | "added" | "alreadyMember" | "refused", number>;
@@ -271,7 +254,7 @@ const states: Record<
 
 describe("each address has its own answer", () => {
   for (const [name, { make, outcome, reason }] of Object.entries(states))
-    test(`${name}: ${outcome}${reason ? `, ${reason}` : ""}, the same in the preview`, async () => {
+    test(`${name}: ${outcome}${reason ? `, ${reason}` : ""}`, async () => {
       const of = await firm();
       const email = await make(of);
       const expected = {
@@ -279,8 +262,6 @@ describe("each address has its own answer", () => {
         outcome,
         ...(reason ? { reason } : {}),
       };
-      const previewed = await answered(await previewing(of.id, [email]));
-      expect(previewed.items).toEqual([expected]);
       const body = await answered(await importing(of.id, [email]));
       expect(body.items).toEqual([expected]);
       expect(body.counts).toEqual({
@@ -420,17 +401,6 @@ describe("what it makes", () => {
     expect((await membership(of.id, user.id))!.status).toBe("active");
   });
 
-  test("listed now counts them, and the answer's next read shows it", async () => {
-    const of = await firm();
-    await answered(await importing(of.id, [address(of), address(of)]));
-    const headers = fixture.headers("platformAdmin");
-    const read = await fixture.app.request(
-      `/api/admin/v1/organizations/${of.id}`,
-      { headers },
-    );
-    expect(await read.json()).toMatchObject({ magicLink: { listed: 2 } });
-  });
-
   test("allowed with links off and with a directory connected", async () => {
     const off = await firm();
     const headers = fixture.headers("platformAdmin");
@@ -473,16 +443,6 @@ describe("what it makes", () => {
         .from(accounts)
         .where(eq(accounts.userId, user.id)),
     ).toEqual([]);
-  });
-
-  test("the preview changes nothing and writes no journal or audit row", async () => {
-    const of = await firm();
-    const email = address(of);
-    const operations = await fixture.db.$count(adminOperations);
-    await answered(await previewing(of.id, [email]));
-    expect(await holder(email)).toBeUndefined();
-    expect(await fixture.db.$count(adminOperations)).toBe(operations);
-    expect(await importEvents(of.id)).toEqual([]);
   });
 });
 
@@ -617,26 +577,6 @@ describe("who may import, and how many", () => {
     });
   });
 
-  test("the preview needs platform:read, and tenants have none", async () => {
-    const of = await firm();
-    const bearer = await fixture.mintMachineToken(["platform:read"]);
-    await answered(
-      await previewing(of.id, ["a@b.example"], { kind: { bearer } }),
-    );
-    const writer = await fixture.mintMachineToken(["platform:users"]);
-    expect(
-      (await previewing(of.id, ["a@b.example"], { kind: { bearer: writer } }))
-        .status,
-    ).toBe(403);
-    expect(
-      (
-        await previewing(fixture.tenant.organizationId, ["a@b.example"], {
-          kind: "tenantAdmin",
-        })
-      ).status,
-    ).toBe(403);
-  });
-
   test("a person whose directory sign-in is stale is refused", async () => {
     const of = await firm();
     const email = address(of);
@@ -677,11 +617,9 @@ describe("who may import, and how many", () => {
       { length: maxImportAddresses + 1 },
       (_, index) => `p${index}@${of.domain}`,
     );
-    for (const send of [importing, previewing]) {
-      expect((await send(of.id, tooMany)).status).toBe(400);
-      expect((await send(of.id, [])).status).toBe(400);
-      expect((await send(createId(), ["a@b.example"])).status).toBe(404);
-    }
+    expect((await importing(of.id, tooMany)).status).toBe(400);
+    expect((await importing(of.id, [])).status).toBe(400);
+    expect((await importing(createId(), ["a@b.example"])).status).toBe(404);
     expect(
       await fixture.db
         .select()

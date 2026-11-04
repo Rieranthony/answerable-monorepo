@@ -41,8 +41,7 @@ const committed = async (client: Client, intent: Prepared) => {
   if (answer.isError) throw new Error(`commit: ${JSON.stringify(errorOf(answer))}`)
   return answer.structuredContent as { results: Record<string, unknown>; applied_changes: unknown[]; effects_performed: string[] }
 }
-// The preview of an import is a POST that changes nothing.
-const writes = (id: FakeId) => id.received.filter(({ request }) => !request.startsWith("GET") && !request.endsWith("/members/import/preview"))
+const writes = (id: FakeId) => id.received.filter(({ request }) => !request.startsWith("GET"))
 const noPrecondition = (write: string) => `Answerable ID takes no precondition on ${write}: the admin MCP reads the target again just before it writes, but a change in between is not refused by ID.`
 
 // An admin with a recent sign-in, on Newco, which holds a member and one domain.
@@ -84,7 +83,7 @@ test("magiclink_disable says what it ends, that directory sign-ins are not touch
     changes: [{ path: `organizations[${newco.id}].magicLink.enabled`, from: false, to: true }],
     effects: ["permission_change"],
     warnings: [
-      "Who may ask for a link: its 1 effective member.",
+      "Who may ask for a link: its effective members.",
       "Sessions and grants ended when links were turned off stay ended: their people sign in again.",
       noPrecondition("turning magic links on"),
     ],
@@ -112,24 +111,35 @@ test("magiclink_enable with a directory connected says what a link does not pass
   id.ssoProvider(newco.id, { issuer: entraIssuer, domain: "newco.example" })
   const on = await prepared(client, "magiclink_enable", { organizationId: newco.id })
   expect(on.preview.warnings).toEqual([
-    "Who may ask for a link: its 1 effective member, and anyone at a proved domain, whom a first sign-in creates.",
+    "Who may ask for a link: its effective members, and anyone at a proved domain, whom a first sign-in creates.",
     "A magic link does not pass through the directory's MFA or conditional access, and someone disabled there can still use a link while their mailbox works; remove the member in Answerable ID, with members_remove, to stop both.",
     "Sessions and grants ended when links were turned off stay ended: their people sign in again.",
     noPrecondition("turning magic links on"),
   ])
 })
 
-test("the platform organisation: an admin is refused every one of these, an owner with a recent sign-in cannot turn links on, and may look at the rest", async () => {
+test("the platform organisation: only ID refuses it links, and that answer reads clearly at commit; an owner with a recent sign-in may look at the rest", async () => {
   const { id, platform, staff, world } = await asAdmin()
   const owner = staff(["admin", "answerable-owner"])
   const client = await owner.connect()
-  id.domain(platform, "answerable.test")
-  expect(await refusal(client, "magiclink_enable", { organizationId: platform })).toMatchObject({ code: "PRECONDITION_FAILED", message: "The platform organisation can never use magic links: staff sign in through its directory" })
-  expect(await refusal(client, "magiclink_admission", { organizationId: platform, admission: "domain" })).toMatchObject({ code: "PRECONDITION_FAILED", message: "The platform organisation can never use magic links: staff sign in through its directory" })
+  const [domain] = [id.domain(platform, "answerable.test", { verifiedAt: new Date().toISOString() })]
+  const log = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    for (const [name, args, path, method] of [
+      ["magiclink_enable", { organizationId: platform }, "magic-link/enable", "POST"],
+      ["magiclink_admission", { organizationId: platform, admission: "domain" }, "magic-link", "PATCH"],
+    ] as const) {
+      const intent = await prepared(client, name, args)
+      expect(errorOf(await confirm(client, intent)), name).toMatchObject({
+        code: "UPSTREAM_REJECTED", retry: { policy: "never" }, details: { upstream: { status: 409, code: "platform_magic_link" } },
+        message: `Answerable ID answered ${method} /api/admin/v1/organizations/${platform}/${path} with 409 platform_magic_link: The platform organisation cannot use magic links`,
+      })
+    }
+  } finally { log.mockRestore() }
+  expect(id.organisation(platform).magicLink).toEqual({ enabled: false, admission: "listed" })
   expect(await refusal(client, "magiclink_disable", { organizationId: platform })).toMatchObject({ code: "PRECONDITION_FAILED", message: "Magic links are already off for organisation “Answerable” (answerable)" })
-  expect((await prepared(client, "domains_verify", { organizationId: platform, domain: "answerable.test" })).preview.summary).toBe("Check the DNS record that proves answerable.test for organisation “Answerable” (answerable)")
+  expect((await prepared(client, "domains_verify", { organizationId: platform, domain: String(domain!.domain) })).preview.summary).toBe("Check the DNS record that proves answerable.test for organisation “Answerable” (answerable)")
   expect(world.platform).toBe(platform)
-  expect(writes(id)).toEqual([])
 })
 
 test("each needs a recent directory sign-in, at prepare and at commit, as ID's own route does of a person", async () => {
@@ -215,30 +225,27 @@ test("magiclink_admission to domain with links off says it has no effect until t
   expect((await prepared(client, "magiclink_admission", { organizationId: newco.id, admission: "listed" })).preview.warnings).not.toContain(line)
 })
 
-test("members_import previews the counts from ID's own answer, changing nothing, and commits one import under the intent's key with a platform:users token", async () => {
+test("members_import previews how many addresses it will try, asking ID nothing about them, and commits one import under the intent's key with a platform:users token, whose answer holds the counts and refusals", async () => {
   const { id, world: { newco, ada }, client } = await asAdmin()
   const other = id.organisation(Bun.randomUUIDv7(), { name: "Other", slug: "other" })
   const alan = id.member(other.id, { email: "alan@newco.example", name: "Alan" })
   const addresses = ["new@newco.example", "NEW@newco.example", "alan@newco.example", String(ada.email), "someone@elsewhere.example", "nonsense"]
   const intent = await prepared(client, "members_import", { organizationId: newco.id, addresses })
+  expect(intent.targets).toEqual([expect.objectContaining({ resource_type: "organization", resource_id: newco.id })])
   expect(intent.preview).toEqual({
-    summary: "List 2 people in organisation “Newco” (newco): 1 new, 1 existing users added; 1 already members, 2 refused",
-    changes: [{ path: `organizations[${newco.id}].magicLink.listed`, from: 1, to: 3 }],
+    summary: "Try to list 6 addresses in organisation “Newco” (newco)",
+    changes: [{ path: `organizations[${newco.id}].members`, from: "as they are", to: "each address listed, unless it is already a member or refused" }],
     effects: ["permission_change"],
     warnings: [
-      "Refused: someone@elsewhere.example (outside_domains), nonsense (invalid).",
+      "Each address is answered at commit: created, added, already a member, or refused with its reason. One refused does not stop the rest, and a rerun is safe: it changes nothing for someone already listed.",
       "Sends no mail. Each person's account is made at their first sign-in. A removed member and a disabled person stay as they are.",
       noPrecondition("importing members"),
     ],
-    quantities: [
-      { name: "created", value: 1, unit: "people" }, { name: "added", value: 1, unit: "people" },
-      { name: "alreadyMember", value: 1, unit: "people" }, { name: "refused", value: 2, unit: "addresses" },
-    ],
+    quantities: [{ name: "addresses", value: 6, unit: "addresses" }],
   })
   expect(writes(id)).toEqual([])
-  expect(id.received.filter(({ request }) => request.endsWith("/members/import/preview"))).toHaveLength(1)
+  expect(id.received.filter(({ request }) => request.includes(`${newco.id}/members`))).toEqual([])
   expect(id.userOf(String(ada.userId))).toBeDefined()
-  expect(id.scopesAsked).toContain("platform:read")
   const receipt = await committed(client, intent)
   expect(receipt.results).toEqual({
     organizationId: newco.id, operationId: expect.any(String),
@@ -250,44 +257,49 @@ test("members_import previews the counts from ID's own answer, changing nothing,
   ])
   // The fake refuses a token without platform:users, so the write could only have been made with the machine client's users token.
   expect(id.scopesAsked).toContain("platform:read platform:users")
-  expect((id.organisation(newco.id).magicLink as object)).toBeDefined()
   expect(alan.userId).toBeDefined()
 })
 
-test("members_import names what it cannot reach: links off, a directory connected, organisation-wide access, and more refusals than it spells out", async () => {
+test("members_import names what it cannot reach: links off, organisation-wide access and, with a directory connected, that importing is rarely needed and what each person listed must then do; the receipt spells out the first refusals", async () => {
   const { id, world: { newco }, client } = await asAdmin()
   id.organisation(newco.id, { magicLink: { enabled: false, admission: "listed" } })
   id.ssoProvider(newco.id, { issuer: entraIssuer, domain: "newco.example" })
   id.entitlement(newco.id, { resource: "https://toolbox.test/mcp", scopes: ["e2e"] })
   const refused = Array.from({ length: 25 }, (_, index) => `p${index}@elsewhere.example`)
   const intent = await prepared(client, "members_import", { organizationId: newco.id, addresses: ["one@newco.example", ...refused] })
-  expect(intent.preview.summary).toBe("List 1 person in organisation “Newco” (newco): 1 new, 0 existing users added; 0 already members, 25 refused")
+  expect(intent.preview.summary).toBe("Try to list 26 addresses in organisation “Newco” (newco)")
   expect(intent.preview.warnings).toEqual([
-    expect.stringMatching(/^Refused: p0@elsewhere\.example \(outside_domains\), .*p19@elsewhere\.example \(outside_domains\), and 5 more\.$/),
+    "Each address is answered at commit: created, added, already a member, or refused with its reason. One refused does not stop the rest, and a rerun is safe: it changes nothing for someone already listed.",
     "Sends no mail. Each person's account is made at their first sign-in. A removed member and a disabled person stay as they are.",
     "1 organisation-wide entitlement exists, so each new member has access at once: https://toolbox.test/mcp.",
     "Magic links are off here, so nobody listed can sign in by link until magiclink_enable.",
-    "A directory is connected: a listed person's first directory sign-in asks for a code from their mailbox, once, which connects it to the person listed here. That works whether links are on or off.",
+    "A directory is connected, so importing is rarely needed: people become members at their first directory sign-in. Each person listed here must then prove their mailbox with a code at their first directory sign-in, once. That works whether links are on or off.",
     noPrecondition("importing members"),
   ])
   const receipt = await committed(client, intent)
   expect(receipt.results.refused).toHaveLength(20)
   expect(receipt.results.counts).toEqual({ created: 1, added: 0, alreadyMember: 0, refused: 25 })
+  const one = await prepared(client, "members_import", { organizationId: newco.id, addresses: ["two@newco.example"] })
+  expect(one.preview.summary).toBe("Try to list 1 address in organisation “Newco” (newco)")
 })
 
-test("members_import refuses what would change nothing, an unknown organisation and an empty or oversized list, and keeps removed and disabled people as they are", async () => {
+test("members_import changing nothing is no refusal: the commit answers that, with each reason, and a rerun makes nobody twice; removed and disabled people stay as they are; an unknown organisation and an empty or oversized list are refused", async () => {
   const { id, world: { newco, ada }, client } = await asAdmin()
   const removed = id.member(newco.id, { email: "gone@newco.example", membershipStatus: "revoked", effective: false })
   const disabled = id.member(newco.id, { email: "off@newco.example", status: "disabled" })
   id.user({ email: "foreign@newco.example", otherFirm: true })
-  const nothing = await refusal(client, "members_import", { organizationId: newco.id, addresses: [String(ada.email), String(removed.email), "foreign@newco.example", "nonsense"] })
-  expect(nothing).toMatchObject({
-    code: "PRECONDITION_FAILED", message: "Importing these addresses would change nothing in organisation “Newco” (newco): 1 already members, 3 refused",
-    details: { preconditions: [{ organizationId: newco.id, refused: [{ address: "gone@newco.example", reason: "removed" }, { address: "foreign@newco.example", reason: "other_firm" }, { address: "nonsense", reason: "invalid" }] }] },
+  const nothing = await committed(client, await prepared(client, "members_import", { organizationId: newco.id, addresses: [String(ada.email), String(removed.email), "foreign@newco.example", "nonsense"] }))
+  expect(nothing.results).toMatchObject({
+    counts: { created: 0, added: 0, alreadyMember: 1, refused: 3 },
+    refused: [{ address: "gone@newco.example", reason: "removed" }, { address: "foreign@newco.example", reason: "other_firm" }, { address: "nonsense", reason: "invalid" }],
   })
-  const off = await prepared(client, "members_import", { organizationId: newco.id, addresses: ["off@newco.example", "fine@newco.example"] })
-  expect(off.preview.warnings[0]).toBe("Refused: off@newco.example (disabled).")
+  const addresses = ["off@newco.example", "fine@newco.example"]
+  const first = await committed(client, await prepared(client, "members_import", { organizationId: newco.id, addresses }))
+  expect(first.results).toMatchObject({ counts: { created: 1, refused: 1 }, refused: [{ address: "off@newco.example", reason: "disabled" }] })
+  const again = await committed(client, await prepared(client, "members_import", { organizationId: newco.id, addresses }))
+  expect(again.results).toMatchObject({ counts: { created: 0, alreadyMember: 1, refused: 1 } })
   expect(disabled.status).toBe("disabled")
+  expect(removed.membershipStatus).toBe("revoked")
   const unknown = crypto.randomUUID()
   expect(await refusal(client, "members_import", { organizationId: unknown, addresses: ["a@b.example"] })).toMatchObject({ code: "NOT_FOUND" })
   expect((await refusal(client, "members_import", { organizationId: newco.id, addresses: [] })).code).toBe("INVALID_INPUT")
@@ -298,7 +310,7 @@ test("members_import at its limit: 1,000 addresses go through the intent store a
   const { world: { newco }, client } = await asAdmin()
   const addresses = Array.from({ length: 1000 }, (_, index) => (index % 2 ? `person-${index}@newco.example` : `someone-with-a-long-address-${index}@elsewhere.example`))
   const intent = await prepared(client, "members_import", { organizationId: newco.id, addresses })
-  expect(intent.preview.summary).toBe("List 500 people in organisation “Newco” (newco): 500 new, 0 existing users added; 0 already members, 500 refused")
+  expect(intent.preview.summary).toBe("Try to list 1000 addresses in organisation “Newco” (newco)")
   expect(JSON.stringify(intent).length).toBeLessThan(4_000)
   const receipt = await committed(client, intent)
   expect(receipt.results.counts).toEqual({ created: 500, added: 0, alreadyMember: 0, refused: 500 })
@@ -398,12 +410,12 @@ test("organisations_get shows magic links and the directory side by side, each w
   const [domain] = id.domainsOf(newco.id)
   const shown = async () => (await call(client, "organisations_get", { organizationId: newco.id })).structuredContent as Record<string, unknown>
   expect(await shown()).toMatchObject({
-    magicLink: { enabled: true, admission: "listed", listed: 1 }, sso: null,
+    magicLink: { enabled: true, admission: "listed" }, sso: null,
     domains: [{ id: domain!.id, domain: "newco.example", status: "active", verifiedAt: null, verificationRecord: domain!.verificationRecord }],
   })
   id.organisation(newco.id, { magicLink: { enabled: false, admission: "domain" } })
   id.ssoProvider(newco.id, { issuer: entraIssuer, domain: "newco.example" })
-  expect(await shown()).toMatchObject({ magicLink: { enabled: false, admission: "domain", listed: 1 }, sso: { issuer: entraIssuer } })
+  expect(await shown()).toMatchObject({ magicLink: { enabled: false, admission: "domain" }, sso: { issuer: entraIssuer } })
 })
 
 test("descriptions no longer imply a directory is the only way in", async () => {

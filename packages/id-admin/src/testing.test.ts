@@ -102,7 +102,7 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
     [200, "POST", `/organizations/${id.organizationId}/magic-link/disable`, { key: "platform-off" }, receipt("noop", "organization")],
     [403, "POST", at("/magic-link/disable"), { token: "read" }],
     // Who may ask: listed always, domain with every active domain proved, and never the platform organisation's.
-    [200, "GET", at(""), {}, body => expect(body).toMatchObject({ magicLink: { enabled: true, admission: "listed", listed: expect.any(Number) } })],
+    [200, "GET", at(""), {}, body => expect((body as { magicLink: unknown }).magicLink).toEqual({ enabled: true, admission: "listed" })],
     [200, "GET", "/organizations?q=newco", {}, body => {
       const [row] = (body as { items: { magicLink: Record<string, unknown> }[] }).items
       expect(row!.magicLink).toEqual({ enabled: true, admission: "listed" })
@@ -125,21 +125,25 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
     [403, "POST", at(`/domains/${domainRow.id}/verify`), { token: "read" }],
     [403, "POST", at(`/domains/${domainRow.id}/verify`), { token: "users" }],
     [405, "GET", at(`/domains/${domainRow.id}/verify`)],
-    // An import: each address its own answer, with platform:users, and its preview with platform:read.
-    [200, "POST", at("/members/import/preview"), { token: "read", body: { addresses: ["Ada@newco.example", "ada@newco.example", "fresh@newco.example", "x@elsewhere.example", "nonsense"] } }, body => expect(body).toEqual({
+    // A sign-in diagnosis, on the route's own contract.
+    [200, "GET", at("/sign-in-diagnosis?email=Ada@newco.example"), {}, body => expect(body).toMatchObject({ email: "ada@newco.example", verdict: { code: "authentication_required" } })],
+    [200, "GET", at("/sign-in-diagnosis?email=nobody@newco.example"), {}, body => expect(body).toMatchObject({ user: null, membership: null })],
+    [400, "GET", at("/sign-in-diagnosis?email=nonsense")],
+    [404, "GET", `/organizations/${missing}/sign-in-diagnosis?email=a@b.example`],
+    [405, "POST", at("/sign-in-diagnosis?email=a@b.example")],
+    // An import: each address its own answer, with platform:users.
+    [400, "POST", at("/members/import"), { token: "users", body: { addresses: [] } }],
+    [404, "POST", `/organizations/${missing}/members/import`, { token: "users", body: { addresses: ["a@b.example"] } }],
+    [403, "POST", at("/members/import"), { token: "write", body: { addresses: ["a@b.example"] } }, body => expect(body).toMatchObject({ code: "insufficient_scope" })],
+    [401, "POST", at("/members/import"), { token: null, body: { addresses: ["a@b.example"] } }],
+    [200, "POST", at("/members/import"), { token: "users", key: "import", body: { addresses: ["Ada@newco.example", "ada@newco.example", "fresh@newco.example", "x@elsewhere.example", "nonsense"] } }, body => expect(body).toEqual({
       counts: { created: 1, added: 0, alreadyMember: 1, refused: 2 },
       items: [
         { address: "ada@newco.example", outcome: "alreadyMember" }, { address: "fresh@newco.example", outcome: "created" },
         { address: "x@elsewhere.example", outcome: "refused", reason: "outside_domains" }, { address: "nonsense", outcome: "refused", reason: "invalid" },
       ],
     })],
-    [200, "POST", at("/members/import/preview"), { token: "read", body: { addresses: ["fresh@newco.example"] } }, body => expect(body).toMatchObject({ counts: { created: 1 } })],
-    [401, "POST", at("/members/import/preview"), { token: null, body: { addresses: ["a@b.example"] } }],
-    [400, "POST", at("/members/import"), { token: "users", body: { addresses: [] } }],
-    [404, "POST", `/organizations/${missing}/members/import`, { token: "users", body: { addresses: ["a@b.example"] } }],
-    [403, "POST", at("/members/import"), { token: "write", body: { addresses: ["a@b.example"] } }, body => expect(body).toMatchObject({ code: "insufficient_scope" })],
-    [200, "POST", at("/members/import"), { token: "users", key: "import", body: { addresses: ["fresh@newco.example"] } }, body => expect(body).toMatchObject({ counts: { created: 1 }, items: [{ address: "fresh@newco.example", outcome: "created" }] })],
-    [200, "POST", at("/members/import"), { token: "users", key: "import", body: { addresses: ["fresh@newco.example"] } }, receipt("applied", "organization")],
+    [200, "POST", at("/members/import"), { token: "users", key: "import", body: { addresses: ["Ada@newco.example", "ada@newco.example", "fresh@newco.example", "x@elsewhere.example", "nonsense"] } }, receipt("applied", "organization")],
     [200, "POST", at("/members/import"), { token: "users", key: "import-again", body: { addresses: ["fresh@newco.example"] } }, body => expect(body).toMatchObject({ counts: { alreadyMember: 1 } })],
     [200, "POST", at("/members/import"), { token: "users", key: "import-again", body: { addresses: ["fresh@newco.example"] } }, receipt("noop", "organization")],
     [405, "GET", at("/members/import")],
@@ -564,16 +568,55 @@ test("ID answers its liveness check, and a fake that is down answers it 503", as
   expect((await id.config.fetch("https://id.test/healthz")).status).toBe(503)
 })
 
-test("an import's preview needs platform:read, as ID's does: a token without it is refused", async () => {
-  const id = createFakeId({ resources: { [admin]: ["platform:users"] } })
-  const organisation = id.organisation(Bun.randomUUIDv7(), { name: "Newco" })
+test("a sign-in diagnosis answers from one organisation's rows and the mail a test says an address has had, in ID's order of checks", async () => {
+  const id = createFakeId()
+  const newco = id.organisation(Bun.randomUUIDv7(), { name: "Newco", slug: "newco", magicLink: { enabled: true, admission: "listed" } })
+  id.domain(newco.id, "newco.example")
+  const ada = id.member(newco.id, { email: "ada@newco.example" })
   const issued = await id.config.fetch("https://id.test/auth/oauth2/token", {
-    method: "POST", headers: { Authorization: `Basic ${btoa("toolbox-hub:hub-secret")}` }, body: new URLSearchParams({ grant_type: "client_credentials", resource: admin, scope: "platform:users" }),
+    method: "POST", headers: { Authorization: `Basic ${btoa("toolbox-hub:hub-secret")}` }, body: new URLSearchParams({ grant_type: "client_credentials", resource: admin, scope: "platform:read" }),
   })
   const { access_token: token } = await issued.json() as { access_token: string }
-  const answer = await id.config.fetch(`https://id.test/api/admin/v1/organizations/${organisation.id}/members/import/preview`, {
-    method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ addresses: ["a@b.example"] }),
+  const ask = (organisation: string, query: string) => id.config.fetch(`https://id.test/api/admin/v1/organizations/${organisation}/sign-in-diagnosis${query}`, { headers: { Authorization: `Bearer ${token}` } })
+  const diagnosed = async (email: string) => await (await ask(newco.id, `?email=${encodeURIComponent(email)}`)).json() as { verdict: { code: string; checked: string[] }; magicLink: Record<string, unknown>; provider: { kind: string | null }; user: unknown; membership: unknown; routing: { routesTo: unknown } }
+  const code = async (email: string) => (await diagnosed(email)).verdict.code
+  expect<unknown>(await diagnosed("ADA@newco.example")).toEqual({
+    email: "ada@newco.example",
+    routing: { domain: "newco.example", routesTo: { organizationId: newco.id, slug: "newco" }, matchesThisOrganization: true },
+    organization: { id: newco.id, slug: "newco", status: "active" },
+    provider: { configured: false, kind: null, issuer: null },
+    magicLink: { enabled: true, suppressed: false, lastRequest: null, directoryConnection: null, requestsInLastDay: 0, dailyLimit: 50 },
+    user: { id: ada.userId, status: "active" },
+    membership: { memberId: ada.id, effective: true, validFrom: null, validUntil: null },
+    verdict: {
+      code: "authentication_required",
+      checked: ["provider_not_found", "organization_disabled", "domain_not_allowed", "user_disabled", "membership_revoked", "magic_link_not_listed", "magic_link_address_limit", "magic_link_suppressed", "authentication_required"],
+      requiresToken: ["directory_mismatch", "guest_account", "personal_account", "hosted_domain_mismatch", "email_unverified", "identity_conflict", "email_conflict"],
+    },
   })
-  expect(answer.status).toBe(403)
-  expect(await answer.json()).toMatchObject({ code: "insufficient_scope" })
+  expect(await code("nobody@newco.example")).toBe("magic_link_not_listed")
+  const elsewhere = await diagnosed("ada@elsewhere.example")
+  expect([elsewhere.verdict.code, elsewhere.routing.routesTo]).toEqual(["domain_not_allowed", null])
+  id.signInMail(newco.id, "ada@newco.example", { lastRequest: { postmarkErrorCode: 406 } })
+  expect(await code("ada@newco.example")).toBe("magic_link_suppressed")
+  id.signInMail(newco.id, "ada@newco.example", { requestsInLastDay: 50 })
+  expect(await code("ada@newco.example")).toBe("magic_link_address_limit")
+  id.organisation(newco.id, { magicLink: { enabled: true, admission: "domain" } })
+  id.signInMail(newco.id, "ada@newco.example", {})
+  expect(await code("nobody@newco.example")).toBe("authentication_required")
+  ada.membershipStatus = "revoked"
+  expect(await code("ada@newco.example")).toBe("membership_revoked")
+  ada.status = "disabled"
+  expect(await code("ada@newco.example")).toBe("user_disabled")
+  id.ssoProvider(newco.id, { issuer: "https://accounts.google.com", domain: "newco.example" })
+  const directory = await diagnosed("nobody@newco.example")
+  expect([directory.verdict.code, directory.provider.kind, directory.user, directory.membership]).toEqual(["authentication_required", "google", null, null])
+  id.organisation(newco.id, { status: "disabled" })
+  expect(await code("nobody@newco.example")).toBe("organization_disabled")
+  const bare = id.organisation(Bun.randomUUIDv7(), { name: "Bare" })
+  expect(await (await (await ask(bare.id, "?email=a@b.example")).json() as { verdict: { code: string } }).verdict.code).toBe("provider_not_found")
+  expect((await ask(newco.id, "?email=nonsense")).status).toBe(400)
+  expect((await ask(newco.id, "")).status).toBe(400)
+  expect((await ask(crypto.randomUUID(), "?email=a@b.example")).status).toBe(404)
+  expect(id.scopesAsked).toEqual(["platform:read"])
 })

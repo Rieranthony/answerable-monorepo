@@ -62,6 +62,7 @@ assertProviderConformance(world.provider, {
     "access.list": { organizationId: newco.id },
     "audit.list": { organizationId: newco.id },
     "sso.test": { organizationId: newco.id },
+    "signin.diagnose": { organizationId: newco.id, email: "ada@newco.example" },
     "organisations.create": () => ({ slug: `created-${unique()}`, name: "Created" }),
     "organisations.update": () => ({ organizationId: organisation(), name: "Renamed" }),
     "organisations.disable": () => ({ organizationId: organisation() }),
@@ -82,11 +83,11 @@ assertProviderConformance(world.provider, {
     "standalone.enable": () => ({ organizationId: organisation(), mcp: "acme", everyone: true }),
     "staff.grant": () => ({ memberId: staffer(false), role: "team" }),
     "staff.revoke": () => ({ memberId: staffer(true), role: "team" }),
-    "users.disable": () => ({ userId: human().userId }),
-    "users.enable": () => ({ userId: human({ status: "disabled" }).userId }),
-    "users.retireemail": () => ({ userId: human({ status: "disabled" }).userId }),
-    "members.remove": () => ({ organizationId: newco.id, memberId: person() }),
-    "members.reinstate": () => ({ organizationId: newco.id, memberId: human({ membershipStatus: "revoked", effective: false }).id }),
+    "users.disable": () => ({ email: String(human().email) }),
+    "users.enable": () => ({ email: String(human({ status: "disabled" }).email) }),
+    "users.retireemail": () => ({ email: String(human({ status: "disabled" }).email) }),
+    "members.remove": () => ({ organizationId: newco.id, email: String(human().email) }),
+    "members.reinstate": () => ({ organizationId: newco.id, email: String(human({ membershipStatus: "revoked", effective: false }).email) }),
     "magiclink.enable": () => ({ organizationId: organisation() }),
     "magiclink.disable": () => ({ organizationId: organisation({ magicLink: { enabled: true, admission: "listed" } }) }),
     "magiclink.admission": () => ({ organizationId: organisation({ magicLink: { enabled: true, admission: "domain" } }), admission: "listed" }),
@@ -135,6 +136,8 @@ test("each read sends its filters to ID as the query string and answers ID's row
   const page = (items: unknown[]) => ({ items, next_cursor: null, has_more: false })
   const unknown = crypto.randomUUID()
   const bare = id.organisation(crypto.randomUUID()).id
+  const mailed = Bun.randomUUIDv7()
+  id.signInMail(newco.id, "ada@newco.example", { requestsInLastDay: 50, lastRequest: { id: mailed, purpose: "link", sendStatus: "sent", postmarkErrorCode: null, postmarkHttpStatus: null, createdAt: "2026-11-04T10:00:00.000Z" } })
   const audit = { organizationId: newco.id, action: "organization.created", actorId: "admin-mcp", operationId: String(created.operationId), outcome: "success", targetType: "organization", targetId: newco.id, from: "2026-01-01T00:00:00Z", to: "2099-01-01T00:00:00Z" }
   // Each read: its arguments, what it asks ID, and what it answers.
   const reads: [string, Record<string, unknown>, string[], unknown][] = [
@@ -142,7 +145,7 @@ test("each read sends its filters to ID as the query string and answers ID's row
     ["organisations_get", { organizationId: newco.id }, [at(`/organizations/${newco.id}`), at(`/organizations/${newco.id}/domains?limit=200`), at(`/organizations/${newco.id}/sso-provider`)], {
       id: newco.id, slug: "newco", name: "Newco", status: "active", disabledAt: null, createdAt: newco.createdAt, updatedAt: newco.updatedAt,
       domains: [{ id: domain.id, domain: "newco.example", status: "active", verifiedAt: null, verificationRecord: domain.verificationRecord }],
-      magicLink: { enabled: false, admission: "listed", listed: 1 },
+      magicLink: { enabled: false, admission: "listed" },
       sso: { issuer: entraIssuer, domain: "newco.example", oidc: { credentials: "platform", hasClientSecret: false } },
     }],
     ["organisations_get", { organizationId: bare }, [at(`/organizations/${bare}`), at(`/organizations/${bare}/domains?limit=200`), at(`/organizations/${bare}/sso-provider`)], expect.objectContaining({ domains: [], sso: null })],
@@ -160,6 +163,20 @@ test("each read sends its filters to ID as the query string and answers ID's row
     ["audit_list", audit, [at(`/audit-events?${new URLSearchParams({ ...audit, limit: "20" })}`)], page([event(created)])],
     ["audit_list", {}, [at("/audit-events?limit=20")], page([event(created)])],
     ["sso_test", { organizationId: newco.id }, [at(`/organizations/${newco.id}/sso-provider/test`)], expect.objectContaining({ issuer: entraIssuer, kind: "entra", problems: [] })],
+    ["signin_diagnose", { organizationId: newco.id, email: "Ada+x@newco.example" }, [at(`/organizations/${newco.id}/sign-in-diagnosis?email=Ada%2Bx%40newco.example`)], expect.objectContaining({
+      email: "ada+x@newco.example", routing: { domain: "newco.example", routesTo: { organizationId: newco.id, slug: "newco" }, matchesThisOrganization: true },
+      provider: { configured: true, kind: "entra", issuer: entraIssuer }, user: null, membership: null, verdict: expect.objectContaining({ code: "authentication_required" }),
+    })],
+    ["signin_diagnose", { organizationId: newco.id, email: "ada@newco.example" }, [at(`/organizations/${newco.id}/sign-in-diagnosis?email=ada%40newco.example`)], {
+      email: "ada@newco.example", routing: { domain: "newco.example", routesTo: { organizationId: newco.id, slug: "newco" }, matchesThisOrganization: true },
+      organization: { id: newco.id, slug: "newco", status: "active" }, provider: { configured: true, kind: "entra", issuer: entraIssuer },
+      magicLink: {
+        enabled: false, suppressed: false, directoryConnection: null, requestsInLastDay: 50, dailyLimit: 50,
+        lastRequest: { id: mailed, purpose: "link", sendStatus: "sent", postmarkErrorCode: null, postmarkHttpStatus: null, createdAt: "2026-11-04T10:00:00.000Z" },
+      },
+      user: { id: ada.userId, status: "active" }, membership: { memberId: ada.id, effective: true, validFrom: null, validUntil: null },
+      verdict: { code: "authentication_required", checked: ["provider_not_found", "organization_disabled", "domain_not_allowed", "user_disabled", "membership_revoked", "magic_link_not_listed", "magic_link_address_limit", "magic_link_suppressed", "authentication_required"], requiresToken: expect.arrayContaining(["email_conflict"]) },
+    }],
     ["staff_list", {}, [at(`/organizations/${platform}/access?resource=${encodeURIComponent(resource)}&limit=20`)], page([staff(newcomer, null), staff(helper, "team"), staff(owner, "owner")])],
   ]
   for (const [name, args, asked, answer] of reads) {
@@ -173,6 +190,7 @@ test("each read sends its filters to ID as the query string and answers ID's row
     ["members_list", { organizationId: unknown }, missingOrganisation],
     ["members_get", { organizationId: newco.id, memberId: unknown }, `Answerable ID has no member ${unknown} in organisation ${newco.id}; members_list lists them`],
     ["sso_test", { organizationId: bare }, `Organisation ${bare} has no SSO provider in Answerable ID, or does not exist; organisations_get shows its SSO provider`],
+    ["signin_diagnose", { organizationId: unknown, email: "ada@newco.example" }, missingOrganisation],
   ] as const) expect(errorOf(await call(name, args)), name).toMatchObject({ code: "NOT_FOUND", message, retry: { policy: "never" } })
   expect(errorOf(await call("organisations_list", { limit: 101 }))).toMatchObject({ code: "INVALID_INPUT" })
 })

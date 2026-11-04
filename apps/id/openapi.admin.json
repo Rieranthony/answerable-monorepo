@@ -2521,7 +2521,7 @@
           }
         ],
         "summary": "Diagnose sign-in by email",
-        "description": "Inspect tenant-local configuration and membership. Current platform:read or org:users authority is rechecked inside the read transaction. Routing identifies only this organisation; user and membership are null unless this tenant has a membership for the exact email. Global accounts and retired-email state are excluded, including for staff. A null user does not mean the email is globally unused. authentication_required means local checks found no blocker; a real IdP authentication or a magic link's confirmation must establish identity and account conflicts. provider describes the directory; magicLink is the organisation's setting and the newest sign-in mail for this exact email, kept for seven days. magic_link_not_admitted means a link is the way in and admission would refuse this address: its firm's switch and mode and the person, which magicLink.admitted reports in every case. That one field reads a global account: in domain mode, on this organisation's own proved domain, it is false for an address whose holder is disabled or has another firm's account, which is no more than those mailboxes would show by asking for a link. magic_link_suppressed means a link is the way in and Postmark refused the last send as a suppressed address (406), which staff reactivate in Postmark. magicLink.directoryConnection is a directory sign-in this address has made and not yet connected, waiting on the code mailed to it. Windows affect grants, not admission; revoked membership requires reinstatement. Responses use no-store. validation_failed rejects malformed input; not_found means the organisation is unavailable.",
+        "description": "Inspect tenant-local configuration and membership. Current platform:read or org:users authority is rechecked inside the read transaction. Routing identifies only this organisation; user and membership are null unless this tenant has a membership for the exact email. Global accounts and retired-email state are excluded, including for staff. A null user does not mean the email is globally unused. authentication_required means local checks found no blocker; a real IdP authentication or a magic link's confirmation must establish identity and account conflicts. provider describes the directory; magicLink is the organisation's setting and the newest sign-in mail for this exact email, kept for seven days. magic_link_not_listed means a link is the way in, the organisation lists its members and this address is not an effective member of it; it reads this organisation alone, so in domain mode, and for an account another firm holds, it says nothing and the other fields show the rest. magic_link_address_limit means a link is the way in and this address has had magicLink.dailyLimit mails in the last day, so it gets no more until the oldest passes a day. magic_link_suppressed means a link is the way in and Postmark refused the last send as a suppressed address (406), which staff reactivate in Postmark. A message's delivery, bounces and suppressions are in Postmark's Activity, not here. magicLink.directoryConnection is a directory sign-in this address has made and not yet connected, waiting on the code mailed to it. Windows affect grants, not admission; revoked membership requires reinstatement. Responses use no-store. validation_failed rejects malformed input; not_found means the organisation is unavailable.",
         "tags": [
           "Diagnostics"
         ],
@@ -2643,10 +2643,6 @@
                         "enabled": {
                           "type": "boolean"
                         },
-                        "admitted": {
-                          "type": "boolean",
-                          "description": "Whether this address may ask this firm for a link now: its switch, its admission and the person"
-                        },
                         "suppressed": {
                           "type": "boolean"
                         },
@@ -2672,7 +2668,8 @@
                                   "enum": [
                                     "sent",
                                     "failed"
-                                  ]
+                                  ],
+                                  "description": "sent: no failure has been recorded; delivery is in Postmark's Activity. failed: Postmark refused the send, or never answered"
                                 },
                                 "postmarkErrorCode": {
                                   "anyOf": [
@@ -2758,14 +2755,27 @@
                             }
                           ],
                           "description": "A directory sign-in this address has made and not yet connected: it is waiting on the code mailed to it. Null when none is live"
+                        },
+                        "requestsInLastDay": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "This address's sign-in mails in the last day at this firm, leaving out those that failed: what dailyLimit counts"
+                        },
+                        "dailyLimit": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "How many mails an address gets in a day, from any client"
                         }
                       },
                       "required": [
                         "enabled",
-                        "admitted",
                         "suppressed",
                         "lastRequest",
-                        "directoryConnection"
+                        "directoryConnection",
+                        "requestsInLastDay",
+                        "dailyLimit"
                       ]
                     },
                     "user": {
@@ -2857,7 +2867,8 @@
                             "domain_not_allowed",
                             "user_disabled",
                             "membership_revoked",
-                            "magic_link_not_admitted",
+                            "magic_link_not_listed",
+                            "magic_link_address_limit",
                             "magic_link_suppressed",
                             "authentication_required"
                           ]
@@ -2872,7 +2883,8 @@
                               "domain_not_allowed",
                               "user_disabled",
                               "membership_revoked",
-                              "magic_link_not_admitted",
+                              "magic_link_not_listed",
+                              "magic_link_address_limit",
                               "magic_link_suppressed",
                               "authentication_required"
                             ]
@@ -17388,358 +17400,6 @@
         "x-fresh-authentication": true,
         "x-scopes": {
           "platform": "platform:write"
-        }
-      }
-    },
-    "/api/admin/v1/organizations/{organizationId}/members/import/preview": {
-      "post": {
-        "operationId": "previewMemberImport",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organizationId",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$schema": "https://json-schema.org/draft/2020-12/schema",
-                "type": "object",
-                "properties": {
-                  "addresses": {
-                    "minItems": 1,
-                    "maxItems": 1000,
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                },
-                "required": [
-                  "addresses"
-                ],
-                "additionalProperties": false
-              },
-              "example": {
-                "addresses": [
-                  "ada@acme.example.com",
-                  "grace@acme.example.com"
-                ]
-              }
-            }
-          }
-        },
-        "summary": "Preview a member import",
-        "description": "Answer what importMembers would answer for these addresses now, changing nothing and recording nothing: a POST only because a list of up to 1,000 addresses does not fit a query. Use it to show a person the counts before importMembers; validation_failed rejects a malformed or oversized list and not_found means the organisation is unavailable.",
-        "tags": [
-          "Members"
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "counts": {
-                      "type": "object",
-                      "properties": {
-                        "created": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9007199254740991
-                        },
-                        "added": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9007199254740991
-                        },
-                        "alreadyMember": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9007199254740991
-                        },
-                        "refused": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9007199254740991
-                        }
-                      },
-                      "required": [
-                        "created",
-                        "added",
-                        "alreadyMember",
-                        "refused"
-                      ]
-                    },
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "address": {
-                            "type": "string"
-                          },
-                          "outcome": {
-                            "type": "string",
-                            "enum": [
-                              "created",
-                              "added",
-                              "alreadyMember",
-                              "refused"
-                            ]
-                          },
-                          "reason": {
-                            "type": "string",
-                            "enum": [
-                              "invalid",
-                              "outside_domains",
-                              "disabled",
-                              "removed",
-                              "other_firm"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "address",
-                          "outcome"
-                        ]
-                      }
-                    }
-                  },
-                  "required": [
-                    "counts",
-                    "items"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The request is invalid",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "number"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "title",
-                    "status",
-                    "code",
-                    "request_id"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication is required",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "number"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "title",
-                    "status",
-                    "code",
-                    "request_id"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The principal is not allowed",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "number"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "title",
-                    "status",
-                    "code",
-                    "request_id"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "number"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "title",
-                    "status",
-                    "code",
-                    "request_id"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          },
-          "408": {
-            "description": "The request body did not finish within five seconds. Send a complete body in a new request. This is a transport response, not a problem-details response."
-          },
-          "413": {
-            "description": "The request body exceeds 262144 bytes (256 KiB). Reduce the payload. This transport response may precede application headers and is not a problem-details response."
-          },
-          "503": {
-            "description": "Service unavailable",
-            "headers": {
-              "Retry-After": {
-                "description": "For database_busy or authentication_unavailable, seconds to wait before retrying the same command.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "type": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "number"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "request_id": {
-                      "type": "string"
-                    },
-                    "detail": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "title",
-                    "status",
-                    "code",
-                    "request_id"
-                  ],
-                  "additionalProperties": {}
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
-        "x-kind": "read",
-        "x-fresh-authentication": false,
-        "x-scopes": {
-          "platform": "platform:read"
         }
       }
     },
@@ -33073,18 +32733,11 @@
                                 "domain"
                               ],
                               "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
-                            },
-                            "listed": {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 9007199254740991,
-                              "description": "The organisation's effective members. A list leaves this out, since it counts them."
                             }
                           },
                           "required": [
                             "enabled",
-                            "admission",
-                            "listed"
+                            "admission"
                           ]
                         }
                       },
@@ -33491,18 +33144,11 @@
                             "domain"
                           ],
                           "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
-                        },
-                        "listed": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9007199254740991,
-                          "description": "The organisation's effective members. A list leaves this out, since it counts them."
                         }
                       },
                       "required": [
                         "enabled",
-                        "admission",
-                        "listed"
+                        "admission"
                       ]
                     }
                   },
@@ -33883,18 +33529,11 @@
                                 "domain"
                               ],
                               "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
-                            },
-                            "listed": {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 9007199254740991,
-                              "description": "The organisation's effective members. A list leaves this out, since it counts them."
                             }
                           },
                           "required": [
                             "enabled",
-                            "admission",
-                            "listed"
+                            "admission"
                           ]
                         }
                       },
@@ -34705,18 +34344,11 @@
                                 "domain"
                               ],
                               "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
-                            },
-                            "listed": {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 9007199254740991,
-                              "description": "The organisation's effective members. A list leaves this out, since it counts them."
                             }
                           },
                           "required": [
                             "enabled",
-                            "admission",
-                            "listed"
+                            "admission"
                           ]
                         }
                       },
@@ -35161,18 +34793,11 @@
                                 "domain"
                               ],
                               "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
-                            },
-                            "listed": {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 9007199254740991,
-                              "description": "The organisation's effective members. A list leaves this out, since it counts them."
                             }
                           },
                           "required": [
                             "enabled",
-                            "admission",
-                            "listed"
+                            "admission"
                           ]
                         }
                       },
@@ -35617,18 +35242,11 @@
                                 "domain"
                               ],
                               "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
-                            },
-                            "listed": {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 9007199254740991,
-                              "description": "The organisation's effective members. A list leaves this out, since it counts them."
                             }
                           },
                           "required": [
                             "enabled",
-                            "admission",
-                            "listed"
+                            "admission"
                           ]
                         }
                       },
@@ -36073,18 +35691,11 @@
                                 "domain"
                               ],
                               "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
-                            },
-                            "listed": {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 9007199254740991,
-                              "description": "The organisation's effective members. A list leaves this out, since it counts them."
                             }
                           },
                           "required": [
                             "enabled",
-                            "admission",
-                            "listed"
+                            "admission"
                           ]
                         }
                       },
@@ -36556,18 +36167,11 @@
                                 "domain"
                               ],
                               "description": "Who may ask for a link: listed, the organisation's effective members; domain, also anyone at one of its proved domains, whom a first sign-in creates."
-                            },
-                            "listed": {
-                              "type": "integer",
-                              "minimum": 0,
-                              "maximum": 9007199254740991,
-                              "description": "The organisation's effective members. A list leaves this out, since it counts them."
                             }
                           },
                           "required": [
                             "enabled",
-                            "admission",
-                            "listed"
+                            "admission"
                           ]
                         }
                       },
