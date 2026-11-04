@@ -48,6 +48,13 @@ export function testEnvironment(
   };
 }
 
+/** For a test that asks for no mail: `POST /login` takes a request and sends nothing, and a
+ * directory's refusal asks no mailbox. */
+export const noMagicLinks = {
+  request: () => true,
+  connectDirectory: async () => "conflict" as const,
+};
+
 export function stubAuth(): Auth {
   return {
     options: { session: { additionalFields: {} } },

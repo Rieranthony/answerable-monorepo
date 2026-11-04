@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 
 import { testEnvironment } from "./__tests__/support.ts";
-import { createApp } from "./app.ts";
+import { createApp } from "./__tests__/app.ts";
 import { createAuth } from "./auth.ts";
 import { createDatabase, type DatabaseConnection } from "./db/client.ts";
 import { isAllowedAuthRoute } from "./http/auth-allowlist.ts";

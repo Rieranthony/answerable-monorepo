@@ -22,7 +22,7 @@ const postmarkToken = "magic-link-journey"
 const app = { clientId: "magic-link-journey", resource: "https://app.magic-link.example.test/mcp", scope: "app:read" }
 const signInCookie = "answerable-sign-in"
 // The mail's own words and tags, from packages/emails.
-const tags = { link: "sign-in", removed: "access-removed", connect: "mailbox-code" }
+const tags = { link: "sign-in", connect: "mailbox-code" }
 
 const postmark = startFakePostmark({ token: postmarkToken })
 const database = connectDatabase("postgres://answerable:answerable@127.0.0.1:47532/answerable_id_test", { max: 2 })
@@ -65,19 +65,21 @@ afterAll(async () => {
 
 type Firm = { id: string; slug: string; name: string; domain: string }
 
-/** A firm with its domain and no directory: sign-in by link is on, as it is for every new firm. */
+/** A firm with its domain and no directory, and sign-in by link turned on, which starts off for every new firm. */
 async function firm(slug: string, name = slug): Promise<Firm> {
   const { id: organizationId } = z.object({ id: z.uuid() }).parse(await id.admin("POST", "/organizations", { slug, name }))
+  await id.admin("POST", `/organizations/${organizationId}/magic-link/enable`)
   const domain = `${slug}.example.test`
   await addDomain(id.admin, organizationId, domain)
   await grantOrganisation(id.admin, organizationId, { clientId: app.clientId, resource: app.resource, scopes: [app.scope] })
   return { id: organizationId, slug, name, domain }
 }
 
-/** A firm with a company directory, one of the fixture's spares, and links on as well. */
+/** A firm with a company directory, one of the fixture's spares, and links turned on as well. */
 async function directoryFirm(slug: string, name = slug) {
   const spare = directories[slug]!
   const { id: organizationId } = z.object({ id: z.uuid() }).parse(await id.admin("POST", "/organizations", { slug, name }))
+  await id.admin("POST", `/organizations/${organizationId}/magic-link/enable`)
   await addDomain(id.admin, organizationId, spare.domain)
   await setSsoProvider(id.admin, organizationId, spare)
   await grantOrganisation(id.admin, organizationId, { clientId: app.clientId, resource: app.resource, scopes: [app.scope] })
@@ -169,16 +171,9 @@ async function viaDirectory(context: BrowserContext, address: string, { choice }
   return page
 }
 
-/**
- * The first mail to `address` after `since`, with the link and the code read out of it. ID sends after it has answered the request, so this waits, and then waits for the
- * request's row to say `sent`, which ID writes after Postmark answers: until it does, neither the link nor the code can sign anyone in, and a person cannot be that fast.
- */
+/** The first mail to `address` after `since`, with the link and the code read out of it. ID sends after it has answered the request, so this waits. */
 async function mailTo(address: string, since: number) {
   const mail = await postmark.waitFor(address, { after: since })
-  for (const deadline = Date.now() + 5_000; Date.now() < deadline; await Bun.sleep(25)) {
-    const [row] = await query<{ send_status: string }>`select send_status from magic_link_requests where email = ${address} order by created_at desc, id desc limit 1`
-    if (row?.send_status !== "sending") break
-  }
   return { ...mail, ...readMail(mail), token: mail.text.match(/token=([A-Za-z0-9_-]+)/)?.[1] ?? null }
 }
 
@@ -325,6 +320,7 @@ async function appFlow(context: BrowserContext, address: string) {
 describe("sign-in by emailed link", () => {
   beforeAll(async () => {
     controlFirm = { id: z.uuid().parse((await id.admin("POST", "/organizations", { slug: "control", name: "control" })).id), slug: "control", name: "control", domain: "control.example.test" }
+    await id.admin("POST", `/organizations/${controlFirm.id}/magic-link/enable`)
     await addDomain(id.admin, controlFirm.id, controlFirm.domain)
   })
 
@@ -464,12 +460,12 @@ describe("sign-in by emailed link", () => {
       const refused = await enterCode(page, wrongCode(mail.code!))
       expect(refused.heading).toBe(codeRefused)
       expect(await requestsOf(bob!)).toEqual([expect.objectContaining({ attempts: 1, ended: false })])
-      // The right one signs in, where the person asked, and takes back the attempt it counted, not the wrong code's.
+      // The right one signs in, where the person asked; it was the second try.
       const signedIn = await enterCode(page, mail.code!)
       expect(signedIn.heading).toBe("Signed in")
       expect(await sessionOf(first)).toMatchObject({ user: { email: bob } })
       expect(await sessionOf(second)).toBeNull()
-      expect(await requestsOf(bob!)).toEqual([expect.objectContaining({ attempts: 1, ended: true })])
+      expect(await requestsOf(bob!)).toEqual([expect.objectContaining({ attempts: 2, ended: true })])
       // The link that came with the code is spent, in either browser.
       for (const context of [first, second]) expect((await see(await open(context, mail.link!))).heading).toBe(elsewhere)
 
@@ -650,7 +646,7 @@ describe("sign-in by emailed link", () => {
     })
   })
 
-  test("7b. a removed member: the page stays uniform, a new request sends the short access-removed mail and no link, and an old link or code shows that access was removed", async () => {
+  test("7b. a removed member: a new request gets the page a stranger gets and no mail, and an old link or code shows that access was removed", async () => {
     const gone = await firm("admit-removed", "Removed Firm")
     const [byLink, byCode, fresh] = await list(gone, "by-link", "by-code", "fresh")
     const stranger = `stranger@${gone.domain}`
@@ -670,20 +666,19 @@ describe("sign-in by emailed link", () => {
         expect(await sessionsOf(address)).toEqual([])
       }
 
-      // Someone removed who had not asked: the same page as a stranger gets, and a short mail in place of the link.
+      // Someone removed who had not asked: the same page as a stranger gets, no mail and no row.
       const since = Date.now()
       const asRemoved = await ask(freshBrowser, fresh!)
       const asStranger = await ask(strangerBrowser, stranger)
       expect(without(await see(asRemoved.page), fresh!)).toBe(without(await see(asStranger.page), stranger))
-      const note = await mailTo(fresh!, since)
-      expect(note).toMatchObject({ tag: tags.removed, subject: `Your access to ${gone.name} was removed`, link: null, code: null })
-      expect(await requestsOf(fresh!)).toEqual([expect.objectContaining({ purpose: "access_removed", send_status: "sent" })])
+      await noMail(fresh!, since)
       await noMail(stranger, since)
-      step("7b. admission: removed members had the uniform page, the access-removed mail and no link; an old link and an old code both said access was removed")
+      expect(await requestsOf(fresh!)).toEqual([])
+      step("7b. admission: removed members had the uniform page and no mail; an old link and an old code both said access was removed")
     })
   })
 
-  test("7c. domain mode needs a proved domain; then anyone at it gets a link and a first sign-in makes them, a domain added later admits nobody until it is proved, and a removed person still only gets the short mail", async () => {
+  test("7c. domain mode needs a proved domain; then anyone at it gets a link and a first sign-in makes them, a domain added later admits nobody until it is proved, and a removed person still gets no mail", async () => {
     const wide = await firm("admit-domain", "Domain Firm")
     const [gone] = await list(wide, "gone")
     const newcomer = `newcomer@${wide.domain}`
@@ -717,11 +712,11 @@ describe("sign-in by emailed link", () => {
       expect((await mailTo(`other@${late}`, provedAsk)).tag).toBe(tags.link)
       expect(await see(lateAsk.page)).toMatchObject({ heading: "Check your email" })
 
-      // A member removed is told by mail whichever mode the firm is in, and a person of a firm back in listed mode, who is not a member, gets nothing.
+      // A member removed gets no mail whichever mode the firm is in, and nor does a person of a firm back in listed mode, who is not a member.
       await id.admin("DELETE", `/organizations/${wide.id}/members/${await memberOf(gone!, wide)}`)
       const sinceGone = Date.now()
       await ask(await newBrowser(), gone!)
-      expect((await mailTo(gone!, sinceGone)).tag).toBe(tags.removed)
+      await noMail(gone!, sinceGone)
       expect(await admission("listed")).toMatchObject({ magicLink: { admission: "listed" } })
       const sinceNarrow = Date.now()
       await ask(await newBrowser(), narrow)
@@ -881,7 +876,7 @@ describe("sign-in by emailed link", () => {
       expect(replayed).toContain(codeRefused)
       expect(await sessionsOf(rob!)).toHaveLength(1)
       expect(await auditOf(rob!, "auth.magic_link.refused")).toEqual([])
-      expect(await requestsOf(rob!)).toEqual([expect.objectContaining({ attempts: 0, ended: true })])
+      expect(await requestsOf(rob!)).toEqual([expect.objectContaining({ attempts: 1, ended: true })])
       expect((await query<{ n: number }>`select count(*)::int as n from audit_events where action = 'auth.signin.succeeded' and actor_id in (${await userOf(rita!)}, ${await userOf(rob!)})`)[0]!.n).toBe(2)
       step("10. replay: a used link and a used code each showed the page of a link or a code that is not for this browser, and made no second session")
     })
@@ -987,7 +982,7 @@ describe("sign-in by emailed link", () => {
 
   // ---- 12: stopping someone ----
 
-  test("12. users_disable ends a link session, an old link and an old code show access was removed, the next request sends the access-removed mail, and the address stays blocked until it is retired", async () => {
+  test("12. users_disable ends a link session, an old link and an old code show access was removed, the next request sends nothing, and the address stays blocked until it is retired", async () => {
     const stopping = await firm("stopping", "Stopping Firm")
     const [sam, sue] = await list(stopping, "sam", "sue")
     const [signed, oldLink, oldCode] = [await newBrowser(), await newBrowser(), await newBrowser()]
@@ -1011,12 +1006,12 @@ describe("sign-in by emailed link", () => {
       expect((await enterCode(codes.page, codeMail.code!)).heading).toBe(removed)
       expect(await sessionsOf(sue!)).toEqual([])
 
-      // The next request: the uniform page, the short mail and no link. A minute has to pass first, as for any second request.
+      // The next request: the uniform page, no mail and no new row. A minute has to pass first, or a limit would be why.
       await aMinutePasses(sam!)
+      const asked = (await requestsOf(sam!)).length
       const next = await ask(await newBrowser(), sam!)
-      const note = await mailTo(sam!, next.since)
-      expect(note).toMatchObject({ tag: tags.removed, subject: "Your access to Stopping Firm was removed", link: null, code: null })
-      expect(await requestsOf(sam!)).toContainEqual(expect.objectContaining({ purpose: "access_removed", send_status: "sent" }))
+      await noMail(sam!, next.since)
+      expect(await requestsOf(sam!)).toHaveLength(asked)
 
       // The address stays blocked: nobody can list it again, and nothing signs in, until staff retire it.
       const blocked = z.object({ items: z.array(z.object({ address: z.string(), outcome: z.string(), reason: z.string().optional() })) }).parse(await id.admin("POST", `/organizations/${stopping.id}/members/import`, { addresses: [sam] }))

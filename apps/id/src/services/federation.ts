@@ -109,8 +109,9 @@ async function membershipRevoked(
 /**
  * A person ID has not met, on any method: a directory's first sign-in, a magic link's in domain
  * mode, and staff importing an address. The same fields, so `sub`, which is the id these rows
- * get, and everything that reads them work alike. Whichever made the row has seen the mailbox
- * proved, or will before any token: no token exists for an imported person until they sign in.
+ * get, and everything that reads them work alike. `emailVerified` is what ID takes the address
+ * to be, not a mailbox it has seen proved: a directory's first sign-in stores the address that
+ * directory asserts, and no token exists for an imported person until they sign in.
  */
 export const newUserFields = (person: {
   email: string;
@@ -228,8 +229,7 @@ export async function resolveFederatedUser(
   }
 
   // Another account already holds this directory identity, for example an
-  // Entra object whose subject changed with the application. Binding imported
-  // placeholders instead waits for import tooling: docs/02-plan.md.
+  // Entra object whose subject changed with the application.
   const holder = await database.findOne<AccountRow>({
     model: "account",
     where: [

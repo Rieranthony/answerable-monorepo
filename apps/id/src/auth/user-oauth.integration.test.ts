@@ -29,7 +29,7 @@ import {
   inPlatformWrite,
 } from "../__tests__/platform-context.ts";
 import { inTenant, inTenantRead } from "../__tests__/tenant-command.ts";
-import { createApp } from "../app.ts";
+import { createApp } from "../__tests__/app.ts";
 import { createAuth } from "../auth.ts";
 import { createDatabase, type Database, type Executor } from "../db/client.ts";
 import { withDatabaseScope } from "../db/isolation.ts";

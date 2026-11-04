@@ -7,7 +7,7 @@ import {
   createRuntimeLogin,
   type RuntimeLogin,
 } from "../__tests__/runtime-role.ts";
-import { createApp } from "../app.ts";
+import { createApp } from "../__tests__/app.ts";
 import { createAuth } from "../auth.ts";
 import { adminOperations, auditEvents, organizations } from "./schema/index.ts";
 let fixture: AdminFixture;

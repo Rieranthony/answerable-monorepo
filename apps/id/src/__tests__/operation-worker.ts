@@ -1,4 +1,4 @@
-import { createApp } from "../app.ts";
+import { createApp } from "./app.ts";
 import { createAuth } from "../auth.ts";
 import { createDatabase } from "../db/client.ts";
 import { assertRuntimeRole } from "../db/runtime-role.ts";

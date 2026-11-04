@@ -1,6 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { spyOn, afterEach, beforeEach, expect, test } from "bun:test";
-import { createApp } from "../../app.ts";
+import { createApp } from "../../__tests__/app.ts";
 import { stubAuth } from "../../__tests__/support.ts";
 import {
   createOrganizationDomain,
@@ -167,13 +167,8 @@ function enqueue() {
 }
 test("organisation login forwards state and session cookies through the issuer", async () => {
   enqueue();
-  // The firm has both ways in, so the page asks which.
-  const chosen = await page("/login?organization=tenant");
-  expect(chosen.status).toBe(200);
-  expect(await chosen.text()).toContain("Continue with company sign-in");
-  const completed = await finishSso(
-    await page("/login?organization=tenant", "", { method: "directory" }),
-  );
+  // The firm's links are off, so its directory is the way in, with nothing to choose.
+  const completed = await finishSso(await page("/login?organization=tenant"));
   expect(completed.headers.get("location")).toBe(
     fixture.environment.betterAuthUrl + "/login?organization=tenant",
   );

@@ -31,7 +31,16 @@ export function CodeForm({
 }
 
 /** Whatever became of the request: it says "if", and names only what was typed. */
-export function CheckEmail({ email, query }: { email: string; query: string }) {
+export function CheckEmail({
+  email,
+  query,
+  sender,
+}: {
+  email: string;
+  query: string;
+  /** Who the mail comes from, as a firm's IT team would allow it. */
+  sender: string;
+}) {
   return (
     <section aria-labelledby="check-email-heading">
       <h1 id="check-email-heading" class="text-xl/6 font-bold">
@@ -43,6 +52,11 @@ export function CheckEmail({ email, query }: { email: string; query: string }) {
         the code here.
       </p>
       <CodeForm action={`/magic-link/code?${query}`} />
+      <p class="text-muted-foreground mt-4 text-sm/6">
+        If nothing arrives, check your junk or quarantine folder. You can ask
+        again after a minute. If it still doesn&apos;t come, ask your IT team to
+        allow email from {sender}.
+      </p>
       <p class="mt-4 text-sm/6">
         <a href={`/login?${query}`} class={link}>
           Use another email

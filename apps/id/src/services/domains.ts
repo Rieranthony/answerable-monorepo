@@ -4,24 +4,12 @@ import { lockOrganizationForCommand } from "../db/queries/organizations.ts";
 import { endMagicLinkUseOfDomain } from "../db/queries/magic-link-requests.ts";
 import { recordCommandEvent, statusAction, evidence } from "./audit.ts";
 import { found, ProblemError } from "../http/problem.ts";
-import { isPublicMailDomain } from "../lib/public-mail-domains.ts";
 import {
   domainVerificationRecord,
   txtRecordsHold,
 } from "./domain-verification.ts";
 
 const notFound = "Organisation or domain not found";
-
-/** Anyone can get an address at a public mail domain, so no firm can hold one. */
-function refusePublicMailDomain(domain: string) {
-  if (isPublicMailDomain(domain))
-    throw new ProblemError(
-      409,
-      "public_mail_domain",
-      "This is a public mail domain",
-      `Anyone can get an address at ${domain}, so it cannot belong to an organisation.`,
-    );
-}
 
 /** A domain as an answer shows it: the record to publish, and not the token alone. */
 export function shownDomain<
@@ -42,7 +30,6 @@ export async function createDomain(
   input: { domain: string },
 ) {
   found(await lockOrganizationForCommand(context, organizationId), notFound);
-  refusePublicMailDomain(input.domain);
   const row = await queries.createOrganizationDomain(context, {
     organizationId,
     ...input,
@@ -76,7 +63,6 @@ async function setStatus(
     notFound,
   );
   const changed = existing.status !== status;
-  if (changed && status === "active") refusePublicMailDomain(existing.domain);
   const row = changed
     ? await queries.setOrganizationDomainStatus(
         context,

@@ -1,3 +1,0 @@
-ALTER TABLE "magic_link_requests" ADD COLUMN "new_address" boolean DEFAULT false NOT NULL;--> statement-breakpoint
-CREATE INDEX "magic_link_requests_new_address_organization_idx" ON "magic_link_requests" USING btree ("organization_id","created_at") WHERE "magic_link_requests"."new_address" and "magic_link_requests"."send_status" <> 'failed';--> statement-breakpoint
-CREATE INDEX "magic_link_requests_new_address_client_idx" ON "magic_link_requests" USING btree ("client_hash","created_at") WHERE "magic_link_requests"."new_address" and "magic_link_requests"."send_status" <> 'failed';

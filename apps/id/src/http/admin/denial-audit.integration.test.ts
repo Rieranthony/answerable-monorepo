@@ -5,7 +5,7 @@ import {
   createAdminFixture,
   type AdminFixture,
 } from "../../__tests__/admin.ts";
-import { createApp } from "../../app.ts";
+import { createApp } from "../../__tests__/app.ts";
 import { createAuth } from "../../auth.ts";
 import {
   auditEvents,

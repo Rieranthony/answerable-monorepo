@@ -64,9 +64,9 @@ export async function diagnoseSignIn(
   ]);
   const membership = memberRows.items[0];
   const suppressed = lastRequest?.postmarkErrorCode === postmarkSuppressed;
-  // The one admission check, whose rules this must not restate: its switch, its mode, the public
-  // mail list and the person. Asked only of this firm's own domains, since an answer about
-  // another firm's address would say who is a member there, and it says only yes or no.
+  // The one admission check, whose rules this must not restate: its switch, its mode and the
+  // person. Asked only of this firm's own domains, since an answer about another firm's address
+  // would say who is a member there, and it says only yes or no.
   const address = parseMagicLinkAddress(email);
   const admitted =
     matchesThisOrganization &&

@@ -32,7 +32,6 @@ import { magicLinkRequests } from "../db/schema/index.ts";
 import {
   addressRequestCounts,
   magicLinkDrainDeadlineMs,
-  organizationRequestCount,
 } from "./magic-link-requests.ts";
 
 let fixture: MagicLinkFixture;
@@ -92,7 +91,7 @@ describe("what is stored", () => {
     expect(row!.attempts).toBe(0);
   });
 
-  test("the link and the row last ten minutes, and the pending query is kept", async () => {
+  test("the link and the row last thirty minutes, and the pending query is kept", async () => {
     const firm = await fixture.firm();
     const { email } = await fixture.member(firm);
     await fixture.ask(email, { pendingQuery: "client_id=a&sig=b" });
@@ -100,12 +99,12 @@ describe("what is stored", () => {
     expect(row!.pendingOauthQuery).toBe("client_id=a&sig=b");
     const minutes =
       (row!.expiresAt.getTime() - row!.createdAt.getTime()) / 60_000;
-    expect(minutes).toBeGreaterThan(9.9);
-    expect(minutes).toBeLessThan(10.1);
+    expect(minutes).toBeGreaterThan(29.9);
+    expect(minutes).toBeLessThan(30.1);
     const [verification] = await fixture.tokens([row!.tokenIdentifier]);
     const remaining = verification!.expiresAt.getTime() - Date.now();
-    expect(remaining).toBeGreaterThan(9 * 60_000);
-    expect(remaining).toBeLessThanOrEqual(10 * 60_000);
+    expect(remaining).toBeGreaterThan(29 * 60_000);
+    expect(remaining).toBeLessThanOrEqual(30 * 60_000);
   });
 
   test("the same code on two requests gives two different HMACs", async () => {
@@ -121,7 +120,7 @@ describe("what is stored", () => {
     expect(keys.codeHmac(second!.id, code)).not.toBe(first!.codeHmac);
   });
 
-  test("a `sending` row exists while the send runs, and has its token and code", async () => {
+  test("a row can sign in once it is made: it says `sent` and holds its token while the send runs", async () => {
     const firm = await fixture.firm();
     const { email } = await fixture.member(firm);
     let during: { status: string; held: number } | undefined;
@@ -141,7 +140,7 @@ describe("what is stored", () => {
       client,
       pendingQuery: null,
     });
-    expect(during).toEqual({ status: "sending", held: 1 });
+    expect(during).toEqual({ status: "sent", held: 1 });
     expect((await fixture.rows(email))[0]!.sendStatus).toBe("sent");
   });
 
@@ -230,9 +229,10 @@ describe("what is stored", () => {
       ).toEqual({
         outcome: "invalid",
       });
+      // It says nothing of the address: the queue had room.
       expect(
         requests.request({ address, browser, client, pendingQuery: null }),
-      ).toBe(false);
+      ).toBe(true);
     }
     expect(await requests.drain(1_000)).toEqual({ abandoned: 0, running: 0 });
     expect(fixture.transport.sent).toHaveLength(before);
@@ -248,23 +248,6 @@ async function explained(statement: SQL) {
     );
     return rows[0]!["QUERY PLAN"];
   });
-}
-
-type PlanNode = {
-  "Relation Name"?: string;
-  "Actual Rows"?: number;
-  Plan?: PlanNode;
-  Plans?: PlanNode[];
-};
-function nodeOn(node: unknown, relation: string): PlanNode {
-  const search = (from: PlanNode): PlanNode | undefined =>
-    from["Relation Name"] === relation
-      ? from
-      : [from.Plan, ...(from.Plans ?? [])]
-          .filter((next) => next !== undefined)
-          .map(search)
-          .find(Boolean);
-  return search(node as PlanNode)!;
 }
 
 describe("the limits", () => {
@@ -341,9 +324,9 @@ describe("the limits", () => {
     }: { age?: string; status?: string } = {},
   ) {
     return fixture.owner.pool.query(
-      `insert into magic_link_requests (id, organization_id, provider_id, provider_revision, purpose, email, client_hash, expires_at, send_status, created_at)
-       select uuid_v7(), $1, (select id from sso_providers where organization_id = $1 and kind = 'magic_link'), 1, 'access_removed',
-         replace($2, '#', n::text), 'other-client-' || n, now(), $3, now() - $4::interval
+      `insert into magic_link_requests (id, organization_id, provider_id, provider_revision, purpose, email, token_identifier, browser_hash, code_hmac, client_hash, expires_at, send_status, created_at)
+       select uuid_v7(), $1, (select id from sso_providers where organization_id = $1 and kind = 'magic_link'), 1, 'link',
+         replace($2, '#', n::text), 'magic-link:earlier-' || gen_random_uuid(), 'other-browser', 'other-code', 'other-client-' || n, now(), $3, now() - $4::interval
        from generate_series(1, $5::int) n`,
       [organizationId, addressOf, status, age, count],
     );
@@ -367,68 +350,16 @@ describe("the limits", () => {
     expect((await fixture.ask(email)).outcome).toBe("sent");
   });
 
-  test("the organisation's cap: the last below it passes, the next is dropped, an hour later it passes", async () => {
+  test("no count of a firm's mail holds back its next person", async () => {
     const firm = await fixture.firm();
-    const { email } = await fixture.member(firm, "first");
-    const { email: next } = await fixture.member(firm, "next");
-    const { email: after } = await fixture.member(firm, "after");
-    // Other people at the firm, so no address limit stands in the way.
-    await earlier(firm.id, `filler#@${firm.domain}`, 4_999, {
-      age: "50 minutes",
+    const { email } = await fixture.member(firm);
+    await earlier(firm.id, `filler#@${firm.domain}`, 6_000, {
+      age: "10 minutes",
     });
     expect((await fixture.ask(email)).outcome).toBe("sent");
-    const beforeNext = fixture.transport.sent.length;
-    expect(await fixture.ask(next)).toEqual({
-      outcome: "limited",
-      limit: "organization_hour",
-    });
-    expect(fixture.transport.sent).toHaveLength(beforeNext);
-    expect(await fixture.rows(next)).toEqual([]);
-    await fixture.owner.db
-      .update(magicLinkRequests)
-      .set({ createdAt: sql`now() - interval '61 minutes'` })
-      .where(eq(magicLinkRequests.organizationId, firm.id));
-    expect((await fixture.ask(after)).outcome).toBe("sent");
     await fixture.owner.db
       .delete(magicLinkRequests)
       .where(eq(magicLinkRequests.organizationId, firm.id));
-  }, 30_000);
-
-  test("failed requests and another firm's do not count towards a firm's cap", async () => {
-    const firm = await fixture.firm();
-    const other = await fixture.firm();
-    const { email } = await fixture.member(firm);
-    const cap = 5_000;
-    await earlier(firm.id, `failed#@${firm.domain}`, cap, { status: "failed" });
-    await earlier(other.id, `filler#@${other.domain}`, cap);
-    expect((await fixture.ask(email)).outcome).toBe("sent");
-    for (const { id } of [firm, other])
-      await fixture.owner.db
-        .delete(magicLinkRequests)
-        .where(eq(magicLinkRequests.organizationId, id));
-  }, 30_000);
-
-  test("a firm at its cap reads no more than the cap's rows, and a quiet firm reads only its own, on its index", async () => {
-    const flooded = await fixture.firm();
-    const quiet = await fixture.firm();
-    const cap = 5_000;
-    await earlier(flooded.id, `filler#@${flooded.domain}`, cap + 200);
-    await earlier(quiet.id, `quiet#@${quiet.domain}`, 10);
-    await fixture.owner.pool.query("analyze magic_link_requests");
-
-    const [full] = await explained(organizationRequestCount(flooded.id));
-    expect(nodeOn(full, "magic_link_requests")["Actual Rows"]).toBe(cap);
-
-    const [small] = await explained(organizationRequestCount(quiet.id));
-    expect(JSON.stringify(small)).toContain(
-      "magic_link_requests_organization_created_at_idx",
-    );
-    expect(nodeOn(small, "magic_link_requests")["Actual Rows"]).toBe(10);
-
-    for (const { id } of [flooded, quiet])
-      await fixture.owner.db
-        .delete(magicLinkRequests)
-        .where(eq(magicLinkRequests.organizationId, id));
   }, 30_000);
 
   test("the address's count reads its index", async () => {
@@ -440,19 +371,23 @@ describe("the limits", () => {
     );
   });
 
-  test("a removed person's mail is within the same limits", async () => {
+  test("a removed person, and a disabled one, cost nothing: no row and no mail", async () => {
     const firm = await fixture.firm();
-    const { email, memberId } = await fixture.member(firm);
+    const removed = await fixture.member(firm, "removed");
     await fixture.owner.pool.query(
       `update members set status = 'revoked', revoked_at = now() where id = $1`,
-      [memberId],
+      [removed.memberId],
     );
-    expect((await fixture.ask(email)).outcome).toBe("sent");
-    expect(await fixture.ask(email)).toEqual({
-      outcome: "limited",
-      limit: "address_client_minute",
-    });
-    expect(fixture.mailsTo(email)).toHaveLength(1);
+    const disabled = await fixture.member(firm, "disabled");
+    await fixture.owner.pool.query(
+      `update users set status = 'disabled', disabled_at = now() where id = $1`,
+      [disabled.userId],
+    );
+    for (const { email } of [removed, disabled]) {
+      expect(await fixture.ask(email)).toEqual({ outcome: "stranger" });
+      expect(await fixture.rows(email)).toEqual([]);
+      expect(fixture.mailsTo(email)).toEqual([]);
+    }
   });
 
   test("a failed send costs nothing, at any limit", async () => {
@@ -474,7 +409,7 @@ describe("the limits", () => {
     expect(fixture.mailsTo(email)).toHaveLength(1);
   });
 
-  test("a `sending` row counts, so a request racing a send is dropped", async () => {
+  test("a row counts from when it is made, so a request racing a send is dropped", async () => {
     const email = await member();
     let release = () => {};
     const held = new Promise<void>((resolve) => {
@@ -710,34 +645,7 @@ describe("a send that fails", () => {
     expect(await fixture.tokens([row!.tokenIdentifier])).toEqual([]);
   });
 
-  test("a failed access-removed mail is recorded, and has no token to remove", async () => {
-    const firm = await fixture.firm();
-    const { email, memberId } = await fixture.member(firm);
-    await fixture.owner.pool.query(
-      `update members set status = 'revoked', revoked_at = now() where id = $1`,
-      [memberId],
-    );
-    const requests = fixture.instance({ transport: failing(failed(406, 422)) });
-    const before = (await fixture.magicLinkVerifications()).length;
-    await capturingLogs(async () => {
-      expect(
-        await requests.process({
-          address: email,
-          browser,
-          client,
-          pendingQuery: null,
-        }),
-      ).toMatchObject({ outcome: "failed", purpose: "access_removed" });
-    });
-    expect((await fixture.rows(email))[0]).toMatchObject({
-      purpose: "access_removed",
-      sendStatus: "failed",
-      postmarkErrorCode: 406,
-    });
-    expect(await fixture.magicLinkVerifications()).toHaveLength(before);
-  });
-
-  test("an answer that cannot be recorded leaves the row `sending`, which never signs in, and escapes nothing", async () => {
+  test("a failure that cannot be recorded leaves the row as it was made, and escapes nothing", async () => {
     const firm = await fixture.firm();
     const { email } = await fixture.member(firm);
     const blocker = await fixture.owner.pool.connect();
@@ -748,7 +656,7 @@ describe("a send that fails", () => {
           await blocker.query(
             "lock table magic_link_requests in access exclusive mode",
           );
-          return { status: "sent", messageId: "m" };
+          return failed(500, 500);
         },
       },
     });
@@ -770,7 +678,7 @@ describe("a send that fails", () => {
       `[id] magic link ${JSON.stringify({ level: "error", event: "magic_link_job_failed", name: "Error", code: "55P03" })}`,
     ]);
     const [row] = await fixture.rows(email);
-    expect(row!.sendStatus).toBe("sending");
+    expect(row!.sendStatus).toBe("sent");
     expect(await fixture.ask(email)).toEqual({
       outcome: "limited",
       limit: "address_client_minute",
@@ -808,7 +716,7 @@ describe("the logs", () => {
     expect(lines).toHaveLength(6);
 
     const mails = fixture.transport.sent.filter((message) =>
-      [sent, limited, revoked].includes(message.to),
+      [sent, limited].includes(message.to),
     );
     const rows = (
       await Promise.all([sent, limited, lost, revoked].map(fixture.rows))
@@ -861,14 +769,9 @@ describe("the logs", () => {
         requestId: expect.any(String),
         organizationId: firm.id,
       },
-      {
-        event: "magic_link_request",
-        outcome: "sent",
-        requestId: of(revoked),
-        organizationId: firm.id,
-        purpose: "access_removed",
-      },
-      // A stranger logs no organisation, so a log cannot say which firm was asked about.
+      // Someone removed logs as a stranger does, with no organisation: a log cannot say which firm
+      // was asked about.
+      { event: "magic_link_request", outcome: "stranger" },
       { event: "magic_link_request", outcome: "stranger" },
       {
         level: "error",

@@ -8,7 +8,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, sql, type SQL } from "drizzle-orm";
 import { testEnvironment } from "../__tests__/support.ts";
 import { bootstrap, systemActor } from "../bootstrap.ts";
-import { createApp } from "../app.ts";
+import { createApp } from "../__tests__/app.ts";
 import { createAuth } from "../auth.ts";
 import {
   createClient as createClientImplementation,

@@ -42,22 +42,18 @@ import {
  * Judgement, not a standard: the figures others publish differ. A person who asks again
  * within a minute already has a working email. Five an hour from one client covers a slow
  * mail gateway, and fifty a day keeps someone else's requests from filling a mailbox.
- * The organisation's cap stops a flood of real addresses before it costs every firm its
- * sender's reputation.
  */
 export const magicLinkLimits = {
   addressClientPerMinute: 1,
   addressClientPerHour: 5,
   addressPerDay: 50,
-  organizationPerHour: 5_000,
   /**
    * For an address no user holds, which only domain mode admits. Made-up addresses at a real
    * firm hard-bounce, and Postmark pauses a server past 10%, which would stop sign-in at every
    * firm; each row also gives three guesses at a code whose hit makes a real member. The limits
-   * above do not reach this, since the addresses rotate: one client at the page's budget reaches
-   * 5,000 in about 14 minutes. An office shares one egress address, hence 100 and not less. The
-   * person sees what any limit shows them, so a firm-wide start imports first. Judgement until
-   * staging measures them.
+   * above do not reach this, since the addresses rotate. An office shares one egress address,
+   * hence 100 and not less. The person sees what any limit shows them, so a firm-wide start
+   * imports first. Judgement until staging measures them.
    */
   newAddressClientPerHour: 100,
   newAddressOrganizationPerDay: 500,
@@ -101,19 +97,18 @@ type LimitName =
   | "address_client_minute"
   | "address_client_hour"
   | "address_day"
-  | "organization_hour"
   | "new_address_client_hour"
   | "new_address_organization_day";
 
-const unsent: SendResult = {
+const unsent: Extract<SendResult, { status: "failed" }> = {
   status: "failed",
   httpStatus: null,
   errorCode: null,
   retried: false,
 };
 
-/** What the limits count for one address: what did not fail, on a partial index. An
- * address holds few rows, since these limits themselves bound them. */
+/** What the limits count for one address: what did not fail. An address holds few rows, since
+ * these limits themselves bound them. */
 export const addressRequestCounts = (email: string, clientHash: string) => sql`
   select
     count(*) filter (where client_hash = ${clientHash} and created_at > statement_timestamp() - interval '60 seconds')::int as minute,
@@ -121,15 +116,6 @@ export const addressRequestCounts = (email: string, clientHash: string) => sql`
     count(*)::int as day
   from ${magicLinkRequests}
   where email = ${email} and send_status <> 'failed' and created_at > statement_timestamp() - interval '1 day'`;
-
-/** What the cap counts for one firm. It stops at the cap, so a firm at its cap reads no
- * more than the cap's rows of a partial index however many it holds. */
-export const organizationRequestCount = (organizationId: string) => sql`
-  select count(*)::int as hour from (
-    select 1 from ${magicLinkRequests}
-    where organization_id = ${organizationId} and send_status <> 'failed' and created_at > statement_timestamp() - interval '1 hour'
-    limit ${magicLinkLimits.organizationPerHour}
-  ) as recent`;
 
 /** What one client has asked for addresses nobody holds, at any firm. It stops at the budget. */
 export const newAddressClientCount = (clientHash: string) => sql`
@@ -166,13 +152,6 @@ async function exceededLimit(
   if (address!.hour >= magicLinkLimits.addressClientPerHour)
     return "address_client_hour";
   if (address!.day >= magicLinkLimits.addressPerDay) return "address_day";
-  const {
-    rows: [organization],
-  } = await tx.execute<{ hour: number }>(
-    organizationRequestCount(organizationId),
-  );
-  if (organization!.hour >= magicLinkLimits.organizationPerHour)
-    return "organization_hour";
   if (!newAddress) return undefined;
   const {
     rows: [client],
@@ -203,9 +182,8 @@ export type MagicLinkRequests = ReturnType<typeof createMagicLinkRequests>;
  * Turn one request into an email, or into nothing.
  *
  * In one transaction, which the send stays out of: admission, the address's lock, the
- * limits, the token, and a `sending` row. A row that never leaves `sending` signs nobody
- * in, so a paused Postmark stops guesses as well as mail. A failed send becomes `failed`,
- * loses its token and counts against no limit.
+ * limits, the token and the row. The row can sign in from then on, unless its send fails: a
+ * failed send becomes `failed`, loses its token and counts against no limit.
  */
 export function createMagicLinkRequests({
   auth,
@@ -231,15 +209,15 @@ export function createMagicLinkRequests({
     { address, browser, client, pendingQuery }: Parsed,
   ) {
     const admission = await admitMagicLink(tx, address);
-    if (admission.outcome === "stranger")
-      return { outcome: "stranger" } as const;
+    // Someone whose access ended asks as anyone else does, with the same page and no mail. An
+    // old link or code still tells them, at confirmation.
+    if (admission.outcome !== "admit") return { outcome: "stranger" } as const;
     const { organizationId, providerId, providerRevision, firmName } =
       admission;
     const { email } = address;
     await lockMagicLinkAddress(tx, email);
     const clientHash = keys.clientHash(client);
-    const newAddress =
-      admission.outcome === "admit" && admission.person.kind === "new";
+    const newAddress = admission.person.kind === "new";
     const limit = await exceededLimit(
       tx,
       email,
@@ -248,29 +226,6 @@ export function createMagicLinkRequests({
       newAddress,
     );
     if (limit) return { outcome: "limited", limit, organizationId } as const;
-    const row = {
-      id: requestId,
-      organizationId,
-      providerId,
-      providerRevision,
-      email,
-      clientHash,
-      newAddress,
-      expiresAt: sql`statement_timestamp() + make_interval(mins => ${magicLinkTtlMinutes})`,
-    };
-    if (admission.outcome === "removed") {
-      const rendered = renderEmail({ template: "access-removed", firmName });
-      await tx
-        .insert(magicLinkRequests)
-        .values({ ...row, purpose: "access_removed" });
-      return {
-        outcome: "reserved",
-        organizationId,
-        purpose: "access_removed",
-        tokenIdentifier: null,
-        message: { to: email, ...rendered } satisfies Message,
-      } as const;
-    }
     const token = await issueMagicLinkToken(auth, email);
     const code = newMagicLinkCode();
     const url = new URL("/magic-link", environment.betterAuthUrl);
@@ -284,12 +239,19 @@ export function createMagicLinkRequests({
     });
     const tokenIdentifier = magicLinkIdentifier(token);
     await tx.insert(magicLinkRequests).values({
-      ...row,
+      id: requestId,
+      organizationId,
+      providerId,
+      providerRevision,
       purpose: "link",
+      email,
       tokenIdentifier,
       browserHash: magicLinkBrowserHash(browser),
+      clientHash,
       codeHmac: keys.codeHmac(requestId, code),
+      newAddress,
       pendingOauthQuery: pendingQuery,
+      expiresAt: sql`statement_timestamp() + make_interval(mins => ${magicLinkTtlMinutes})`,
     });
     return {
       outcome: "reserved",
@@ -355,26 +317,22 @@ export function createMagicLinkRequests({
     } as const;
   }
 
-  /** Record the send's answer. A link that failed loses its token with the same commit. */
-  function finish(
+  /** A failed send's answer. A link loses its token with the same commit. */
+  function recordFailure(
     requestId: string,
     tokenIdentifier: string | null,
-    result: SendResult,
+    { errorCode, httpStatus }: typeof unsent,
   ) {
     return withDatabaseScope(db, { kind: "protocol" }, async (tx) => {
       await tx
         .update(magicLinkRequests)
-        .set(
-          result.status === "sent"
-            ? { sendStatus: "sent" }
-            : {
-                sendStatus: "failed",
-                postmarkErrorCode: result.errorCode,
-                postmarkHttpStatus: result.httpStatus,
-              },
-        )
+        .set({
+          sendStatus: "failed",
+          postmarkErrorCode: errorCode,
+          postmarkHttpStatus: httpStatus,
+        })
         .where(eq(magicLinkRequests.id, requestId));
-      if (result.status === "failed" && tokenIdentifier)
+      if (tokenIdentifier)
         await tx
           .delete(verifications)
           .where(eq(verifications.identifier, tokenIdentifier));
@@ -428,10 +386,10 @@ export function createMagicLinkRequests({
       message: Message;
     },
   ) {
-    // A transport refuses an address it cannot send to by throwing; that is a failed send.
+    // A transport that throws is a failed send.
     const result = await transport.send(message).catch(() => unsent);
-    await finish(requestId, tokenIdentifier, result);
     if (result.status === "failed") {
+      await recordFailure(requestId, tokenIdentifier, result);
       const { errorCode, httpStatus, retried } = result;
       logEvent("magic link", "magic_link_send_failed", {
         requestId,
@@ -456,19 +414,21 @@ export function createMagicLinkRequests({
       logEvent("magic link", "magic_link_queue_overflow", { dropped }),
   });
 
-  function parse({ address, ...rest }: MagicLinkRequest): Parsed | null {
+  /** The one parser decides whether a request costs anything. */
+  async function handle({ address, ...rest }: MagicLinkRequest) {
     const parsed = parseMagicLinkAddress(address);
-    return parsed && { address: parsed, ...rest };
+    return parsed
+      ? run({ address: parsed, ...rest })
+      : ({ outcome: "invalid" } as const);
   }
 
   return {
     /**
      * Queue one request and answer at once, whatever becomes of it, so a response cannot
-     * depend on the address. False when the address is refused or the queue is full.
+     * depend on the address. False when the queue is full, which depends on no address.
      */
     request(request: MagicLinkRequest) {
-      const parsed = parse(request);
-      return parsed !== null && queue.enqueue(() => run(parsed));
+      return queue.enqueue(() => handle(request));
     },
     /**
      * Ask a mailbox for the code that connects a directory. The row commits before this
@@ -495,14 +455,11 @@ export function createMagicLinkRequests({
       }
       // A send that will never run must not hold a limit or look as if it might.
       if (!queue.enqueue(() => deliver(requestId, reservation)))
-        await finish(requestId, null, unsent);
+        await recordFailure(requestId, null, unsent);
       return "reserved" as const;
     },
     /** One request now, for what must wait for its outcome. */
-    async process(request: MagicLinkRequest) {
-      const parsed = parse(request);
-      return parsed ? run(parsed) : ({ outcome: "invalid" } as const);
-    },
+    process: handle,
     /** Finish what is queued, then the database can close. */
     async drain(deadlineMs = magicLinkDrainDeadlineMs) {
       const left = await queue.drain(deadlineMs);

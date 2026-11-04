@@ -1,7 +1,7 @@
 import type { PlatformApplications } from "../../auth/platform-applications.ts";
 import type { Database } from "../../db/client.ts";
 import { expect, test } from "bun:test";
-import { createApp } from "../../app.ts";
+import { createApp } from "../../__tests__/app.ts";
 import {
   stubAuth,
   stubDatabase,

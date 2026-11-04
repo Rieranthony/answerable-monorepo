@@ -23,7 +23,7 @@ export type MagicLinkProps = {
   url: string
   /** The eight digits to enter on the page where sign-in started, from another browser or device. */
   code: string
-  /** How long the link and the code work, as the email says it: "10 minutes". */
+  /** How long the link and the code work, as the email says it: "30 minutes". */
   expiry: string
 }
 
@@ -84,6 +84,10 @@ export function MagicLinkEmail({
         <Text style={codeText}>{code}</Text>
       </Box>
       <Paragraph>{`The link and the code expire in ${expiry}.`}</Paragraph>
+      <Paragraph>
+        Never read this code to anyone. Answerable and your IT team will never
+        ask for it.
+      </Paragraph>
       <Closing>
         If you did not ask to sign in, you can ignore this email: nobody can
         sign in without it.

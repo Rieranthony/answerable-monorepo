@@ -1,4 +1,5 @@
 import { afterAll, describe } from "bun:test"
+import { createConnection, createServer, type AddressInfo, type Socket } from "node:net"
 import { fileURLToPath } from "node:url"
 import { callerOrganisation, type Provider, type Target, type UserPrincipal } from "@answerable/mcp"
 import { assertProviderConformance as assertConformance, createTestMcp as createSdkTestMcp, type ConformanceFixture, type TestMcp, type TestServing } from "@answerable/mcp/testing"
@@ -9,6 +10,40 @@ import { configureRuntimeRole, type Grant } from "./runtime-role"
 import { testMcpDatabase } from "./mcp-test-database"
 
 export { mcpPostgresTestConfig } from "./mcp-test-database"
+
+/**
+ * A TCP proxy in front of the Postgres at `target`, for a test of a connection lost with no word from the server: `url` is `target` through it, and
+ * `cut()` destroys every socket it holds, as a crashed server or a network reset does. `pg_terminate_backend` sends a FATAL first, which is another path.
+ */
+export async function connectionCutter(target: string) {
+  const { hostname, port } = new URL(target)
+  const sockets = new Set<Socket>()
+  const held = (socket: Socket) => {
+    sockets.add(socket)
+    socket.on("close", () => sockets.delete(socket))
+    // The other end going first is what a cut is.
+    socket.on("error", socket.destroy.bind(socket))
+    return socket
+  }
+  const server = createServer(client => {
+    const upstream = held(createConnection(Number(port), hostname))
+    held(client).pipe(upstream).pipe(client)
+  })
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve))
+  const url = new URL(target)
+  url.hostname = "127.0.0.1"
+  url.port = String((server.address() as AddressInfo).port)
+  return {
+    url: url.href,
+    cut() {
+      for (const socket of sockets) socket.destroy()
+    },
+    close() {
+      this.cut()
+      server.close()
+    },
+  }
+}
 
 /** A tagged template that runs a query on `db` and returns its rows: `const query = rowsOf(db); await query\`select …\``, for a suite's own reads. */
 export const rowsOf = (db: Executor) => async <T extends Record<string, unknown> = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]> =>

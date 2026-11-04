@@ -3,7 +3,6 @@ import type { Hono } from "hono";
 import { jsx } from "hono/jsx";
 
 import { findLiveLinkRequest } from "../../../auth/magic-link-confirm.ts";
-import { createClientBudget } from "../../../lib/client-budget.ts";
 import { logEvent } from "../../../lib/log.ts";
 import { attemptMagicLinkCode } from "../../../services/magic-link-codes.ts";
 import type { AppEnvironment } from "../../context.ts";
@@ -65,8 +64,9 @@ export function logFailure(context: PageContext, path: string, error: unknown) {
 
 /**
  * Sign in on a request this browser holds, in process. A signed query that has since expired
- * is left out, so a link that outlives its authorisation signs in and lands on `/login`.
- * Better Auth's provider resumes the rest through its after-hook, which needs a request.
+ * is left out, so a link that outlives its authorisation signs in and lands on `/login`, which
+ * tells the person to go back to their application. Better Auth's provider resumes the rest
+ * through its after-hook, which needs a request.
  */
 async function confirm(
   context: PageContext,
@@ -75,7 +75,6 @@ async function confirm(
     pendingOauthQuery: string | null;
   },
   browser: string,
-  proof: "link" | "code",
 ) {
   const auth = context.get("auth");
   const { secret } = await auth.$context;
@@ -94,7 +93,6 @@ async function confirm(
     body: {
       identifier: row.tokenIdentifier!,
       browser,
-      proof,
       ...(pending ? { oauth_query: pending } : {}),
     },
     asResponse: true,
@@ -107,18 +105,18 @@ async function confirm(
   };
   // The session is committed by the time the provider resumes, so a resume that failed still
   // signed the person in.
-  if (data.url) return context.redirect(data.url, 303);
+  if (data.url)
+    return context.redirect(
+      row.pendingOauthQuery !== null && !pending
+        ? `${data.url}?resume=expired`
+        : data.url,
+      303,
+    );
   if (setCookies.length > 0) return context.redirect("/login", 303);
   return data.refused === "removed" ? renderRemoved(context) : null;
 }
 
 export function registerMagicLink(app: Hono<AppEnvironment>) {
-  // 60 per 10 s per client, as on `POST /login`. Over it these two answer as they answer a
-  // refusal, with no database work: what a flood costs is the point, and neither says why.
-  const budget = createClientBudget({ max: 60, windowMs: 10_000 });
-  const withinBudget = (context: PageContext) =>
-    budget.take(context.get("clientIp") ?? "unresolved");
-
   // Scanners fetch links: GET and HEAD consume nothing and count nothing, for anyone.
   app.get("/magic-link", async (context) => {
     const token = context.req.query("token");
@@ -145,7 +143,6 @@ export function registerMagicLink(app: Hono<AppEnvironment>) {
       context.status(403);
       return renderElsewhere(context);
     }
-    if (!withinBudget(context)) return renderElsewhere(context);
     const body = await context.req.parseBody();
     const browser = readSignInCookie(context);
     if (
@@ -163,7 +160,7 @@ export function registerMagicLink(app: Hono<AppEnvironment>) {
         browser,
       );
       if (row) {
-        const answer = await confirm(context, row, browser, "link");
+        const answer = await confirm(context, row, browser);
         if (answer) return answer;
       }
     } catch (error) {
@@ -177,7 +174,6 @@ export function registerMagicLink(app: Hono<AppEnvironment>) {
       context.status(403);
       return renderCodeRefused(context);
     }
-    if (!withinBudget(context)) return renderCodeRefused(context);
     const body = await context.req.parseBody();
     const code = typeof body.code === "string" ? body.code.trim() : "";
     const browser = readSignInCookie(context);
@@ -187,16 +183,11 @@ export function registerMagicLink(app: Hono<AppEnvironment>) {
       const row = await attemptMagicLinkCode(
         context.get("db"),
         context.get("environment"),
-        {
-          browser,
-          client: context.get("clientIp") ?? "unresolved",
-          code,
-          purpose: "link",
-        },
+        { browser, code, purpose: "link" },
         whoAsked(context),
       );
       if (row) {
-        const answer = await confirm(context, row, browser, "code");
+        const answer = await confirm(context, row, browser);
         if (answer) return answer;
       }
     } catch (error) {

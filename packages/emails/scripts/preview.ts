@@ -1,10 +1,10 @@
 // Writes each email's HTML and text to disk, to open in a browser or send to a test inbox:
 //   bun run --filter @answerable/emails preview [directory]      (default: dist/preview)
-// It renders through React, so an edit shows without a `generate`; the equivalence test holds the generated strings to
-// the same output. The firm name is hostile on purpose: the preview shows that the escaping holds.
+// It renders what is sent, the generated strings, so an edit shows after a `generate`. The firm name is hostile on purpose:
+// the preview shows that the escaping holds.
 import { mkdir } from "node:fs/promises"
 import type { Email } from "../src/holes"
-import { renderThroughReact } from "../src/react"
+import { renderEmail } from "../src/render"
 
 const directory =
   process.argv[2] ?? new URL("../dist/preview", import.meta.url).pathname
@@ -19,19 +19,18 @@ const emails: Email[] = [
     firmName,
     url,
     code: "04817352",
-    expiresInMinutes: 10,
+    expiresInMinutes: 30,
   },
-  { template: "access-removed", firmName },
   {
     template: "mailbox-code",
     firmName,
     code: "04817352",
-    expiresInMinutes: 10,
+    expiresInMinutes: 30,
   },
 ]
 
 for (const email of emails) {
-  const { subject, html, text } = await renderThroughReact(email)
+  const { subject, html, text } = renderEmail(email)
   await Bun.write(`${directory}/${email.template}.html`, html)
   await Bun.write(
     `${directory}/${email.template}.txt`,

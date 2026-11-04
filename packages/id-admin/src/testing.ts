@@ -57,8 +57,6 @@ const platformIssuer = (value: unknown) => value === "https://accounts.google.co
 const usersCommand = (path: string) => /^\/users\/[^/]+\/(?:disable|enable|retire-email)$/.test(path) || /^\/organizations\/[^/]+\/members\/[^/]+(?:\/reinstate)?$/.test(path)
 // The POST that changes nothing, because its list does not fit a query (apps/id/src/http/admin/members.ts).
 const importPreview = (path: string) => /^\/organizations\/[^/]+\/members\/import\/preview$/.test(path)
-// A few of ID's public mail domains (apps/id/src/lib/public-mail-domains.generated.ts), for its refusals.
-const publicMail = new Set(["gmail.com", "proton.me", "mailinator.com"])
 // The fields of a domain that prove it: what to publish, and when it was last seen.
 const domainProof = (domain: unknown) => ({
   verifiedAt: null as string | null,
@@ -74,9 +72,9 @@ const retiredAddress = (userId: unknown) => `${String(userId)}@retired.invalid`
  * `operationInProgress`, a write whose method, path and Idempotency-Key a running write holds answers `409 operation_in_progress`, as ID does;
  * without it, the second write runs after the first. A method the fake does not implement on a route answers `405`.
  *
- * Every organisation holds its magic-link setting, on and `listed`, and the platform organisation's off, which `POST .../magic-link/enable` answers `409 platform_magic_link`, as
+ * Every organisation holds its magic-link setting, off and `listed`. `POST .../magic-link/enable` turns it on, and answers `409 platform_magic_link` for the platform organisation's, as
  * `PATCH .../magic-link` does for `domain`. `listed` is its effective members, on one organisation's answer and not a list's. A domain's proof is what `publish` says DNS holds:
- * `POST .../verify` answers `409 domain_verification_failed` without it, and takes a proof it already held. `gmail.com`, `proton.me` and `mailinator.com` are public mail.
+ * `POST .../verify` answers `409 domain_verification_failed` without it, and takes a proof it already held.
  *
  * Staff set a service up through the admin API: `rootSecret` is a bearer that works as a platform administrator's until `lockRoot(true)`, or until a
  * member joins the platform organisation's `platform-admins` group without `breakGlass`, after which ID answers it `403 root_locked`; `staffToken`
@@ -282,7 +280,6 @@ export function createFakeId({
       const refuse = (reason: string) => items.push({ address: valid ? email : raw, outcome: "refused", reason })
       if (!valid) { refuse("invalid"); continue }
       const domain = email.slice(email.indexOf("@") + 1)
-      if (publicMail.has(domain)) { refuse("public_mail"); continue }
       if (!active.includes(domain)) { refuse("outside_domains"); continue }
       const holder = [...users.values()].find(user => user.email === email)
       const member = holder && rows(members, organisation).find(row => row.userId === holder.id)
@@ -329,9 +326,8 @@ export function createFakeId({
         if (platform && organisation === organizationId) return problem(409, "platform_magic_link", "The platform organisation cannot use magic links")
         const active = rows(domains, organisation).filter(domain => domain.status === "active")
         const unverified = active.filter(domain => !domain.verifiedAt).map(domain => domain.domain)
-        const held = active.filter(domain => publicMail.has(String(domain.domain))).map(domain => domain.domain)
-        if (!active.length || unverified.length || held.length) {
-          return problem(409, "domain_not_verified", "Every active domain must be proved before anyone at them may ask for a link", { details: { unverified, publicMail: held } })
+        if (!active.length || unverified.length) {
+          return problem(409, "domain_not_verified", "Every active domain must be proved before anyone at them may ask for a link", { details: { unverified } })
         }
       }
       // Who may ask moves no revision: it ends no session, in ID.
@@ -397,7 +393,6 @@ export function createFakeId({
       if (request.method === "GET") return newest(matching(rows(domains, organisation), url, ["status"]), url)
       const domain = String(body.domain).trim().toLowerCase()
       if (!host.test(domain)) return invalid("domain")
-      if (publicMail.has(domain)) return problem(409, "public_mail_domain", "This is a public mail domain")
       if ([...domains.values()].flat().some(existing => existing.domain === domain)) return conflict("organization_domains_active_domain_idx")
       const created = { id: Bun.randomUUIDv7(), organizationId: organisation, domain, status: "active", ...domainProof(domain), createdAt: now(), updatedAt: now() }
       rows(domains, organisation).push(created)
@@ -781,11 +776,11 @@ export function createFakeId({
     return row
   }
   const organisation = (id: string, fields: Record<string, unknown> = {}) => {
-    const row = { id, revision: 1, name: "Organisation", slug: `org-${id.slice(0, 8)}`, status: "active", authorizationVersion: 1, disabledAt: null, createdAt: now(), updatedAt: now(), magicLink: { enabled: true, admission: "listed" }, ...organisations.get(id), ...fields }
+    const row = { id, revision: 1, name: "Organisation", slug: `org-${id.slice(0, 8)}`, status: "active", authorizationVersion: 1, disabledAt: null, createdAt: now(), updatedAt: now(), magicLink: { enabled: false, admission: "listed" }, ...organisations.get(id), ...fields }
     organisations.set(id, row)
     return row
   }
-  organisation(organizationId, platform ? { name: "Answerable", slug: "answerable", magicLink: { enabled: false, admission: "listed" } } : {})
+  organisation(organizationId, platform ? { name: "Answerable", slug: "answerable" } : {})
   if (rootSecret) tokens.set(rootSecret, { scope: "platform:read platform:users platform:write", resource: adminResource })
   return {
     config: { issuer, adminResource, clientId, clientSecret, fetch },

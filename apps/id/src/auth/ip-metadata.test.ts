@@ -1,6 +1,6 @@
 import type { BetterAuthOptions } from "better-auth";
-import { afterAll, expect, test } from "bun:test";
-import { createApp } from "../app.ts";
+import { afterAll, describe, expect, setSystemTime, test } from "bun:test";
+import { createApp } from "../__tests__/app.ts";
 import { createAuth } from "../auth.ts";
 import { createDatabase } from "../db/client.ts";
 import { testEnvironment } from "../__tests__/support.ts";
@@ -216,7 +216,6 @@ for (const path of [
 // The process-level checks above exercise the native resolver in production;
 // this isolates the app's admission branch for in-process coverage.
 test("unresolved client context refuses authentication before dispatch", async () => {
-  const { createApp } = await import("../app.ts");
   const { stubAuth } = await import("../__tests__/support.ts");
   const auth = stubAuth();
   const options: BetterAuthOptions = auth.options;
@@ -255,6 +254,11 @@ for (const { route, limit, request } of [
     route: "POST /auth/oauth2/token",
     limit: 600,
     request: `{ path: "/auth/oauth2/token", method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "grant_type=client_credentials" }`,
+  },
+  {
+    route: "GET /auth/oauth2/userinfo",
+    limit: 600,
+    request: `{ path: "/auth/oauth2/userinfo", headers: { authorization: "Bearer not-a-real-token" } }`,
   },
 ])
   test(`production allows ${limit} ${route} requests per client address`, async () => {
@@ -301,3 +305,54 @@ for (const { route, limit, request } of [
     expect(statuses[limit]).toBe(429);
     expect(other).not.toBe(429);
   }, 60_000);
+
+// Measured on real ID with Better Auth's own store: 2 a second from one address, well under each
+// rule, was refused from 30 seconds on, since its count resets only after a full window of silence.
+describe("a steady rate under a rule's stated rate is never refused, over many windows", () => {
+  for (const [route, send] of [
+    [
+      "POST /auth/sign-in/sso, 60 per 10 s",
+      (auth: ReturnType<typeof createAuth>) =>
+        auth.handler(
+          new Request(`${environment.betterAuthUrl}/auth/sign-in/sso`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-forwarded-for": "198.51.100.9",
+            },
+            body: JSON.stringify({
+              email: "person@unknown.example.com",
+              callbackURL: `${environment.betterAuthUrl}/`,
+            }),
+          }),
+        ),
+    ],
+    [
+      "GET /auth/oauth2/userinfo, 600 per 60 s",
+      (auth: ReturnType<typeof createAuth>) =>
+        auth.handler(
+          new Request(`${environment.betterAuthUrl}/auth/oauth2/userinfo`, {
+            headers: {
+              authorization: "Bearer not-a-real-token",
+              "x-forwarded-for": "198.51.100.9",
+            },
+          }),
+        ),
+    ],
+  ] as const)
+    test(route, async () => {
+      const auth = createAuth(connection.db, environment);
+      (await auth.$context).rateLimit.enabled = true;
+      const start = Date.now();
+      try {
+        for (let second = 0; second < 120; second += 0.5) {
+          setSystemTime(new Date(start + second * 1_000));
+          const response = await send(auth);
+          await response.arrayBuffer();
+          expect(response.status, `at ${second} s`).not.toBe(429);
+        }
+      } finally {
+        setSystemTime();
+      }
+    });
+});

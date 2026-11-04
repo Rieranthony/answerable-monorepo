@@ -19,11 +19,11 @@ function problemsOf(cookies: BrowserCookie[], host: string, name: string, maxAge
 
 /**
  * What is wrong with the sign-in cookie in what a browser holds for ID's host, over https: `__Host-answerable-sign-in`, once, `Secure`, `HttpOnly`,
- * `SameSite=Lax`, path `/`, host-only, for 10 minutes at most; and no `answerable-sign-in`, the name ID uses on plain http. Empty when it is right.
+ * `SameSite=Lax`, path `/`, host-only, for 30 minutes at most; and no `answerable-sign-in`, the name ID uses on plain http. Empty when it is right.
  */
 export function signInCookieProblems(cookies: BrowserCookie[], host: string, now = Date.now() / 1000) {
   const plain = cookies.filter(cookie => cookie.name === "answerable-sign-in").map(() => "answerable-sign-in, the name for plain http, is set on https")
-  return [...problemsOf(cookies, host, "__Host-answerable-sign-in", 600, now), ...plain]
+  return [...problemsOf(cookies, host, "__Host-answerable-sign-in", 1_800, now), ...plain]
 }
 
 /**

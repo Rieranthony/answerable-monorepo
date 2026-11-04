@@ -6,7 +6,7 @@ import { databaseClock } from "../__tests__/database-clock.ts";
 import { signInThroughIdp } from "../__tests__/federation.ts";
 import { softDeleteUser } from "../__tests__/soft-deletion.ts";
 import { inPlatformWrite } from "../__tests__/platform-context.ts";
-import { createApp } from "../app.ts";
+import { createApp } from "../__tests__/app.ts";
 import { createAuth } from "../auth.ts";
 import { createDatabase } from "../db/client.ts";
 import { withDatabaseScope } from "../db/isolation.ts";

@@ -31,9 +31,11 @@ export const ssoProviders = pgTable(
     id: id(),
     kind: text("kind", { enum: ssoProviderKinds }).default("oidc").notNull(),
     /** Only a magic-link row can be off: sessions and grants name this row and its
-     * revision, so turning it off ends those at once and touches nothing else. */
+     * revision, so turning it off ends those at once and touches nothing else. The default is
+     * a directory's, which must be on (sso_providers_enabled_check) and whose every insert
+     * leaves it out; the trigger that makes a firm's magic-link row writes false (drizzle/0003). */
     enabled: boolean("enabled").default(true).notNull(),
-    /** Who may ask this row for a link. Changing it moves no revision (drizzle/0010): narrowing
+    /** Who may ask this row for a link. Changing it moves no revision (drizzle/0003): narrowing
      * it leaves members as members, so it ends no session and no grant. */
     admission: text("admission", { enum: magicLinkAdmissions })
       .default("listed")

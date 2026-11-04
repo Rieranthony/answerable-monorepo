@@ -43,19 +43,15 @@ const request = (
   organizationId: of.id,
   providerId: of.providerId,
   providerRevision: 1,
-  purpose: "access_removed",
+  purpose: "link",
+  tokenIdentifier: `magic-link:${createId()}`,
+  browserHash: "browser",
+  codeHmac: "code",
   email: "person@firm.example.com",
   clientHash: "client",
   expiresAt: new Date(Date.now() + 600_000),
   ...fields,
 });
-
-const link = {
-  purpose: "link",
-  tokenIdentifier: "magic-link:token",
-  browserHash: "browser",
-  codeHmac: "code",
-} as const;
 
 beforeAll(async () => {
   roles = await openRuntimeRole(testEnvironment());
@@ -191,22 +187,14 @@ describe("the constraints", () => {
 
   test("a link has its token, its browser and its code", async () => {
     const check = "magic_link_requests_purpose_fields_check";
-    await refused({ ...link, tokenIdentifier: null }, check);
-    await refused({ ...link, browserHash: null }, check);
-    await refused({ ...link, codeHmac: null }, check);
-    await owner.db.insert(magicLinkRequests).values(request(one, link));
+    await refused({ tokenIdentifier: null }, check);
+    await refused({ browserHash: null }, check);
+    await refused({ codeHmac: null }, check);
+    await owner.db.insert(magicLinkRequests).values(request(one));
   });
 
-  test("word that access was removed has no token, browser, code or query to resume", async () => {
-    const check = "magic_link_requests_purpose_fields_check";
-    await refused({ tokenIdentifier: "magic-link:x" }, check);
-    await refused({ browserHash: "x" }, check);
-    await refused({ codeHmac: "x" }, check);
-    await refused({ pendingOauthQuery: "x" }, check);
-  });
-
-  test("two rows cannot name one token, and any number name none", async () => {
-    const shared = { ...link, tokenIdentifier: "magic-link:shared" };
+  test("two rows cannot name one token", async () => {
+    const shared = { tokenIdentifier: "magic-link:shared" };
     await owner.db.insert(magicLinkRequests).values(request(one, shared));
     await refused(shared, "magic_link_requests_token_identifier_unique");
   });
@@ -238,7 +226,7 @@ describe("the constraints", () => {
   test("only a failed send holds Postmark's answer", async () => {
     const check = "magic_link_requests_send_error_check";
     await refused({ sendStatus: "sent", postmarkErrorCode: 406 }, check);
-    await refused({ sendStatus: "sending", postmarkHttpStatus: 422 }, check);
+    await refused({ sendStatus: "sent", postmarkHttpStatus: 422 }, check);
     await owner.db.insert(magicLinkRequests).values(
       request(one, {
         sendStatus: "failed",
@@ -251,12 +239,12 @@ describe("the constraints", () => {
       .values(request(one, { sendStatus: "failed" }));
   });
 
-  test("a new row is `sending` with no attempts", async () => {
+  test("a new row is `sent` with no attempts", async () => {
     const added = request(one);
     const [made] = await owner.db
       .insert(magicLinkRequests)
       .values(added)
       .returning();
-    expect(made).toMatchObject({ sendStatus: "sending", attempts: 0 });
+    expect(made).toMatchObject({ sendStatus: "sent", attempts: 0 });
   });
 });

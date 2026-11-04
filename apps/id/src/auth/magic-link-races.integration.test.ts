@@ -266,7 +266,7 @@ describe("a confirmation waits for whoever holds what it depends on", () => {
       await held;
       await tx
         .update(magicLinkRequests)
-        .set({ attempts: 3 })
+        .set({ expiresAt: new Date(Date.now() - 1_000) })
         .where(eq(magicLinkRequests.email, person.email));
     });
     await haveLock;

@@ -13,7 +13,7 @@ import { signInThroughIdp } from "../__tests__/federation.ts";
 import { startOidcIssuer, type OidcIssuer } from "../__tests__/oidc-issuer.ts";
 import { softDeleteUser } from "../__tests__/soft-deletion.ts";
 import { inPlatformWrite } from "../__tests__/platform-context.ts";
-import { createApp } from "../app.ts";
+import { createApp } from "../__tests__/app.ts";
 import { createAuth } from "../auth.ts";
 import { createDatabase } from "../db/client.ts";
 import * as audit from "../db/queries/audit.ts";

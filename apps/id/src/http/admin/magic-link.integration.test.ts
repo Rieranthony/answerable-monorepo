@@ -108,7 +108,7 @@ const organizationEvidence = [
   "status",
 ];
 
-test("an organisation made through the admin API holds its row, on", async () => {
+test("an organisation made through the admin API holds its row, off", async () => {
   const response = await admin("/organizations", {
     method: "POST",
     body: { slug: "made-by-api", name: "Made by API" },
@@ -116,7 +116,7 @@ test("an organisation made through the admin API holds its row, on", async () =>
   expect(response.status).toBe(201);
   const body = await response.json();
   expect(body.magicLink).toEqual({
-    enabled: true,
+    enabled: false,
     admission: "listed",
     listed: 0,
   });
@@ -129,7 +129,7 @@ test("an organisation made through the admin API holds its row, on", async () =>
     issuer: "urn:answerable:magic-link",
     domain: "magic-link.invalid",
     oidcConfig: null,
-    enabled: true,
+    enabled: false,
     revision: 1,
     deletedAt: null,
   });
@@ -137,18 +137,18 @@ test("an organisation made through the admin API holds its row, on", async () =>
   expect(isUuidV7(row.id)).toBe(true);
 });
 
-test("an organisation the runtime role inserts holds its row, on, with or without a scope", async () => {
+test("an organisation the runtime role inserts holds its row, off, with or without a scope", async () => {
   const unscoped = createId();
   await fixture.appDb
     .insert(organizations)
     .values({ id: unscoped, slug: "made-unscoped", name: "Unscoped" });
-  expect((await magicLinkRowOf(unscoped)).enabled).toBe(true);
+  expect((await magicLinkRowOf(unscoped)).enabled).toBe(false);
 
   const scoped = await createOrganization(fixture.appDb, {
     slug: "made-scoped",
     name: "Scoped",
   });
-  expect((await magicLinkRowOf(scoped.id)).enabled).toBe(true);
+  expect((await magicLinkRowOf(scoped.id)).enabled).toBe(false);
 });
 
 test("an organisation inserted already erased gets no row", async () => {
@@ -179,7 +179,7 @@ test("every organisation read and command answer shows the setting, and organisa
   const { id } = created;
   const path = `/organizations/${id}`;
   const expected = {
-    magicLink: { enabled: true, admission: "listed" },
+    magicLink: { enabled: false, admission: "listed" },
   };
   expect(created).toMatchObject(expected);
   expect(await shown(await admin(path))).toMatchObject(expected);
@@ -210,13 +210,13 @@ test("every organisation read and command answer shows the setting, and organisa
     ).toMatchObject(expected);
 
   // The setting is a read of its row, not a constant.
-  await set(id, "disable");
+  await set(id, "enable");
   expect(await shown(await admin(path))).toMatchObject({
-    magicLink: { enabled: false, admission: "listed", listed: 0 },
+    magicLink: { enabled: true, admission: "listed", listed: 0 },
   });
   expect(
     await shown(await admin(`${path}/disable`, { method: "POST" })),
-  ).toMatchObject({ magicLink: { enabled: false } });
+  ).toMatchObject({ magicLink: { enabled: true } });
 
   const events = await fixture.db
     .select()
@@ -228,11 +228,11 @@ test("every organisation read and command answer shows the setting, and organisa
     "organization.updated",
     "organization.disabled",
     "organization.enabled",
-    "organization.magic_link_disabled",
+    "organization.magic_link_enabled",
     "organization.disabled",
   ]);
   for (const { action, data } of events) {
-    if (action === "organization.magic_link_disabled") continue;
+    if (action === "organization.magic_link_enabled") continue;
     const { before, after } = data as { before: object | null; after: object };
     if (action === "organization.disabled") {
       expect(Object.keys(after).sort()).toEqual([
@@ -249,12 +249,12 @@ test("every organisation read and command answer shows the setting, and organisa
 
 test("a tenant's read and the list show each organisation's own setting", async () => {
   const { organizationId } = fixture.tenant;
-  await set(organizationId, "disable");
+  await set(organizationId, "enable");
   expect(
     await shown(
       await admin(`/organizations/${organizationId}`, { kind: "tenantReader" }),
     ),
-  ).toMatchObject({ id: organizationId, magicLink: { enabled: false } });
+  ).toMatchObject({ id: organizationId, magicLink: { enabled: true } });
 
   const page = await (
     await admin("/organizations?limit=100", { kind: "platformReader" })
@@ -265,10 +265,10 @@ test("a tenant's read and the list show each organisation's own setting", async 
       row.magicLink.enabled,
     ]),
   );
-  expect(settings.get(organizationId)).toBe(false);
-  expect(settings.get(fixture.outsider.organizationId)).toBe(true);
+  expect(settings.get(organizationId)).toBe(true);
+  expect(settings.get(fixture.outsider.organizationId)).toBe(false);
   expect(settings.get(fixture.platform.organizationId)).toBe(false);
-  await set(organizationId, "enable");
+  await set(organizationId, "disable");
 });
 
 test("turning magic links off ends that row's sessions and grants only, and turning them on revives neither", async () => {
@@ -643,15 +643,15 @@ test("the switch needs platform:write, and a tenant's scopes are refused", async
 
   // A machine holding platform:write has no freshness to show.
   const bearer = await fixture.mintMachineToken(["platform:write"]);
-  const off = await set(organizationId, "disable", { kind: { bearer } });
-  expect(await shown(off)).toMatchObject({ magicLink: { enabled: false } });
+  const on = await set(organizationId, "enable", { kind: { bearer } });
+  expect(await shown(on)).toMatchObject({ magicLink: { enabled: true } });
   const [event] = (await magicLinkEvents(organizationId)).reverse();
   expect(event).toMatchObject({
     actorType: "client",
     actorId: fixture.platform.client.clientId,
   });
   expect(
-    (await set(organizationId, "enable", { kind: { bearer } })).status,
+    (await set(organizationId, "disable", { kind: { bearer } })).status,
   ).toBe(200);
 });
 

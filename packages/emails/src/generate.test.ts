@@ -19,7 +19,7 @@ test("each template is generated, with its tag and a hole for every value it tak
     Object.values(templates)
       .map(({ tag }) => tag)
       .sort(),
-  ).toEqual(["access-removed", "mailbox-code", "sign-in"])
+  ).toEqual(["mailbox-code", "sign-in"])
   for (const [name, { subject, html, text }] of Object.entries(templates)) {
     const holes = holeNames[name as keyof typeof holeNames] as readonly string[]
     for (const part of [subject, html, text]) {

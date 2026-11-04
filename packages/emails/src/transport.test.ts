@@ -4,7 +4,6 @@ import { link } from "./fixtures"
 import {
   createLogTransport,
   createPostmarkTransport,
-  postmarkErrorCode,
   type Message,
 } from "./transport"
 
@@ -148,24 +147,6 @@ describe("the request", () => {
       "[staging] Sign in to Acme Surveyors",
     )
   })
-
-  test("refuses a recipient that is a list, has a name or holds a break, before anything is sent", async () => {
-    const { transport: postmark, calls } = transport([])
-    for (const bad of [
-      "a@example.com, b@example.com",
-      "a@example.com;b@example.com",
-      "Alice <a@example.com>",
-      "a@example.com\r\nBcc: b@example.com",
-      "a b@example.com",
-      "",
-      '"a,b"@example.com',
-    ]) {
-      await expect(postmark.send({ ...message, to: bad })).rejects.toThrow(
-        "one plain address",
-      )
-    }
-    expect(calls).toHaveLength(0)
-  })
 })
 
 describe("an answer that is final", () => {
@@ -179,9 +160,9 @@ describe("an answer that is final", () => {
   test("is not retried when it is a refusal: 401, 406, 412, 413, any other 4xx", async () => {
     const cases: [number, number][] = [
       [401, 10],
-      [422, postmarkErrorCode.inactiveRecipient],
-      [422, postmarkErrorCode.pendingApproval],
-      [422, postmarkErrorCode.accountNotApproved],
+      [422, 406],
+      [422, 412],
+      [422, 413],
       [422, 300],
       [400, 402],
       [403, 1480],
@@ -199,14 +180,6 @@ describe("an answer that is final", () => {
       })
       expect(calls).toHaveLength(1)
     }
-  })
-
-  test("names the codes a caller acts on", () => {
-    expect(postmarkErrorCode).toEqual({
-      inactiveRecipient: 406,
-      pendingApproval: 412,
-      accountNotApproved: 413,
-    })
   })
 
   test("is failed, never retried and never a throw when a 2xx cannot be read: Postmark may have sent it", async () => {

@@ -137,30 +137,10 @@ describe("to domain", () => {
     expect(refused.status).toBe(409);
     expect(await refused.json()).toMatchObject({
       code: "domain_not_verified",
-      details: { unverified: [unproved], publicMail: [] },
+      details: { unverified: [unproved] },
     });
     expect((await rowOf(organization.id)).admission).toBe("listed");
     expect(await eventsOf(organization.id)).toEqual([]);
-  });
-
-  test("a public mail domain refuses, proved or not, named as such", async () => {
-    const organization = await firm();
-    await flow.proveDomainOf(organization.id, organization.domain);
-    await fixture.db.insert(organizationDomains).values({
-      id: createId(),
-      organizationId: organization.id,
-      domain: "proton.me",
-      verifiedAt: new Date(),
-    });
-    const refused = await setAdmission(organization.id, "domain");
-    expect(refused.status).toBe(409);
-    expect(await refused.json()).toMatchObject({
-      code: "domain_not_verified",
-      details: { unverified: [], publicMail: ["proton.me"] },
-    });
-    await fixture.db
-      .delete(organizationDomains)
-      .where(eq(organizationDomains.domain, "proton.me"));
   });
 
   test("no active domain refuses, whatever is disabled or removed", async () => {
@@ -174,7 +154,7 @@ describe("to domain", () => {
     const problem = await refused.json();
     expect(problem).toMatchObject({
       code: "domain_not_verified",
-      details: { unverified: [], publicMail: [] },
+      details: { unverified: [] },
     });
     expect(problem.detail).toContain("no active domain");
   });

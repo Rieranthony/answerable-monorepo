@@ -2,6 +2,7 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { eq, sql, type SQL } from "drizzle-orm";
 
 import { openRuntimeRole } from "./__tests__/runtime-role.ts";
+import { turnLinksOn } from "./__tests__/magic-link.ts";
 import { testEnvironment } from "./__tests__/support.ts";
 import { assertDisposableTestDatabase } from "./__tests__/test-database.ts";
 import {
@@ -76,13 +77,13 @@ test("the first start provisions the platform; later starts change only the admi
     status: "active",
   });
   expect(first.slug).toBe("answerable");
-  // The binding turned its magic-link row off, in the transaction that made both.
+  // Its magic-link row, off as any firm's starts, and the binding keeps it so.
   expect(await db.select().from(ssoProviders)).toMatchObject([
     {
       organizationId: first.organizationId,
       kind: "magic_link",
       enabled: false,
-      revision: 2,
+      revision: 1,
     },
   ]);
   expect(seeded.resource[0]).toMatchObject({
@@ -278,6 +279,7 @@ test("making the binding turns its organisation's magic-link row off, whatever s
         .select({ enabled: ssoProviders.enabled })
         .from(ssoProviders)
         .where(eq(ssoProviders.organizationId, organizationId));
+    await turnLinksOn(db, organizationId);
     expect(await row()).toEqual([{ enabled: true }]);
     await connections.runtime.db.insert(systemBindings).values({
       name: "platform",

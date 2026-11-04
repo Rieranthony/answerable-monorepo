@@ -21,7 +21,7 @@ import {
 } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
 
-import { createApp, type App } from "../app.ts";
+import { createApp, type App } from "../__tests__/app.ts";
 import { createAuth } from "../auth.ts";
 import { createSsoOriginBoundary } from "../auth/sso-origin.ts";
 import { authDatabaseAdapter } from "../auth/database-adapter.ts";
@@ -526,7 +526,7 @@ describe("integration: federated sign-in", () => {
   test("origin resolution rejects missing providers before identity writes", async () => {
     const auth = createAuth(connection.db, testEnvironment());
     const adapter = authDatabaseAdapter(connection.db)(auth.options);
-    const origin = createSsoOriginBoundary(connection.db);
+    const origin = createSsoOriginBoundary();
     const input: Parameters<typeof origin.resolveUser>[0] = {
       protocol: "oidc",
       providerId: "missing",

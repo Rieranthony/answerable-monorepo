@@ -1,4 +1,4 @@
-import { and, eq, exists, inArray, isNull, not, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import type { Executor } from "../db/client.ts";
@@ -9,11 +9,9 @@ import {
   organizationDomains,
   organizations,
   ssoProviders,
-  systemBindings,
   users,
 } from "../db/schema/index.ts";
 import { maxLoginAddressLength } from "../http/pages/login-routing.ts";
-import { isPublicMailDomain } from "../lib/public-mail-domains.ts";
 
 /** An address as `users.email` holds it, and its domain. */
 export type MagicLinkAddress = { email: string; domain: string };
@@ -48,13 +46,13 @@ export type AdmittedPerson =
 
 /**
  * Whether this address may have a link at this moment. `admit` is a person the firm lists, or
- * anyone at a proved domain of a firm in domain mode; `removed` is one whose access ended, who
- * is told so by mail and gets no token; `stranger` is everyone else, and nothing is sent or
- * written.
+ * anyone at a proved domain of a firm in domain mode; `removed` is one whose access ended, whom
+ * an old link or code tells so, and who asks as a stranger does; `stranger` is everyone else,
+ * and nothing is sent or written.
  */
 export type MagicLinkAdmission =
   | { outcome: "stranger" }
-  | ({ outcome: "removed" } & MagicLinkFirm)
+  | { outcome: "removed" }
   | ({ outcome: "admit"; person: AdmittedPerson } & MagicLinkFirm);
 
 /**
@@ -135,8 +133,7 @@ export async function admitMagicLink(
   tx: Executor,
   { email, domain }: MagicLinkAddress,
 ): Promise<MagicLinkAdmission> {
-  // Before any row: an old domain row fails closed when the list grows, in either mode.
-  if (isPublicMailDomain(domain)) return { outcome: "stranger" };
+  // The platform organisation's row can never be on: its triggers see to that (drizzle/0003).
   const [row] = await tx
     .select({
       organizationId: organizations.id,
@@ -167,14 +164,6 @@ export async function admitMagicLink(
         isNull(organizationDomains.deletedAt),
         eq(organizations.status, "active"),
         isNull(organizations.deletedAt),
-        not(
-          exists(
-            tx
-              .select({ organizationId: systemBindings.organizationId })
-              .from(systemBindings)
-              .where(eq(systemBindings.organizationId, organizations.id)),
-          ),
-        ),
       ),
     );
   if (!row) return { outcome: "stranger" };
@@ -183,19 +172,14 @@ export async function admitMagicLink(
   const openToAnyone = admission === "domain" && domainProvedAt !== null;
 
   const [user] = await tx
-    .select({
-      id: users.id,
-      status: users.status,
-      retiredEmail: users.retiredEmail,
-    })
+    .select({ id: users.id, status: users.status })
     .from(users)
     .where(and(eq(users.email, email), isNull(users.deletedAt)));
   if (!user)
     return openToAnyone
       ? { outcome: "admit", person: { kind: "new" }, ...firm }
       : { outcome: "stranger" };
-  if (user.retiredEmail !== null) return { outcome: "stranger" };
-  if (user.status !== "active") return { outcome: "removed", ...firm };
+  if (user.status !== "active") return { outcome: "removed" };
 
   const [member] = await tx
     .select({
@@ -211,7 +195,7 @@ export async function admitMagicLink(
       ),
     );
   if (!member && !openToAnyone) return { outcome: "stranger" };
-  if (member?.status === "revoked") return { outcome: "removed", ...firm };
+  if (member?.status === "revoked") return { outcome: "removed" };
   if (member && !member.effective) return { outcome: "stranger" };
   const foreign = await usersWithForeignAccounts(
     tx,

@@ -10,11 +10,16 @@ import { magicLink } from "better-auth/plugins/magic-link";
 import type { Auth } from "../auth.ts";
 import type { Environment } from "../env.ts";
 
-/** How long a link and its code work: NIST 800-63B-4's cap on an out-of-band secret. */
-export const magicLinkTtlMinutes = 10;
+/**
+ * How long a link and its code work. Judgement: long enough for a slow gateway or a delayed send,
+ * since a mail that arrives dead looks like a fault of the person's. Guessing does not depend on
+ * it, since a request gets three tries. No standard sets this for email: NIST SP 800-63B-4 does
+ * not allow email as an out-of-band authenticator at all.
+ */
+export const magicLinkTtlMinutes = 30;
 
 /** The issuer of every account a magic link makes: the trigger that writes the provider row
- * cannot read `BETTER_AUTH_URL`, so it is a constant (drizzle/0005). */
+ * cannot read `BETTER_AUTH_URL`, so it is a constant (drizzle/0003). */
 export const magicLinkIssuer = "urn:answerable:magic-link";
 
 /** The owner's decision D3: a mailbox proof earns less than a directory sign-in. */

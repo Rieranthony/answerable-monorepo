@@ -2521,7 +2521,7 @@
           }
         ],
         "summary": "Diagnose sign-in by email",
-        "description": "Inspect tenant-local configuration and membership. Current platform:read or org:users authority is rechecked inside the read transaction. Routing identifies only this organisation; user and membership are null unless this tenant has a membership for the exact email. Global accounts and retired-email state are excluded, including for staff. A null user does not mean the email is globally unused. authentication_required means local checks found no blocker; a real IdP authentication or a magic link's confirmation must establish identity and account conflicts. provider describes the directory; magicLink is the organisation's setting and the newest sign-in mail for this exact email, kept for seven days. magic_link_not_admitted means a link is the way in and admission would refuse this address: its firm's switch and mode, the public mail list and the person, which magicLink.admitted reports in every case. That one field reads a global account: in domain mode, on this organisation's own proved domain, it is false for an address whose holder is disabled or has another firm's account, which is no more than those mailboxes would show by asking for a link. magic_link_suppressed means a link is the way in and Postmark refused the last send as a suppressed address (406), which staff reactivate in Postmark. magicLink.directoryConnection is a directory sign-in this address has made and not yet connected, waiting on the code mailed to it. Windows affect grants, not admission; revoked membership requires reinstatement. Responses use no-store. validation_failed rejects malformed input; not_found means the organisation is unavailable.",
+        "description": "Inspect tenant-local configuration and membership. Current platform:read or org:users authority is rechecked inside the read transaction. Routing identifies only this organisation; user and membership are null unless this tenant has a membership for the exact email. Global accounts and retired-email state are excluded, including for staff. A null user does not mean the email is globally unused. authentication_required means local checks found no blocker; a real IdP authentication or a magic link's confirmation must establish identity and account conflicts. provider describes the directory; magicLink is the organisation's setting and the newest sign-in mail for this exact email, kept for seven days. magic_link_not_admitted means a link is the way in and admission would refuse this address: its firm's switch and mode and the person, which magicLink.admitted reports in every case. That one field reads a global account: in domain mode, on this organisation's own proved domain, it is false for an address whose holder is disabled or has another firm's account, which is no more than those mailboxes would show by asking for a link. magic_link_suppressed means a link is the way in and Postmark refused the last send as a suppressed address (406), which staff reactivate in Postmark. magicLink.directoryConnection is a directory sign-in this address has made and not yet connected, waiting on the code mailed to it. Windows affect grants, not admission; revoked membership requires reinstatement. Responses use no-store. validation_failed rejects malformed input; not_found means the organisation is unavailable.",
         "tags": [
           "Diagnostics"
         ],
@@ -2645,7 +2645,7 @@
                         },
                         "admitted": {
                           "type": "boolean",
-                          "description": "Whether this address may ask this firm for a link now: its switch, its admission, the public mail list and the person"
+                          "description": "Whether this address may ask this firm for a link now: its switch, its admission and the person"
                         },
                         "suppressed": {
                           "type": "boolean"
@@ -2664,14 +2664,12 @@
                                   "type": "string",
                                   "enum": [
                                     "link",
-                                    "access_removed",
                                     "connect_directory"
                                   ]
                                 },
                                 "sendStatus": {
                                   "type": "string",
                                   "enum": [
-                                    "sending",
                                     "sent",
                                     "failed"
                                   ]
@@ -2733,7 +2731,6 @@
                                 "sendStatus": {
                                   "type": "string",
                                   "enum": [
-                                    "sending",
                                     "sent",
                                     "failed"
                                   ]
@@ -17505,7 +17502,6 @@
                             "enum": [
                               "invalid",
                               "outside_domains",
-                              "public_mail",
                               "disabled",
                               "removed",
                               "other_firm"
@@ -17804,7 +17800,7 @@
           }
         },
         "summary": "Import organisation members",
-        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Create up to 1,000 people before their first sign-in, so that their sub exists first: a user and an active membership at once, and no account, which the first sign-in makes. Addresses are normalised and de-duplicated. One transaction, answering per address and never all or nothing: created; added, an existing user gains a membership; alreadyMember; or refused with a reason: invalid; outside_domains, not one of this organisation's active domains; public_mail; disabled, an existing disabled user; removed, a revoked member, whom only reinstateMember brings back; other_firm, an account from another organisation's directory or magic-link row. Works with magic links off and with a directory connected. A replay with the same Idempotency-Key answers the receipt, not the per-address answers; member.imported is audited per membership made. A person's first directory sign-in asks for a code from their mailbox, once, which connects it to this user. validation_failed rejects a malformed or oversized list and not_found means the organisation is missing.",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Create up to 1,000 people before their first sign-in, so that their sub exists first: a user and an active membership at once, and no account, which the first sign-in makes. Addresses are normalised and de-duplicated. One transaction, answering per address and never all or nothing: created; added, an existing user gains a membership; alreadyMember; or refused with a reason: invalid; outside_domains, not one of this organisation's active domains; disabled, an existing disabled user; removed, a revoked member, whom only reinstateMember brings back; other_firm, an account from another organisation's directory or magic-link row. Works with magic links off and with a directory connected. A replay with the same Idempotency-Key answers the receipt, not the per-address answers; member.imported is audited per membership made. A person's first directory sign-in asks for a code from their mailbox, once, which connects it to this user. validation_failed rejects a malformed or oversized list and not_found means the organisation is missing.",
         "tags": [
           "Members"
         ],
@@ -17871,7 +17867,6 @@
                                 "enum": [
                                   "invalid",
                                   "outside_domains",
-                                  "public_mail",
                                   "disabled",
                                   "removed",
                                   "other_firm"
@@ -28973,7 +28968,7 @@
           }
         },
         "summary": "Create an organisation domain",
-        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Add an email domain to an organisation and return the created domain with the DNS record that proves it, enabling domain-based sign-in discovery. Prefer listOrganizationDomains to inspect existing assignments; validation_failed rejects malformed input, not_found means the organisation is missing, conflict means the domain is already assigned and public_mail_domain means anyone can get an address there.",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Add an email domain to an organisation and return the created domain with the DNS record that proves it, enabling domain-based sign-in discovery. Prefer listOrganizationDomains to inspect existing assignments; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict means the domain is already assigned.",
         "tags": [
           "Domains"
         ],
@@ -29873,7 +29868,7 @@
           }
         ],
         "summary": "Enable an organisation domain",
-        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Enable an organisation domain and return the updated record. Prefer disableOrganizationDomain for the opposite transition; not_found means the target is missing, public_mail_domain means the domain has joined the public mail list, and an already active assignment returns unchanged state and records a noop.",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Enable an organisation domain and return the updated record. Prefer disableOrganizationDomain for the opposite transition; not_found means the target is missing, and an already active assignment returns unchanged state and records a noop.",
         "tags": [
           "Domains"
         ],
@@ -36484,7 +36479,7 @@
           }
         },
         "summary": "Set who may ask for a magic link",
-        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Set who may ask an organisation's magic-link row for a link and return the updated organisation. listed: its effective members. domain: also anyone with an address at one of its proved domains, whom a first sign-in creates, with any organisation-wide entitlement at once; a domain added later admits nobody new until it is proved, and an address no user holds gets no mail past 100 an hour from one client or 500 a day for the organisation, so a firm-wide start uses importMembers first. Removed members and disabled users are refused in both. domain_not_verified refuses domain unless every active domain is proved and none is a public mail domain, and at least one exists, naming those in details; platform_magic_link refuses it on the platform organisation. listed is always allowed. Changing it ends no session and no grant, and existing members stay members. Works whether or not a directory is connected and on a disabled organisation. not_found means the organisation is missing and the same value returns a noop.",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Set who may ask an organisation's magic-link row for a link and return the updated organisation. listed: its effective members. domain: also anyone with an address at one of its proved domains, whom a first sign-in creates, with any organisation-wide entitlement at once; a domain added later admits nobody new until it is proved, and an address no user holds gets no mail past 100 an hour from one client or 500 a day for the organisation, so a firm-wide start uses importMembers first. Removed members and disabled users are refused in both. domain_not_verified refuses domain unless every active domain is proved, and at least one exists, naming those in details; platform_magic_link refuses it on the platform organisation. listed is always allowed. Changing it ends no session and no grant, and existing members stay members. Works whether or not a directory is connected and on a disabled organisation. not_found means the organisation is missing and the same value returns a noop.",
         "tags": [
           "Organizations"
         ],

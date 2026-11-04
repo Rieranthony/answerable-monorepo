@@ -1,9 +1,12 @@
-import { afterAll, expect, test } from "bun:test"
+import { afterAll, expect, spyOn, test } from "bun:test"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { sql } from "drizzle-orm"
 import { Client } from "pg"
 import { connect } from "./connect"
+import { database } from "./test/database"
+import { connectionCutter } from "./testing"
 
 // A pg pool connects on the first query, so nothing here opens a connection: a client made from the pool's options shows what pg read from the
 // URL, which is what every client of the pool connects with.
@@ -48,3 +51,44 @@ test("sslrootcert without a verifying sslmode is refused, without the URL in the
     }
   }
 })
+
+// A lost connection reaches the pool as an `error` event with no listener by default, which ends the process: the test run fails if it still does.
+async function cutWithLogs(run: (db: ReturnType<typeof connect>, cutter: Awaited<ReturnType<typeof connectionCutter>>, logged: () => unknown[][]) => Promise<void>) {
+  const cutter = await connectionCutter(database.url)
+  const db = connect(cutter.url, { max: 2 })
+  const log = spyOn(console, "error").mockImplementation(() => {})
+  try {
+    await run(db, cutter, () => log.mock.calls)
+  } finally {
+    log.mockRestore()
+    await db.$client.end()
+    cutter.close()
+  }
+}
+const until = async (holds: () => boolean) => {
+  for (let wait = 0; wait < 500 && !holds(); wait++) await Bun.sleep(10)
+  expect(holds()).toBe(true)
+}
+
+test("an idle connection lost with no word from the server costs a log line, and the pool serves the next query", () => cutWithLogs(async (db, cutter, logged) => {
+  await db.execute(sql`select 1`)
+  expect(db.$client.idleCount).toBe(1)
+  cutter.cut()
+  await until(() => db.$client.idleCount === 0)
+  expect((await db.execute(sql`select 1 as served`)).rows).toEqual([{ served: 1 }])
+  expect(logged()).toEqual([["[mcp-postgres] database connection lost", { name: "Error" }]])
+}))
+
+test("a connection lost while a transaction holds it fails that transaction's next query alone, and the pool serves the next query", () => cutWithLogs(async (db, cutter, logged) => {
+  const client = await db.$client.connect()
+  try {
+    await client.query("begin")
+    cutter.cut()
+    await until(() => logged().length > 0)
+    await expect(client.query("select 1")).rejects.toThrow()
+  } finally {
+    client.release()
+  }
+  expect((await db.execute(sql`select 1 as served`)).rows).toEqual([{ served: 1 }])
+  expect(logged()).toEqual([["[mcp-postgres] database connection lost", { name: "Error" }]])
+}))

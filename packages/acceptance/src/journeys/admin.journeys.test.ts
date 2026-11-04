@@ -577,17 +577,13 @@ describe("A10 magic links", () => {
     }
   }
 
-  test("organisations_get shows magic links and the directory side by side, and domains_add gives the record that proves the domain; a public mail domain is ID's refusal", async () => {
+  test("organisations_get shows magic links, off for a new firm, and the directory side by side, and domains_add gives the record that proves the domain", async () => {
     const created = await change(colleagueClient, "organisations_create", { slug: firm, name: "Links Firm" })
     organizationId = z.uuid().parse(created.receipt.results.organizationId)
     const added = await change(colleagueClient, "domains_add", { organizationId, domain })
     expect(added.receipt.results.verificationRecord).toEqual({ type: "TXT", name: `_answerable-challenge.${domain}`, value: expect.stringMatching(/^answerable-domain-verification=[0-9a-f]{32}$/) })
     const shown = getRow.parse(await tool(colleagueClient, "organisations_get", { organizationId }))
-    expect(shown).toMatchObject({ magicLink: { enabled: true, admission: "listed", listed: 0 }, sso: null, domains: [{ domain, verifiedAt: null, verificationRecord: added.receipt.results.verificationRecord }] })
-    const publicMail = await prepare(colleagueClient, "domains_add", { organizationId, domain: "gmail.com" })
-    expect(errorOf(await colleagueClient.callTool({ name: "admin_commit_confirmed", arguments: { intent_id: publicMail.intent_id, commit_token: publicMail.commit_token, preview_summary: publicMail.preview.summary } }))).toMatchObject({
-      code: "UPSTREAM_REJECTED", details: { upstream: { status: 409, code: "public_mail_domain" } },
-    })
+    expect(shown).toMatchObject({ magicLink: { enabled: false, admission: "listed", listed: 0 }, sso: null, domains: [{ domain, verifiedAt: null, verificationRecord: added.receipt.results.verificationRecord }] })
   })
 
   test("domains_verify, by an admin, asks the system's resolver for a record nobody published: it says what to publish, and on a proved domain takes the proof away, audited", async () => {
@@ -615,7 +611,7 @@ describe("A10 magic links", () => {
     const opened = await change(staffClient, "magiclink_admission", { organizationId, admission: "domain" })
     expect(opened.intent.preview.warnings.join(" ")).toContain("An alias of a removed person is a different address")
     expect((await audited(staffClient, opened.receipt)).action).toBe("organization.magic_link_admission_changed")
-    expect(await read()).toMatchObject({ enabled: true, admission: "domain" })
+    expect(await read()).toMatchObject({ enabled: false, admission: "domain" })
     const narrowed = await change(colleagueClient, "magiclink_admission", { organizationId, admission: "listed" })
     await audited(colleagueClient, narrowed.receipt)
     expect(await read()).toMatchObject({ admission: "listed" })
@@ -624,15 +620,15 @@ describe("A10 magic links", () => {
   })
 
   test("members_import, by an admin with the machine client's platform:users: the preview's counts are ID's own, and each address has its answer", async () => {
-    const addresses = ["ada@links-firm.example.test", "ADA@links-firm.example.test", "grace@links-firm.example.test", "someone@gmail.com", "someone@elsewhere.example.test", "nonsense"]
+    const addresses = ["ada@links-firm.example.test", "ADA@links-firm.example.test", "grace@links-firm.example.test", "someone@elsewhere.example.test", "nonsense"]
     const before = await read()
     const intent = await prepare(colleagueClient, "members_import", { organizationId, addresses })
-    expect(intent.preview.summary).toBe("List 2 people in organisation “Links Firm” (links-firm): 2 new, 0 existing users added; 0 already members, 3 refused")
+    expect(intent.preview.summary).toBe("List 2 people in organisation “Links Firm” (links-firm): 2 new, 0 existing users added; 0 already members, 2 refused")
     expect(await read()).toEqual(before)
     const receipt = await confirm(colleagueClient, intent)
     expect(receipt.results).toMatchObject({
-      counts: { created: 2, added: 0, alreadyMember: 0, refused: 3 },
-      refused: [{ address: "someone@gmail.com", reason: "public_mail" }, { address: "someone@elsewhere.example.test", reason: "outside_domains" }, { address: "nonsense", reason: "invalid" }],
+      counts: { created: 2, added: 0, alreadyMember: 0, refused: 2 },
+      refused: [{ address: "someone@elsewhere.example.test", reason: "outside_domains" }, { address: "nonsense", reason: "invalid" }],
     })
     expect(await read()).toMatchObject({ listed: 2 })
     const operationId = z.uuid().parse(receipt.results.operationId)
@@ -642,21 +638,21 @@ describe("A10 magic links", () => {
     const members = z.object({ items: z.array(z.object({ email: z.string(), userId: z.uuid(), effective: z.boolean() })) }).parse(await id.admin("GET", `/organizations/${organizationId}/members`))
     expect(members.items.map(item => [item.email, item.effective]).toSorted()).toEqual([["ada@links-firm.example.test", true], ["grace@links-firm.example.test", true]])
     expect(await refusal(colleagueClient, "members_import", { organizationId, addresses: ["ada@links-firm.example.test"] })).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("would change nothing") })
-    step("members_import: 2 people made through the machine client's platform:users, 3 addresses refused one by one, one ID audit row per membership")
+    step("members_import: 2 people made through the machine client's platform:users, 2 addresses refused one by one, one ID audit row per membership")
   })
 
-  test("magiclink_disable and magiclink_enable, by an admin: the preview says what is not touched, each one ID audit row; the platform organisation can never turn them on", async () => {
+  test("magiclink_enable and magiclink_disable, by an admin: the preview says what is not touched, each one ID audit row; the platform organisation can never turn them on", async () => {
+    const on = await change(colleagueClient, "magiclink_enable", { organizationId })
+    expect((await audited(colleagueClient, on.receipt)).action).toBe("organization.magic_link_enabled")
+    expect(await read()).toMatchObject({ enabled: true })
     const off = await change(colleagueClient, "magiclink_disable", { organizationId })
     expect(off.intent.preview.warnings).toContain("Ends every magic-link session and grant at this organisation. It does not touch directory sign-ins, sessions or grants.")
     expect(off.intent.preview.warnings).toContain("A service token already issued lives to its expiry.")
     expect((await audited(colleagueClient, off.receipt)).action).toBe("organization.magic_link_disabled")
     expect(await read()).toMatchObject({ enabled: false })
-    const on = await change(colleagueClient, "magiclink_enable", { organizationId })
-    expect((await audited(colleagueClient, on.receipt)).action).toBe("organization.magic_link_enabled")
-    expect(await read()).toMatchObject({ enabled: true })
     expect(await refusal(colleagueClient, "magiclink_enable", { organizationId: platformOrganization() })).toMatchObject({ code: "PERMISSION_DENIED" })
     expect(await refusal(staffClient, "magiclink_enable", { organizationId: platformOrganization() })).toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("can never use magic links") })
-    step("magiclink_disable and magiclink_enable: one ID audit row each; the platform organisation refused to an admin and, by the tool, to an owner")
+    step("magiclink_enable and magiclink_disable: one ID audit row each; the platform organisation refused to an admin and, by the tool, to an owner")
   })
 })
 

@@ -1,12 +1,12 @@
-import { runWithEndpointContext } from "@better-auth/core/context";
-import type { DBAdapter } from "better-auth";
 import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { and, eq, like, sql } from "drizzle-orm";
 import { createIdVerifier } from "@answerable/auth";
 
 import { createAdminFixture, type AdminFixture } from "../__tests__/admin.ts";
+import { turnLinksOn } from "../__tests__/magic-link.ts";
 import { cookieOf, magicLinkFlow } from "../__tests__/magic-link-flow.ts";
+import { createAuth } from "../auth.ts";
 import { inTenant } from "../__tests__/tenant-command.ts";
 import { inPlatformWrite } from "../__tests__/platform-context.ts";
 import { withDatabaseScope } from "../db/isolation.ts";
@@ -37,8 +37,6 @@ import {
   magicLinkSessionLifetimeSeconds,
 } from "./magic-link.ts";
 import { maxPendingQueryLength } from "../http/pages/login-routing.ts";
-import { authenticationTransaction } from "./database-adapter.ts";
-import { createSsoOriginBoundary } from "./sso-origin.ts";
 import { grantLifetimeSeconds } from "./user-oauth-flow.ts";
 import { tenantAuthentication } from "./tenant-authentication.ts";
 
@@ -133,7 +131,6 @@ describe("the path in", () => {
               body: JSON.stringify({
                 identifier: person.row.tokenIdentifier,
                 browser: "x",
-                proof: "link",
               }),
             }),
       });
@@ -156,7 +153,6 @@ describe("the path in", () => {
           body: JSON.stringify({
             identifier: person.row.tokenIdentifier,
             browser: "b".repeat(43),
-            proof: "link",
           }),
         },
       ),
@@ -175,13 +171,9 @@ describe("the path in", () => {
 });
 
 describe("what signs in", () => {
-  const confirm = (
-    identifier: string,
-    browser: string,
-    proof: "link" | "code" = "link",
-  ) =>
+  const confirm = (identifier: string, browser: string) =>
     fixture.auth.api.confirmMagicLink({
-      body: { identifier, browser, proof },
+      body: { identifier, browser },
       headers: new Headers(),
       request: new Request(
         `${fixture.environment.betterAuthUrl}/auth/magic-link/confirm`,
@@ -212,9 +204,13 @@ describe("what signs in", () => {
     expect(await response.json()).toEqual({ refused: "invalid" });
   });
 
-  test("only a sent link: sending and failed rows, and an expired one, are ended", async () => {
+  test("only a sent link: a failed row and an expired one are ended", async () => {
     for (const change of [
-      { sendStatus: "sending" as const },
+      {
+        sendStatus: "failed" as const,
+        postmarkErrorCode: 500,
+        postmarkHttpStatus: 500,
+      },
       { expiresAt: new Date(Date.now() - 1_000) },
     ]) {
       const person = await asked();
@@ -231,72 +227,44 @@ describe("what signs in", () => {
     }
   });
 
-  test("the pages treat a row not yet sent, or failed, as no link at all", async () => {
-    for (const change of [
-      { sendStatus: "sending" as const },
-      {
-        sendStatus: "failed" as const,
+  test("the pages treat a failed row as no link at all", async () => {
+    const person = await asked();
+    await fixture.db
+      .update(magicLinkRequests)
+      .set({
+        sendStatus: "failed",
         postmarkErrorCode: 500,
         postmarkHttpStatus: 500,
-      },
-    ]) {
-      const person = await asked();
-      await fixture.db
-        .update(magicLinkRequests)
-        .set(change)
-        .where(eq(magicLinkRequests.id, person.row.id));
-      const page = await flow.open(person.token, person.cookie);
-      expect(await page.text()).not.toContain(person.email);
-      await flow.follow(person.token, person.cookie);
-      // Refused before the confirmation, so it is not a refused sign-in.
-      expect(await refusalsOf(person.row.id)).toEqual([]);
-      expect(await flow.sessionsOf(person.userId)).toEqual([]);
-    }
+      })
+      .where(eq(magicLinkRequests.id, person.row.id));
+    const page = await flow.open(person.token, person.cookie);
+    expect(await page.text()).not.toContain(person.email);
+    await flow.follow(person.token, person.cookie);
+    // Refused before the confirmation, so it is not a refused sign-in.
+    expect(await refusalsOf(person.row.id)).toEqual([]);
+    expect(await flow.sessionsOf(person.userId)).toEqual([]);
   });
 
-  test("a link at three attempts is ended; a code at three is its own third", async () => {
-    const link = await asked();
-    const code = await asked();
-    await fixture.db
-      .update(magicLinkRequests)
-      .set({ attempts: 3 })
-      .where(eq(magicLinkRequests.id, link.row.id));
-    await fixture.db
-      .update(magicLinkRequests)
-      .set({ attempts: 3 })
-      .where(eq(magicLinkRequests.id, code.row.id));
-    expect(
-      await (
-        await confirm(
-          link.row.tokenIdentifier!,
-          link.cookie.split("=")[1]!,
-          "link",
-        )
-      ).json(),
-    ).toEqual({ refused: "invalid" });
-    expect(
-      await (
-        await confirm(
-          code.row.tokenIdentifier!,
-          code.cookie.split("=")[1]!,
-          "code",
-        )
-      ).json(),
-    ).toEqual({ url: "/login" });
-    const [row] = await flow.requestsOf(code.email);
-    expect(row!.attempts).toBe(2);
-  });
-
-  test("at three attempts the row's link and code are both dead", async () => {
+  test("a request's attempts are no concern of the confirmation: the third wrong code has ended it, and a third right code still signs in", async () => {
     const person = await asked();
     await fixture.db
       .update(magicLinkRequests)
       .set({ attempts: 3 })
       .where(eq(magicLinkRequests.id, person.row.id));
-    const link = await flow.follow(person.token, person.cookie);
-    expect(link.status).toBe(200);
-    const code = await flow.enter(person.code, person.cookie);
-    expect(code.status).toBe(200);
+    expect(
+      await (
+        await confirm(person.row.tokenIdentifier!, person.cookie.split("=")[1]!)
+      ).json(),
+    ).toEqual({ url: "/login" });
+  });
+
+  test("three wrong codes leave the row's link and code both dead", async () => {
+    const person = await asked();
+    const wrong = person.code === "00000000" ? "11111111" : "00000000";
+    for (let attempt = 0; attempt < 3; attempt++)
+      await flow.enter(wrong, person.cookie);
+    expect((await flow.follow(person.token, person.cookie)).status).toBe(200);
+    expect((await flow.enter(person.code, person.cookie)).status).toBe(200);
     expect(await flow.sessionsOf(person.userId)).toEqual([]);
   });
 
@@ -355,12 +323,7 @@ describe("what signs in", () => {
     const person = await asked();
     await fixture.db
       .update(magicLinkRequests)
-      .set({
-        purpose: "access_removed",
-        tokenIdentifier: null,
-        browserHash: null,
-        codeHmac: null,
-      })
+      .set({ tokenIdentifier: `magic-link:${createId()}` })
       .where(eq(magicLinkRequests.id, person.row.id));
     expect((await flow.follow(person.token, person.cookie)).status).toBe(200);
     expect(await flow.sessionsOf(person.userId)).toEqual([]);
@@ -432,15 +395,13 @@ describe("a sign-in", () => {
     expect(row!.attempts).toBe(0);
   });
 
-  test("using the code ends both, and a right code is not counted as a wrong one", async () => {
+  test("using the code ends both", async () => {
     const person = await asked();
     flow.signedIn(await flow.enter(person.code, person.cookie));
     expect(await flow.tokenRows(person.row.tokenIdentifier!)).toEqual([]);
     const link = await flow.follow(person.token, person.cookie);
     expect(link.status).toBe(200);
     expect(await flow.sessionsOf(person.userId)).toHaveLength(1);
-    const [row] = await flow.requestsOf(person.email);
-    expect(row!.attempts).toBe(0);
   });
 
   test("a second sign-in reuses the account, and says nothing of a link", async () => {
@@ -917,89 +878,34 @@ describe("lifetimes", () => {
     }
   });
 
-  test("the update hook caps what a refresh asks for, for this origin only", async () => {
-    const boundary = createSsoOriginBoundary(fixture.db);
+  test("a read that cannot say whose session it is skips the refresh, so the cap holds", async () => {
     const person = await asked();
-    flow.signedIn(await flow.follow(person.token, person.cookie));
-    const session = await readSession(person.userId);
-    const context = (id: string | undefined) =>
-      ({
-        context: {
-          adapter: fixture.db,
-          session: id ? { session: { id } } : null,
-        },
-      }) as unknown as Parameters<typeof boundary.refresh>[1];
-    const cap = new Date(
-      session.createdAt.getTime() + magicLinkSessionLifetimeSeconds * 1000,
+    const cookie = flow.signedIn(
+      await flow.follow(person.token, person.cookie),
     );
-    const asking = (expiresAt?: Date) =>
-      ({
-        updatedAt: new Date(),
-        ...(expiresAt ? { expiresAt } : {}),
-      }) as Parameters<typeof boundary.refresh>[0];
-    const later = new Date(Date.now() + 7 * 86_400_000);
-    expect(await boundary.refresh(asking(later), context(session.id))).toEqual({
-      data: { expiresAt: cap },
-    });
-    const sooner = new Date(Date.now() + 60_000);
-    expect(await boundary.refresh(asking(sooner), context(session.id))).toEqual(
-      {
-        data: { expiresAt: sooner },
+    const session = await readSession(person.userId);
+    // The same database, where only the read of a session's origin fails.
+    const failing = new Proxy(fixture.appDb, {
+      get(target, name, receiver) {
+        if (name !== "select") return Reflect.get(target, name, receiver);
+        return (fields?: Record<string, unknown>) =>
+          fields?.kind
+            ? {
+                from: () => ({
+                  innerJoin: () => ({
+                    where: () => Promise.reject(new Error("Unavailable")),
+                  }),
+                }),
+              }
+            : target.select(fields as never);
       },
+    });
+    const response = await createAuth(failing, fixture.environment).handler(
+      new Request(`${fixture.environment.betterAuthUrl}/auth/get-session`, {
+        headers: { cookie },
+      }),
     );
-    // An update that moves no expiry, and one that names no session, are left alone.
-    expect(
-      await boundary.refresh(asking(), context(session.id)),
-    ).toBeUndefined();
-    expect(
-      await boundary.refresh(asking(later), context(undefined)),
-    ).toBeUndefined();
-    expect(await boundary.refresh(asking(later), null)).toBeUndefined();
-
-    const organization = await firm(true);
-    const directory = await flow.directorySignIn(organization);
-    const theirs = await readSession(directory.userId);
-    expect(
-      await boundary.refresh(asking(later), context(theirs.id)),
-    ).toBeUndefined();
-  });
-
-  test("inside a caller's transaction, the update hook stays on that connection: on a pool of one it would wait for itself", async () => {
-    const boundary = createSsoOriginBoundary(fixture.appDb);
-    const person = await asked();
-    flow.signedIn(await flow.follow(person.token, person.cookie));
-    const session = await readSession(person.userId);
-    const { adapter } = await fixture.auth.$context;
-    const later = new Date(Date.now() + 7 * 86_400_000);
-    const answer = await authenticationTransaction(adapter as DBAdapter, () =>
-      boundary.refresh(
-        { expiresAt: later } as Parameters<typeof boundary.refresh>[0],
-        {
-          context: { adapter, session: { session: { id: session.id } } },
-        } as unknown as Parameters<typeof boundary.refresh>[1],
-      ),
-    );
-    expect(answer).toEqual({ data: { expiresAt: session.expiresAt } });
-  });
-
-  test("if a refresh happens all the same, the hook auth.ts installs holds the cap", async () => {
-    const person = await asked();
-    flow.signedIn(await flow.follow(person.token, person.cookie));
-    const session = await readSession(person.userId);
-    const authContext = await fixture.auth.$context;
-    // What the native session read does, without the skip to stop it.
-    await runWithEndpointContext(
-      {
-        context: {
-          ...authContext,
-          session: { session: { id: session.id } },
-        },
-      } as never,
-      () =>
-        authContext.internalAdapter.updateSession(session.token, {
-          expiresAt: new Date(Date.now() + 7 * 86_400_000),
-        }),
-    );
+    expect(response.status).toBe(200);
     expect((await readSession(person.userId)).expiresAt.getTime()).toBe(
       session.expiresAt.getTime(),
     );
@@ -1236,7 +1142,7 @@ describe("resuming an authorisation", () => {
     expect(query.length).toBeLessThan(maxPendingQueryLength / 4);
   });
 
-  test("a link that outlives its signed query signs in and lands on /login", async () => {
+  test("a link that outlives its signed query signs in, and the page says to go back to the application", async () => {
     const organization = await firm();
     const person = await flow.listed(organization);
     const query = await pendingLogin();
@@ -1249,8 +1155,41 @@ describe("resuming an authorisation", () => {
       .where(eq(magicLinkRequests.email, person.email));
     const response = await flow.follow(request.token!, request.cookie);
     expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("/login?resume=expired");
+    const cookie = flow.signedIn(response);
+    const page = await fixture.app.request(response.headers.get("location")!, {
+      headers: { cookie },
+    });
+    const text = await page.text();
+    expect(text).toContain(`Signed in as ${person.email}`);
+    expect(text).toContain("go back to your application");
+  });
+
+  test("a code that outlives its signed query says the same", async () => {
+    const organization = await firm();
+    const person = await flow.listed(organization);
+    const query = await pendingLogin();
+    const request = await flow.ask(person.email, { query });
+    const stale = new URLSearchParams(query);
+    stale.set("exp", String(Math.floor(Date.now() / 1000) - 1));
+    await fixture.db
+      .update(magicLinkRequests)
+      .set({ pendingOauthQuery: stale.toString() })
+      .where(eq(magicLinkRequests.email, person.email));
+    const response = await flow.enter(request.code!, request.cookie);
+    expect(response.headers.get("location")).toBe("/login?resume=expired");
+  });
+
+  test("a sign-in with no application to return to says nothing of one", async () => {
+    const organization = await firm();
+    const person = await flow.listed(organization);
+    const request = await flow.ask(person.email);
+    const response = await flow.follow(request.token!, request.cookie);
     expect(response.headers.get("location")).toBe("/login");
-    flow.signedIn(response);
+    const page = await fixture.app.request("/login", {
+      headers: { cookie: flow.signedIn(response) },
+    });
+    expect(await page.text()).not.toContain("go back to your application");
   });
 
   test("a resume the provider cannot finish leaves the person signed in, on /login", async () => {
@@ -1703,6 +1642,7 @@ describe("off means off", () => {
 describe("administrative authority", () => {
   test("a magic-link session holds none, whatever its entitlements; the same person's directory session keeps it, and the views agree", async () => {
     const tenant = fixture.principals.tenantAdmin;
+    await turnLinksOn(fixture.db, tenant.organizationId);
     const [{ email }] = (await fixture.db
       .select({ email: users.email })
       .from(users)

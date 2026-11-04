@@ -88,6 +88,8 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
     [200, "POST", at("/disable")],
     [200, "POST", at("/enable")],
     [405, "GET", at("/disable")],
+    [200, "GET", at(""), {}, body => expect(body).toMatchObject({ magicLink: { enabled: false } })],
+    [200, "POST", at("/magic-link/enable"), {}, body => expect(body).toMatchObject({ id: organisation, magicLink: { enabled: true } })],
     [200, "POST", at("/magic-link/disable"), { key: "magic-link-off" }, body => expect(body).toMatchObject({ id: organisation, magicLink: { enabled: false } })],
     [200, "POST", at("/magic-link/disable"), { key: "magic-link-off" }, receipt("applied", "organization")],
     [200, "POST", at("/magic-link/disable"), { key: "magic-link-off-again" }],
@@ -108,8 +110,8 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
     [200, "GET", at("/domains"), {}, body => expect((body as { items: unknown[] }).items[0]).toMatchObject({
       domain: "newco.example", verifiedAt: null, verificationRecord: { type: "TXT", name: "_answerable-challenge.newco.example", value: expect.stringMatching(/^answerable-domain-verification=[0-9a-f]{32}$/) },
     })],
-    [409, "PATCH", at("/magic-link"), { body: { admission: "domain" } }, body => expect(body).toMatchObject({ code: "domain_not_verified", details: { unverified: ["newco.example"], publicMail: [] } })],
-    [409, "PATCH", `/organizations/${bare}/magic-link`, { body: { admission: "domain" } }, body => expect(body).toMatchObject({ code: "domain_not_verified", details: { unverified: [], publicMail: [] } })],
+    [409, "PATCH", at("/magic-link"), { body: { admission: "domain" } }, body => expect(body).toMatchObject({ code: "domain_not_verified", details: { unverified: ["newco.example"] } })],
+    [409, "PATCH", `/organizations/${bare}/magic-link`, { body: { admission: "domain" } }, body => expect(body).toMatchObject({ code: "domain_not_verified", details: { unverified: [] } })],
     [409, "PATCH", `/organizations/${id.organizationId}/magic-link`, { body: { admission: "domain" } }, body => expect(body).toMatchObject({ code: "platform_magic_link" })],
     [400, "PATCH", at("/magic-link"), { body: { admission: "anyone" } }],
     [403, "PATCH", at("/magic-link"), { token: "read", body: { admission: "listed" } }],
@@ -123,12 +125,11 @@ test("every answer the fake gives is one Answerable ID's admin contract declares
     [403, "POST", at(`/domains/${domainRow.id}/verify`), { token: "read" }],
     [403, "POST", at(`/domains/${domainRow.id}/verify`), { token: "users" }],
     [405, "GET", at(`/domains/${domainRow.id}/verify`)],
-    [409, "POST", at("/domains"), { body: { domain: "gmail.com" } }, body => expect(body).toMatchObject({ code: "public_mail_domain" })],
     // An import: each address its own answer, with platform:users, and its preview with platform:read.
-    [200, "POST", at("/members/import/preview"), { token: "read", body: { addresses: ["Ada@newco.example", "ada@newco.example", "fresh@newco.example", "x@gmail.com", "x@elsewhere.example", "nonsense"] } }, body => expect(body).toEqual({
-      counts: { created: 1, added: 0, alreadyMember: 1, refused: 3 },
+    [200, "POST", at("/members/import/preview"), { token: "read", body: { addresses: ["Ada@newco.example", "ada@newco.example", "fresh@newco.example", "x@elsewhere.example", "nonsense"] } }, body => expect(body).toEqual({
+      counts: { created: 1, added: 0, alreadyMember: 1, refused: 2 },
       items: [
-        { address: "ada@newco.example", outcome: "alreadyMember" }, { address: "fresh@newco.example", outcome: "created" }, { address: "x@gmail.com", outcome: "refused", reason: "public_mail" },
+        { address: "ada@newco.example", outcome: "alreadyMember" }, { address: "fresh@newco.example", outcome: "created" },
         { address: "x@elsewhere.example", outcome: "refused", reason: "outside_domains" }, { address: "nonsense", outcome: "refused", reason: "invalid" },
       ],
     })],

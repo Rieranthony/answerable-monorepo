@@ -1,6 +1,5 @@
 // The runtime: fills the strings scripts/generate.ts wrote from the React templates. It imports no React, so a service that
-// sends mail bundles a few kilobytes of strings, not a renderer (src/react.tsx is the React side, for the generator, the
-// preview and the tests).
+// sends mail bundles a few kilobytes of strings, not a renderer (src/react.tsx is the React side, for the generator).
 import { templates } from "./generated/templates.generated"
 import { holesOf, holeNames, type Email } from "./holes"
 
@@ -15,8 +14,7 @@ export type RenderedEmail = {
   tag: string
 }
 
-// The same five characters React escapes, in the same spelling, so the two renderers agree byte for byte
-// (equivalence.test.ts compares them on hostile input).
+// The same five characters React escapes, in the same spelling, so a value reads as the template's own text does.
 const entities: Record<string, string> = {
   "&": "&amp;",
   "<": "&lt;",
@@ -52,7 +50,7 @@ function fill(
 /**
  * Renders an email for sending: the subject, the HTML part, the plain-text part and the tag. The HTML part escapes every
  * value; the subject and the text part, which are not markup, carry them as given.
- * @throws `TypeError` when a value is refused (see `holesOf`) or the template is unknown.
+ * @throws `TypeError` for a firm name with nothing in it, or a template that does not exist (see `holesOf`).
  */
 export function renderEmail(email: Email): RenderedEmail {
   const holes = holesOf(email)

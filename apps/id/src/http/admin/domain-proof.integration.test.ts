@@ -9,7 +9,7 @@ import {
 import { responseSchema } from "../../__tests__/openapi-response.ts";
 import { magicLinkFirms } from "../../__tests__/magic-link.ts";
 import { inPlatformWrite } from "../../__tests__/platform-context.ts";
-import { createApp } from "../../app.ts";
+import { createApp } from "../../__tests__/app.ts";
 import {
   adminOperations,
   auditEvents,
@@ -570,66 +570,21 @@ describe("a domain's answers show what to publish", () => {
   });
 });
 
-describe("the public mail list", () => {
-  test("adding a public mail domain is refused, in any case, and nothing is written", async () => {
-    const firm = await firms.seedOrganization(`proof-${++nextFirm}`, false);
-    for (const domain of ["gmail.com", "GMAIL.com", "mailinator.com"]) {
-      const refused = await admin(`/organizations/${firm.id}/domains`, {
-        method: "POST",
-        body: { domain },
-      });
-      expect(refused.status, domain).toBe(409);
-      expect((await refused.json()).code).toBe("public_mail_domain");
-    }
-    expect(
-      await fixture.db
-        .select()
-        .from(organizationDomains)
-        .where(
-          and(
-            eq(organizationDomains.organizationId, firm.id),
-            eq(organizationDomains.domain, "gmail.com"),
-          ),
-        ),
-    ).toEqual([]);
+test("a public mail domain is a domain like any other: it can be added, and only whoever runs it could prove it", async () => {
+  const firm = await firms.seedOrganization(`proof-${++nextFirm}`, false);
+  const created = await admin(`/organizations/${firm.id}/domains`, {
+    method: "POST",
+    body: { domain: "gmail.com" },
   });
-
-  test("a firm's own subdomain of a public domain is its own business", async () => {
-    const firm = await firms.seedOrganization(`proof-${++nextFirm}`, false);
-    const created = await admin(`/organizations/${firm.id}/domains`, {
-      method: "POST",
-      body: { domain: `acme-${createId()}.gmail.com` },
-    });
-    expect(created.status).toBe(201);
+  expect(created.status).toBe(201);
+  const { id, verifiedAt } = await created.json();
+  expect(verifiedAt).toBeNull();
+  const verify = await admin(`/organizations/${firm.id}/domains/${id}/verify`, {
+    method: "POST",
   });
-
-  test("enabling an old row that joined the list is refused; it stays disabled, and disabling one is not", async () => {
-    const firm = await firms.seedOrganization(`proof-${++nextFirm}`, false);
-    const id = createId();
-    await fixture.db.insert(organizationDomains).values({
-      id,
-      organizationId: firm.id,
-      domain: "proton.me",
-      status: "active",
-    });
-    const path = `/organizations/${firm.id}/domains/${id}`;
-    // Already active: nothing changes, so nothing is refused, and it can be turned off.
-    expect((await admin(`${path}/enable`, { method: "POST" })).status).toBe(
-      200,
-    );
-    expect((await admin(`${path}/disable`, { method: "POST" })).status).toBe(
-      200,
-    );
-    const refused = await admin(`${path}/enable`, { method: "POST" });
-    expect(refused.status).toBe(409);
-    expect((await refused.json()).code).toBe("public_mail_domain");
-    const [row] = await fixture.db
-      .select({ status: organizationDomains.status })
-      .from(organizationDomains)
-      .where(eq(organizationDomains.id, id));
-    expect(row).toEqual({ status: "disabled" });
-    await fixture.db
-      .delete(organizationDomains)
-      .where(eq(organizationDomains.id, id));
-  });
+  expect(verify.status).toBe(409);
+  expect((await verify.json()).code).toBe("domain_verification_failed");
+  await fixture.db
+    .delete(organizationDomains)
+    .where(eq(organizationDomains.id, id));
 });

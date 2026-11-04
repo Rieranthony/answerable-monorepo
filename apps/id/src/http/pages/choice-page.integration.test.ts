@@ -8,7 +8,7 @@ import {
 import { answerOf, magicLinkFlow } from "../../__tests__/magic-link-flow.ts";
 import { inPlatformWrite } from "../../__tests__/platform-context.ts";
 import { createSsoProvider } from "../../__tests__/sso-queries.ts";
-import { createApp } from "../../app.ts";
+import { createApp } from "../../__tests__/app.ts";
 import { members, ssoProviders, users } from "../../db/schema/index.ts";
 import { createId } from "../../lib/id.ts";
 import { deleteSsoProvider } from "../../services/sso-providers.ts";
@@ -243,7 +243,7 @@ describe("POST /login, a firm with both", () => {
         },
         body: new URLSearchParams({ email, method }),
       });
-    for (let post = 0; post < 60; post++) await send("");
+    for (let post = 0; post < 300; post++) await send("");
     for (const method of ["directory", "link", ""]) {
       const over = await send(method);
       expect(over.status).toBe(429);

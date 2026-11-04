@@ -215,35 +215,24 @@ test("magiclink_admission to domain with links off says it has no effect until t
   expect((await prepared(client, "magiclink_admission", { organizationId: newco.id, admission: "listed" })).preview.warnings).not.toContain(line)
 })
 
-test("what the admin MCP cannot know, ID refuses, and the tool says so: a public mail domain on the row", async () => {
-  const { id, world: { newco }, client } = await asAdmin("answerable-owner")
-  id.domainsOf(newco.id)[0]!.verifiedAt = new Date().toISOString()
-  id.domain(newco.id, "gmail.com", { verifiedAt: new Date().toISOString() })
-  const intent = await prepared(client, "magiclink_admission", { organizationId: newco.id, admission: "domain" })
-  const log = spyOn(console, "error").mockImplementation(() => {})
-  try {
-    expect(errorOf(await confirm(client, intent))).toMatchObject({ code: "UPSTREAM_REJECTED", details: { upstream: { status: 409, code: "domain_not_verified" } } })
-  } finally { log.mockRestore() }
-})
-
 test("members_import previews the counts from ID's own answer, changing nothing, and commits one import under the intent's key with a platform:users token", async () => {
   const { id, world: { newco, ada }, client } = await asAdmin()
   const other = id.organisation(Bun.randomUUIDv7(), { name: "Other", slug: "other" })
   const alan = id.member(other.id, { email: "alan@newco.example", name: "Alan" })
-  const addresses = ["new@newco.example", "NEW@newco.example", "alan@newco.example", String(ada.email), "someone@gmail.com", "someone@elsewhere.example", "nonsense"]
+  const addresses = ["new@newco.example", "NEW@newco.example", "alan@newco.example", String(ada.email), "someone@elsewhere.example", "nonsense"]
   const intent = await prepared(client, "members_import", { organizationId: newco.id, addresses })
   expect(intent.preview).toEqual({
-    summary: "List 2 people in organisation “Newco” (newco): 1 new, 1 existing users added; 1 already members, 3 refused",
+    summary: "List 2 people in organisation “Newco” (newco): 1 new, 1 existing users added; 1 already members, 2 refused",
     changes: [{ path: `organizations[${newco.id}].magicLink.listed`, from: 1, to: 3 }],
     effects: ["permission_change"],
     warnings: [
-      "Refused: someone@gmail.com (public_mail), someone@elsewhere.example (outside_domains), nonsense (invalid).",
+      "Refused: someone@elsewhere.example (outside_domains), nonsense (invalid).",
       "Sends no mail. Each person's account is made at their first sign-in. A removed member and a disabled person stay as they are.",
       noPrecondition("importing members"),
     ],
     quantities: [
       { name: "created", value: 1, unit: "people" }, { name: "added", value: 1, unit: "people" },
-      { name: "alreadyMember", value: 1, unit: "people" }, { name: "refused", value: 3, unit: "addresses" },
+      { name: "alreadyMember", value: 1, unit: "people" }, { name: "refused", value: 2, unit: "addresses" },
     ],
   })
   expect(writes(id)).toEqual([])
@@ -253,8 +242,8 @@ test("members_import previews the counts from ID's own answer, changing nothing,
   const receipt = await committed(client, intent)
   expect(receipt.results).toEqual({
     organizationId: newco.id, operationId: expect.any(String),
-    counts: { created: 1, added: 1, alreadyMember: 1, refused: 3 },
-    refused: [{ address: "someone@gmail.com", reason: "public_mail" }, { address: "someone@elsewhere.example", reason: "outside_domains" }, { address: "nonsense", reason: "invalid" }],
+    counts: { created: 1, added: 1, alreadyMember: 1, refused: 2 },
+    refused: [{ address: "someone@elsewhere.example", reason: "outside_domains" }, { address: "nonsense", reason: "invalid" }],
   })
   expect(writes(id)).toEqual([
     { request: `POST /api/admin/v1/organizations/${newco.id}/members/import`, requestId: expect.any(String), idempotencyKey: intent.intent_id, ifMatch: null, ifNoneMatch: null, caller: "admin-mcp" },

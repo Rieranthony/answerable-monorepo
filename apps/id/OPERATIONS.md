@@ -17,7 +17,7 @@ a change ships as a release. Only the pool size is a variable.
 | Database statements | 10 s per statement; lock wait 2 s; idle transaction 15 s                   | Not a whole-request deadline; transactions may execute multiple statements |
 | Request body        | 256 KiB (4 KiB on `POST /login`, `POST /magic-link`, `POST /magic-link/code` and `POST /connect-directory`, 64 KiB on `POST /auth/sign-in/sso`); acquisition deadline 5 s | Does not bound response streaming or socket count                          |
 | Rate limits         | Per client address per process, production only ([docs/06](../../docs/06-deploying-answerable-id.md#operating-it)) | Replicas multiply them; not a volumetric defence                           |
-| Sign-in page posts  | 60 per 10 s per client address per process, in every environment: on `POST /login`, a 429 page; on `POST /magic-link` and `POST /magic-link/code` together, and on `POST /connect-directory`, their usual refusal with no database work. At most 10,000 clients held per route | Replicas multiply them; not a volumetric defence                           |
+| Sign-in page posts  | 300 per 10 s per client address per process, in every environment, on `POST /login`: a 429 page. Nothing else limits that path | Replicas multiply it; not a volumetric defence |
 | Client address      | `cf-connecting-ip`; else the rightmost untrusted `x-forwarded-for` address after the proxies in `TRUSTED_PROXY_CIDRS` | Requires proxy-only network access ([README](README.md#http-surface))      |
 
 **Runtime summaries.** Every 30 seconds each process writes `[id] operations`
@@ -37,19 +37,15 @@ rows writes `[id] protocol sweep` with the count per table; expiry records no au
 
 **Magic-link mail.** Each process sends at most 5 at a time, holds at most 500 waiting
 and drops the rest; no connection is held through a send. Limits hold across replicas,
-in Postgres: per address and client 1 in 60 s and 5 in an hour, per address 50 in a day,
-per organisation 5,000 in an hour. An address no user holds, which only domain mode admits,
+in Postgres: per address and client 1 in 60 s and 5 in an hour, per address 50 in a day.
+An address no user holds, which only domain mode admits,
 also has a budget of its own: 100 in an hour per client, at any firm, and 500 in a day per
 organisation. Made-up addresses hard-bounce, and Postmark pauses a server past 10%, which
 would stop sign-in at every firm. Members and users with no membership there neither count
 nor are held back. Both sets of numbers are judgement until staging measures them:
 `src/services/magic-link-requests.ts`.
 
-**Magic-link codes.** Three comparisons per request. Wrong codes per client 30 in an hour
-and per organisation 1,000 in an hour, added up from `attempts` in Postgres so that they hold
-across replicas and checked before comparing; at most the ten newest requests of one browser
-are compared per attempt. These too are judgement: `src/services/magic-link-codes.ts`. The
-link does not go through these budgets.
+**Magic-link codes.** Three comparisons per request, and the third wrong one ends it, for its link as well. At most the ten newest requests of one browser are compared per attempt: `src/services/magic-link-codes.ts`.
 
 **Domain proofs.** One TXT lookup per `POST .../verify`, at most 5 s, with no connection held through it. It uses the resolver in the pod's `/etc/resolv.conf`, so ID needs DNS egress to answer for a firm's domain.
 
@@ -73,17 +69,17 @@ or budget is configured here.
 | `[id] error` `unexpected_error`, or `provider_diagnostic` with an error | Read the class and SQLSTATE; a repeated one is a defect or a database fault                                                                  |
 | `[id] page` `page_auth_call_failed`                                     | A sign-in page's in-process authentication call threw; the person saw the friendly message. Check the named auth path, or page for a magic link, and the database |
 | `admin_denial_audit_unavailable` or `token_rejection_audit_unavailable` | Investigate database/audit availability; refusal remains refusal                                                                             |
-| Rising `token_rejected` or `signin_rejected` (`[id] auth`)              | Refusals that verified no client or identity, logged instead of audited: a misconfigured client or directory, or credential stuffing; compare with 429s and the edge rate limits |
+| Rising `token_rejected` or `signin_rejected` (`[id] auth`)              | Refusals that verified no client or identity, logged instead of audited: a misconfigured client or directory, or credential stuffing; compare with 429s |
 | `[id] admin` `admin_auth_refused`, repeated                             | A missing or invalid credential on `/api/admin` (`reason` `unauthenticated` or `invalid_token`, with request id, address and path); no audit row is written. Compare the addresses with the ingress log |
 | `SigningKeyCustodyError` at startup                                     | The configured application secrets cannot decrypt the newest signing key: deliver the version that encrypted it; never delete the key       |
 | `Invalid ID configuration: POSTMARK_SERVER_TOKEN: Required in production` at startup | The Secret `id-env` holds no Postmark token. The deploy refuses to apply one without it, so this follows an edit made by hand to the Secret: set `POSTMARK_SERVER_TOKEN` in the GitHub environment and tag again. The previous replicas keep serving |
 | `[id] magic link` `magic_link_send_failed`                              | `errorCode` and `httpStatus` are Postmark's; 406 is a suppressed address, which staff reactivate in Postmark. The address is in that row of `magic_link_requests`, under its `requestId`, for seven days. No code and no status: Postmark was not reached |
-| `[id] magic link` `magic_link_request`, `outcome` `limited`             | `limit` names which. `organization_hour`, repeated: someone is requesting mail for many real addresses at that firm. `new_address_client_hour` or `new_address_organization_day`, repeated: someone guessing addresses, or a big start that needed `members_import` first. The person sees the usual page and gets no mail |
-| `[id] magic link` `magic_link_queue_overflow`, or `magic_link_queue_abandoned` | Requests were told to check their email and got none. `dropped`, `abandoned` and `running` are counts. Compare with Postmark's status and the pool |
-| `[id] magic link` `magic_link_job_failed`                               | A job threw before its row was final; read the class and SQLSTATE. Its row, if any, stays `sending`, which signs nobody in                 |
-| `[id] magic link` `magic_link_code_budget_exhausted`                    | `budget` says which: `client`, repeated from one address, is someone guessing or an office with a bad day; `organization`, with its id, someone trying a firm from many addresses. Codes stop being compared and the person sees the usual refusal; the link still works |
+| `[id] magic link` `magic_link_request`, `outcome` `limited`             | `limit` names which. `new_address_client_hour` or `new_address_organization_day`, repeated: someone guessing addresses, or a big start that needed `members_import` first. The person sees the usual page and gets no mail |
+| `[id] magic link` `magic_link_queue_overflow`, or `magic_link_queue_abandoned` | On overflow the person was told ID cannot send email just now; abandoned requests were told to check their email and got none. `dropped`, `abandoned` and `running` are counts. Compare with Postmark's status and the pool |
+| `[id] magic link` `magic_link_job_failed`                               | A job threw; read the class and SQLSTATE. Its row, if any, stays `sent`, though its mail may not have gone, and asking again after a minute makes another |
 | `[id] domains` `domain_lookup_failed`                                   | A DNS check got no answer: `code` is the resolver's, `ETIMEOUT` being the 5 s bound. The caller saw `domain_verification_failed`, and a proved domain lost its proof. A domain with no record is not this, and logs nothing. Repeated, check the pod's DNS egress before re-checking any firm |
 | `domain.verification_lost` audit events                                 | A re-check found nothing on a proved domain. In domain mode it admits nobody new until it is proved again; nobody's session ended. Check whether the record was removed, or the resolver failed |
+| `[id] database` `database_connection_lost`                              | A pooled connection to Postgres ended with no word from the server: a crash, a node's loss or a network reset. The process goes on, the next query takes a new connection, and readiness answers 503 until Postgres is back. Repeated: check the database and the network |
 | `[id] magic link` `magic_link_audit_unavailable`                        | A refused sign-in could not write its audit row; read the class and SQLSTATE. The refusal stands                                            |
 | Rising `auth.magic_link.refused` or `auth.magic_link.code_exhausted` audit events | Refusals that took a real browser cookie and a real request. `reason` says why: `provider_changed`, repeated, follows a firm switched off and on; `code_attempts` someone guessing or mistyping; `directory_changed`, `not_connectable` and `identity_taken` a connection refused at its code: the directory changed since, the person, the domain or the firm changed since, or that identity already has an account |
 | `[id] magic link` `magic_link_request`, `purpose` `connect_directory`   | A directory sign-in met an address someone here already holds, and that mailbox was sent a code. It signs nobody in. Repeated `identity.linked` audit events on this path, for people who did not ask, mean someone with a directory identity asserting others' addresses got them to read out a code: remove the member in ID, and take it to the firm's IT team. A person who says they got no code: `sign-in-diagnosis` shows it as `magicLink.directoryConnection`, and `lastRequest` shows a failed send |

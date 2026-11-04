@@ -10,6 +10,7 @@ import type { Database } from "./db/client.ts";
 import { answerableSchema } from "./auth/answerable-schema.ts";
 import type { Environment } from "./env.ts";
 import { errorFields } from "./http/problem.ts";
+import { createRateLimitStorage } from "./lib/client-budget.ts";
 import { createId } from "./lib/id.ts";
 import { hashClientSecret } from "./services/client-secrets.ts";
 import { logEvent } from "./lib/log.ts";
@@ -22,7 +23,7 @@ import { magicLinkConfirmation } from "./auth/magic-link-confirm.ts";
 
 export function createAuth(db: Database, environment: Environment) {
   const verifiedSso = createVerifiedSso(db);
-  const ssoOrigin = createSsoOriginBoundary(db, verifiedSso);
+  const ssoOrigin = createSsoOriginBoundary(verifiedSso);
   const nativeSso = sso({
     schema: {
       ssoProvider: {
@@ -78,7 +79,6 @@ export function createAuth(db: Database, environment: Environment) {
       session: {
         ...sessionAuditHooks(db),
         create: { before: ssoOrigin.before },
-        update: { before: ssoOrigin.refresh },
       },
     },
     session: {
@@ -121,8 +121,9 @@ export function createAuth(db: Database, environment: Environment) {
     trustedOrigins: environment.trustedOrigins,
     // Production only, per client address per process: replicas multiply these.
     // An office signs in through one egress address; the provider's options
-    // below size authorize and token for a host refreshing for all its users.
+    // below size authorize, token and UserInfo for a host serving all its users.
     rateLimit: {
+      customStorage: createRateLimitStorage(),
       customRules: {
         "/sign-in/sso": { window: 10, max: 60 },
         "/sso/callback": { window: 10, max: 300 },
@@ -230,6 +231,7 @@ export function createAuth(db: Database, environment: Environment) {
           rateLimit: {
             authorize: { window: 60, max: 300 },
             token: { window: 60, max: 600 },
+            userinfo: { window: 60, max: 600 },
           },
           loginPage: `${environment.betterAuthUrl}/login`,
           consentPage: `${environment.betterAuthUrl}/consent`,

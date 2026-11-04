@@ -361,11 +361,10 @@ describe("the right code waits for whoever holds what it depends on", () => {
     );
   });
 
-  test("a row that ended, failed or spent its attempts while the right code waited refuses", async () => {
+  test("a row that ended or failed while the right code waited refuses", async () => {
     for (const change of [
       { expiresAt: new Date(Date.now() - 1_000) },
       { sendStatus: "failed" as const },
-      { attempts: 4 },
     ]) {
       const person = await ready();
       let release = () => {};

@@ -4,7 +4,7 @@ import type { RenderedEmail } from "./render"
 
 /** One email to send: `renderEmail`'s output and the address it goes to. */
 export type Message = RenderedEmail & {
-  /** One address: a list, a display name or a line break is refused. */
+  /** One address, which the caller has parsed: Postmark's `To` takes a comma-separated list, and a sign-in link must go to one person. */
   to: string
 }
 
@@ -23,7 +23,7 @@ export type SendResult =
       status: "failed"
       /** The HTTP status Postmark answered, or `null` when none arrived (a network error or the timeout). */
       httpStatus: number | null
-      /** Postmark's `ErrorCode`, or `null` when there was no answer to read. Compare with `postmarkErrorCode`. */
+      /** Postmark's `ErrorCode`, or `null` when there was no answer to read. */
       errorCode: number | null
       /** Whether a second attempt was made: the result is the second attempt's. */
       retried: boolean
@@ -33,16 +33,6 @@ export type SendResult =
 export type Transport = {
   send(message: Message): Promise<SendResult>
 }
-
-/** The Postmark `ErrorCode`s a caller acts on; the rest are shown in the result as numbers. */
-export const postmarkErrorCode = {
-  /** The recipient is inactive: a hard bounce, a spam complaint or a manual suppression. The address will not be mailed. */
-  inactiveRecipient: 406,
-  /** The account's sender domain or recipient is not approved yet: sends are limited until Postmark approves the account. */
-  pendingApproval: 412,
-  /** The account is not approved yet. */
-  accountNotApproved: 413,
-} as const
 
 /** What `createPostmarkTransport` takes. */
 export type PostmarkTransportOptions = {
@@ -70,9 +60,6 @@ export type PostmarkTransportOptions = {
 
 /** Postmark's email call: what `endpoint` defaults to. */
 const ENDPOINT = "https://api.postmarkapp.com/email"
-
-// One address only: Postmark's `To` takes a comma-separated list, and a sign-in link must go to one person.
-const ONE_ADDRESS = /^[^\s,;<>"\p{Cc}]+$/u
 
 type Attempt =
   | { sent: true; messageId: string }
@@ -134,9 +121,6 @@ export function createPostmarkTransport({
 
   return {
     async send({ to, subject, html, text, tag }) {
-      if (!ONE_ADDRESS.test(to)) {
-        throw new TypeError("The recipient must be one plain address")
-      }
       const body = JSON.stringify({
         From: from,
         To: to,

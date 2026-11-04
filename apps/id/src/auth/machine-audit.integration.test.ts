@@ -9,7 +9,7 @@ import { decodeJwt } from "jose";
 import { recordMachineIssuance } from "./machine-audit.ts";
 import { createId } from "../lib/id.ts";
 import { createAuth } from "../auth.ts";
-import { createApp } from "../app.ts";
+import { createApp } from "../__tests__/app.ts";
 import { testEnvironment } from "../__tests__/support.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import {

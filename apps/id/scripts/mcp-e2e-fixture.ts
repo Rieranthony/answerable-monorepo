@@ -16,7 +16,7 @@ import {
   type OidcClaims,
 } from "../src/__tests__/oidc-issuer.ts";
 import { createRuntimeLogin } from "../src/__tests__/runtime-role.ts";
-import { testEnvironment } from "../src/__tests__/support.ts";
+import { noMagicLinks, testEnvironment } from "../src/__tests__/support.ts";
 
 const [planPath, manifestPath] = process.argv.slice(2);
 if (!planPath || !manifestPath || !process.argv.includes("--isolated-mcp-fixture"))
@@ -112,7 +112,7 @@ const magicLinks = plan.postmark
       environment,
       transport: createMailTransport(environment),
     })
-  : undefined;
+  : noMagicLinks;
 const app = createApp({ auth, db: runtime.db, environment, magicLinks });
 Bun.serve({ hostname: "127.0.0.1", port: 47_600, fetch: app.fetch });
 

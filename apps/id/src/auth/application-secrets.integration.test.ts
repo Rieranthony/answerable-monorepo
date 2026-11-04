@@ -4,7 +4,7 @@ import { decodeProtectedHeader, importJWK, jwtVerify } from "jose";
 import { signInThroughIdp } from "../__tests__/federation.ts";
 import { createAdminFixture } from "../__tests__/admin.ts";
 import { createAuth } from "../auth.ts";
-import { createApp } from "../app.ts";
+import { createApp } from "../__tests__/app.ts";
 import { jwks } from "../db/schema/index.ts";
 
 test("application secret rotation retains signing custody and requires new browser authentication when the active secret changes", async () => {

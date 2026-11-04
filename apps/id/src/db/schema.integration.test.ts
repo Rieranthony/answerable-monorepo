@@ -22,7 +22,7 @@ import { addGroupMember, createGroup } from "../__tests__/group-queries.ts";
 import { createSsoProvider } from "../__tests__/sso-queries.ts";
 import { isUuidV7, testEnvironment } from "../__tests__/support.ts";
 import { retireUserEmail } from "../__tests__/user-queries.ts";
-import { createApp } from "../app.ts";
+import { createApp } from "../__tests__/app.ts";
 import { createAuth } from "../auth.ts";
 import { createId } from "../lib/id.ts";
 import { createDatabase, type DatabaseConnection } from "./client.ts";

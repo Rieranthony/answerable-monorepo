@@ -1,2 +1,0 @@
-ALTER TABLE "sso_providers" ADD COLUMN "enabled" boolean DEFAULT true NOT NULL;--> statement-breakpoint
-ALTER TABLE "sso_providers" ADD CONSTRAINT "sso_providers_enabled_check" CHECK ("sso_providers"."kind" = 'magic_link' or "sso_providers"."enabled");

@@ -14,7 +14,7 @@ import {
 } from "../__tests__/platform-context.ts";
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { getCurrentAdapter } from "better-auth";
-import { createApp } from "../app.ts";
+import { createApp } from "../__tests__/app.ts";
 import { createId } from "../lib/id.ts";
 import type { OAuthProviderExtension } from "@better-auth/oauth-provider";
 import { decodeJwt } from "jose";

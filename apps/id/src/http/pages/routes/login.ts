@@ -25,7 +25,7 @@ import {
   pendingOAuthQuery,
 } from "../login-routing.ts";
 import { describeError, type ErrorDescription } from "../error-copy.ts";
-import { holdSignInCookie } from "../sign-in-cookie.ts";
+import { holdSignInCookie, signInCookieValue } from "../sign-in-cookie.ts";
 import { ChooseSignIn, LoginForm, SignedIn } from "../views/login.tsx";
 import { CheckEmail } from "../views/magic-link.tsx";
 
@@ -98,6 +98,7 @@ async function renderLogin(context: PageContext, message?: ErrorDescription) {
         method: session.method,
         query: query.toString(),
         message,
+        applicationLost: query.get("resume") === "expired",
       }),
     );
   }
@@ -148,30 +149,49 @@ async function renderLogin(context: PageContext, message?: ErrorDescription) {
 
 /**
  * The same page whatever becomes of this address, and the work that depends on it runs after
- * the response.
+ * the response. A full queue is the one thing it says, which depends on no address.
  */
 async function askForLink(
   context: PageContext,
   email: string,
   query: URLSearchParams,
 ) {
-  const browser = holdSignInCookie(context);
-  context.get("magicLinks")?.request({
+  const browser = signInCookieValue(context);
+  const taken = context.get("magicLinks").request({
     address: email,
     browser,
     client: context.get("clientIp") ?? "unresolved",
     pendingQuery: await resumableQuery(context, pendingOAuthQuery(query)),
   });
-  return context.render(jsx(CheckEmail, { email, query: query.toString() }), {
-    title: "Sign in",
-  });
+  if (!taken) {
+    context.status(503);
+    context.header("Retry-After", "60");
+    return renderSignIn(
+      context,
+      jsx(LoginForm, {
+        email,
+        query: query.toString(),
+        message: describeError("magic_link_queue_full"),
+      }),
+    );
+  }
+  holdSignInCookie(context, browser);
+  return context.render(
+    jsx(CheckEmail, {
+      email,
+      query: query.toString(),
+      sender: context.get("environment").mailFrom,
+    }),
+    { title: "Sign in" },
+  );
 }
 
 export function registerLogin(app: Hono<AppEnvironment>) {
-  // An office signs in through one egress address, so this is as wide as `/sign-in/sso`'s rule.
-  // Without it a stranger's flood costs a transaction and a queue slot each, and drops real
-  // requests. It depends on no address.
-  const budget = createClientBudget({ max: 60, windowMs: 10_000 });
+  // Judgement. An office signs in through one egress address, and at a firm's peak, with two
+  // processes, that is about eight posts a second to each. Without this a stranger's flood costs
+  // a transaction and a queue slot each, and drops real requests. Nothing else limits this path,
+  // and it depends on no address.
+  const budget = createClientBudget({ max: 300, windowMs: 10_000 });
   app.get("/login", (context) => renderLogin(context));
   app.post("/login", async (context) => {
     const query = new URL(context.req.url).searchParams;

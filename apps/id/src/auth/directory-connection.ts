@@ -67,7 +67,7 @@ class Refusal extends Error {
 /**
  * The right code's work: the directory's account on the same user, in one transaction, under a
  * confirmation's lock order. Everything that let the request be made is read again, since a
- * person can be removed, a domain lost or a directory changed in the ten minutes it lives. It
+ * person can be removed, a domain lost or a directory changed in the time it lives. It
  * makes no session and no cookie: the caller sends the person through the directory again, and
  * that sign-in, by the ordinary path, is what signs them in.
  *
@@ -106,12 +106,7 @@ export async function connectDirectoryAccount(
         .from(magicLinkRequests)
         .where(eq(magicLinkRequests.id, matched.id))
         .for("update");
-      if (
-        !row?.live ||
-        row.sendStatus !== "sent" ||
-        row.attempts > magicLinkCodeAttempts
-      )
-        throw new Refusal("ended");
+      if (!row?.live || row.sendStatus !== "sent") throw new Refusal("ended");
       if (
         !directory ||
         directory.kind !== "oidc" ||
@@ -177,13 +172,9 @@ export async function connectDirectoryAccount(
           upstreamAuthTime: null,
         },
       });
-      // A right code is not a wrong code, so it takes back the attempt it counted.
       await tx
         .update(magicLinkRequests)
-        .set({
-          expiresAt: sql`statement_timestamp()`,
-          attempts: sql`${magicLinkRequests.attempts} - 1`,
-        })
+        .set({ expiresAt: sql`statement_timestamp()` })
         .where(eq(magicLinkRequests.id, row.id));
       return {
         organizationSlug: firm.slug,

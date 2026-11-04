@@ -14,10 +14,10 @@ import {
 const betterAuthSecret = "a-secret-of-at-least-thirty-two-characters";
 const requestId = "01900000-0000-7000-8000-000000000001";
 
-test("the plugin creates no user and keeps a link ten minutes", () => {
+test("the plugin creates no user and keeps a link thirty minutes", () => {
   expect(magicLinkPlugin().options).toMatchObject({
     disableSignUp: true,
-    expiresIn: 600,
+    expiresIn: 1_800,
   });
 });
 

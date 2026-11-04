@@ -4,13 +4,13 @@ import { type BrowserCookie, sessionCookieProblems, signInCookieProblems } from 
 const host = "id.127-0-0-1.sslip.io"
 const now = 1_800_000_000
 
-const signIn = (change: Partial<BrowserCookie> = {}): BrowserCookie => ({ name: "__Host-answerable-sign-in", value: "x", domain: host, path: "/", expires: now + 600, httpOnly: true, secure: true, sameSite: "Lax", ...change })
+const signIn = (change: Partial<BrowserCookie> = {}): BrowserCookie => ({ name: "__Host-answerable-sign-in", value: "x", domain: host, path: "/", expires: now + 1_800, httpOnly: true, secure: true, sameSite: "Lax", ...change })
 const session = (change: Partial<BrowserCookie> = {}): BrowserCookie => ({ name: "__Secure-better-auth.session_token", value: "x", domain: host, path: "/", expires: now + 24 * 3600, httpOnly: true, secure: true, sameSite: "Lax", ...change })
 
 describe("the sign-in cookie", () => {
-  test("is right when it is __Host-answerable-sign-in, Secure, HttpOnly, Lax, path /, host-only and ten minutes long", () => {
+  test("is right when it is __Host-answerable-sign-in, Secure, HttpOnly, Lax, path /, host-only and thirty minutes long", () => {
     expect(signInCookieProblems([signIn()], host, now)).toEqual([])
-    expect(signInCookieProblems([signIn({ expires: now + 605 }), session()], host, now)).toEqual([])
+    expect(signInCookieProblems([signIn({ expires: now + 1_805 }), session()], host, now)).toEqual([])
   })
 
   test("is wrong in each attribute that differs, and says which", () => {
@@ -20,9 +20,9 @@ describe("the sign-in cookie", () => {
     expect(signInCookieProblems([signIn({ sameSite: "None" })], host, now)).toEqual(["__Host-answerable-sign-in is SameSite=None, not Lax"])
     expect(signInCookieProblems([signIn({ path: "/login" })], host, now)).toEqual(["__Host-answerable-sign-in has path /login, not /"])
     expect(signInCookieProblems([signIn({ domain: `.${host}` })], host, now)).toEqual([`__Host-answerable-sign-in is for .${host}, not the host alone (${host})`])
-    expect(signInCookieProblems([signIn({ expires: now + 3600 })], host, now)).toEqual([`__Host-answerable-sign-in expires at ${now + 3600}, not within 600 s of ${now}`])
-    expect(signInCookieProblems([signIn({ expires: now - 1 })], host, now)).toEqual([`__Host-answerable-sign-in expires at ${now - 1}, not within 600 s of ${now}`])
-    // A session cookie with no expiry (-1) is not the ten minutes ID sets.
+    expect(signInCookieProblems([signIn({ expires: now + 3600 })], host, now)).toEqual([`__Host-answerable-sign-in expires at ${now + 3600}, not within 1800 s of ${now}`])
+    expect(signInCookieProblems([signIn({ expires: now - 1 })], host, now)).toEqual([`__Host-answerable-sign-in expires at ${now - 1}, not within 1800 s of ${now}`])
+    // A session cookie with no expiry (-1) is not the thirty minutes ID sets.
     expect(signInCookieProblems([signIn({ expires: -1 })], host, now)).toHaveLength(1)
   })
 

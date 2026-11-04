@@ -57,7 +57,7 @@ export const magicLinkRequests = pgTable(
     directoryUserId: text("directory_user_id"),
     expiresAt: timestampColumn("expires_at").notNull(),
     sendStatus: text("send_status", { enum: magicLinkSendStatuses })
-      .default("sending")
+      .default("sent")
       .notNull(),
     /** Postmark's answer to a failed send: 406 is a suppressed address. */
     postmarkErrorCode: integer("postmark_error_code"),
@@ -85,33 +85,22 @@ export const magicLinkRequests = pgTable(
       table.sendStatus,
       magicLinkSendStatuses,
     ),
-    // A link has its token, browser and code. Word that access was removed has none, and
-    // nothing to resume. A directory's connection has a browser, a code and the identity, and
-    // no token, since its code signs nobody in; it is never a new address.
+    // A link has its token, browser and code. A directory's connection has a browser, a code and
+    // the identity, and no token, since its code signs nobody in; it is never a new address.
     check(
       "magic_link_requests_purpose_fields_check",
-      sql`(${table.purpose} = 'link' and ${table.tokenIdentifier} is not null and ${table.browserHash} is not null and ${table.codeHmac} is not null and ${table.directoryIssuer} is null and ${table.directorySubject} is null and ${table.directoryUserId} is null) or (${table.purpose} = 'access_removed' and ${table.tokenIdentifier} is null and ${table.browserHash} is null and ${table.codeHmac} is null and ${table.pendingOauthQuery} is null and ${table.directoryIssuer} is null and ${table.directorySubject} is null and ${table.directoryUserId} is null) or (${table.purpose} = 'connect_directory' and ${table.tokenIdentifier} is null and ${table.browserHash} is not null and ${table.codeHmac} is not null and ${table.directoryIssuer} is not null and ${table.directorySubject} is not null and ${table.directoryUserId} is not null and not ${table.newAddress})`,
+      sql`(${table.purpose} = 'link' and ${table.tokenIdentifier} is not null and ${table.browserHash} is not null and ${table.codeHmac} is not null and ${table.directoryIssuer} is null and ${table.directorySubject} is null and ${table.directoryUserId} is null) or (${table.purpose} = 'connect_directory' and ${table.tokenIdentifier} is null and ${table.browserHash} is not null and ${table.codeHmac} is not null and ${table.directoryIssuer} is not null and ${table.directorySubject} is not null and ${table.directoryUserId} is not null and not ${table.newAddress})`,
     ),
     check(
       "magic_link_requests_send_error_check",
       sql`${table.sendStatus} = 'failed' or (${table.postmarkErrorCode} is null and ${table.postmarkHttpStatus} is null)`,
     ),
-    // The limits count what did not fail. An address has few rows; an organisation's
-    // count stops at its cap, on this index.
-    index("magic_link_requests_email_created_at_idx")
-      .on(table.email, table.createdAt)
-      .where(sql`${table.sendStatus} <> 'failed'`),
-    index("magic_link_requests_organization_created_at_idx")
-      .on(table.organizationId, table.createdAt)
-      .where(sql`${table.sendStatus} <> 'failed'`),
-    // The failure budgets add up attempts by client and by organisation, and only a row
-    // somebody guessed at counts, which is few of them.
-    index("magic_link_requests_client_attempted_idx")
-      .on(table.clientHash, table.createdAt)
-      .where(sql`${table.attempts} > 0`),
-    index("magic_link_requests_organization_attempted_idx")
-      .on(table.organizationId, table.createdAt)
-      .where(sql`${table.attempts} > 0`),
+    // The limits read one address's rows, which they themselves keep few; so do diagnosis and
+    // freeing an address, which read failed rows too.
+    index("magic_link_requests_email_created_at_idx").on(
+      table.email,
+      table.createdAt,
+    ),
     // What the budgets for addresses nobody holds count, and only those rows are in them.
     index("magic_link_requests_new_address_organization_idx")
       .on(table.organizationId, table.createdAt)

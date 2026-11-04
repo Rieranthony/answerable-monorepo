@@ -6,7 +6,6 @@ import { activeOrganizationDomains } from "../db/queries/organization-domains.ts
 import { members, organizations, users } from "../db/schema/index.ts";
 import { found } from "../http/problem.ts";
 import { createId } from "../lib/id.ts";
-import { isPublicMailDomain } from "../lib/public-mail-domains.ts";
 import { recordCommandEvents } from "./audit.ts";
 import { newUserFields } from "./federation.ts";
 import {
@@ -25,7 +24,6 @@ export const maxImportAddresses = 1_000;
 export const importRefusals = [
   "invalid",
   "outside_domains",
-  "public_mail",
   "disabled",
   "removed",
   "other_firm",
@@ -73,13 +71,7 @@ async function sortByDomain(
   for (const answer of answers) {
     if (!("email" in answer)) continue;
     const { email, domain } = answer;
-    if (isPublicMailDomain(domain))
-      refused.set(email, {
-        address: email,
-        outcome: "refused",
-        reason: "public_mail",
-      });
-    else if (!active.has(domain))
+    if (!active.has(domain))
       refused.set(email, {
         address: email,
         outcome: "refused",

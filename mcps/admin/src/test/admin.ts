@@ -58,13 +58,13 @@ export function createFakeToolbox(id: FakeId) {
 }
 
 /**
- * What ID holds for the tests of the writes: a client organisation, Newco, with a domain, a group, a member in it and the Toolbox's resource
+ * What ID holds for the tests of the writes: a client organisation, Newco, with its links on, a domain, a group, a member in it and the Toolbox's resource
  * registered with its grant strings; the host client; and in the platform organisation the three role groups, each found by its entitlement on
  * the admin MCP's resource and called anything but its role.
  */
 export function seed(id: FakeId) {
   const platform = id.organizationId
-  const newco = id.organisation(Bun.randomUUIDv7(), { name: "Newco", slug: "newco" })
+  const newco = id.organisation(Bun.randomUUIDv7(), { name: "Newco", slug: "newco", magicLink: { enabled: true, admission: "listed" } })
   id.domain(newco.id, "newco.example")
   const engineers = id.group(newco.id, { slug: "engineers", name: "Engineers" })
   const ada = id.member(newco.id, { email: "ada@newco.example", name: "Ada Lovelace" })

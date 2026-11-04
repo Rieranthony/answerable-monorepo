@@ -131,7 +131,7 @@ test("domains_add previews the organisation's domains from and to, and refuses o
     summary: "Route email domain mail.newco.example to organisation “Newco” (newco)",
     changes: [{ path: `organizations[${newco.id}].domains`, from: ["newco.example"], to: ["mail.newco.example", "newco.example"] }],
     warnings: [
-      "If another organisation holds mail.newco.example, Answerable ID refuses the write with 409 conflict; if anyone can get an address there, with 409 public_mail_domain.",
+      "If another organisation holds mail.newco.example, Answerable ID refuses the write with 409 conflict.",
       "Until its DNS record is proved with domains_verify, it admits nobody new, whatever the organisation's admission says.",
       noPrecondition("adding a domain"),
     ],

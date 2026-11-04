@@ -13,7 +13,7 @@ import {
 } from "jose";
 import { softDeleteClient } from "../__tests__/soft-deletion.ts";
 import { testEnvironment } from "../__tests__/support.ts";
-import { createApp } from "../app.ts";
+import { createApp } from "../__tests__/app.ts";
 import { createAuth } from "../auth.ts";
 import { createDatabase, type DatabaseConnection } from "../db/client.ts";
 import { createOrganization } from "../__tests__/organization-queries.ts";

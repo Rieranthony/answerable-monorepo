@@ -112,7 +112,7 @@ async function chooseOrganisation(page: Page, url: URL) {
   if (await email.isVisible()) {
     await email.fill(id.manifest.tenants[0]!.email)
     await page.getByRole("button", { name: /continue/i }).click()
-    // The organisation has magic links on as well, so ID asks which way.
+    // An organisation with magic links on as well asks which way.
     const directory = page.getByRole("button", { name: /^Continue with / })
     await chooser.or(directory).waitFor()
     if (await directory.isVisible()) await directory.click()

@@ -1026,7 +1026,7 @@
       "name": "domains_add",
       "version": "2026-10-01",
       "kind": "mutate",
-      "description": "Prepare routing an email domain to an organisation in Answerable ID, so that people with that domain are sent to its sign-in: a magic link, its directory, or the choice of both. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. A domain belongs to one organisation, and a public mail domain is refused. The result gives the DNS record that proves it, which domains_verify checks; sso_set connects a directory, if it has one.",
+      "description": "Prepare routing an email domain to an organisation in Answerable ID, so that people with that domain are sent to its sign-in: a magic link, its directory, or the choice of both. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. A domain belongs to one organisation. The result gives the DNS record that proves it, which domains_verify checks; sso_set connects a directory, if it has one.",
       "scopes": [
         "admin"
       ],
@@ -2023,7 +2023,7 @@
       "name": "members_import",
       "version": "2026-10-01",
       "kind": "mutate",
-      "description": "Prepare listing people in an organisation in Answerable ID before their first sign-in, so that their sub exists first: a user and an active membership for each address, at most 1,000, and no account, which the first sign-in makes. Each address has its own answer, and one refused does not stop the rest: refused when invalid, outside the organisation's active domains, public mail, a disabled person, a removed member, whom only members_reinstate brings back, or an account of another organisation. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. It sends no mail, and works with magic links off and with a directory connected.",
+      "description": "Prepare listing people in an organisation in Answerable ID before their first sign-in, so that their sub exists first: a user and an active membership for each address, at most 1,000, and no account, which the first sign-in makes. Each address has its own answer, and one refused does not stop the rest: refused when invalid, outside the organisation's active domains, a disabled person, a removed member, whom only members_reinstate brings back, or an account of another organisation. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. It sends no mail, and works with magic links off and with a directory connected.",
       "scopes": [
         "admin"
       ],
@@ -2455,7 +2455,7 @@
       "name": "organisations_create",
       "version": "2026-10-01",
       "kind": "mutate",
-      "description": "Prepare creating an organisation in Answerable ID with a unique slug and a name. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. It starts with no domain, directory, member or access, and with magic links on for its members: then domains_add, members_import or sso_set, toolbox_enable and access_grant. A directory is one way in, not the only one.",
+      "description": "Prepare creating an organisation in Answerable ID with a unique slug and a name. Changes nothing: returns a preview; show the person its summary, then commit the intent with admin_commit_confirmed and that summary. It starts with no domain, directory, member or access, and with magic links off: then domains_add, sso_set or magiclink_enable with members_import, toolbox_enable and access_grant. A directory is one way in, not the only one.",
       "scopes": [
         "admin"
       ],

@@ -6,7 +6,6 @@ import {
   findDirectoryConnection,
 } from "../../../auth/directory-connection.ts";
 import type { RefusedIdentity } from "../../../auth/refused-identity.ts";
-import { createClientBudget } from "../../../lib/client-budget.ts";
 import { logEvent } from "../../../lib/log.ts";
 import { attemptMagicLinkCode } from "../../../services/magic-link-codes.ts";
 import type { AppEnvironment } from "../../context.ts";
@@ -46,13 +45,11 @@ export async function askMailboxToConnect(
   refusal: Response,
   identity: RefusedIdentity,
 ) {
-  const requests = context.get("magicLinks");
-  if (!requests) return null;
   const browser = signInCookieValue(context);
   const carried = new URL(refusal.headers.get("location")!, context.req.url)
     .searchParams;
   try {
-    const answer = await requests.connectDirectory({
+    const answer = await context.get("magicLinks").connectDirectory({
       identity,
       browser,
       client: context.get("clientIp") ?? "unresolved",
@@ -107,8 +104,6 @@ async function signInThroughDirectory(
 }
 
 export function registerConnectDirectory(app: Hono<AppEnvironment>) {
-  // 60 per 10 s per client, as on `POST /magic-link/code`, and refused alike.
-  const budget = createClientBudget({ max: 60, windowMs: 10_000 });
   const renderRefused = (context: PageContext) =>
     context.render(
       jsx(ConnectDirectory, {
@@ -142,8 +137,6 @@ export function registerConnectDirectory(app: Hono<AppEnvironment>) {
       context.status(403);
       return renderRefused(context);
     }
-    if (!budget.take(context.get("clientIp") ?? "unresolved"))
-      return renderRefused(context);
     const body = await context.req.parseBody();
     const code = typeof body.code === "string" ? body.code.trim() : "";
     const browser = readSignInCookie(context);
@@ -153,12 +146,7 @@ export function registerConnectDirectory(app: Hono<AppEnvironment>) {
       const row = await attemptMagicLinkCode(
         context.get("db"),
         context.get("environment"),
-        {
-          browser,
-          client: context.get("clientIp") ?? "unresolved",
-          code,
-          purpose: "connect_directory",
-        },
+        { browser, code, purpose: "connect_directory" },
         whoAsked(context),
       );
       if (row) {

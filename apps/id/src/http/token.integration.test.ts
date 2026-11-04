@@ -11,7 +11,7 @@ import { approveMachineCapability } from "../__tests__/capabilities.ts";
 import { startOidcIssuer, type OidcIssuer } from "../__tests__/oidc-issuer.ts";
 import { platformWriteService } from "../__tests__/platform-context.ts";
 import { testEnvironment } from "../__tests__/support.ts";
-import { createApp, type App } from "../app.ts";
+import { createApp, type App } from "../__tests__/app.ts";
 import { createAuth } from "../auth.ts";
 import {
   bootstrap,

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { holeNames, type Email } from "./holes"
-import { emails, link, mailbox, removed } from "./fixtures"
+import { emails, link, mailbox } from "./fixtures"
 import { renderEmail } from "./render"
 
 // The invisible-padded preheader: the text before its inner div.
@@ -23,22 +23,11 @@ describe("what each email says", () => {
 
       04817352
 
-      The link and the code expire in 10 minutes.
+      The link and the code expire in 30 minutes.
+
+      Never read this code to anyone. Answerable and your IT team will never ask for it.
 
       If you did not ask to sign in, you can ignore this email: nobody can sign in without it."
-    `)
-  })
-
-  test("the access-removed email", () => {
-    const { subject, tag, text } = renderEmail(removed)
-    expect(subject).toBe("Your access to Acme Surveyors was removed")
-    expect(tag).toBe("access-removed")
-    expect(text).toMatchInlineSnapshot(`
-      "Your access was removed
-
-      Someone asked to sign in to Acme Surveyors with this address. Your access has been removed, so no sign-in link was sent.
-
-      If you think this is a mistake, ask your administrator."
     `)
   })
 
@@ -53,9 +42,9 @@ describe("what each email says", () => {
 
       04817352
 
-      The code expires in 10 minutes.
+      The code expires in 30 minutes.
 
-      Do not give this code to anyone. Nobody at your firm or at this service will ask for it.
+      Never read this code to anyone. Answerable and your IT team will never ask for it.
 
       If this was not you, tell your administrator: someone may be using your company sign-in."
     `)
@@ -88,19 +77,8 @@ describe("what each email says", () => {
     expect(html.split(`href="${href}"`)).toHaveLength(3) // the button and the plain link
     expect(html).toContain(`>${href}</a>`)
     expect(html.match(/04817352/g)).toHaveLength(1)
-    expect(html).toContain("The link and the code expire in 10 minutes.")
+    expect(html).toContain("The link and the code expire in 30 minutes.")
     expect(html).toContain("nobody can sign in without it")
-  })
-
-  test("the access-removed email has no link, no code and no button", () => {
-    const { html, text } = renderEmail(removed)
-    expect(html).not.toMatch(/<a[\s>]/i)
-    expect(html).not.toMatch(/href=|mso-padding-alt|<button/i)
-    expect(html).not.toMatch(/\d{8}/)
-    expect(`${html}\n${text}`.replace(/<!DOCTYPE[^>]*>/i, "")).not.toMatch(
-      /https?:\/\//i,
-    )
-    expect(text).not.toMatch(/\d{4,}/)
   })
 
   test("the mailbox-code email has a code and no link", () => {
@@ -112,20 +90,17 @@ describe("what each email says", () => {
     )
   })
 
-  test("the mailbox-code email tells the reader not to hand the code over, in both parts", () => {
-    const { html, text } = renderEmail(mailbox)
-    for (const part of [html, text.replace(/\s+/g, " ")]) {
-      expect(part).toContain("Do not give this code to anyone.")
-      expect(part).toContain(
-        "Nobody at your firm or at this service will ask for it.",
-      )
-    }
-  })
-
-  test("no email carries the brand name or a brand device", () => {
+  test("every email tells the reader not to read the code out, in both parts, and names the brand only there", () => {
+    const warning =
+      "Never read this code to anyone. Answerable and your IT team will never ask for it."
     for (const email of emails) {
       const { subject, html, text } = renderEmail(email)
-      expect(`${subject}\n${html}\n${text}`).not.toMatch(/answerable/i)
+      for (const part of [html, text.replace(/\s+/g, " ")]) {
+        expect(part).toContain(warning)
+      }
+      expect(
+        `${subject}\n${html.replace(warning, "")}\n${text.replace(/\s+/g, " ").replace(warning, "")}`,
+      ).not.toMatch(/answerable/i)
     }
   })
 })
@@ -193,7 +168,6 @@ describe("a value is text, never markup, a pattern or a header", () => {
     const firmName = `<script>alert("x")</script> & Sons <img src=x onerror=y>`
     for (const email of [
       { ...link, firmName },
-      { ...removed, firmName },
       { ...mailbox, firmName },
     ]) {
       const { subject, html, text } = renderEmail(email)
@@ -236,9 +210,6 @@ describe("a value is text, never markup, a pattern or a header", () => {
       "  A   B  ": "A B",
     }
     for (const [firmName, expected] of Object.entries(names)) {
-      expect(renderEmail({ ...removed, firmName }).subject).toBe(
-        `Your access to ${expected} was removed`,
-      )
       expect(renderEmail({ ...link, firmName }).subject).toBe(
         `Sign in to ${expected}`,
       )
@@ -246,12 +217,11 @@ describe("a value is text, never markup, a pattern or a header", () => {
   })
 })
 
-describe("a value that cannot be used is refused", () => {
+describe("what cannot be used is refused", () => {
   test("a firm name with nothing in it", () => {
     for (const firmName of ["", " ", "\r\n", " \t "]) {
       for (const email of [
         { ...link, firmName },
-        { ...removed, firmName },
         { ...mailbox, firmName },
       ]) {
         expect(() => renderEmail(email)).toThrow(TypeError)
@@ -259,96 +229,10 @@ describe("a value that cannot be used is refused", () => {
     }
   })
 
-  test("an address that is not http or https, or holds a space or a control character", () => {
-    const refused = [
-      "javascript:alert(1)",
-      "data:text/html,x",
-      "ftp://id.example.com/x",
-      "file:///etc/passwd",
-      "not a url",
-      "",
-      "//id.example.com/x",
-      "https://id.example.com/a b",
-      "https://id.example.com/a\nb",
-      "https://id.example.com/a\u0000b",
-      " https://id.example.com/",
-    ]
-    for (const url of refused) {
-      expect(() => renderEmail({ ...link, url }), JSON.stringify(url)).toThrow(
-        "http or https URL",
-      )
-    }
-    expect(
-      renderEmail({ ...link, url: "http://localhost:47300/m" }).html,
-    ).toContain("http://localhost:47300/m")
-  })
-
-  test("a code that is not exactly eight digits", () => {
-    for (const code of [
-      "",
-      "1234567",
-      "123456789",
-      "1234567a",
-      "1234 5678",
-      "12345678\n",
-      " 12345678",
-      "１２３４５６７８",
-      "1.234567",
-    ]) {
-      expect(
-        () => renderEmail({ ...link, code }),
-        JSON.stringify(code),
-      ).toThrow("exactly 8 digits")
-      expect(() => renderEmail({ ...mailbox, code })).toThrow(
-        "exactly 8 digits",
-      )
-    }
-    expect(renderEmail({ ...link, code: "00000000" }).text).toContain(
-      "\n00000000\n",
-    )
-  })
-
-  test("an expiry that is not a positive whole number of minutes", () => {
-    for (const expiresInMinutes of [
-      0,
-      -1,
-      1.5,
-      NaN,
-      Infinity,
-      2 ** 53,
-      "10" as unknown as number,
-    ]) {
-      expect(
-        () => renderEmail({ ...link, expiresInMinutes }),
-        String(expiresInMinutes),
-      ).toThrow("positive whole number")
-      expect(() => renderEmail({ ...mailbox, expiresInMinutes })).toThrow(
-        "positive whole number",
-      )
-    }
-  })
-
   test("a template that does not exist", () => {
     expect(() =>
       renderEmail({ template: "constructor" } as unknown as Email),
     ).toThrow("Unknown email template")
-  })
-
-  test("the error never repeats the link or the code", () => {
-    const secret =
-      "https://id.example.com/magic-link?token=SECRETTOKEN and more"
-    for (const email of [
-      { ...link, url: secret },
-      { ...link, code: "SECRETCODE" },
-      { ...mailbox, code: "SECRETCODE" },
-    ]) {
-      try {
-        renderEmail(email)
-        throw new Error("not refused")
-      } catch (error) {
-        expect(String((error as Error).message)).not.toMatch(/SECRET|token=/)
-      }
-    }
   })
 })
 

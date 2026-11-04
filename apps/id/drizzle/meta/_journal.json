@@ -19,78 +19,15 @@
     {
       "idx": 2,
       "version": "7",
-      "when": 1793706860297,
-      "tag": "0002_sso_provider_kind",
+      "when": 1793795707019,
+      "tag": "0002_magic_links",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1793706860714,
-      "tag": "0003_sso_provider_kind_guard",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1793714862319,
-      "tag": "0004_sso_provider_enabled",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1793714862703,
-      "tag": "0005_magic_link_provider",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1793725115162,
-      "tag": "0006_magic_link_requests",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1793730071971,
-      "tag": "0007_magic_link_code_budgets",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1793730072318,
-      "tag": "0008_magic_link_origin_on",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1793738318338,
-      "tag": "0009_magic_link_admission",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1793738318706,
-      "tag": "0010_sso_provider_admission_guard",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1793744646459,
-      "tag": "0011_magic_link_new_address",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1793747724378,
-      "tag": "0012_magic_link_connect_directory",
+      "when": 1793795707395,
+      "tag": "0003_magic_link_invariants",
       "breakpoints": true
     }
   ]

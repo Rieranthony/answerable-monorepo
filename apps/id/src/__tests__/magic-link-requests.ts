@@ -15,6 +15,7 @@ import {
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
 import { createMagicLinkRequests } from "../services/magic-link-requests.ts";
+import { turnLinksOn } from "./magic-link.ts";
 import { openRuntimeRole } from "./runtime-role.ts";
 import { testEnvironment } from "./support.ts";
 
@@ -61,12 +62,13 @@ export async function openMagicLinkFixture() {
   const auth = createAuth(runtime.db, environment);
   const transport = createMemoryTransport();
 
-  /** A firm with one active domain, on its magic-link row as the trigger made it. */
+  /** A firm with one active domain, on the magic-link row the trigger made, turned on. */
   async function firm(name = "Acme Surveyors") {
     const id = createId();
     const slug = `firm-${id}`;
     const domain = `${slug}.example.com`;
     await owner.db.insert(organizations).values({ id, slug, name });
+    await turnLinksOn(owner.db, id);
     const domainId = createId();
     await owner.db
       .insert(organizationDomains)

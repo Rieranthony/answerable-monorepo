@@ -86,20 +86,6 @@ const strangers: Record<string, () => Promise<string>> = {
     await retireUserEmail(fixture.owner.db, userId);
     return email;
   },
-  "the retired form of an address, at a firm that lists that domain":
-    async () => {
-      const firm = await fixture.firm();
-      const { userId } = await fixture.member(firm);
-      await inPlatformUsers(fixture.owner.db, (context) =>
-        disableUser(context, userId),
-      );
-      await retireUserEmail(fixture.owner.db, userId);
-      await fixture.owner.pool.query(
-        `insert into organization_domains (id, organization_id, domain) values ('${createId()}', '${firm.id}', 'retired.invalid')
-       on conflict do nothing`,
-      );
-      return `${userId}@retired.invalid`;
-    },
   "an erased user's address": async () => {
     const firm = await fixture.firm();
     const { email, userId } = await fixture.member(firm);
@@ -383,30 +369,13 @@ describe("sent and stored, for each state", () => {
   );
 
   test.each(Object.keys(removed))(
-    "%s: one access-removed mail, no token and a row saying so",
+    "%s: asks as a stranger does, and nothing is sent or written",
     async (state) => {
       const email = await removed[state]!();
       const verifications = (await fixture.magicLinkVerifications()).length;
-      const outcome = await fixture.ask(email);
-      expect(outcome).toMatchObject({
-        outcome: "sent",
-        purpose: "access_removed",
-      });
-      const mail = fixture.mailsTo(email);
-      expect(mail).toHaveLength(1);
-      expect(mail[0]!.tag).toBe("access-removed");
-      expect(mail[0]!.text).not.toContain("/magic-link");
-      expect(codeIn(mail[0]!)).toBeUndefined();
-      const rows = await fixture.rows(email);
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({
-        purpose: "access_removed",
-        sendStatus: "sent",
-        tokenIdentifier: null,
-        browserHash: null,
-        codeHmac: null,
-        pendingOauthQuery: null,
-      });
+      expect(await fixture.ask(email)).toEqual({ outcome: "stranger" });
+      expect(fixture.mailsTo(email)).toEqual([]);
+      expect(await fixture.rows(email)).toEqual([]);
       expect(await fixture.magicLinkVerifications()).toHaveLength(
         verifications,
       );
@@ -442,13 +411,13 @@ describe("sent and stored, for each state", () => {
       enableMagicLink(context, firm.id),
     );
     const provider = (await liveMagicLinkRow(fixture.owner.db, firm.id))!;
-    expect(provider.revision).toBe(3);
+    expect(provider.revision).toBe(4);
     await fixture.ask(email);
     const [row] = await fixture.rows(email);
     expect(row).toMatchObject({
       organizationId: firm.id,
       providerId: provider.id,
-      providerRevision: 3,
+      providerRevision: 4,
     });
     const [mail] = fixture.mailsTo(email);
     expect(mail!.subject).toBe("Sign in to Named & Partners");
@@ -477,47 +446,13 @@ describe("what admission answers", () => {
     });
   });
 
-  test("removed names the firm and no person", async () => {
+  test("removed says only that", async () => {
     const firm = await fixture.firm();
     const { email, userId } = await fixture.member(firm);
     await inPlatformUsers(fixture.owner.db, (context) =>
       disableUser(context, userId),
     );
-    const provider = (await liveMagicLinkRow(fixture.owner.db, firm.id))!;
-    expect(await admission(email)).toEqual({
-      outcome: "removed",
-      organizationId: firm.id,
-      firmName: firm.name,
-      providerId: provider.id,
-      providerRevision: provider.revision,
-    });
-  });
-
-  test("a platform row turned on, which a trigger otherwise refuses, still admits nobody", async () => {
-    const domain = `platform-on-${createId()}.example.com`;
-    const organizationId = fixture.platform.organizationId;
-    await fixture.owner.pool.query(
-      `insert into organization_domains (id, organization_id, domain) values ('${createId()}', '${organizationId}', '${domain}')`,
-    );
-    const { email } = await fixture.member({ id: organizationId, domain });
-    await expect(
-      fixture.owner.db.transaction(async (tx) => {
-        await tx.execute(
-          sql`alter table sso_providers disable trigger sso_providers_platform_magic_link`,
-        );
-        await tx
-          .update(ssoProviders)
-          .set({ enabled: true })
-          .where(
-            and(
-              eq(ssoProviders.organizationId, organizationId),
-              eq(ssoProviders.kind, "magic_link"),
-            ),
-          );
-        const outcome = await admitMagicLink(tx, parseMagicLinkAddress(email)!);
-        throw Object.assign(new Error("roll back"), { outcome });
-      }),
-    ).rejects.toMatchObject({ outcome: { outcome: "stranger" } });
+    expect(await admission(email)).toEqual({ outcome: "removed" });
   });
 
   test.each([

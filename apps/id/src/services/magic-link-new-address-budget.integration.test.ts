@@ -70,9 +70,9 @@ function earlier(
   }: { client?: string; age?: string; status?: string; isNew?: boolean } = {},
 ) {
   return fixture.owner.pool.query(
-    `insert into magic_link_requests (id, organization_id, provider_id, provider_revision, purpose, email, client_hash, expires_at, send_status, created_at, new_address)
-     select uuid_v7(), $1, (select id from sso_providers where organization_id = $1 and kind = 'magic_link'), 1, 'access_removed',
-       'filler-' || n || '-' || $6 || '@' || $2, coalesce($3, 'other-client-' || n), now(), $4, now() - $5::interval, $7
+    `insert into magic_link_requests (id, organization_id, provider_id, provider_revision, purpose, email, token_identifier, browser_hash, code_hmac, client_hash, expires_at, send_status, created_at, new_address)
+     select uuid_v7(), $1, (select id from sso_providers where organization_id = $1 and kind = 'magic_link'), 1, 'link',
+       'filler-' || n || '-' || $6 || '@' || $2, 'magic-link:filler-' || gen_random_uuid(), 'other-browser', 'other-code', coalesce($3, 'other-client-' || n), now(), $4, now() - $5::interval, $7
      from generate_series(1, $8::int) n`,
     [
       firm.id,
@@ -200,7 +200,7 @@ describe("a firm's budget", () => {
 });
 
 describe("what they count", () => {
-  test("a new person's row says so, and a member's, a user's and a removed person's do not", async () => {
+  test("a new person's row says so, and a member's and a user's do not", async () => {
     const firm = await openFirm();
     const address = newAddress(firm);
     await fixture.ask(address, { client: aClient() });
@@ -215,19 +215,10 @@ describe("what they count", () => {
     expect(await fixture.rows(user.email)).toMatchObject([
       { newAddress: false },
     ]);
-    const removed = await fixture.member(firm, "removed");
-    await fixture.owner.pool.query(
-      `update members set status = 'revoked', revoked_at = now() where id = $1`,
-      [removed.memberId],
-    );
-    await fixture.ask(removed.email, { client: aClient() });
-    expect(await fixture.rows(removed.email)).toMatchObject([
-      { newAddress: false, purpose: "access_removed" },
-    ]);
     await cleanUp(firm);
   });
 
-  test("a failed send does not count, as a client's or a firm's, and one still sending does", async () => {
+  test("a failed send does not count, as a client's or a firm's, and one that has not failed does", async () => {
     const firm = await openFirm();
     const client = aClient();
     await earlier(firm, 100, { client, status: "failed" });
@@ -235,15 +226,15 @@ describe("what they count", () => {
     expect((await fixture.ask(newAddress(firm), { client })).outcome).toBe(
       "sent",
     );
-    const sending = await openFirm();
-    await earlier(sending, 500, { status: "sending" });
-    expect(
-      await fixture.ask(newAddress(sending), { client: aClient() }),
-    ).toEqual({
-      outcome: "limited",
-      limit: "new_address_organization_day",
-    });
-    await cleanUp(firm, sending);
+    const spent = await openFirm();
+    await earlier(spent, 500);
+    expect(await fixture.ask(newAddress(spent), { client: aClient() })).toEqual(
+      {
+        outcome: "limited",
+        limit: "new_address_organization_day",
+      },
+    );
+    await cleanUp(firm, spent);
   });
 
   test("a real failed send leaves a row that says new and counts for nothing", async () => {
@@ -305,7 +296,7 @@ describe("what they count", () => {
 });
 
 describe("who they hold back", () => {
-  test("at both budgets a member, a user with no membership here and a removed person still get their mail", async () => {
+  test("at both budgets a member and a user with no membership here still get their mail", async () => {
     const firm = await openFirm();
     const client = aClient();
     await earlier(firm, 100, { client });
@@ -318,12 +309,6 @@ describe("who they hold back", () => {
     expect(fixture.mailsTo(member.email)).toHaveLength(1);
     const user = await fixture.person(firm, "still-user");
     expect((await fixture.ask(user.email, { client })).outcome).toBe("sent");
-    const removed = await fixture.member(firm, "still-removed");
-    await fixture.owner.pool.query(
-      `update members set status = 'revoked', revoked_at = now() where id = $1`,
-      [removed.memberId],
-    );
-    expect((await fixture.ask(removed.email, { client })).outcome).toBe("sent");
     await cleanUp(firm);
   });
 
@@ -365,16 +350,6 @@ describe("which limit a request names", () => {
     });
     await cleanUp(firm);
   });
-
-  test("the firm's hourly cap comes before either budget", async () => {
-    const firm = await openFirm();
-    await earlier(firm, 5_000);
-    expect(await fixture.ask(newAddress(firm), { client: aClient() })).toEqual({
-      outcome: "limited",
-      limit: "organization_hour",
-    });
-    await cleanUp(firm);
-  }, 30_000);
 
   test("the client's comes before the firm's", async () => {
     const firm = await openFirm();

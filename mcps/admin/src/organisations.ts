@@ -18,7 +18,7 @@ export function organisationWrites(writes: Writes) {
 
   const create = role("admin", defineMutation({
     name: "organisations.create", risk: "normal", scopes, effects: ["publication"],
-    description: `Prepare creating an organisation in Answerable ID with a unique slug and a name. ${commitWith} It starts with no domain, directory, member or access, and with magic links on for its members: then domains_add, members_import or sso_set, toolbox_enable and access_grant. A directory is one way in, not the only one.`,
+    description: `Prepare creating an organisation in Answerable ID with a unique slug and a name. ${commitWith} It starts with no domain, directory, member or access, and with magic links off: then domains_add, sso_set or magiclink_enable with members_import, toolbox_enable and access_grant. A directory is one way in, not the only one.`,
     input: z.object({
       slug: slug.describe("Unique in Answerable ID: lowercase letters and digits, words joined by single hyphens, such as newco"),
       name: name.describe("The organisation's name, 1 to 200 characters"),
@@ -107,7 +107,7 @@ export function organisationWrites(writes: Writes) {
 
   const domainsAdd = role("admin", defineMutation({
     name: "domains.add", risk: "normal", scopes, errors,
-    description: `Prepare routing an email domain to an organisation in Answerable ID, so that people with that domain are sent to its sign-in: a magic link, its directory, or the choice of both. ${commitWith} A domain belongs to one organisation, and a public mail domain is refused. The result gives the DNS record that proves it, which domains_verify checks; sso_set connects a directory, if it has one.`,
+    description: `Prepare routing an email domain to an organisation in Answerable ID, so that people with that domain are sent to its sign-in: a magic link, its directory, or the choice of both. ${commitWith} A domain belongs to one organisation. The result gives the DNS record that proves it, which domains_verify checks; sso_set connects a directory, if it has one.`,
     input: z.object({ organizationId, domain: domain.describe("The email domain, such as newco.example") }),
     output: z.object({
       domainId: z.uuid(), domain: z.string(), operationId: z.uuid(),
@@ -123,7 +123,7 @@ export function organisationWrites(writes: Writes) {
           summary: `Route email domain ${added} to organisation ${named(row)}`,
           changes: [{ path: `organizations[${id}].domains`, from: held, to: [...held, added].sort() }],
           warnings: [
-            `If another organisation holds ${added}, Answerable ID refuses the write with 409 conflict; if anyone can get an address there, with 409 public_mail_domain.`,
+            `If another organisation holds ${added}, Answerable ID refuses the write with 409 conflict.`,
             "Until its DNS record is proved with domains_verify, it admits nobody new, whatever the organisation's admission says.",
             noPrecondition("adding a domain"),
           ],

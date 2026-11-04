@@ -8,7 +8,7 @@ export type MailboxCodeProps = {
   firmName: string
   /** The eight digits to enter on the page where the person started. */
   code: string
-  /** How long the code works, as the email says it: "10 minutes". */
+  /** How long the code works, as the email says it: "30 minutes". */
   expiry: string
 }
 
@@ -31,8 +31,8 @@ export function MailboxCodeEmail({ firmName, code, expiry }: MailboxCodeProps) {
       </Box>
       <Paragraph>{`The code expires in ${expiry}.`}</Paragraph>
       <Paragraph>
-        Do not give this code to anyone. Nobody at your firm or at this service
-        will ask for it.
+        Never read this code to anyone. Answerable and your IT team will never
+        ask for it.
       </Paragraph>
       <Closing>
         If this was not you, tell your administrator: someone may be using your

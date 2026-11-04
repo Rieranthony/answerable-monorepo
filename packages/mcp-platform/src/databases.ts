@@ -1,5 +1,5 @@
 import { callerOrganisation, type Mount, type Provider } from "@answerable/mcp"
-import { assertServingLogin, mcpDatabase } from "@answerable/mcp-postgres"
+import { assertServingLogin, mcpDatabase, surviveLostConnections } from "@answerable/mcp-postgres"
 import { drizzle } from "drizzle-orm/node-postgres"
 import { Pool } from "pg"
 
@@ -20,12 +20,14 @@ export type Declared = Readonly<{ provider: Provider; serve: Serve } & ({ databa
  * on each pool for the MCPs it serves, to await before listening; and `close()`.
  */
 export function mcpDatabases(declared: readonly Declared[], { shared, own }: { shared: string; own: Readonly<Record<string, string | undefined>> }) {
-  const pool = new Pool({ connectionString: shared })
+  // A lost connection costs a log line and not every MCP this process serves.
+  const pooled = (connectionString: string) => surviveLostConnections(new Pool({ connectionString }), "mcp-platform")
+  const pool = pooled(shared)
   const owned = new Map(declared.flatMap(entry => {
     if (entry.database === "shared") return []
     const url = own[entry.variable]
     if (!url) throw new Error(`Set ${entry.variable} to the database of ${entry.provider.id}, as its runtime login`)
-    return [[entry.provider.id, new Pool({ connectionString: url })] as const]
+    return [[entry.provider.id, pooled(url)] as const]
   }))
   const mount: (Mount & { readonly serve: Serve })[] = declared.map(({ provider, serve }) => {
     if (!provider.database) return { provider, serve }

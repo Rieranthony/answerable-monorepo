@@ -257,26 +257,6 @@ const states: Record<
     outcome: "refused",
     reason: "outside_domains",
   },
-  "public mail": {
-    make: async () => "someone@gmail.com",
-    outcome: "refused",
-    reason: "public_mail",
-  },
-  "public mail at a row the firm holds": {
-    make: async (of) => {
-      await fixture.db
-        .delete(organizationDomains)
-        .where(eq(organizationDomains.domain, "proton.me"));
-      await fixture.db.insert(organizationDomains).values({
-        id: createId(),
-        organizationId: of.id,
-        domain: "proton.me",
-      });
-      return "someone@proton.me";
-    },
-    outcome: "refused",
-    reason: "public_mail",
-  },
   "not an address": {
     make: async () => "not an address",
     outcome: "refused",

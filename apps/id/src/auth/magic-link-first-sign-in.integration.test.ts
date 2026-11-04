@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { decodeJwt } from "jose";
 import { and, eq, inArray } from "drizzle-orm";
 
@@ -23,7 +23,6 @@ import {
   users,
 } from "../db/schema/index.ts";
 import { createId } from "../lib/id.ts";
-import * as publicMail from "../lib/public-mail-domains.ts";
 import {
   deleteOrganizationDomain,
   disableDomain,
@@ -403,16 +402,16 @@ describe("what asking sends", () => {
     expect((await flow.ask(member.email)).mail).toBeDefined();
   });
 
-  test("a removed member gets word that access was removed, in domain mode too, and no link", async () => {
+  test("a removed member gets the usual page and no mail, in domain mode too", async () => {
     const firm = await openFirm();
     const person = await flow.listed(firm);
     await inTenant(fixture.db, firm.id, (context) =>
       memberService.remove(context, person.memberId),
     );
     const request = await flow.ask(person.email);
-    expect(request.mail).toBeDefined();
-    expect(request.token).toBeUndefined();
-    expect(request.mail!.text).not.toContain("/magic-link?token=");
+    expect(await request.response.text()).toContain("Check your email");
+    expect(request.mail).toBeUndefined();
+    expect(await flow.requestsOf(person.email)).toEqual([]);
   });
 });
 
@@ -472,23 +471,6 @@ describe("the re-check at confirm is the authority", () => {
       await expectNothingCreated(email);
       expect(await refusalReasons(row!.id)).toEqual([reason]);
     });
-
-  test("a domain that joined the public list refuses a person it admitted at issue", async () => {
-    const firm = await openFirm();
-    const email = address(firm);
-    const request = await flow.ask(email);
-    const [row] = await flow.requestsOf(email);
-    const listed = spyOn(publicMail, "isPublicMailDomain").mockImplementation(
-      (domain) => domain === firm.domain,
-    );
-    try {
-      await flow.follow(request.token!, request.cookie);
-    } finally {
-      listed.mockRestore();
-    }
-    await expectNothingCreated(email);
-    expect(await refusalReasons(row!.id)).toEqual(["not_admitted"]);
-  });
 
   test("a disabled user is refused, told their access was removed, and gains no membership", async () => {
     const firm = await openFirm();

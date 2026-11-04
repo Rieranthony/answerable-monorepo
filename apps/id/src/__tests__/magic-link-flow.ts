@@ -92,8 +92,8 @@ export function magicLinkFlow(fixture: AdminFixture) {
     return domainId;
   }
 
-  // Every test here comes from one machine, which the per-client budgets would see as one
-  // office at full tilt. A test of those budgets names its own client.
+  // Every test here comes from one machine, which the per-client limits would see as one
+  // office at full tilt. A test of those limits names its own client.
   let posts = 0;
   const nextClient = () =>
     `198.18.${Math.floor(++posts / 20) % 250}.${Math.floor(posts / 5000) + 1}`;
@@ -192,16 +192,25 @@ export function magicLinkFlow(fixture: AdminFixture) {
     };
   }
 
-  /** The mail a connection's request queued, once its row says what became of the send. */
-  async function sendOf(email: string, before: number) {
-    for (let waited = 0; waited < 200; waited++) {
+  /**
+   * The mail a connection's request queued. A request made since `requestsBefore` ends in a mail
+   * or a failed row; with none made, there is nothing to wait for.
+   */
+  async function sendOf(email: string, before: number, requestsBefore: number) {
+    const mail = () =>
+      fixture.mail.transport.sent
+        .slice(before)
+        .find((message) => message.to === email);
+    for (let waited = 0; waited < 200 && !mail(); waited++) {
       const rows = await requestsOf(email);
-      if (rows.at(-1)?.sendStatus !== "sending") break;
+      if (
+        rows.length === requestsBefore ||
+        rows.at(-1)!.sendStatus === "failed"
+      )
+        break;
       await Bun.sleep(10);
     }
-    return fixture.mail.transport.sent
-      .slice(before)
-      .find((message) => message.to === email);
+    return mail();
   }
 
   /**
@@ -224,6 +233,7 @@ export function magicLinkFlow(fixture: AdminFixture) {
     } = {},
   ) {
     const before = fixture.mail.transport.sent.length;
+    const requestsBefore = (await requestsOf(email)).length;
     const started = await post(
       `/login${query ? `?${query}` : ""}`,
       { email, method: "directory" },
@@ -237,7 +247,7 @@ export function magicLinkFlow(fixture: AdminFixture) {
       { sub: subject, email, name: "Person", ...claims },
       { cookie, client },
     );
-    const mail = await sendOf(email, before);
+    const mail = await sendOf(email, before, requestsBefore);
     return { ...answer, mail, code: mail && codeIn(mail)! };
   }
 

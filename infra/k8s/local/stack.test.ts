@@ -612,8 +612,9 @@ describe("people sign in by email over https, in Chromium through Traefik", () =
   let run: Run
 
   test("the browser run: grace by a link, bob by a code, ada by a code and her directory (about two minutes)", () => watched("the sign-ins by email", 330_000, async () => {
-    // Set up as an operator does, with root: a firm with a domain and links, which are on by default, and its people, imported so that each has a user.
+    // Set up as an operator does, with root: a firm with a domain and links, which start off, links for the firm with a directory, and their people, imported so that each has a user.
     const { id: organizationId } = await rootAdmin("POST", "/organizations", { slug: linkFirm.slug, name: linkFirm.name }) as { id: string }
+    for (const firm of [organizationId, tenant.organizationId]) await rootAdmin("POST", `/organizations/${firm}/magic-link/enable`)
     const domain = await rootAdmin("POST", `/organizations/${organizationId}/domains`, { domain: linkFirm.domain }) as { id: string; verificationRecord: { name: string; value: string } }
     Object.assign(linkFirm, { organizationId, domainId: domain.id, record: domain.verificationRecord })
     const imported = (await rootAdmin("POST", `/organizations/${organizationId}/members/import`, { addresses: [linkFirm.bob] })) as { counts: { created: number } }

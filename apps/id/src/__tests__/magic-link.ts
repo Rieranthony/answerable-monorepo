@@ -47,6 +47,20 @@ export async function liveMagicLinkRow(db: Database, organizationId: string) {
   return row;
 }
 
+/** Turn a firm's links on, which start off, as `POST .../magic-link/enable` leaves them. */
+export async function turnLinksOn(db: Database, organizationId: string) {
+  await db
+    .update(ssoProviders)
+    .set({ enabled: true })
+    .where(
+      and(
+        eq(ssoProviders.organizationId, organizationId),
+        eq(ssoProviders.kind, "magic_link"),
+        isNull(ssoProviders.deletedAt),
+      ),
+    );
+}
+
 const cookieOf = (cookies: string[]) =>
   cookies.map((value) => value.split(";", 1)[0]).join("; ");
 
@@ -68,12 +82,13 @@ export function magicLinkFirms(fixture: AdminFixture) {
     };
   }
 
-  /** A firm with a domain, its magic-link row and, unless asked not to, a directory. */
+  /** A firm with a domain, its magic-link row turned on and, unless asked not to, a directory. */
   async function seedOrganization(slug: string, directory = true) {
     const organization = await createOrganization(fixture.db, {
       slug,
       name: slug,
     });
+    await turnLinksOn(fixture.db, organization.id);
     const domain = `${slug}.example.com`;
     await createOrganizationDomain(fixture.db, {
       organizationId: organization.id,

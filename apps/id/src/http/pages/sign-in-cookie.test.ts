@@ -20,7 +20,7 @@ function app(betterAuthUrl: string) {
 
 const held = "a".repeat(43);
 
-test("on https it is a __Host- cookie: Secure, Path=/, HttpOnly, Lax and ten minutes", async () => {
+test("on https it is a __Host- cookie: Secure, Path=/, HttpOnly, Lax and thirty minutes", async () => {
   const response = await app("https://id.example.com").request("/hold", {
     method: "POST",
   });
@@ -28,7 +28,7 @@ test("on https it is a __Host- cookie: Secure, Path=/, HttpOnly, Lax and ten min
   expect(value).toMatch(/^[A-Za-z0-9_-]{43}$/);
   expect(Buffer.from(value, "base64url")).toHaveLength(32);
   expect(response.headers.getSetCookie()).toEqual([
-    `__Host-answerable-sign-in=${value}; Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax`,
+    `__Host-answerable-sign-in=${value}; Max-Age=1800; Path=/; HttpOnly; Secure; SameSite=Lax`,
   ]);
 });
 
@@ -38,11 +38,11 @@ test("on plain http it drops the prefix and Secure, and nothing else", async () 
   });
   const value = await response.text();
   expect(response.headers.getSetCookie()).toEqual([
-    `answerable-sign-in=${value}; Max-Age=600; Path=/; HttpOnly; SameSite=Lax`,
+    `answerable-sign-in=${value}; Max-Age=1800; Path=/; HttpOnly; SameSite=Lax`,
   ]);
 });
 
-test("a well-formed cookie keeps its value and has its ten minutes renewed", async () => {
+test("a well-formed cookie keeps its value and has its thirty minutes renewed", async () => {
   for (const [url, name] of [
     ["https://id.example.com", "__Host-answerable-sign-in"],
     ["http://localhost:47300", "answerable-sign-in"],
@@ -53,7 +53,7 @@ test("a well-formed cookie keeps its value and has its ten minutes renewed", asy
     });
     expect(await response.text()).toBe(held);
     expect(response.headers.getSetCookie()[0]).toContain(
-      `${name}=${held}; Max-Age=600;`,
+      `${name}=${held}; Max-Age=1800;`,
     );
   }
 });

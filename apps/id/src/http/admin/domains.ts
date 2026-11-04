@@ -112,7 +112,7 @@ export const routes = {
     operationId: "createOrganizationDomain",
     summary: "Create an organisation domain",
     description:
-      "Add an email domain to an organisation and return the created domain with the DNS record that proves it, enabling domain-based sign-in discovery. Prefer listOrganizationDomains to inspect existing assignments; validation_failed rejects malformed input, not_found means the organisation is missing, conflict means the domain is already assigned and public_mail_domain means anyone can get an address there.",
+      "Add an email domain to an organisation and return the created domain with the DNS record that proves it, enabling domain-based sign-in discovery. Prefer listOrganizationDomains to inspect existing assignments; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict means the domain is already assigned.",
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",
@@ -154,7 +154,7 @@ export const routes = {
     operationId: "enableOrganizationDomain",
     summary: "Enable an organisation domain",
     description:
-      "Enable an organisation domain and return the updated record. Prefer disableOrganizationDomain for the opposite transition; not_found means the target is missing, public_mail_domain means the domain has joined the public mail list, and an already active assignment returns unchanged state and records a noop.",
+      "Enable an organisation domain and return the updated record. Prefer disableOrganizationDomain for the opposite transition; not_found means the target is missing, and an already active assignment returns unchanged state and records a noop.",
     tag: "Domains",
     platformScope: "platform:write",
     kind: "write",

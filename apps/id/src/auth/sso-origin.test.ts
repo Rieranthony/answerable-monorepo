@@ -1,9 +1,8 @@
 import { expect, test } from "bun:test";
-import type { Database } from "../db/client.ts";
 import { createSsoOriginBoundary } from "./sso-origin.ts";
 
 test("session input cannot manufacture origin without trusted resolution", async () => {
-  const boundary = createSsoOriginBoundary({} as Database);
+  const boundary = createSsoOriginBoundary();
   const session = {
     id: "session",
     userId: "user",

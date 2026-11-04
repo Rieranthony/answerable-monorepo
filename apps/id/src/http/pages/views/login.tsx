@@ -23,11 +23,14 @@ export function SignedIn({
   method,
   query,
   message,
+  applicationLost,
 }: {
   email: string;
   method: "directory" | "magic_link";
   query: string;
   message?: ErrorDescription;
+  /** The application's request ended before the person signed in, so nothing can resume it. */
+  applicationLost?: boolean;
 }) {
   return (
     <section aria-labelledby="signed-in-heading">
@@ -35,6 +38,11 @@ export function SignedIn({
         Signed in
       </h1>
       <p class="mt-2 text-sm/6">Signed in as {email}</p>
+      {applicationLost && (
+        <p class="mt-2 text-sm/6">
+          To carry on, go back to your application and start again from there.
+        </p>
+      )}
       {method === "directory" && (
         <p class="mt-4 text-sm/6">
           <a href="/security" class="underline underline-offset-4">

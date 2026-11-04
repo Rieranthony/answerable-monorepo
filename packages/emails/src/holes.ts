@@ -15,11 +15,6 @@ export type Email =
       expiresInMinutes: number
     }
   | {
-      template: "access-removed"
-      /** The firm the person asked to sign in to. Plain text: the HTML part escapes it. */
-      firmName: string
-    }
-  | {
       template: "mailbox-code"
       /** The firm the person signed in to. Plain text: the HTML part escapes it. */
       firmName: string
@@ -35,7 +30,6 @@ export type TemplateName = Email["template"]
 /** The holes of each template: the `{{name}}` words in its generated subject, HTML and text, each filled with a string. */
 export const holeNames = {
   "magic-link": ["firmName", "url", "code", "expiry"],
-  "access-removed": ["firmName"],
   "mailbox-code": ["firmName", "code", "expiry"],
 } as const satisfies Record<TemplateName, readonly string[]>
 
@@ -45,7 +39,7 @@ export type Holes<T extends TemplateName> = Record<
   string
 >
 
-// The errors name the field and never the value: a link and a code are secrets, and an error ends up in a log.
+// An error names no value: it ends up in a log.
 const fail = (message: string): never => {
   throw new TypeError(message)
 }
@@ -55,49 +49,28 @@ const firmNameOf = (value: string) =>
   value.replace(/[\p{Cc}\s]+/gu, " ").trim() ||
   fail("The firm name must not be empty")
 
-function urlOf(value: string) {
-  let protocol: string | undefined
-  try {
-    protocol = new URL(value).protocol
-  } catch {
-    // Not a URL at all: refused below, without the parser's message, which repeats the input.
-  }
-  return (protocol === "http:" || protocol === "https:") &&
-    !/[\p{Cc}\s]/u.test(value)
-    ? value
-    : fail("The sign-in address must be an http or https URL")
-}
-
-const codeOf = (value: string) =>
-  /^[0-9]{8}$/.test(value) ? value : fail("The code must be exactly 8 digits")
-
-function expiryOf(minutes: number) {
-  if (!Number.isSafeInteger(minutes) || minutes < 1) {
-    fail("expiresInMinutes must be a positive whole number")
-  }
-  return minutes === 1 ? "1 minute" : `${minutes} minutes`
-}
+// The caller makes the expiry itself, as it does the address and the code.
+const expiryOf = (minutes: number) =>
+  minutes === 1 ? "1 minute" : `${minutes} minutes`
 
 /**
- * The values an email's holes take, checked and tidied: a firm name on one line and never empty, an address that is
- * http or https, a code of eight digits, an expiry as words ("10 minutes", "1 minute").
- * @throws `TypeError` for any value that fails, without repeating it.
+ * The values an email's holes take: a firm name on one line and never empty, which comes from a person, and an expiry as
+ * words ("30 minutes", "1 minute").
+ * @throws `TypeError` for a firm name with nothing in it, or a template that does not exist.
  */
 export function holesOf(email: Email): Record<string, string> {
   switch (email.template) {
     case "magic-link":
       return {
         firmName: firmNameOf(email.firmName),
-        url: urlOf(email.url),
-        code: codeOf(email.code),
+        url: email.url,
+        code: email.code,
         expiry: expiryOf(email.expiresInMinutes),
       }
-    case "access-removed":
-      return { firmName: firmNameOf(email.firmName) }
     case "mailbox-code":
       return {
         firmName: firmNameOf(email.firmName),
-        code: codeOf(email.code),
+        code: email.code,
         expiry: expiryOf(email.expiresInMinutes),
       }
     default:

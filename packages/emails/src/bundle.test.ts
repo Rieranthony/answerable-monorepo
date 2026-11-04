@@ -24,8 +24,8 @@ test("the entry bundles, and holds no React, no renderer and no HTML-to-text con
   }
 })
 
-test("it stays small: the three emails' strings, the fill and the transport", () => {
-  // Measured: 28,292 bytes unminified (25,921 minified), nearly all of it the three templates' strings, whose invisible
+test("it stays small: the emails' strings, the fill and the transport", () => {
+  // Measured with three templates: 28,292 bytes unminified (25,921 minified), nearly all of it their strings, whose invisible
   // preheader padding is written as \u escapes. With React, react-dom, Prettier and html-to-text the probe measured 1.36 MB.
   expect(Buffer.byteLength(bundle)).toBeLessThan(40_000)
 })

@@ -1,6 +1,7 @@
-import { afterAll, beforeAll, expect, test } from "bun:test"
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test"
 import { createMcpServer, defineProvider, defineTool, type Mount } from "@answerable/mcp"
 import { createTestMcp } from "@answerable/mcp/testing"
+import { connectionCutter } from "@answerable/mcp-postgres/testing"
 import { z } from "zod"
 import { mcpDatabases, type Declared } from "./databases"
 import { pltfix } from "./test/fixtures/pltfix-provider"
@@ -75,5 +76,38 @@ test("a provider without a database is mounted with no db; an own MCP without it
     await expect(elsewhere.assert()).rejects.toThrow("may not serve MCPs: lacks USAGE on schema pltfix")
   } finally {
     await elsewhere.close()
+  }
+})
+
+test("each pool outlives a connection lost with no word from the server, idle or in a transaction, and serves the next query", async () => {
+  const [sharedCutter, ownCutter] = await Promise.all([connectionCutter(shared.url), connectionCutter(own.url)])
+  const mcps = mcpDatabases([{ provider: pltfix, serve: "toolbox", database: "own", variable: "PLTFIX_DATABASE_URL" }], { shared: sharedCutter.url, own: { PLTFIX_DATABASE_URL: ownCutter.url } })
+  const log = spyOn(console, "error").mockImplementation(() => {})
+  const until = async (holds: () => boolean) => {
+    for (let wait = 0; wait < 500 && !holds(); wait++) await Bun.sleep(10)
+    expect(holds()).toBe(true)
+  }
+  try {
+    for (const [pool, cutter] of [[mcps.pools.mcps!, sharedCutter], [mcps.pools.pltfix!, ownCutter]] as const) {
+      log.mockClear()
+      await pool.query("select 1")
+      expect(pool.idleCount).toBe(1)
+      cutter.cut()
+      await until(() => pool.idleCount === 0)
+      expect((await pool.query("select 1 as served")).rows).toEqual([{ served: 1 }])
+      const held = await pool.connect()
+      await held.query("begin")
+      cutter.cut()
+      await until(() => log.mock.calls.length === 2)
+      await expect(held.query("select 1")).rejects.toThrow()
+      held.release()
+      expect((await pool.query("select 1 as served")).rows).toEqual([{ served: 1 }])
+      expect(log.mock.calls).toEqual(Array(2).fill(["[mcp-platform] database connection lost", { name: "Error" }]))
+    }
+  } finally {
+    log.mockRestore()
+    await mcps.close()
+    sharedCutter.close()
+    ownCutter.close()
   }
 })

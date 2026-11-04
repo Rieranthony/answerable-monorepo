@@ -17,7 +17,6 @@ import { retireUserEmail } from "../__tests__/user-queries.ts";
 import { setDatabaseScope } from "../db/isolation.ts";
 import {
   accounts,
-  magicLinkRequests,
   organizationDomains,
   ssoProviders,
   users,
@@ -208,23 +207,6 @@ const table: Record<string, Row> = {
     domain: "new",
     unproved: "stranger",
   },
-  "a retired user's tombstone address, at a firm that lists that domain": {
-    make: async (firm) => {
-      const { userId } = await memberOf(firm);
-      await inPlatformUsers(fixture.owner.db, (context) =>
-        disableUser(context, userId),
-      );
-      await retireUserEmail(fixture.owner.db, userId);
-      await fixture.owner.pool.query(
-        "delete from organization_domains where domain = 'retired.invalid'",
-      );
-      await fixture.owner.pool.query(
-        `insert into organization_domains (id, organization_id, domain, verified_at) values ('${createId()}', '${firm.id}', 'retired.invalid', now())`,
-      );
-      return `${userId}@retired.invalid`;
-    },
-    all: "stranger",
-  },
   "a membership that has ended": {
     make: async (firm) =>
       (
@@ -328,31 +310,6 @@ describe("who may have a link, in each mode", () => {
         const email = await row.make(firm);
         expect(await outcomeOf(email)).toBe((row.all ?? row[mode])!);
       });
-
-  test("public mail is a stranger in every mode, a listed member with a proved row included", async () => {
-    // A row older than the list, proved, in domain mode, with a member at it.
-    for (const mode of Object.keys(modes) as Mode[]) {
-      const firm = await fixture.firm();
-      const domain = "proton.me";
-      await fixture.owner.db
-        .delete(magicLinkRequests)
-        .where(eq(magicLinkRequests.organizationId, firm.id));
-      await fixture.owner.pool.query(
-        "delete from organization_domains where domain = 'proton.me'",
-      );
-      await fixture.owner.pool.query(
-        `insert into organization_domains (id, organization_id, domain, verified_at) values ('${createId()}', '${firm.id}', '${domain}', now())`,
-      );
-      await setMode(firm, mode);
-      const member = await fixture.owner.pool.query(
-        "delete from users where email = 'person@proton.me'",
-      );
-      expect(member.rowCount).toBeLessThanOrEqual(1);
-      const { email } = await fixture.member({ id: firm.id, domain });
-      expect(await outcomeOf(email), mode).toBe("stranger");
-      expect(await outcomeOf(`new@${domain}`), mode).toBe("stranger");
-    }
-  });
 
   test("the platform organisation admits nobody, in domain mode on a proved domain included", async () => {
     const domain = `platform-${createId()}.example.com`;

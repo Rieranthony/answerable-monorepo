@@ -7,7 +7,7 @@ import {
   stubDatabase,
   testEnvironment,
 } from "./__tests__/support.ts";
-import { createApp } from "./app.ts";
+import { createApp } from "./__tests__/app.ts";
 import { isAllowedAuthRoute } from "./http/auth-allowlist.ts";
 import { buildPublicOpenApiDocument } from "./http/openapi.ts";
 import { ProblemError } from "./http/problem.ts";

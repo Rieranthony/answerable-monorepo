@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { renderEmail } from "./render"
-import { link, removed } from "./fixtures"
+import { link, mailbox } from "./fixtures"
 import { createMemoryTransport } from "./testing"
 
 const message = (to: string) => ({ to, ...renderEmail(link) })
@@ -9,7 +9,7 @@ test("keeps every message it was sent, in order, and answers with an id for each
   const transport = createMemoryTransport()
   expect(transport.sent).toEqual([])
   const first = message("a@example.com")
-  const second = { to: "b@example.com", ...renderEmail(removed) }
+  const second = { to: "b@example.com", ...renderEmail(mailbox) }
   expect(await transport.send(first)).toEqual({
     status: "sent",
     messageId: "memory-1",

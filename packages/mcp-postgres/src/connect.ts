@@ -9,10 +9,25 @@ export type Executor = NodePgDatabase | Parameters<Parameters<NodePgDatabase["tr
 export type ConnectOptions = Omit<PoolConfig, "connectionString" | "ssl">
 
 /**
+ * Keep a lost connection from ending the process. `pg` reports one as an `error` event, on the pool for an idle client as well as on the client itself,
+ * and an event with no listener throws. The next query takes a new connection. `label` names the package in the log line, which carries the error's class
+ * and code and never its message, which can hold credentials.
+ */
+export function surviveLostConnections(pool: Pool, label = "mcp-postgres"): Pool {
+  // The client's own listener has logged it: every client the pool makes emits `connect` before it can be idle.
+  pool.on("error", () => {})
+  pool.on("connect", client => client.on("error", (error: Error & { code?: string }) => {
+    console.error(`[${label}] database connection lost`, { name: error.name, ...(error.code ? { code: error.code } : {}) })
+  }))
+  return pool
+}
+
+/**
  * A drizzle database over a `pg` pool on a Postgres URL, read the way libpq reads it: `sslmode` and `sslrootcert` in the URL make the pool verify the
  * server against that certificate authority, so a deployment's URL ends in `?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem`. A URL naming
  * `sslrootcert` must ask for `sslmode=verify-full` or `verify-ca`, so that the file is never there for show (pg 8 verifies fully under either, and
- * warns once that `verify-ca` will mean less in pg 9). The pool is lazy: nothing connects until the first query. `options` are the pool's, such as `max`.
+ * warns once that `verify-ca` will mean less in pg 9). The pool is lazy: nothing connects until the first query, and a lost connection costs a log line and
+ * not the process. `options` are the pool's, such as `max`.
  */
 export function connect(url: string, options: ConnectOptions = {}): Database {
   const parsed = new URL(url)
@@ -20,5 +35,5 @@ export function connect(url: string, options: ConnectOptions = {}): Database {
     const mode = parsed.searchParams.get("sslmode")
     if (mode !== "verify-full" && mode !== "verify-ca") throw new Error(`sslrootcert needs sslmode=verify-full or sslmode=verify-ca, not ${mode ? `sslmode=${mode}` : "no sslmode"}`)
   }
-  return drizzle({ client: new Pool({ ...options, connectionString: url }) })
+  return drizzle({ client: surviveLostConnections(new Pool({ ...options, connectionString: url })) })
 }

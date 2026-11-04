@@ -201,7 +201,10 @@ test("a magic-link request goes seven days after it was made, whatever its expir
     organizationId,
     providerId,
     providerRevision: 1,
-    purpose: "access_removed" as const,
+    purpose: "link" as const,
+    tokenIdentifier: `magic-link:${createId()}`,
+    browserHash: "browser",
+    codeHmac: "code",
     email: "person@sweep.example.com",
     clientHash: "client",
     // Expired long since, which is no reason to remove it: diagnosis reads it.

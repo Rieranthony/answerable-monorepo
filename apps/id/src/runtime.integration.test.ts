@@ -2,6 +2,7 @@ import { createMemoryTransport } from "@answerable/emails/testing";
 import { expect, mock, test } from "bun:test";
 import { eq } from "drizzle-orm";
 
+import { turnLinksOn } from "./__tests__/magic-link.ts";
 import { browser, client } from "./__tests__/magic-link-requests.ts";
 import { createRuntimeLogin } from "./__tests__/runtime-role.ts";
 import { testEnvironment } from "./__tests__/support.ts";
@@ -102,6 +103,7 @@ test("shutdown finishes queued mail, row and all, before the database closes", a
     slug: `drain-${organizationId}`,
     name: "Drain",
   });
+  await turnLinksOn(owner.db, organizationId);
   await owner.db.insert(organizationDomains).values({
     id: createId(),
     organizationId,
@@ -180,6 +182,7 @@ test("the running server's POST /login reaches the real queue and the mail goes 
     slug: `served-${organizationId}`,
     name: "Served",
   });
+  await turnLinksOn(owner.db, organizationId);
   await owner.db.insert(organizationDomains).values({
     id: createId(),
     organizationId,

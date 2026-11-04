@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
 import { createOrganizationDomain } from "../__tests__/domain-queries.ts";
+import { turnLinksOn } from "../__tests__/magic-link.ts";
 import { createOrganization } from "../__tests__/organization-queries.ts";
 import { createSsoProvider } from "../__tests__/sso-queries.ts";
 import { testEnvironment } from "../__tests__/support.ts";
@@ -43,6 +44,7 @@ const email = "person@example.com";
 async function seed(provider = true, account = provider) {
   const db = connection.db;
   const org = await createOrganization(db, { slug: "alpha", name: "Alpha" });
+  await turnLinksOn(db, org.id);
   await createOrganizationDomain(db, {
     organizationId: org.id,
     domain: "example.com",
@@ -130,7 +132,10 @@ test("a suppressed address blocks only where a link is the way in, and is shown"
       organizationId: org.id,
       providerId: row!.id,
       providerRevision: 1,
-      purpose: "access_removed",
+      purpose: "link",
+      tokenIdentifier: `magic-link:${id}`,
+      browserHash: "browser",
+      codeHmac: "code",
       email,
       clientHash: "client",
       expiresAt: new Date(Date.now() + 60_000),
@@ -152,7 +157,7 @@ test("a suppressed address blocks only where a link is the way in, and is shown"
     directoryConnection: null,
     lastRequest: {
       id,
-      purpose: "access_removed",
+      purpose: "link",
       sendStatus: "failed",
       postmarkErrorCode: 406,
       postmarkHttpStatus: 422,
@@ -270,7 +275,7 @@ test("diagnosis reports revoked admission rather than a successful sign-in", asy
     .where(eq(members.id, memberId));
   const result = await diagnoseSignIn(db, org.id, email);
   expect(result.verdict.code).toBe("membership_revoked");
-  // Admission tells a removed person so by mail; that is not being admitted.
+  // An old link tells a removed person so; that is not being admitted.
   expect(result.magicLink.admitted).toBe(false);
 });
 test("whether a directory's sign-in meets a held address depends on its token, so it is left to the token", () => {
@@ -295,27 +300,6 @@ test("where a link is the only way in, a person admission would refuse is told a
     issuer,
   });
   verdict(await diagnoseSignIn(db, org.id, email), "magic_link_not_admitted");
-});
-test("a domain the public mail list holds admits nobody, whatever row is left behind", async () => {
-  const { db, org } = await seed(false);
-  await createOrganizationDomain(db, {
-    organizationId: org.id,
-    domain: "gmail.com",
-  });
-  const userId = createId();
-  await db.insert(users).values({
-    id: userId,
-    name: "Public",
-    email: "person@gmail.com",
-    status: "active",
-  });
-  await db
-    .insert(members)
-    .values({ id: createId(), userId, organizationId: org.id });
-  const result = await diagnoseSignIn(db, org.id, "person@gmail.com");
-  expect(result.routing.matchesThisOrganization).toBe(true);
-  expect(result.magicLink.admitted).toBe(false);
-  verdict(result, "magic_link_not_admitted");
 });
 test("with links off, or a directory beside them, admission blocks nothing, and is still shown", async () => {
   const { db, org } = await seed(false);
@@ -406,7 +390,10 @@ test("a code an address may be holding for a directory is shown, and only a live
     organizationId: org.id,
     providerId: row!.id,
     providerRevision: 1,
-    purpose: "access_removed",
+    purpose: "link",
+    tokenIdentifier: `magic-link:${createId()}`,
+    browserHash: "browser",
+    codeHmac: "code",
     email,
     clientHash: "client",
     expiresAt: new Date(Date.now() + 60_000),

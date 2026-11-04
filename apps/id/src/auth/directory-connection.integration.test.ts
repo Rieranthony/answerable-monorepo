@@ -13,7 +13,9 @@ import {
 } from "../__tests__/platform-context.ts";
 import { createSsoProvider } from "../__tests__/sso-queries.ts";
 import { inTenant } from "../__tests__/tenant-command.ts";
-import { createApp } from "../app.ts";
+import { createApp } from "../__tests__/app.ts";
+import { turnLinksOn } from "../__tests__/magic-link.ts";
+import { noMagicLinks } from "../__tests__/support.ts";
 import { maxPendingQueryLength } from "../http/pages/login-routing.ts";
 import {
   accounts,
@@ -32,7 +34,6 @@ import {
   deleteOrganizationDomain,
   disableDomain,
 } from "../services/domains.ts";
-import { magicLinkCodeBudgets } from "../services/magic-link-codes.ts";
 import {
   createMagicLinkRequests,
   magicLinkLimits,
@@ -135,7 +136,7 @@ const askLink = (email: string, options: Parameters<typeof flow.ask>[1] = {}) =>
   flow.ask(email, { ...options, method: "link" });
 
 describe("the first proof: the directory has verified someone whose address is held", () => {
-  test("no session and no account; the identity is stored against the browser, for ten minutes, with nothing else of the sign-in", async () => {
+  test("no session and no account; the identity is stored against the browser, for thirty minutes, with nothing else of the sign-in", async () => {
     const of = await firm();
     const person = await waiting(of);
     const { response, cookie, mail, code, email, userId, sub } = person;
@@ -174,12 +175,12 @@ describe("the first proof: the directory has verified someone whose address is h
       })
       .from(magicLinkRequests)
       .where(eq(magicLinkRequests.id, row.id))) as [{ lifetime: number }];
-    expect(Math.abs(lifetime - 600)).toBeLessThan(5);
+    expect(Math.abs(lifetime - 1_800)).toBeLessThan(5);
 
     expect(mail!.subject).toContain("code");
-    expect(mail!.text).toContain("Do not give this code to anyone.");
+    expect(mail!.text).toContain("Never read this code to anyone.");
     expect(mail!.text).toContain(
-      "Nobody at your firm or at this service will ask for it.",
+      "Answerable and your IT team will never ask for it.",
     );
     expect(mail!.text).not.toContain("http");
     expect(mail!.text).toContain(of.slug);
@@ -206,7 +207,7 @@ describe("the first proof: the directory has verified someone whose address is h
     expect(set).toContain("HttpOnly");
     expect(set).toContain("SameSite=Lax");
     expect(set).toContain("Path=/");
-    expect(set).toContain("Max-Age=600");
+    expect(set).toContain("Max-Age=1800");
     // Its state cookie's clearing comes through with it.
     expect(
       response.headers.getSetCookie().filter((line) => /max-age=0/i.test(line)),
@@ -598,12 +599,12 @@ describe("the first proof: the directory has verified someone whose address is h
       expect(account!.accountId).toBe(person.sub);
     });
 
-    test("a browser with no service to mail through, and a failure asking, leave the refusal as it was", async () => {
+    test("a mailbox that cannot help, and a failure asking it, leave the refusal as it was", async () => {
       const of = await firm();
       const person = await flow.listed(of);
       const answers: Response[] = [];
       for (const magicLinks of [
-        undefined,
+        noMagicLinks,
         {
           request: () => false,
           connectDirectory: () => Promise.reject(new Error("unavailable")),
@@ -653,7 +654,7 @@ describe("the first proof: the directory has verified someone whose address is h
           console.error = error;
         }
         expect(logged.join().includes("magic_link_job_failed")).toBe(
-          magicLinks !== undefined,
+          magicLinks !== noMagicLinks,
         );
         // The refusal's own line: an operator sees it as any other.
         expect(logged.join()).toContain("signin_rejected");
@@ -737,7 +738,10 @@ describe("the first proof: the directory has verified someone whose address is h
           organizationId: stranger.id,
           providerId: stranger.magicLink.id,
           providerRevision: stranger.magicLink.revision,
-          purpose: "access_removed" as const,
+          purpose: "link" as const,
+          tokenIdentifier: `magic-link:${createId()}`,
+          browserHash: "another-browser",
+          codeHmac: "another-code",
           email: `made-up-${createId()}@${stranger.domain}`,
           clientHash,
           newAddress: true,
@@ -926,11 +930,11 @@ describe("the second proof: the right code in the same browser", () => {
       authenticationProviderRevision: of.row!.revision,
       upstreamAuthTime: null,
     });
-    // The attempt a right code counted is taken back, for the budgets, and the row is over.
+    // It was one try, and the row is over.
     const [ended] = await flow
       .requestsOf(person.email)
       .then((rows) => rows.filter((item) => item.id === row.id));
-    expect(ended!.attempts).toBe(0);
+    expect(ended!.attempts).toBe(1);
     expect(ended!.expiresAt.getTime()).toBeLessThanOrEqual(Date.now());
 
     // The ordinary path makes the session: this firm's directory row, one user, both ways live.
@@ -1053,6 +1057,7 @@ describe("the second proof: the right code in the same browser", () => {
 
   test("the same person's directory session has the authority their magic-link session does not", async () => {
     const { organizationId } = fixture.tenant;
+    await turnLinksOn(fixture.db, organizationId);
     const person = await flow.listed({
       id: organizationId,
       domain: "tenant.example.com",
@@ -1201,7 +1206,7 @@ describe("the second proof: the right code in the same browser", () => {
         (await flow.enterConnectionCode(person.code!, person.cookie)).status,
       ).toBe(303);
       expect(await flow.accountsOf(person.userId)).toHaveLength(1);
-      expect((await connectionOf(person.email)).attempts).toBe(1);
+      expect((await connectionOf(person.email)).attempts).toBe(2);
     });
 
     test("three wrong codes end it: one audit row, and the right code then does nothing", async () => {
@@ -1224,80 +1229,6 @@ describe("the second proof: the right code in the same browser", () => {
       );
     });
 
-    test("a spent budget blocks the right code too, and wrong codes on either page count towards it", async () => {
-      const of = await firm();
-      const client = "198.18.203.1";
-      const person = await flow.listed(of);
-      const signIn = await flow.signInByDirectory(person.email, subject(), {
-        client,
-      });
-      // Earlier wrong guesses by this client at a link's code: the budget adds up both.
-      const linker = await flow.listed(of);
-      const link = await askLink(linker.email, {
-        headers: { "cf-connecting-ip": client },
-      });
-      const [linkRow] = await flow.requestsOf(linker.email);
-      await fixture.db
-        .update(magicLinkRequests)
-        .set({ attempts: magicLinkCodeBudgets.clientPerHour })
-        .where(eq(magicLinkRequests.id, linkRow!.id));
-      expect(link.mail).toBeDefined();
-      const logged: string[] = [];
-      const { error } = console;
-      console.error = (...args: unknown[]) => void logged.push(args.join(" "));
-      let answer: Response;
-      try {
-        answer = await flow.enterConnectionCode(signIn.code!, signIn.cookie, {
-          "cf-connecting-ip": client,
-        });
-      } finally {
-        console.error = error;
-      }
-      expect(answer.status).toBe(200);
-      expect(await answer.text()).toContain("That code didn&#39;t work");
-      expect(await flow.accountsOf(person.userId)).toEqual([]);
-      expect(logged.join()).toContain("magic_link_code_budget_exhausted");
-      // And the other way: wrong codes here are what a link's code page then sees.
-      const [row] = await flow.requestsOf(person.email);
-      await fixture.db
-        .update(magicLinkRequests)
-        .set({ attempts: 0 })
-        .where(eq(magicLinkRequests.id, linkRow!.id));
-      await fixture.db
-        .update(magicLinkRequests)
-        .set({ attempts: magicLinkCodeBudgets.clientPerHour })
-        .where(eq(magicLinkRequests.id, row!.id));
-      const blocked = await flow.enter(link.code!, link.cookie, {
-        "cf-connecting-ip": client,
-      });
-      expect(blocked.status).toBe(200);
-      expect(await flow.sessionsOf(linker.userId)).toEqual([]);
-    });
-
-    test("a firm's spent budget blocks it as well", async () => {
-      const of = await firm();
-      const person = await waiting(of);
-      const [row] = await flow.requestsOf(person.email);
-      const stranger = await flow.listed(of);
-      const asked = await askLink(stranger.email);
-      await fixture.db
-        .update(magicLinkRequests)
-        .set({ attempts: magicLinkCodeBudgets.organizationPerHour })
-        .where(eq(magicLinkRequests.email, stranger.email));
-      expect(asked.mail).toBeDefined();
-      const { error } = console;
-      console.error = () => {};
-      try {
-        expect(
-          (await flow.enterConnectionCode(person.code!, person.cookie)).status,
-        ).toBe(200);
-      } finally {
-        console.error = error;
-      }
-      expect(await flow.accountsOf(person.userId)).toEqual([]);
-      expect(row!.attempts).toBe(0);
-    });
-
     test("another browser's cookie finds nothing, counts nothing and connects nothing", async () => {
       const of = await firm();
       const person = await waiting(of);
@@ -1314,7 +1245,7 @@ describe("the second proof: the right code in the same browser", () => {
       expect((await connectionOf(person.email)).attempts).toBe(0);
     });
 
-    test("not a code costs nothing, a cross-site post is refused, and over the budget it answers alike", async () => {
+    test("not a code costs nothing, and a cross-site post is refused", async () => {
       const of = await firm();
       const person = await waiting(of);
       for (const code of ["1234567", "123456789", "abcdefgh", ""])
@@ -1334,20 +1265,10 @@ describe("the second proof: the right code in the same browser", () => {
         expect(refused.status).toBe(403);
       }
       expect((await connectionOf(person.email)).attempts).toBe(0);
-      const client = { "cf-connecting-ip": "198.18.203.2" };
-      for (let post = 0; post < 60; post++)
-        await flow.enterConnectionCode("abc", person.cookie, client);
-      const over = await flow.enterConnectionCode(
-        person.code!,
-        person.cookie,
-        client,
-      );
-      expect(over.status).toBe(200);
-      expect(await over.text()).toContain("That code didn&#39;t work");
       expect(await flow.accountsOf(person.userId)).toEqual([]);
     });
 
-    test("past ten minutes the page shows nothing and the code does nothing", async () => {
+    test("past thirty minutes the page shows nothing and the code does nothing", async () => {
       const of = await firm();
       const person = await waiting(of);
       await fixture.db
@@ -1378,22 +1299,6 @@ describe("the second proof: the right code in the same browser", () => {
       expect(await (await flow.openConnection(other.cookie)).text()).toContain(
         "No code is waiting",
       );
-    });
-
-    test("a row that has not been sent cannot be answered, though the page shows it", async () => {
-      const of = await firm();
-      const person = await waiting(of);
-      await fixture.db
-        .update(magicLinkRequests)
-        .set({ sendStatus: "sending" })
-        .where(eq(magicLinkRequests.email, person.email));
-      expect(await (await flow.openConnection(person.cookie)).text()).toContain(
-        person.email,
-      );
-      expect(
-        (await flow.enterConnectionCode(person.code!, person.cookie)).status,
-      ).toBe(200);
-      expect(await flow.accountsOf(person.userId)).toEqual([]);
     });
 
     test("a used code is a refused code: no second account, no second event", async () => {
@@ -1492,7 +1397,7 @@ describe("the second proof: the right code in the same browser", () => {
     });
   });
 
-  describe("what can change in the ten minutes refuses, ends the row and writes one audit row", () => {
+  describe("what can change in the thirty minutes refuses, ends the row and writes one audit row", () => {
     const changes: Record<
       string,
       {
@@ -2180,9 +2085,9 @@ describe("the row's shape", () => {
       await violates({ ...row, ...change, id: createId() });
   });
 
-  test("no other purpose may hold an identity", async () => {
+  test("a link may hold no identity", async () => {
     const { base, identity, secrets } = await shapes();
-    for (const [name, value] of Object.entries(identity)) {
+    for (const [name, value] of Object.entries(identity))
       await violates({
         ...base,
         ...secrets,
@@ -2191,13 +2096,6 @@ describe("the row's shape", () => {
         tokenIdentifier: `magic-link:${createId()}`,
         [name]: value,
       });
-      await violates({
-        ...base,
-        id: createId(),
-        purpose: "access_removed",
-        [name]: value,
-      });
-    }
   });
 
   test("a purpose outside the vocabulary is refused", async () => {

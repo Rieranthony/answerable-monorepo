@@ -7,7 +7,6 @@ import { found, ProblemError } from "../http/problem.ts";
 import { assertRevision } from "../http/admin/revision.ts";
 import { activeOrganizationDomains } from "../db/queries/organization-domains.ts";
 import type { MagicLinkAdmissionMode } from "../db/schema/vocabulary.ts";
-import { isPublicMailDomain } from "../lib/public-mail-domains.ts";
 
 const notFound = "Organisation not found";
 
@@ -180,9 +179,9 @@ export function disableMagicLink(context: PlatformWriteContext, id: string) {
 }
 
 /**
- * Opening a firm to anyone at its domains needs every active domain proved and none of them
- * public, and at least one. Admission still checks each address's own domain, so a domain
- * added afterwards admits nobody new until it is proved.
+ * Opening a firm to anyone at its domains needs every active domain proved, and at least one.
+ * Admission still checks each address's own domain, so a domain added afterwards admits nobody
+ * new until it is proved. Nobody can publish that record at a public mail domain.
  */
 async function refuseUnprovedDomains(
   context: PlatformWriteContext,
@@ -192,10 +191,7 @@ async function refuseUnprovedDomains(
   const unverified = domains
     .filter(({ verifiedAt }) => verifiedAt === null)
     .map(({ domain }) => domain);
-  const publicMail = domains
-    .filter(({ domain }) => isPublicMailDomain(domain))
-    .map(({ domain }) => domain);
-  if (!domains.length || unverified.length || publicMail.length)
+  if (!domains.length || unverified.length)
     throw new ProblemError(
       409,
       "domain_not_verified",
@@ -203,7 +199,7 @@ async function refuseUnprovedDomains(
       domains.length
         ? "Verify each domain named here, or remove it, then ask again."
         : "The organisation has no active domain. Add one and verify it, then ask again.",
-      { details: { unverified, publicMail } },
+      { details: { unverified } },
     );
 }
 

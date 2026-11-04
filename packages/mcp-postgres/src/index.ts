@@ -1,4 +1,4 @@
-export { connect, type ConnectOptions, type Database, type Executor } from "./connect"
+export { connect, surviveLostConnections, type ConnectOptions, type Database, type Executor } from "./connect"
 export { declaredMcps, type DeclaredMcp } from "./declared"
 export { createEvidence, type EvidenceEvent } from "./evidence"
 export { createPostgresIntentStore } from "./intents"

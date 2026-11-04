@@ -1,6 +1,6 @@
 {
-  "id": "70395302-1d04-43e3-97ea-a216a96c7e4b",
-  "prevId": "f35f5898-3fe4-43ca-a17d-201c68a4bf84",
+  "id": "baade5bb-efc0-4b29-95ec-174c85104ccf",
+  "prevId": "1d4510bf-6134-4396-99bc-b7a4aa3e8aa5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3059,6 +3059,19 @@
           "notNull": true,
           "default": "'active'"
         },
+        "verification_token": {
+          "name": "verification_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "replace(gen_random_uuid()::text, '-', '')"
+        },
+        "verified_at": {
+          "name": "verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3216,6 +3229,20 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'oidc'"
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "admission": {
+          "name": "admission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'listed'"
         },
         "issuer": {
           "name": "issuer",
@@ -3375,9 +3402,331 @@
           "name": "sso_providers_kind_config_check",
           "value": "(\"sso_providers\".\"kind\" = 'oidc' and (\"sso_providers\".\"deleted_at\" is not null or \"sso_providers\".\"oidc_config\" is not null)) or (\"sso_providers\".\"kind\" = 'magic_link' and \"sso_providers\".\"oidc_config\" is null)"
         },
+        "sso_providers_enabled_check": {
+          "name": "sso_providers_enabled_check",
+          "value": "\"sso_providers\".\"kind\" = 'magic_link' or \"sso_providers\".\"enabled\""
+        },
+        "sso_providers_admission_check": {
+          "name": "sso_providers_admission_check",
+          "value": "\"sso_providers\".\"admission\" in ('listed', 'domain')"
+        },
+        "sso_providers_admission_kind_check": {
+          "name": "sso_providers_admission_kind_check",
+          "value": "\"sso_providers\".\"kind\" = 'magic_link' or \"sso_providers\".\"admission\" = 'listed'"
+        },
         "sso_providers_domain_normalized_check": {
           "name": "sso_providers_domain_normalized_check",
           "value": "\"sso_providers\".\"domain\" ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.magic_link_requests": {
+      "name": "magic_link_requests",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_revision": {
+          "name": "provider_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purpose": {
+          "name": "purpose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_identifier": {
+          "name": "token_identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "browser_hash": {
+          "name": "browser_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "client_hash": {
+          "name": "client_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code_hmac": {
+          "name": "code_hmac",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "new_address": {
+          "name": "new_address",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "pending_oauth_query": {
+          "name": "pending_oauth_query",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "directory_issuer": {
+          "name": "directory_issuer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "directory_subject": {
+          "name": "directory_subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "directory_user_id": {
+          "name": "directory_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "send_status": {
+          "name": "send_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'sent'"
+        },
+        "postmark_error_code": {
+          "name": "postmark_error_code",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "postmark_http_status": {
+          "name": "postmark_http_status",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "magic_link_requests_email_created_at_idx": {
+          "name": "magic_link_requests_email_created_at_idx",
+          "columns": [
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "magic_link_requests_new_address_organization_idx": {
+          "name": "magic_link_requests_new_address_organization_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"magic_link_requests\".\"new_address\" and \"magic_link_requests\".\"send_status\" <> 'failed'",
+          "concurrently": false
+        },
+        "magic_link_requests_new_address_client_idx": {
+          "name": "magic_link_requests_new_address_client_idx",
+          "columns": [
+            {
+              "expression": "client_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"magic_link_requests\".\"new_address\" and \"magic_link_requests\".\"send_status\" <> 'failed'",
+          "concurrently": false
+        },
+        "magic_link_requests_browser_hash_idx": {
+          "name": "magic_link_requests_browser_hash_idx",
+          "columns": [
+            {
+              "expression": "browser_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "magic_link_requests_created_at_idx": {
+          "name": "magic_link_requests_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "magic_link_requests_organization_id_organizations_id_fk": {
+          "name": "magic_link_requests_organization_id_organizations_id_fk",
+          "tableFrom": "magic_link_requests",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "tableTo": "organizations",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "magic_link_requests_token_identifier_unique": {
+          "name": "magic_link_requests_token_identifier_unique",
+          "columns": [
+            "token_identifier"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {
+        "protocol_write": {
+          "name": "protocol_write",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "current_setting('answerable.scope', true) = 'protocol'",
+          "withCheck": "current_setting('answerable.scope', true) = 'protocol'"
+        },
+        "protocol_read": {
+          "name": "protocol_read",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "public"
+          ],
+          "using": "current_setting('answerable.scope', true) in ('platform-read', 'platform-write')\n      or (current_setting('answerable.scope', true) in ('tenant-read', 'tenant-write') and \"magic_link_requests\".\"organization_id\" = nullif(current_setting('answerable.tenant', true), '')::uuid)"
+        }
+      },
+      "checkConstraints": {
+        "magic_link_requests_email_normalized_check": {
+          "name": "magic_link_requests_email_normalized_check",
+          "value": "\"magic_link_requests\".\"email\" = lower(btrim(\"magic_link_requests\".\"email\"))"
+        },
+        "magic_link_requests_provider_revision_check": {
+          "name": "magic_link_requests_provider_revision_check",
+          "value": "\"magic_link_requests\".\"provider_revision\" > 0"
+        },
+        "magic_link_requests_attempts_check": {
+          "name": "magic_link_requests_attempts_check",
+          "value": "\"magic_link_requests\".\"attempts\" >= 0"
+        },
+        "magic_link_requests_purpose_check": {
+          "name": "magic_link_requests_purpose_check",
+          "value": "\"magic_link_requests\".\"purpose\" in ('link', 'connect_directory')"
+        },
+        "magic_link_requests_send_status_check": {
+          "name": "magic_link_requests_send_status_check",
+          "value": "\"magic_link_requests\".\"send_status\" in ('sent', 'failed')"
+        },
+        "magic_link_requests_purpose_fields_check": {
+          "name": "magic_link_requests_purpose_fields_check",
+          "value": "(\"magic_link_requests\".\"purpose\" = 'link' and \"magic_link_requests\".\"token_identifier\" is not null and \"magic_link_requests\".\"browser_hash\" is not null and \"magic_link_requests\".\"code_hmac\" is not null and \"magic_link_requests\".\"directory_issuer\" is null and \"magic_link_requests\".\"directory_subject\" is null and \"magic_link_requests\".\"directory_user_id\" is null) or (\"magic_link_requests\".\"purpose\" = 'connect_directory' and \"magic_link_requests\".\"token_identifier\" is null and \"magic_link_requests\".\"browser_hash\" is not null and \"magic_link_requests\".\"code_hmac\" is not null and \"magic_link_requests\".\"directory_issuer\" is not null and \"magic_link_requests\".\"directory_subject\" is not null and \"magic_link_requests\".\"directory_user_id\" is not null and not \"magic_link_requests\".\"new_address\")"
+        },
+        "magic_link_requests_send_error_check": {
+          "name": "magic_link_requests_send_error_check",
+          "value": "\"magic_link_requests\".\"send_status\" = 'failed' or (\"magic_link_requests\".\"postmark_error_code\" is null and \"magic_link_requests\".\"postmark_http_status\" is null)"
         }
       },
       "isRLSEnabled": true

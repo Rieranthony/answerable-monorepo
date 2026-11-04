@@ -38,9 +38,8 @@ export type AppServices = {
   db: Database;
   environment: Environment;
   metrics?: OperationalMetrics;
-  /** Where `POST /login` hands a request for a link; the runtime always supplies it. A test
-   * that does not ask for mail gets the same page and sends none. */
-  magicLinks?: Pick<MagicLinkRequests, "request" | "connectDirectory">;
+  /** Where `POST /login` hands a request for a link, and a directory's refusal asks a mailbox. */
+  magicLinks: Pick<MagicLinkRequests, "request" | "connectDirectory">;
   /** How a domain's proof is looked up: the system's resolver unless a test brings its own. */
   txtResolver?: TxtResolver;
 };

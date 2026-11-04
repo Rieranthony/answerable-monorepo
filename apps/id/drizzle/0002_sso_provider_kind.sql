@@ -1,5 +1,0 @@
-DROP INDEX "sso_providers_organization_id_unique";--> statement-breakpoint
-ALTER TABLE "sso_providers" ADD COLUMN "kind" text DEFAULT 'oidc' NOT NULL;--> statement-breakpoint
-CREATE UNIQUE INDEX "sso_providers_organization_kind_unique" ON "sso_providers" USING btree ("organization_id","kind") WHERE "sso_providers"."deleted_at" is null;--> statement-breakpoint
-ALTER TABLE "sso_providers" ADD CONSTRAINT "sso_providers_kind_check" CHECK ("sso_providers"."kind" in ('oidc', 'magic_link'));--> statement-breakpoint
-ALTER TABLE "sso_providers" ADD CONSTRAINT "sso_providers_kind_config_check" CHECK (("sso_providers"."kind" = 'oidc' and ("sso_providers"."deleted_at" is not null or "sso_providers"."oidc_config" is not null)) or ("sso_providers"."kind" = 'magic_link' and "sso_providers"."oidc_config" is null));

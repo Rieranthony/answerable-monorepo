@@ -1,3 +1,5 @@
+import { magicLinkTtlMinutes } from "../../auth/magic-link.ts";
+
 export interface ErrorDescription {
   title: string;
   body: string;
@@ -109,13 +111,17 @@ export const ERRORS: Record<string, ErrorDescription> = {
     title: "Too many sign-in attempts",
     body: "Wait a few seconds, then try again.",
   },
+  magic_link_queue_full: {
+    title: "We can't send email just now",
+    body: "Try again in a minute.",
+  },
   magic_link_elsewhere: {
     title: "This link can't sign you in here",
     body: "Enter the code from the email on the page where you started signing in, or ask for a new link.",
   },
   magic_link_code_refused: {
     title: "That code didn't work",
-    body: "Check the code in your email and try again. A code lasts ten minutes and three tries, then you need a new link.",
+    body: `Check the code in your email and try again. A code lasts ${magicLinkTtlMinutes} minutes and three tries, then you need a new link.`,
   },
   magic_link_access_removed: {
     title: "Your access was removed",
@@ -123,7 +129,7 @@ export const ERRORS: Record<string, ErrorDescription> = {
   },
   connect_directory_code_refused: {
     title: "That code didn't work",
-    body: "Check the code in your email and try again. A code lasts ten minutes and three tries, then you need to sign in with your company account again.",
+    body: `Check the code in your email and try again. A code lasts ${magicLinkTtlMinutes} minutes and three tries, then you need to sign in with your company account again.`,
   },
   connect_directory_unavailable: {
     title: "Start again",

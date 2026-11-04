@@ -6,7 +6,7 @@ import {
   type AdminFixture,
 } from "../../__tests__/admin.ts";
 import { answerOf, magicLinkFlow } from "../../__tests__/magic-link-flow.ts";
-import { createApp } from "../../app.ts";
+import { createApp } from "../../__tests__/app.ts";
 import { magicLinkIdentifier } from "../../auth/magic-link.ts";
 import {
   magicLinkRequests,
@@ -149,10 +149,11 @@ describe("POST /login routes by the domain's firm", () => {
     expect(await flow.requestsOf(limited.email)).toHaveLength(1);
   });
 
-  test("a queue that drops the request answers the same page", async () => {
+  test("a full queue says so, whatever the address, and gives the browser nothing to wait on", async () => {
     const organization = await firm();
     const { email } = await flow.listed(organization);
-    const dropped = createApp({
+    const stranger = `queue-stranger@${organization.domain}`;
+    const full = createApp({
       auth: fixture.auth,
       db: fixture.db,
       environment: fixture.environment,
@@ -161,20 +162,50 @@ describe("POST /login routes by the domain's firm", () => {
         connectDirectory: fixture.mail.requests.connectDirectory,
       },
     });
-    const form = () => ({
+    const form = (address: string) => ({
       method: "POST",
       headers: {
         ...fixedId,
         origin: fixture.environment.betterAuthUrl,
         "content-type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({ email }),
+      body: new URLSearchParams({ email: address }),
     });
-    const answered = await dropped.request("/login", form());
-    const sent = await fixture.app.request("/login", form());
-    await fixture.mail.settled();
-    expect(answered.status).toBe(sent.status);
-    expect(await answered.text()).toBe(await sent.text());
+    const [listed, unknown] = [
+      await full.request("/login", form(email)),
+      await full.request("/login", form(stranger)),
+    ];
+    expect(listed.status).toBe(503);
+    expect(listed.headers.get("retry-after")).toBe("60");
+    expect(listed.headers.getSetCookie()).toEqual([]);
+    const [first, second] = [
+      await answerOf(listed, email),
+      await answerOf(unknown, stranger),
+    ];
+    expect(first).toEqual(second);
+    expect(first.body).toContain("We can&#39;t send email just now");
+    expect(first.body).toContain("Try again in a minute.");
+    expect(first.body).not.toContain("Check your email");
+    expect(await flow.requestsOf(email)).toEqual([]);
+  });
+
+  test("the page says what to do when nothing arrives", async () => {
+    const organization = await firm();
+    const { email } = await flow.listed(organization);
+    const { response } = await flow.ask(email);
+    const text = await response.text();
+    expect(text).toContain("check your junk or quarantine folder");
+    expect(text).toContain("You can ask again after a minute");
+    expect(text).toContain("ask your IT team to allow email from");
+    expect(text).toContain("sign-in@id.example.com");
+  });
+
+  test("a request the queue takes for an address nobody can have costs nothing, and the page is the usual one", async () => {
+    const organization = await firm();
+    const unparsed = `"queued"@${organization.domain}`;
+    const { response } = await flow.ask(unparsed);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("Check your email");
   });
 
   test("a reload keeps the browser's value and renews it, so the first link still works", async () => {
@@ -182,13 +213,13 @@ describe("POST /login routes by the domain's firm", () => {
     const { email } = await flow.listed(organization);
     const first = await flow.ask(email);
     const value = first.cookie.split("=")[1]!;
-    expect(first.setCookies[0]).toContain("Max-Age=600");
+    expect(first.setCookies[0]).toContain("Max-Age=1800");
     const second = await flow.ask(email, {
       cookie: first.cookie,
       headers: { "cf-connecting-ip": "198.51.100.40" },
     });
     expect(second.setCookies[0]).toContain(`=${value};`);
-    expect(second.setCookies[0]).toContain("Max-Age=600");
+    expect(second.setCookies[0]).toContain("Max-Age=1800");
     const page = await flow.open(first.token!, first.cookie);
     expect(await page.text()).toContain(`Continue as ${email}`);
   });
@@ -206,7 +237,7 @@ describe("POST /login routes by the domain's firm", () => {
 });
 
 describe("the client's budget", () => {
-  test("the sixty-first in ten seconds is a 429 page and queues nothing", async () => {
+  test("three hundred in ten seconds pass, and the next is a 429 page that queues nothing", async () => {
     const organization = await firm();
     const { email } = await flow.listed(organization);
     const client = { "cf-connecting-ip": "198.51.100.61" };
@@ -224,7 +255,7 @@ describe("the client's budget", () => {
         connectDirectory: fixture.mail.requests.connectDirectory,
       },
     });
-    for (let index = 0; index < 61; index++)
+    for (let index = 0; index < 301; index++)
       last = await counted.request("/login", {
         method: "POST",
         headers: {
@@ -234,7 +265,7 @@ describe("the client's budget", () => {
         },
         body: new URLSearchParams({ email }),
       });
-    expect(queued).toBe(60);
+    expect(queued).toBe(300);
     expect(last!.status).toBe(429);
     expect(last!.headers.get("retry-after")).toBe("10");
     expect(last!.headers.getSetCookie()).toEqual([]);
@@ -261,7 +292,7 @@ describe("the client's budget", () => {
       environment: fixture.environment,
     });
     let status = 0;
-    for (let index = 0; index < 61; index++)
+    for (let index = 0; index < 301; index++)
       status = (
         await counted.request("/login", {
           method: "POST",
@@ -291,44 +322,9 @@ describe("the client's budget", () => {
         },
         body: new URLSearchParams({ email: "not-an-address" }),
       });
-    for (let index = 0; index < 70; index++)
+    for (let index = 0; index < 310; index++)
       expect((await send("https://evil.example")).status).toBe(403);
     expect((await send(fixture.environment.betterAuthUrl)).status).toBe(200);
-  });
-
-  test("over its budget the link and code routes answer as they answer a refusal", async () => {
-    const organization = await firm();
-    const { email } = await flow.listed(organization);
-    const { cookie, token, code } = await flow.ask(email);
-    const client = { "cf-connecting-ip": "198.51.100.64" };
-    const counted = createApp({
-      auth: fixture.auth,
-      db: fixture.db,
-      environment: fixture.environment,
-    });
-    const send = (path: string, fields: Record<string, string>) =>
-      counted.request(path, {
-        method: "POST",
-        headers: {
-          ...client,
-          cookie,
-          origin: fixture.environment.betterAuthUrl,
-          "content-type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams(fields),
-      });
-    for (let index = 0; index < 60; index++)
-      await send("/magic-link", { token: "unknown" });
-    const link = await send("/magic-link", { token: token! });
-    expect(link.status).toBe(200);
-    expect(await link.text()).toContain("This link can&#39;t sign you in here");
-    const answered = await send("/magic-link/code", { code: code! });
-    expect(answered.status).toBe(200);
-    expect(await answered.text()).toContain("That code didn&#39;t work");
-    // Neither reached the request.
-    const [row] = await flow.requestsOf(email);
-    expect(row!.attempts).toBe(0);
-    expect(await flow.tokenRows(row!.tokenIdentifier!)).toHaveLength(1);
   });
 });
 
