@@ -48,6 +48,7 @@ async function run(command: string[], stderr: "ignore" | "inherit" = "inherit") 
  * `platform` gives the platform organisation (Answerable staff) a domain and such a directory too, so a staff member can sign in: `signIns` times, or, given a list,
  * one sign-in per person listed, in order, each `<person>@answerable.example.test`, so that a second member, such as `colleague`, can sign in between two of `staff`'s.
  * `spares` start directories that are trusted at boot but belong to no organisation, for organisations a journey creates later: `setSsoProvider` points one at a spare.
+ * `postmark` is a Postmark the caller serves, the `url` and `token` of a `startFakePostmark`: with it ID sends its sign-in mail there, as a deployed ID sends it to Postmark, and the caller reads what arrived. Without it ID sends nothing.
  * Everything else is provisioned through `admin`.
  * `stop()` ends ID, brings PostgreSQL down with its volume, removes the temporary directory and closes everything else the kit opened. It is safe to call twice, and it runs on Ctrl-C and SIGTERM.
  * A start that throws has already stopped.
@@ -56,11 +57,13 @@ export async function startId({
   tenants,
   platform,
   spares,
+  postmark,
   timeoutMs = 90_000,
 }: {
   tenants: readonly { slug: string; signIns: number }[]
   platform?: { signIns: number | readonly string[] }
   spares?: readonly { slug: string; signIns: number }[]
+  postmark?: { url: string; token: string }
   timeoutMs?: number
 }) {
   const directory = await mkdtemp(join(tmpdir(), "answerable-mcp-acceptance-"))
@@ -77,7 +80,7 @@ export async function startId({
     await run([...compose, "up", "-d", "--wait"])
     const plan = join(directory, "plan.json")
     const manifestPath = join(directory, "manifest.json")
-    await Bun.write(plan, JSON.stringify({ tenants, platform, spares }))
+    await Bun.write(plan, JSON.stringify({ tenants, platform, spares, postmark }))
     fixture = Bun.spawn([process.execPath, "scripts/mcp-e2e-fixture.ts", plan, manifestPath, "--isolated-mcp-fixture"], { cwd, stdout: "inherit", stderr: "inherit" })
     const deadline = Date.now() + timeoutMs
     while (!(await Bun.file(manifestPath).exists())) {

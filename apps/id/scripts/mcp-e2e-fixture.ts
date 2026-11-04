@@ -9,6 +9,8 @@ import { createAuth } from "../src/auth.ts";
 import { bootstrap, systemActor } from "../src/bootstrap.ts";
 import { createDatabase } from "../src/db/client.ts";
 import { runMigrations } from "../src/db/migrate.ts";
+import { createMailTransport } from "../src/services/mail-transport.ts";
+import { createMagicLinkRequests } from "../src/services/magic-link-requests.ts";
 import {
   startOidcIssuer,
   type OidcClaims,
@@ -50,6 +52,9 @@ const plan = z
     // organisation yet, for the organisations a journey creates later: ID
     // accepts an identity provider's endpoints only if they were listed at boot.
     spares: z.array(directory).default([]),
+    // A Postmark that the test process serves (the kit's startFakePostmark): with it, ID sends
+    // its sign-in mail there, as startRuntime wires it; without it, nothing is sent, as before.
+    postmark: z.object({ url: z.url(), token: z.string().min(1) }).optional(),
   })
   .parse(await Bun.file(planPath).json());
 
@@ -80,6 +85,8 @@ const environment = testEnvironment({
   trustedOrigins: [callback, ...upstreams.map((upstream) => upstream.origin)],
   databasePoolMax: 4,
   rootAdminSecret: rootSecret,
+  postmarkServerToken: plan.postmark?.token,
+  postmarkApiUrl: plan.postmark?.url,
 });
 
 const setup = createDatabase(environment);
@@ -97,7 +104,16 @@ const auth = createAuth(runtime.db, environment);
 const authContext = await auth.$context;
 authContext.skipOriginCheck = false;
 authContext.skipCSRFCheck = false;
-const app = createApp({ auth, db: runtime.db, environment });
+// As startRuntime does: the transport the environment names, and the service the sign-in pages hand requests to.
+const magicLinks = plan.postmark
+  ? createMagicLinkRequests({
+      auth,
+      db: runtime.db,
+      environment,
+      transport: createMailTransport(environment),
+    })
+  : undefined;
+const app = createApp({ auth, db: runtime.db, environment, magicLinks });
 Bun.serve({ hostname: "127.0.0.1", port: 47_600, fetch: app.fetch });
 
 type Upstream = Awaited<ReturnType<typeof startOidcIssuer>>;

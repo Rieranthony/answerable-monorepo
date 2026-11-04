@@ -27,7 +27,7 @@ Claude prepares each change, shows you its summary and commits it only once you 
 | --- | --- | --- |
 | None | None | `admin_whoami` only |
 | `team` | `answerable-team` | `admin_whoami` and every read tool |
-| `admin` | `answerable-admin` | The same, the sixteen ordinary writes and the two commit tools |
+| `admin` | `answerable-admin` | The same, the ordinary writes and the two commit tools |
 | `owner` | `answerable-owner` | Everything: also the [critical operations](#critical-operations), any write to the platform organisation, and any write to a member of Answerable staff |
 
 **Where a role lives.** In Answerable ID, as an entitlement on the admin MCP's resource, with no client, whose scopes include the role's grant string. Hold it through a group of the platform organisation: put a member in the group and they have the role. The group's name confers nothing; the entitlement does.
@@ -46,7 +46,7 @@ Claude prepares each change, shows you its summary and commits it only once you 
 | --- | --- | --- |
 | `admin_whoami` | You, your role and the tools you may call | [getMemberAccess](/docs/id/admin-api/access/getMemberAccess) |
 | `organisations_list` | Organisations, by text in the name or slug and by status | [listOrganizations](/docs/id/admin-api/organizations/listOrganizations) |
-| `organisations_get` | One organisation, every domain routed to it and its SSO provider, or `sso: null` | [getOrganization](/docs/id/admin-api/organizations/getOrganization), [listOrganizationDomains](/docs/id/admin-api/domains/listOrganizationDomains), [getSsoProvider](/docs/id/admin-api/sso-provider/getSsoProvider) |
+| `organisations_get` | One organisation, its magic-link setting and its SSO provider side by side (`sso: null` when it has none), and every domain routed to it with when its DNS record was seen and the record that proves it | [getOrganization](/docs/id/admin-api/organizations/getOrganization), [listOrganizationDomains](/docs/id/admin-api/domains/listOrganizationDomains), [getSsoProvider](/docs/id/admin-api/sso-provider/getSsoProvider) |
 | `members_list` | An organisation's members, by email, text and whether the membership is in force | [listMembers](/docs/id/admin-api/members/listMembers) |
 | `members_get` | One member, their groups and what their entitlements reach | [getMember](/docs/id/admin-api/members/getMember), [getMemberAccess](/docs/id/admin-api/access/getMemberAccess) |
 | `groups_list` | An organisation's groups, by text and status | [listGroups](/docs/id/admin-api/groups/listGroups) |
@@ -89,8 +89,12 @@ Each write is a prepare tool: it changes nothing and returns an intent, which `a
 | --- | --- | --- | --- |
 | `organisations_create` | A new organisation: `slug`, `name`. Refused when the slug is taken | `admin` | [createOrganization](/docs/id/admin-api/organizations/createOrganization) |
 | `organisations_update` | A new `name` | `admin` | [updateOrganization](/docs/id/admin-api/organizations/updateOrganization) |
-| `domains_add` | An email `domain` routed to the organisation | `admin` | [createOrganizationDomain](/docs/id/admin-api/domains/createOrganizationDomain) |
-| `sso_set` | The SSO provider, `issuer` and `domain`, through Answerable's Microsoft or Google application | `admin` | [putSsoProvider](/docs/id/admin-api/sso-provider/putSsoProvider) |
+| `domains_add` | An email `domain` routed to the organisation. A public mail provider is refused | `admin` | [createOrganizationDomain](/docs/id/admin-api/domains/createOrganizationDomain) |
+| `domains_verify` | A domain's DNS TXT record looked for, so that it is proved: [magic links](#magic-links) | `admin` | [verifyOrganizationDomain](/docs/id/admin-api/domains/verifyOrganizationDomain) |
+| `magiclink_enable`, `magiclink_disable` | [Sign-in by email link](/docs/id/magic-links) on or off for the organisation, with or without a directory | `admin` | [enableMagicLink](/docs/id/admin-api/organizations/enableMagicLink), [disableMagicLink](/docs/id/admin-api/organizations/disableMagicLink) |
+| `magiclink_admission` | Who may ask for a link: `listed` (its effective members) or `domain` (also anyone at a proved domain) | `admin`; `domain` needs `owner` | [setMagicLinkAdmission](/docs/id/admin-api/organizations/setMagicLinkAdmission) |
+| `members_import` | Up to 1,000 `addresses` listed as members before their first sign-in; each has its own answer | `admin` | [importMembers](/docs/id/admin-api/members/importMembers), after [previewMemberImport](/docs/id/admin-api/members/previewMemberImport) |
+| `sso_set` | The SSO provider, `issuer` and `domain`, through Answerable's Microsoft or Google application. Its preview says that directory sessions and grants end and magic-link ones do not, that people connected to a replaced issuer answer `email_conflict` where a link still signs them in, and that the magic-link setting stays as it is | `admin` | [putSsoProvider](/docs/id/admin-api/sso-provider/putSsoProvider) |
 | `groups_create` | A group: `slug`, `name` | `admin` | [createGroup](/docs/id/admin-api/groups/createGroup) |
 | `groups_addmember` | `memberId` in `groupId`, until `validUntil` if given, or a new end for a membership | `admin` | [putGroupMember](/docs/id/admin-api/groups/putGroupMember) |
 | `groups_dropmember` | `memberId` out of `groupId` | `admin` | [removeGroupMember](/docs/id/admin-api/groups/removeGroupMember) |
@@ -121,6 +125,19 @@ A `standalone` or `both` MCP is its own resource, `https://mcp.<zone>/<name>/mcp
 2. `access_grant` of the MCP's scopes, such as `acme:read`, on its resource, with `clientId` set to the host client, `claude-code-<name>`, to the organisation, a group or a person. ID puts a scope in a person's token only through the client the entitlement names, so `access_grant` refuses a standalone MCP's resource without `clientId`. Or pass `everyone: true` to step 1, which grants every scope to the whole organisation through the host client in the same intent.
 
 `access_revoke` undoes it: the sign-in entitlement, which `access_list` shows with the host client and no resource, and, after `everyone: true`, the entitlement with the host client on the MCP's resource.
+
+### Magic links
+
+```text
+Turn magic links off for newco, because it requires its directory only.
+```
+
+`magiclink_enable`, `magiclink_disable`, `magiclink_admission`, `members_import` and `domains_verify` manage [sign-in by email link](/docs/id/magic-links) for an organisation. They work whether or not it has a directory, and each needs a [recent company sign-in](#critical-operations), because Answerable ID checks that on a person's own session and not on a machine client's. A target in the platform organisation needs `owner`, and the platform organisation can never turn links on.
+
+- **Each preview says what it will not reach.** `magiclink_disable` ends the organisation's link sessions and grants and no directory ones, says a service token already issued lives to its expiry, and says that `magiclink_enable` revives none of it. On an organisation with no directory it says nobody can then sign in. `magiclink_enable` says who may then ask and, with a directory, that a link does not pass through its MFA or conditional access.
+- **`magiclink_admission` to `domain` is an owner's.** It needs every active domain proved and none public mail, and warns of organisation-wide entitlements a new person would have at once. To `listed` it ends nothing.
+- **`members_import` previews with ID's own counts**, names the refused addresses and the reason, and sends no mail.
+- **`domains_verify` names the record to publish** and fails, naming it, when ID does not find it. On a proved domain, a record that is gone clears the proof.
 
 ### Stopping someone
 
@@ -308,8 +325,8 @@ Read from the root `.env` by `bun run admin:dev`. An empty variable counts as un
 | ID unavailable | Nothing is served: lists fail, calls answer `UPSTREAM_UNAVAILABLE` |
 | Lists | At most 100 items a page |
 | Secrets | No tool takes one. `sso_set` sets Answerable's own Microsoft or Google application only: `https://login.microsoftonline.com/<tenant id>/v2.0` or `https://accounts.google.com`. A directory with its own credentials is set with cURL, as [Connect the directory](/docs/id/onboard#connect-the-directory) shows |
-| SSO provider changes | ID revokes every grant of the organisation when its provider changes, including when it is first set |
-| Writes without a precondition at ID | Creating an organisation, a domain, a group or an entitlement; disabling or enabling an organisation or an entitlement; removing a group member; disabling, enabling or retiring a user; removing or reinstating a member. The admin MCP reads the target again just before the write |
+| SSO provider changes | ID revokes the organisation's directory grants when its provider changes, including when it is first set, and a directory session then needs a new sign-in before it can authorise anything. Its magic-link sessions and grants stay |
+| Writes without a precondition at ID | Creating an organisation, a domain, a group or an entitlement; disabling or enabling an organisation or an entitlement; turning magic links on or off, setting who may ask, importing members and verifying a domain; removing a group member; disabling, enabling or retiring a user; removing or reinstating a member. The admin MCP reads the target again just before the write |
 | Stopping someone | Answerable ID's sessions, grants and tokens only: a service token already issued lives to its expiry, and each app's own session is the app's to end. A retired address cannot be given back |
 | Entitlements | ID keeps one per principal and target, whatever its scopes or status: `access_grant` refuses a second, naming the one there. A disabled one comes back with `access_enable`; its scopes change only with [updateEntitlement](/docs/id/admin-api/entitlements/updateEntitlement) |
 | `toolbox_enable` | Not atomic: if the Toolbox fails part-way, what it made stays. Safe to repeat: prepare and commit the same request again, and it makes only what is missing |
@@ -355,6 +372,13 @@ Every tool error is the envelope [MCP errors](/docs/mcp/errors) describes, with 
 | Tool result `UPSTREAM_UNAVAILABLE`: `Answerable ID failed the write twice, did not answer it, or is still applying it…` | ID failed or did not answer a write, sent twice with the same key, or answered `409 operation_in_progress`; whether it applied it is unknown | Read the target back with a read tool before preparing again |
 | Tool result `UPSTREAM_UNAVAILABLE`: `The Toolbox…` | The Toolbox did not answer, or failed | Retry; `toolbox_enable` is safe to repeat |
 | Tool result `UPSTREAM_REJECTED` | ID or the Toolbox refused the machine client or a write; the message is theirs, and `details.upstream` holds the status and code, such as `409 conflict` for a domain another organisation holds or `platform_application_missing` for a directory without Answerable's application | Fix what the message names, such as `ADMIN_ID_CLIENT_ID`, `ADMIN_ID_CLIENT_SECRET` or the client's capabilities |
+| `PRECONDITION_FAILED`: `Magic links are already on` or `off for organisation <name>`, or `Organisation <name> already admits <mode>` | The write would change nothing | Nothing is needed |
+| `PRECONDITION_FAILED`: `The platform organisation can never use magic links…` | `magiclink_enable` or `magiclink_admission` `domain` aimed at the platform organisation | Staff sign in through its directory |
+| `PRECONDITION_FAILED`: `Every active domain must be proved first: <domain>`, or `Organisation <name> has no active domain` | `magiclink_admission` `domain` with an unproved domain, or none | `domains_add`, publish the record, `domains_verify`, then prepare again |
+| `PRECONDITION_FAILED`: `Answerable ID did not find the TXT record at <name> with the value <value>…` | `domains_verify` committed before the record reached DNS; on a proved domain the proof is also cleared | Publish the record, wait, prepare again |
+| `PRECONDITION_FAILED`: `Importing these addresses would change nothing…` | Every address is already a member or refused; the message counts them | Fix the refused addresses, or nothing is needed |
+| `PERMISSION_DENIED`: `Opening an organisation to anyone at its domains is an owner's…` | An admin prepared `magiclink_admission` `domain` | Ask an owner |
+| Tool result `UPSTREAM_REJECTED` with `details.upstream.code` `public_mail_domain` | `domains_add` named a public mail provider | Use the organisation's own domain |
 | Tool result `NOT_FOUND`: `Answerable ID has no user with the address <address>…` or `Organisation <id> has no member with the address <address>…` | The exact address finds nobody, or its holder's address was retired | Check the address with `members_list`; name a retired person by `userId` |
 | `PRECONDITION_FAILED`: `<address> is already disabled`, `is already enabled`, `is already retired`, `is not disabled…`, `was already removed from…`, `is not removed from…`, or `<address>'s address was retired, which is permanent…` | The stop would change nothing, or ID would refuse it: `users_retireemail` needs `users_disable` committed first, and a retired person cannot be enabled | Nothing is needed; or `users_disable` first |
 | Tool result `UPSTREAM_REJECTED`: `Answerable ID refused the client credentials of admin-mcp (400); check … the client's platform:read and platform:users capability…` | The machine client has no capability for `platform:users` on ID's admin API: it was registered before the scope existed, and register has not run since | Run the deploy's register Job, or add the scope by hand as [Register the admin MCP](/docs/admin/setup#register-the-admin-mcp) shows |

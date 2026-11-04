@@ -13,7 +13,7 @@ What you do not get for free is a decision about who may use your MCP. Shipping 
 
 ## What Answerable ID checks on every call
 
-1. **The person signs in** with their organisation's directory, at Answerable ID. Your MCP never sees a password.
+1. **The person signs in** with their organisation's directory, or with a link mailed to their work email, at Answerable ID. Your MCP never sees a password.
 2. **The AI app gets a token for your MCP's own URL.** The token says who the person is, which organisation they chose, which AI app they use and which scopes they hold. A token for another MCP is refused with `401`.
 3. **Your server checks the token on every call,** against Answerable ID's published keys: its issuer, its audience (your MCP's URL), its type, its expiry, and its person and organisation. It does not call Answerable ID for this.
 4. **It lists only what the person may use.** A tool they may not use is absent from the list, and calling it answers as if it did not exist.
@@ -68,6 +68,8 @@ Your tool receives `person` and `organisation` in its context, and nothing to as
 | --- | --- |
 | `person.id`, `person.membershipId`, `organisation.id` | The token, checked on every call |
 | `person.name`, `person.email`, `person.groups`, `organisation.name`, `organisation.slug` | Answerable ID's admin API, read for you before your code runs and kept for 60 seconds. The Toolbox has a machine client of its own for this, for its hub and every MCP it serves alone |
+
+**How the person signed in.** `principal.authenticationMethod` is `directory` for a sign-in at the organisation's company directory, and `magic_link` for a link or code mailed to their work email. `null` is a token from before ID said so: never read it as a directory sign-in. A `magic_link` sign-in shows only that the person could read that mailbox, and it passes through none of the directory's MFA or conditional access. Your tool decides what that is enough for: allow reads and refuse a sensitive change with `PERMISSION_DENIED`, say, until the person signs in through a directory. The kit does not decide it for you. [What a sign-in by email is worth](/docs/id/magic-links#what-a-sign-in-by-email-is-worth) has the lifetimes and the limits.
 
 If Answerable ID cannot be read, the call answers `UPSTREAM_UNAVAILABLE` and your code does not run. A person whose membership is no longer in force is refused with `PERMISSION_DENIED`. [The caller](/docs/mcp/tools#the-caller) has the fields and an example, and [Add a tool](/docs/mcp/add-a-tool#what-every-tool-receives) the whole context.
 

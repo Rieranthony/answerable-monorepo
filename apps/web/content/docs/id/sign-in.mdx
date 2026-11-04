@@ -5,6 +5,8 @@ description: "How sign-in works today: your organisation's identity provider, ch
 
 ## The flow
 
+**Two ways in.** This page is the directory flow. A firm may also sign its people in by an [email link](/docs/id/magic-links). A firm with a directory alone goes straight to it. A firm with both asks which, on a page that redirects nothing. A firm with links alone asks for the address and mails a link and a code. [Sign in by email link](/docs/id/magic-links) covers that side, and what each is worth.
+
 1. The app sends you to `https://id.answerable.org/login?organization=<slug>` or `https://id.answerable.org/login?login_hint=<email>`.
 2. The page calls `POST /auth/sign-in/sso` with `organizationSlug` or `email`, plus `callbackURL` and `errorCallbackURL`.
 3. Answerable ID returns a `url`. Your browser follows it to Microsoft or Google.
@@ -56,6 +58,17 @@ Sign out ends the current session and updates the cookie jar.
 | Email domain          | Enabled for the organisation                              |
 | Answerable ID account | Active                                                    |
 
+A sign-in by [email link](/docs/id/magic-links) checks different things, at the request and again when it is confirmed:
+
+| Check | Requirement |
+| --- | --- |
+| Switch | The organisation has links on. The platform organisation never does |
+| Who | An effective member, or in `domain` mode anyone at a proved domain |
+| Domain | Active, routed to the organisation, and not a public mail provider |
+| Account | An active user, not removed, with no account from another organisation's directory |
+| Browser | The one that asked: the link and the code are bound to its cookie |
+| Time and tries | Not expired, and not out of code tries |
+
 The SSO configuration must stay unchanged from the start of sign-in until the callback completes. Changing the provider row's credentials or changing and then restoring its configuration requires a new sign-in attempt. Rotating a platform secret in the environment leaves rows, revisions and grants unchanged. Replacing a platform client ID interrupts in-flight sign-ins with `invalid_state` and `error_description=sso_provider_changed_during_authentication`, from the SSO plugin's application check; no row revision changes, so `SSO_PROVIDER_CHANGED` does not apply. Saving unchanged configuration does not interrupt sign-in.
 
 ## When sign-in is refused
@@ -90,8 +103,11 @@ Redirect codes arrive on the error page as `?error=<code>`. The page also shows 
 | `domain_not_allowed`               | The email domain is not enabled for Answerable ID.                                                                      | Ask your IT team or use another work email.                                                                      |
 | `hosted_domain_mismatch`           | The account is managed by a different organisation.                                                                     | Use your company account.                                                                                        |
 | `user_disabled`                    | The Answerable ID account is disabled.                                                                                  | Ask your IT team for help.                                                                                       |
-| `identity_conflict`                | The company identity is already connected or reserved, including an imported identity.                                  | Use its existing sign-in or ask your IT team. Linking never transfers an account.                                |
-| `email_conflict`                   | The email address belongs to another Answerable ID account, including a disabled one. Signing in never takes it over.   | Ask your IT team for help. Answerable staff can free the address by [disabling the previous account](/docs/id/admin-api/users/disableUser) and then [retiring its email](/docs/id/admin-api/users/retireUserEmail); sign in again afterwards. |
+| `identity_conflict`                | The company identity is already connected or reserved, including an imported identity. An account of a directory the organisation replaced is also one. | Use its existing sign-in or ask your IT team. Linking never transfers an account. Where links are on, a link still signs the person in. |
+| `email_conflict`                   | The email address belongs to another Answerable ID account, including a disabled one, or to an account of a directory the organisation replaced. Signing in never takes it over. | Ask your IT team for help. Answerable staff can free the address by [disabling the previous account](/docs/id/admin-api/users/disableUser) and then [retiring its email](/docs/id/admin-api/users/retireUserEmail); sign in again afterwards. Where links are on, a link still signs a member in. |
+| `sign_in_rate_limited`             | Too many sign-in attempts from one client.                                                                              | Wait a few seconds, then try again.                                                                              |
+
+**When the address is a member's own.** If the address belongs to an effective member of the organisation who has no directory account yet, listed by staff or signed in by link, the directory sign-in is not refused with `email_conflict`. ID mails an 8-digit code to that mailbox and asks for it at `/connect-directory` in the same browser. The right code connects the directory to the same user, and the person signs in through the directory again. See [a person with both ways](/docs/id/magic-links#a-person-with-both-ways).
 
 **Unexpected sign-in failure.** HTTP 500 with `code: "authentication_unavailable"` means the authentication handler encountered an unexpected failure. It returns no underlying exception details. Start sign-in again; if it continues to fail, contact Answerable staff. This is an HTTP JSON response, not a redirect error code.
 
@@ -101,9 +117,11 @@ Sessions use cookies. Browser calls from another origin need `credentials: "incl
 
 **Organisation authority.** Administration requires authentication through that organisation's current SSO configuration, an active account and membership, and the required permissions. Selecting another organisation or holding its membership does not authenticate you there. Answerable staff use platform SSO and explicit platform permissions to manage other organisations. See [browser administration](/docs/id/manage#get-a-token).
 
-**Provider changes.** A session can remain open after SSO configuration changes, but its earlier authentication cannot authorise new tenant grants or administration. Sign in again through the current provider. An unchanged configuration save preserves authority. Deleted accounts, users, organisations and memberships cannot regain authority through sign-in.
+**Provider changes.** A directory session can remain open after SSO configuration changes, but its earlier authentication cannot authorise new tenant grants or administration. Sign in again through the current provider. An unchanged configuration save preserves authority. Deleted accounts, users, organisations and memberships cannot regain authority through sign-in.
 
 **Authentication time.** When the provider supplies a valid signed `auth_time`, Answerable ID stores it separately from session creation. An absent claim stays unknown. [Sensitive human commands](/docs/id/manage#fresh-authentication) and identity linking require verified upstream authentication within five minutes. Ordinary browsing keeps the normal session lifetime.
+
+**Sign-in by link.** Its session lasts 24 hours from creation and is never extended, and its grants last 7 days. It carries no `upstream_auth_time`, has no administrator authority, and offers neither **Verify sign-in** nor **Connect another work account**: both need a directory sign-in. Changing, replacing or removing the organisation's directory revokes directory grants only, so a firm's link sessions stand. Turning links off ends link sessions and grants only. A token says which it was in `authentication_method`: [what a sign-in by email is worth](/docs/id/magic-links#what-a-sign-in-by-email-is-worth).
 
 Signing out ends the session.
 
@@ -135,6 +153,8 @@ curl -b cookies.txt -c cookies.txt \
   --data '{"providerId":"other-company","callbackURL":"https://id.answerable.org/security","errorCallbackURL":"https://id.answerable.org/security"}'
 ```
 
+**Directory sessions only.** A session made by an email link is refused here, and Account security shows it neither action: a person who signed in by link and meets a directory proves their mailbox with a code instead ([a person with both ways](/docs/id/magic-links#a-person-with-both-ways)).
+
 **Two proofs.** Verify your current sign-in first. Then use **Connect another work account** on [Account security](https://id.answerable.org/security), entering the provider ID supplied by the target organisation’s administrator. Sign in independently through that provider. Both identities must still be eligible when the callback commits; the initiating evidence must remain within five minutes.
 
 **One Answerable identity.** A previously unowned upstream identity is bound to your existing global user UUID. Your profile stays unchanged. An absent target membership is created; a revoked, deleted or ineffective membership is rejected. Existing permissions are still required to administer the target organisation.
@@ -165,7 +185,7 @@ curl https://id.answerable.org/auth/oauth2/token \
 
 **Revoked membership.** A valid corporate login still returns `membership_revoked` when that organisation has revoked the membership. An authorised administrator must [reinstate membership](/docs/id/manage#revoke-and-reinstate-membership); signing in again does not restore it or its deleted assignments.
 
-**Transport limits.** Bodies are limited to 256 KiB, except the sign-in form (4 KiB) and the sign-in start at `/auth/sign-in/sso` (64 KiB), and must finish within five seconds of application body acquisition. Oversized bodies return 413; stalled bodies return 408. These responses can precede OAuth handling and need not use the OAuth JSON error format. See [request boundaries](/docs/id/manage#request-boundaries).
+**Transport limits.** Bodies are limited to 256 KiB, except the sign-in pages' forms (4 KiB: `POST /login`, `POST /magic-link`, `POST /magic-link/code` and `POST /connect-directory`) and the sign-in start at `/auth/sign-in/sso` (64 KiB), and must finish within five seconds of application body acquisition. Oversized bodies return 413; stalled bodies return 408. These responses can precede OAuth handling and need not use the OAuth JSON error format. See [request boundaries](/docs/id/manage#request-boundaries).
 
 **Busy authorization state.** The two-second limit applies to each database lock wait during issuance. Database statements also have a configurable server-side deadline, ten seconds by default. Neither is a total transaction or HTTP deadline. A timed-out or deadlocked issuance rolls back before returning `503 temporarily_unavailable` with `Retry-After: 1`. Wait at least one second and use bounded retries with increasing delay. Clients using `private_key_jwt` must generate a new assertion: an authenticated assertion remains consumed even when issuance fails. This is a fresh OAuth request, not administrative operation-key replay.
 

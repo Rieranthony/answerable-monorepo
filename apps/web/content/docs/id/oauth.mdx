@@ -17,7 +17,7 @@ Use the returned issuer, authorisation endpoint, token endpoint and public signi
 
 **Approve each organisation.** A client-only `authorization_code` capability and assignment approve login identity scopes. Access to a service also requires a capability and assignment for the exact client/resource pair. Renewal needs a separate `refresh_token` capability for the same target: null resource for login-only access, or the exact service URL. Registration and a client/resource compatibility link confer no permission. See [user capabilities](/docs/id/manage#approve-user-capabilities).
 
-**Authenticate the selected organisation.** Membership in two organisations does not establish trust between them. Each requires its own current company sign-in. A person can [connect another independently verified work identity](/docs/id/sign-in#connect-another-work-account) to the same global account. Email never merges identities.
+**Authenticate the selected organisation.** Membership in two organisations does not establish trust between them. Each requires its own current sign-in, at its directory or by an [email link](/docs/id/magic-links). A person can [connect another independently verified work identity](/docs/id/sign-in#connect-another-work-account) to the same global account. Email never merges identities.
 
 ## Start an authorisation
 
@@ -64,7 +64,7 @@ For a service grant, include the same `resource` URL. Public clients use their r
 
 **ID token.** Returned only when the issued scopes include `openid`. Verify its signature using discovery's keys, issuer, audience and expiry. At code exchange, also verify the original nonce; refresh ID tokens omit it. `sub` is the stable global user UUID. Profile and email claims come from UserInfo under the consented scopes or individual claims request, not from the ID token. Email is display data.
 
-**Access token.** Login-only tokens are opaque and can call UserInfo. Service tokens are JWTs whose audience includes the requested resource. An ID token is not a service access token. Refresh tokens and the immutable authorisation context expire after 30 days; other token expiry comes from provider defaults and configured resource lifetimes.
+**Access token.** Login-only tokens are opaque and can call UserInfo. Service tokens are JWTs whose audience includes the requested resource. An ID token is not a service access token. Refresh tokens and the immutable authorisation context expire after 30 days, or 7 days for a sign-in by [email link](/docs/id/magic-links); other token expiry comes from provider defaults and configured resource lifetimes.
 
 | Claim                                | Meaning                                                             |
 | ------------------------------------ | ------------------------------------------------------------------- |
@@ -78,9 +78,12 @@ For a service grant, include the same `resource` URL. Public clients use their r
 | `authorization_version`              | Client authorisation version at issuance                            |
 | `organization_authorization_version` | Organisation authorisation version at issuance                      |
 | `auth_time`                          | Native ID-token broker authentication time                          |
-| `upstream_auth_time`                 | Verified company-provider authentication time, or null when unknown |
+| `upstream_auth_time`                 | Verified company-provider authentication time, or null when unknown, as for a sign-in by link |
+| `authentication_method`              | `directory` or `magic_link`: how the person proved who they are. Absent from a token made before ID said so |
 
 The broker time does not establish upstream freshness. The five-minute freshness rule applies to sensitive human commands and identity linking, not ordinary application browsing.
+
+**How the person signed in.** `authentication_method` is on access tokens and in UserInfo. `magic_link` means a link or code mailed to their work email, which shows only that they could read that mailbox: no MFA or conditional access of the company directory applied. The application decides what that is enough for. The `POST /auth/oauth2/flow` response in the [API reference](/docs/id/api) has the same value as `authenticationMethod`: ID's own pages read it to decide whether to offer a directory action. A `magic_link` session lasts 24 hours and its grant 7 days: [what a sign-in by email is worth](/docs/id/magic-links#what-a-sign-in-by-email-is-worth).
 
 ## Read identity and renew access
 

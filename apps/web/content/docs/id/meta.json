@@ -1,4 +1,13 @@
 {
   "title": "Answerable ID",
-  "pages": ["index", "sign-in", "oauth", "manage", "onboard", "api", "admin-api"]
+  "pages": [
+    "index",
+    "sign-in",
+    "magic-links",
+    "oauth",
+    "manage",
+    "onboard",
+    "api",
+    "admin-api"
+  ]
 }

@@ -10,7 +10,7 @@ description: "How Answerable staff create an organisation, connect its directory
 | Word             | Meaning                                                                                                                                      |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Organisation** | A company that uses Answerable. Answerable itself is one too, called the **platform organisation**. The service creates it by itself.        |
-| **Member**       | A person's place in an organisation. It appears the first time they sign in.                                                                 |
+| **Member**       | A person's place in an organisation. It appears the first time they sign in, or when staff list their address first.                         |
 | **Group**        | A named set of members inside an organisation. `platform-admins` is the group of Answerable staff.                                           |
 | **Scope**        | One permission, written as a word such as `platform:read`. A session or token carries a list of them.                                        |
 | **Resource**     | Something people and apps get tokens for, named by a URL. The admin API is one; MCP servers are the others.                                  |
@@ -116,6 +116,14 @@ ID=http://localhost:47300        # on your machine
 
 **The next staff member.** They sign in once (step 4). You repeat step 5 for them with your own browser session instead of the root secret, adding `-H "Origin: $ID"` because writes from a browser session must name the site they come from. Nothing else is needed.
 
+## Environment
+
+The variables ID reads, with their development defaults, from the repository's inventory. Nothing needs a `.env` on your machine but the credentials another system issues.
+
+<Configuration group={["ID", "ID migration"]} />
+
+**Sign-in mail.** `POSTMARK_SERVER_TOKEN` is required in production: ID refuses to start without it, and the deploy refuses to apply it unset. Without one, outside production, ID prints each [sign-in link](/docs/id/magic-links) on its standard output. `POSTMARK_API_URL` is for a fake Postmark in a test and must be `https:` in production. `MAIL_FROM`, `MAIL_REPLY_TO` and `MAIL_SUBJECT_PREFIX` set the sender, the reply address and a prefix such as `[staging]`.
+
 ## Get a staff token
 
 Your browser session is enough for commands you type by hand. For scripts and agents, create a client owned by the platform organisation, allow it to use the admin API, and swap its secret for a token.
@@ -192,16 +200,20 @@ curl --get "https://id.answerable.org/api/admin/v1/organizations/$ORG/sign-in-di
 
 | Verdict                   | Meaning                                                  | What to do                                                |
 | ------------------------- | -------------------------------------------------------- | --------------------------------------------------------- |
-| `provider_not_found`      | No SSO provider is configured.                           | Configure the provider.                                   |
+| `provider_not_found`      | The organisation has no directory and links are off.     | Configure the provider, or turn links on.                 |
 | `organization_disabled`   | Organisation is disabled.                                | Review whether to enable it.                              |
 | `domain_not_allowed`      | Email domain does not route here.                        | Check this tenant's active domain assignment.             |
 | `user_disabled`           | The user linked to this tenant's membership is disabled. | Ask platform staff to review the account.                 |
 | `membership_revoked`      | This tenant's membership was revoked.                    | Review whether to reinstate it.                           |
-| `authentication_required` | Local checks found no blocker.                           | Complete a real IdP authentication to establish identity. |
+| `magic_link_not_admitted` | Links are the way in and admission would refuse this address: the switch, the mode, the public mail list or the person. | `magicLink.admitted` is false. Turn links on, list the person, or see [who may ask](/docs/id/magic-links#who-may-ask). |
+| `magic_link_suppressed`   | Links are the way in and Postmark refused the last send to this address as suppressed (406). | Staff reactivate the address in Postmark: [deliverability](/docs/id/magic-links#deliverability). |
+| `authentication_required` | Local checks found no blocker.                           | Complete a real IdP authentication, or a link's confirmation, to establish identity. |
+
+**Links in the answer.** `magicLink` has `enabled`, `admitted`, `suppressed`, `lastRequest` (the newest sign-in mail to this exact address, kept seven days, with Postmark's code) and `directoryConnection`: a directory sign-in this address has made and not yet connected, waiting on the code mailed to it. `admitted` is one bit about this address and nothing more. It reads a global account in one case: in `domain` mode, on the organisation's own proved domain, it is false for an address whose holder is disabled or has another firm's account, which is no more than that mailbox would show by asking for a link.
 
 **Tenant visibility.** `user` and `membership` are null unless this tenant has a membership for the exact email. A null user does not mean the email is globally unused. Routing names only this organisation, never another tenant. Account issuers, directory IDs and retired-email state are excluded for all callers, including staff. Platform-wide user inspection remains a separate permission-controlled API.
 
-**A real IdP authentication is required** to establish identity and evaluate `directory_mismatch`, `guest_account`, `personal_account`, `hosted_domain_mismatch`, `email_unverified` and `identity_conflict`, listed in `verdict.requiresToken`. This diagnosis does not predict account creation or successful sign-in. A non-effective membership does not prevent sign-in, but stops grants. See [sign-in checks](/docs/id/sign-in#what-is-checked).
+**A real IdP authentication is required** to establish identity and evaluate `directory_mismatch`, `guest_account`, `personal_account`, `hosted_domain_mismatch`, `email_unverified`, `identity_conflict` and `email_conflict`, listed in `verdict.requiresToken`. This diagnosis does not predict account creation or successful sign-in. A non-effective membership does not prevent sign-in, but stops grants. See [sign-in checks](/docs/id/sign-in#what-is-checked).
 
 **Contract change.** The diagnostic response no longer includes `accounts` or `user.retiredEmail`. `authentication_required` replaces `new_user_would_be_created` and `would_sign_in`; `identity_conflict` is deferred to real authentication. Update diagnostic consumers before releasing this API change.
 
@@ -250,7 +262,11 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/domains" \
   -d '{"domain":"contoso.com"}'
 ```
 
-**One owner.** A domain routes to at most one active organisation. To move it, disable or delete the old row first, then add the new one. Sign-in with an email outside the organisation's active domains is refused. Domain verification by DNS: [Not yet.](/docs/id#today-and-next)
+**One owner.** A domain routes to at most one active organisation. To move it, disable or delete the old row first, then add the new one. Sign-in with an email outside the organisation's active domains is refused. A public mail provider cannot be routed: it answers `public_mail_domain`.
+
+**Where the person goes next.** The address's domain finds the organisation, and the organisation decides what the person sees: its directory if it has only that, a page asking for a link if it has only links, and a choice page, **Continue with Microsoft** (or Google, or company sign-in) beside **Email me a sign-in link**, if it has both. Every new organisation has [sign-in by email link](/docs/id/magic-links) on, so routing a domain to a new organisation already lets its listed members ask for a link.
+
+**Prove the domain.** The answer carries a `verificationRecord`: a TXT record at `_answerable-challenge.<domain>`. Publish it, then call [verifyOrganizationDomain](/docs/id/admin-api/domains/verifyOrganizationDomain). A proof is what lets a firm open links to anyone at the domain ([who may ask](/docs/id/magic-links#who-may-ask)); nothing else depends on it, and nothing re-checks it on a schedule: [Not yet.](/docs/id/magic-links#not-yet)
 
 ```bash
 curl -X DELETE "https://id.answerable.org/api/admin/v1/organizations/$ORG/domains/$DOMAIN" \
@@ -260,7 +276,7 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/organizations/$ORG/domain
 
 **Domain operation keys.** Set `DOMAIN_OPERATION_KEY` and `DOMAIN_DELETE_KEY` to different stable keys for the two logical commands. Reuse each key with identical input when retrying; retries return receipts. The root setup example also uses a stable key. Repeated enable/disable under a new key records a no-op; changed input under an existing key conflicts.
 
-**Delete an assignment.** Set `DOMAIN` to its domain row ID. [deleteOrganizationDomain](/docs/id/admin-api/domains/deleteOrganizationDomain) removes sign-in routing and records `domain.deleted`. No `confirm` is required; disable the assignment for a reversible suspension.
+**Delete an assignment.** Set `DOMAIN` to its domain row ID. [deleteOrganizationDomain](/docs/id/admin-api/domains/deleteOrganizationDomain) removes sign-in routing and records `domain.deleted`. No `confirm` is required; disable the assignment for a reversible suspension. Removing or disabling a domain also ends the link sessions and grants of that domain's addresses, and leaves the rest of the organisation signed in.
 
 ## Connect the directory
 
@@ -311,7 +327,7 @@ curl -X PUT "https://id.answerable.org/api/admin/v1/organizations/$ORG/sso-provi
 
 **Defaults.** When scopes are omitted, every row, platform or own credentials, uses `email openid profile`. ID asks no directory for `offline_access` and stores no upstream refresh token.
 
-**Changing the directory.** Creating, replacing or deleting SSO configuration revokes that organisation's user grants. Switching between own and platform credentials is a configuration change; for Entra it also changes every user's pairwise `sub`, so existing accounts stop matching. Unchanged configuration preserves grants; restoring an earlier configuration does not restore revoked grants. Other organisations and global browser sessions are preserved. [User OAuth](/docs/id/oauth) checks the accepted account, provider UUID and configuration revision.
+**Changing the directory.** Creating, replacing or deleting SSO configuration revokes that organisation's directory grants, and a directory session then needs a new sign-in before it can authorise anything. Its [email-link](/docs/id/magic-links) sessions and grants stay: the two ways are independent, and a link still signs in a person whose old directory account no longer matches. Switching between own and platform credentials is a configuration change; for Entra it also changes every user's pairwise `sub`, so existing accounts stop matching. Unchanged configuration preserves grants; restoring an earlier configuration does not restore revoked grants. Other organisations and global browser sessions are preserved. [User OAuth](/docs/id/oauth) checks the accepted account, provider UUID and configuration revision.
 
 **Retries.** Set `SSO_OPERATION_KEY` once and reuse it with identical input. PUT and delete require keys; retries return receipts. Use `If-None-Match: *` for creation or the current provider ETag in `If-Match` to refuse stale updates, retaining the original header on retry. For own credentials, omit `clientSecret` on an update to keep the stored secret.
 
@@ -441,7 +457,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/access?resource=
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A person leaves the organisation | `members_remove` in the [admin MCP](/docs/admin#stopping-someone), or `PATCH …/members/{memberId}` with `validUntil` now, or `DELETE` the membership | Their sign-in to that organisation and its grants stop; other memberships stay. Reverse with `members_reinstate` or `POST …/members/{memberId}/reinstate`; the grants and group assignments removed with the membership are not restored. Offline JWTs remain subject to expiry and consumer checks. |
 | A person must be cut off at once | `users_disable`, or `POST /users/{userId}/disable`                                                                                                   | Global browser sessions and local stored grants/tokens are revoked atomically, and no sign-in works at any organisation. Reverse with `users_enable`: revoked sessions are not restored. Offline JWTs and downstream sessions retain separate exposure.                                              |
-| Their address will be reused     | `users_retireemail` (owner role) after `users_disable`, or `POST /users/{userId}/retire-email` after disabling                                       | The address is released; the old account keeps a tombstone, and the next holder is a new person with a new `sub`. Until the previous holder is disabled and retired, a new person who signs in with the address gets `email_conflict`. Terminal.                                                     |
+| Their address will be reused     | `users_retireemail` (owner role) after `users_disable`, or `POST /users/{userId}/retire-email` after disabling                                       | The address is released; the old account keeps a tombstone, and the next holder is a new person with a new `sub`. Until the previous holder is disabled and retired, a new person who signs in with the address gets `email_conflict`, and listing it for another person is refused as `disabled`. Terminal.                                                     |
 | The organisation leaves          | `POST /organizations/{org}/disable`                                                                                                                  | Sign-in refuses; the tenant epoch advances and owned machine tokens are revoked. Global browser sessions remain; tenant grants are revoked and old provider/tenant state cannot authorise renewal                                                                                                    |
 | An app is retired                | `DELETE /clients/{clientId}?confirm={clientId}` after removing its entitlements                                                                      | Client, links and consents are tombstoned; credentials are cleared/revoked and history remains                                                                                                                                                                                                       |
 | A domain no longer belongs here  | `DELETE /organizations/{org}/domains/{domainId}`                                                                                                     | Sign-in routing is removed; no confirmation needed                                                                                                                                                                                                                                                   |
@@ -451,7 +467,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORG/access?resource=
 
 **What stopping does not reach.** A service token already issued lives to its expiry, and each app's own session is the app's to end: ending it belongs to each app's integration, such as [App and service OAuth](/docs/id/oauth). No company directory can tell Answerable ID that someone left, so removing the member in ID is the staff step.
 
-**Bulk import of an existing cell's users.** [Not yet.](/docs/id#today-and-next)
+**Bulk import of an existing cell's users.** `POST /organizations/{org}/members/import` lists up to 1,000 addresses a call, each with its own answer: [who may ask](/docs/id/magic-links#who-may-ask).
 
 ## Who may use an app or server
 
@@ -506,10 +522,10 @@ See [all admin error codes](/docs/id/manage#errors), including confirmation and 
 | Capability                                      | Plan                                |
 | ----------------------------------------------- | ----------------------------------- |
 | Certificate credential on the Entra application | [Not yet.](/docs/id#today-and-next) |
-| Domain verification by DNS                      | [Not yet.](/docs/id#today-and-next) |
+| A scheduled re-check of a domain's DNS proof    | [Not yet.](/docs/id/magic-links#not-yet) |
 | Organisations configuring their own SSO         | [Not yet.](/docs/id#today-and-next) |
 | Guest accounts, opted in per organisation       | [Not yet.](/docs/id#today-and-next) |
-| Bulk import of existing users                   | [Not yet.](/docs/id#today-and-next) |
+| A Postmark webhook, alerting and a public mail list override | [Not yet.](/docs/id/magic-links#not-yet) |
 | SCIM provisioning                               | [Not yet.](/docs/id#today-and-next) |
 
 **Group operation keys.** Set `GROUP_CREATE_KEY` and `GROUP_MEMBER_KEY` once for their respective creation and membership commands, and reuse it with identical input after a lost response. Use a different key for each separate command. Group PATCH accepts the optional current getGroup ETag in If-Match. Membership PUT accepts optional If-Match from getGroupMember; omitted preconditions use the current row. Keep the original precondition when retrying a key.

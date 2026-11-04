@@ -94,3 +94,12 @@ test("the platform and spare plan fields reach the fixture, the platform organis
   expect(id.manifest).toEqual({ ...origin, tenants: [], platform: { organizationId: platformOrganizationId, domain: "answerable.example.test", email: "staff@answerable.example.test" }, spares: [spare] })
   await id.stop()
 })
+
+test("the postmark field reaches the fixture's plan as given, so that ID sends its mail to the caller's Postmark", async () => {
+  const fake = fakeSpawn({ ...origin, platformOrganizationId, tenants: [], spares: [] })
+  fakeAdminApi()
+  const postmark = { url: "http://127.0.0.1:50004/email", token: "fake-token" }
+  const id = await startId({ tenants: [], postmark })
+  expect(await Bun.file(fake.commands[1]![2]!).json()).toEqual({ tenants: [], postmark })
+  await id.stop()
+})

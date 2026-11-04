@@ -197,9 +197,9 @@ Paths below start at `/api/admin/v1`; `{org}` means your organisation ID.
 | Family            | Tenant-tier routes                                                                                                                                                                                  | Scope                       |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
 | Caller            | `GET /me`                                                                                                                                                                                           | Any authenticated principal |
-| Organisation      | `GET /organizations/{org}`                                                                                                                                                                          | `org:read`                  |
+| Organisation      | `GET /organizations/{org}` (shows `magicLink`: whether [sign-in by email link](/docs/id/magic-links) is on, who may ask, and on this single read how many members it lists)                          | `org:read`                  |
 | Sign-in diagnosis | `GET /organizations/{org}/sign-in-diagnosis?email=…`                                                                                                                                                | `org:users`                 |
-| Domains           | `GET /organizations/{org}/domains`                                                                                                                                                                  | `org:read`                  |
+| Domains           | `GET /organizations/{org}/domains` (each with when its DNS record was seen, `verifiedAt`, and the `verificationRecord` to publish)                                                                  | `org:read`                  |
 | SSO provider      | `GET /organizations/{org}/sso-provider` (returns `oidc.credentials`, `clientId` and `hasClientSecret`; secret redacted)                                                                                                                                           | `org:read`                  |
 | Members           | `GET /organizations/{org}/members`, `GET /organizations/{org}/members/{memberId}`                                                                                                                   | `org:read`                  |
 | Member changes    | `PATCH /organizations/{org}/members/{memberId}` (window), `DELETE /organizations/{org}/members/{memberId}`                                                                                          | `org:users`                 |
@@ -223,7 +223,9 @@ Every [operation page](/docs/id/admin-api) has a Markdown twin: append `.md` to 
 
 | Capability                        | Status                              | Workaround                                                               |
 | --------------------------------- | ----------------------------------- | ------------------------------------------------------------------------ |
-| Add or verify domains             | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff to configure domains.                               |
+| Add or verify domains             | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff to configure domains. Publish the TXT record they give you.                               |
+| Turn sign-in by email link on or off, or open it to your domain | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff: [turn it on and off](/docs/id/magic-links#turn-it-on-and-off). |
+| List your people before they sign in | [Not yet.](/docs/id#today-and-next) | Send staff the addresses, at most 1,000 a call: [who may ask](/docs/id/magic-links#who-may-ask). |
 | Configure your own SSO            | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff to configure the provider.                          |
 | Manage groups or group membership | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff. |
 | Assign apps through entitlements  | [Not yet.](/docs/id#today-and-next) | Ask Answerable staff to change entitlements.                             |
@@ -310,6 +312,10 @@ curl -X DELETE "https://id.answerable.org/api/admin/v1/users/$USER_ID?confirm=$U
 | `resource_has_entitlements` | Entitlements prevent resource erasure.                                              | Remove those entitlements first.                                                              |
 | `user_not_disabled`         | Email retirement requires a disabled user.                                          | Disable the user first.                                                                       |
 | `user_email_retired`        | Email retirement is terminal.                                                       | Do not try to re-enable this account.                                                         |
+| `public_mail_domain`        | HTTP 409: the domain is a public mail provider, which no organisation can hold.     | Route the organisation's own domain instead.                                                  |
+| `domain_not_verified`       | HTTP 409: `admission: domain` needs every active domain proved, and none public mail. `details` names them. | Verify or remove each domain named, then ask again.                                           |
+| `platform_magic_link`       | HTTP 409: the platform organisation can never use sign-in by email link.            | Nothing; staff sign in through its directory.                                                 |
+| `domain_verification_failed` | HTTP 409: the DNS TXT record was not found. `expected` names it. On a proved domain this also clears the proof. | Publish the record, wait for DNS, ask again. See [who may ask](/docs/id/magic-links#who-may-ask). |
 | `conflict`                  | A client or resource identifier was used before and remains reserved after erasure. | Create the replacement with a new identifier.                                                 |
 | `confirmation_mismatch`     | Erasure confirmation does not match the target.                                     | Check the target and send its exact identifier.                                               |
 

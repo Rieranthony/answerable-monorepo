@@ -7,7 +7,7 @@ description: "Answerable ID in plain English: organisations, members, clients, r
 curl http://localhost:47300/.well-known/openid-configuration
 ```
 
-That is Answerable ID running locally, describing itself: where to sign in, where to get tokens and the keys that sign them. Answerable ID is the front door to every Answerable product. People sign in with the work account their organisation already has, in Microsoft Entra ID or Google Workspace. Apps and MCP servers never see a password: they receive a token from ID that says who the person is, which organisation they act for, and what they may do.
+That is Answerable ID running locally, describing itself: where to sign in, where to get tokens and the keys that sign them. Answerable ID is the front door to every Answerable product. People sign in with the work account their organisation already has, in Microsoft Entra ID or Google Workspace, or with a link and a code mailed to their work email ([sign in by email link](/docs/id/magic-links)); a firm can have either or both. Apps and MCP servers never see a password: they receive a token from ID that says who the person is, which organisation they act for, and what they may do.
 
 ## The words
 
@@ -40,7 +40,7 @@ person ── host (Claude Code) ── 1. call ──────────�
 ```
 
 1. **The host calls the server.** Without a token the server answers `401` and names Answerable ID as the place to sign in.
-2. **ID signs the person in.** The host opens ID in the browser. The person gives their work email, and ID sends them to their company's directory, which checks the password and any second factor. ID then checks the account: a member, not a guest or a personal account, with a verified email on a domain the organisation has enabled.
+2. **ID signs the person in.** The host opens ID in the browser. The person gives their work email, and ID sends them to their company's directory, which checks the password and any second factor. ID then checks the account: a member, not a guest or a personal account, with a verified email on a domain the organisation has enabled. A firm that signs in by [email link](/docs/id/magic-links) mails the person a link and a code instead, and a firm with both asks which. A link proves only that the person could read that mailbox.
 3. **The person chooses and approves.** They choose the organisation to act for, and approve the client's access on a consent page that lists the scopes.
 4. **ID issues the tokens.** An access token for that one server, carrying the entitled subset of scopes, and a refresh token.
 5. **The server checks the token itself.** It verifies the signature with ID's published keys, the issuer, the audience (its own URL) and the expiry. It never calls ID on each request.
@@ -62,7 +62,8 @@ An MCP server built with the kit receives the verified token as `principal`, in 
 | `scope` | `scopes` | The entitled subset of the scopes asked for |
 | `exp` | `expiresAt` | Expiry, in seconds since the epoch |
 | `organization_authorization_version` | `organizationAuthorizationVersion` | Advances when ID changes the organisation's authority, such as disabling it |
-| `upstream_auth_time` | `upstreamAuthTime` | When the person last signed in at their company's directory, in seconds, or `null` when it reported no time. Fixed when the authorisation is made: a refreshed token keeps it |
+| `upstream_auth_time` | `upstreamAuthTime` | When the person last signed in at their company's directory, in seconds, or `null` when it reported no time, as it does for a sign-in by link. Fixed when the authorisation is made: a refreshed token keeps it |
+| `authentication_method` | `authenticationMethod` | How the person proved who they are: `directory` for a company directory, `magic_link` for a link or code mailed to their work email. `null` for a token from before ID said so. Fixed when the authorisation is made, and a refreshed token keeps it. [What it is worth](/docs/id/magic-links#what-a-sign-in-by-email-is-worth) |
 | `aud` | | The resource URL. A server refuses a token for any other |
 | `subject_type` | | `user` for a person; a machine client's own token says `client` |
 
@@ -95,10 +96,10 @@ A script or a service can get a token for itself, with its client's id and secre
 
 | Order | Capability |
 | --- | --- |
-| Today | Organisation sign-in through your identity provider, sessions, health endpoints, the admin API (platform and tenant reads, member management, summaries and sign-in diagnosis), machine access with client credentials, and tenant-bound user OAuth |
+| Today | Organisation sign-in through your identity provider or by an [email link and code](/docs/id/magic-links), sessions, health endpoints, the admin API (platform and tenant reads, member management and import, domain proofs, summaries and sign-in diagnosis), machine access with client credentials, and tenant-bound user OAuth |
 | Next | Not yet: real consumer and first-deployment acceptance, then broader self-service and remote lifecycle work |
 
-**Not yet:** dynamic client registration, upstream directory polling and downstream logout delivery. Local tests do not certify real tenant, consumer or deployment behaviour.
+**Not yet:** dynamic client registration, upstream directory polling, downstream logout delivery, and for email links a Postmark webhook, alerting and scheduled re-checks ([the list](/docs/id/magic-links#not-yet)). Local tests do not certify real tenant, consumer or deployment behaviour.
 
 ## Endpoints
 
