@@ -111,6 +111,11 @@ describe("charts/answerable", () => {
         }
       })
 
+      test("every pod pulls with the Secret the deploy writes: the images are private", () => {
+        expect(workloads(manifests).length).toBeGreaterThan(0)
+        for (const workload of workloads(manifests)) expect(podSpec(workload).imagePullSecrets, workload.metadata.name).toEqual([{ name: "ghcr-pull" }])
+      })
+
       test("the servers of the mcps image each run their own entry point", () => {
         const commands = Object.fromEntries(manifests.filter(manifest => manifest.kind === "Deployment").map(deployment => [deployment.metadata.name, containersOf(deployment)[0].command]))
         expect(commands).toEqual({

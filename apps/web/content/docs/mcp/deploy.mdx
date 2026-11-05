@@ -48,7 +48,7 @@ On a `staging/` tag, in this order. Each step stops the run when it fails.
 
 A step that fails after the release started rolls the whole release back, and the workflow prints the logs of the migration and ops Jobs.
 
-**On a `production/` tag,** the run first checks that the commit is on `main` and that staging built and signed every image for it. A commit staging never shipped is refused. It then waits for the owner to approve, applies production's infrastructure, deploys **exactly the images staging tested**, by digest, and runs the smoke test. Production is never rebuilt.
+**On a `production/` tag,** the run first checks that the commit is on `main` and that staging built and signed every image for it. A commit staging never shipped is refused. It then applies production's infrastructure, deploys **exactly the images staging tested**, by digest, and runs the smoke test. Production is never rebuilt.
 
 ## Check that it worked
 
@@ -98,7 +98,7 @@ When the smoke test passes, the MCP is reachable and signed in. **Nobody can use
 ## Where things stand
 
 - **The whole sequence above has run in the local Kubernetes stack** (`bun run infra:test`), for one MCP in the Toolbox and one on its own URL: schema, migration, mounting, path, registration and smoke test.
-- **On Civo, staging has run the release before this one.** `staging/fourth` passed its smoke test on 2026-10-23. The first tag that ships the `mcps` image and the `mcp` hostname has not been pushed: Not yet. It needs steps from the owner, once: Terraform adds the `mcp.<zone>` hostname and reissues the origin certificate by itself, but the new `mcps` package on GHCR is private, so the owner makes it public and reruns the failed jobs, and, only when Answerable ID's root secret is already locked, ships that tag with break glass and removes it with the next tag. `infra/README.md` in the repository lists them under "The first ship of the mcps image".
+- **On Civo, staging has run the release before this one.** `staging/fourth` passed its smoke test on 2026-10-23. The first tag that ships the `mcps` image and the `mcp` hostname has not finished: Not yet. It needs steps from the owner, once: Terraform adds the `mcp.<zone>` hostname and reissues the origin certificate by itself, but the images are private, so the environment needs `GHCR_PULL_TOKEN` first, and, only when Answerable ID's root secret is already locked, the owner ships that tag with break glass and removes it with the next tag. `infra/README.md` in the repository lists them under "The first ship of the mcps image".
 - **Production: Not yet.** No `production/` tag has shipped. The owner's first one waits for the production rehearsal, which `docs/12-deployment.md` describes. Until then there are no production URLs to open.
 
 ## What is not automatic
@@ -115,6 +115,8 @@ The first two rows are in the workflow's log, as an error. A tag that matches no
 | --- | --- | --- |
 | `<tag> points at <commit>, which is not on main; tag a commit of main` | The tag is on a commit that is not on `main` | Land the commit on `main`, then tag it |
 | `<registry>/<image>:sha-<commit> does not exist: staging has not shipped <commit>; tag it staging/<name> first` | A production tag on a commit staging never shipped | Tag the commit `staging/<name>` first, and wait for it to pass |
+| `GHCR_PULL_TOKEN is not set` | The GitHub environment has no token to read the private images. The deploy changed nothing in the cluster | Ask the owner to paste it, then tag again |
+| `could not resolve <registry>/<image>… to a manifest digest (exit <code>): <registry's answer>. If the registry refused, GHCR_PULL_TOKEN cannot read the package` | The token has expired or lacks `read:packages`, or its account cannot read the package. The deploy changed nothing in the cluster | Ask the owner to replace the token, then tag again |
 | No run starts | The tag does not match `staging/*` or `production/*`, as with a second slash | Tag the commit again, with one slash, after `staging` or `production` |
 | `The upgrade failed. The logs of the migration and ops Jobs follow.` | A migration or an ops Job failed, or the pods did not become ready. Helm rolled the release back | Read the Job log printed below the message: `toolbox-migrate` names the MCP whose migration failed, and `ops-register` the row it could not make. Fix it, commit and tag again with a new name. When every Job's log is clean, a server did not become ready; for the Toolbox, one cause is a tool changed without a new version, the next row |
 | `Capability <identity> version <version> changed its <fields> without a new version; give the tool a new version (YYYY-MM-DD) in its definition or its provider`, in the Toolbox's log | A tool in the Toolbox changed its kind, risk, input or output under the version staging already holds, so the Toolbox refused to start and the upgrade failed as above | Give the tool a new version: [Change a tool after it ships](/docs/mcp/add-a-tool#change-a-tool-after-it-ships). Commit and tag again with a new name |

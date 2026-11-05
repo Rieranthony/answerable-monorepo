@@ -1,7 +1,7 @@
 # Deployment
 
 > **TL;DR**
-> - **Decides:** where Answerable ID, the Toolbox, the admin MCP and every MCP run outside a laptop, and why: Civo London, one Civo account per environment, one Helm chart on Civo Kubernetes, Civo Database PostgreSQL 17, Cloudflare in front, every secret in a GitHub environment or generated where it is used, a tag `staging/<name>` shipping staging and a tag `production/<name>` shipping production behind the owner's approval. Nothing is done by hand from a laptop.
+> - **Decides:** where Answerable ID, the Toolbox, the admin MCP and every MCP run outside a laptop, and why: Civo London, one Civo account per environment, one Helm chart on Civo Kubernetes, Civo Database PostgreSQL 17, Cloudflare in front, every secret in a GitHub environment or generated where it is used, a tag `staging/<name>` shipping staging and a tag `production/<name>` shipping production. Nothing is done by hand from a laptop.
 > - **Rule:** only Cloudflare reaches the services, and only with the origin-pull certificate; no service holds a database owner login; the cluster runs images by digest, built from a commit that passed CI and shipped to staging first; no secret sits in plain text in git, in a Terraform variable or in a log.
 > - **Not here:** how to do each step ([`infra/README.md`](../infra/README.md), the runbook), what ID itself needs from any deployment ([`06-deploying-answerable-id.md`](06-deploying-answerable-id.md)), the decisions with the alternatives they rejected ([`goals/civo-deploy/decisions.md`](goals/civo-deploy/decisions.md), D-numbers below), the measured evidence from the first staging run ([`reports/staging-evidence.md`](../reports/staging-evidence.md)).
 
@@ -19,7 +19,7 @@
 | **PostgreSQL 17** | Civo Database on the environment's private network: `answerable_id`, `answerable_toolbox`, `answerable_admin`, `answerable_mcps` (a schema per shared MCP) and `answerable_mcp_<name>` per MCP with a database of its own | 1 node | [`infra/civo`](../infra/civo/README.md) |
 | **Cluster, network, firewalls, Cloudflare zone, certificates, the GitHub environment's deploy secrets** | One Civo account, one Cloudflare zone and one GitHub environment per environment, Civo region LON1 | 2 nodes (staging), 3 nodes (production), Medium | `infra/civo`, `envs/<environment>.tfvars` |
 | **The state bucket** | Civo object store in the environment's account | one 500 GB block | `bootstrap.yml` |
-| **Images** | GHCR, public: `ghcr.io/answerableorg/answerable/{id,mcps,ops}`, amd64, listed in [`infra/pipeline/images.json`](../infra/pipeline/images.json) | one per image and commit | the Dockerfiles, `deploy-staging.yml` |
+| **Images** | GHCR, private: `ghcr.io/answerableorg/answerable/{id,mcps,ops}`, amd64, listed in [`infra/pipeline/images.json`](../infra/pipeline/images.json) | one per image and commit | the Dockerfiles, `deploy-staging.yml` |
 | **The pipeline** | GitHub Actions: `ci.yml`, `bootstrap.yml`, `deploy-staging.yml`, `promote-production.yml`, `ops.yml` | | [`infra/pipeline`](../infra/pipeline/README.md) |
 
 | Hostname | Staging (zone `answerable-staging.uk`) | Production (zone `answerable.org`) |
@@ -77,8 +77,8 @@ The Toolbox and the admin MCP call ID at its public issuer, through Cloudflare, 
 | Who or what | Holds | Reaches |
 | --- | --- | --- |
 | **The owner** | Each Civo account's API key, each zone's Cloudflare token, the Entra app's credentials and a fine-grained GitHub token, pasted once into each GitHub environment and kept in the vendors' consoles | Everything, through GitHub; the Civo dashboard for break-glass |
-| **The `staging` GitHub environment** | The six pasted secrets (`CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `GH_SECRETS_TOKEN`, `POSTMARK_SERVER_TOKEN`); what `bootstrap.yml` generates (`STATE_ACCESS_KEY_ID`, `STATE_SECRET_ACCESS_KEY`, `BETTER_AUTH_SECRET`, `ROOT_ADMIN_SECRET`); what Terraform writes (`KUBE_SERVER`, `KUBE_CA`, `KUBE_TOKEN`); optionally `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BETTER_AUTH_SECRETS` | Deployments from `main` and the tags `staging/*` only. Each workflow step is handed only the secrets it names |
-| **The `production` GitHub environment** | The same for production, behind the owner's approval | `main` and `production/*` only, with the owner as required reviewer |
+| **The `staging` GitHub environment** | The seven pasted secrets (`CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `GH_SECRETS_TOKEN`, `POSTMARK_SERVER_TOKEN`, `GHCR_PULL_TOKEN`); what `bootstrap.yml` generates (`STATE_ACCESS_KEY_ID`, `STATE_SECRET_ACCESS_KEY`, `BETTER_AUTH_SECRET`, `ROOT_ADMIN_SECRET`); what Terraform writes (`KUBE_SERVER`, `KUBE_CA`, `KUBE_TOKEN`); optionally `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BETTER_AUTH_SECRETS` | Deployments from `main` and the tags `staging/*` only. Each workflow step is handed only the secrets it names |
+| **The `production` GitHub environment** | The same for production | `main` and `production/*` only. No required reviewer: GitHub Team offers none on a private repository ([`Q-PRODUCTION-APPROVAL`](02-plan.md#open-register)) |
 | **The `deployer` ServiceAccount** | A token Terraform creates and writes into the environment | Only what `helm upgrade` of `charts/answerable` touches in `answerable`: no other namespace, no wildcard, no `escalate`, `bind`, `impersonate` or `exec` |
 
 - **One Civo account per environment** under one Civo organisation ([D28](goals/civo-deploy/decisions.md)): a staging credential, bug or Terraform mistake cannot touch production. It is the strongest boundary Civo offers. Teams live in Civo's dashboard: the owner in each account's Owners team with MFA on the login.
@@ -145,7 +145,7 @@ A request travels Cloudflare → the Civo load balancer → Traefik → a servic
 
 **Every secret lives in the GitHub environment, or is generated where it is used; nothing is done from a laptop** ([D23](goals/civo-deploy/decisions.md), [D33](goals/civo-deploy/decisions.md)).
 
-- **What a person provides** goes once into the GitHub environment, pasted in the browser: the Civo key, the Cloudflare token, the Entra client ID and secret, and a fine-grained GitHub token for this repository with read and write on Environments alone (the permission that writes environment secrets; managing the environment itself would need repository administration, which can also delete the repository, so the environment's policy and reviewer are the owner's, set once). GitHub encrypts each value with a libsodium sealed box before it reaches GitHub, stores it write-only, masks it in logs and hands it only to the workflow steps that name it.
+- **What a person provides** goes once into the GitHub environment, pasted in the browser: the Civo key, the Cloudflare token, the Entra client ID and secret, and a fine-grained GitHub token for this repository with read and write on Environments alone (the permission that writes environment secrets; managing the environment itself would need repository administration, which can also delete the repository, so the environment's policy is the owner's, set once), and a classic GitHub token that reads the private images, the only kind GHCR takes from outside GitHub Actions. GitHub encrypts each value with a libsodium sealed box before it reaches GitHub, stores it write-only, masks it in logs and hands it only to the workflow steps that name it.
 - **What a workflow generates** goes into the environment the same way: `bootstrap.yml` creates the state bucket's credential in Civo and ID's two random secrets, each only when missing, and rotates `ROOT_ADMIN_SECRET` on request.
 - **What Terraform makes** stays in its state and goes where it is used: the deploy credentials into the GitHub environment (the `github` module), the database administrator's URL and the origin certificate into the cluster (the `platform` module), the origin-pull certificate to Cloudflare (the `edge` module). Terraform holds no secret as input.
 - **What the ops Jobs generate never leaves the cluster.** `ops-bootstrap` writes the database URLs and `ops-register` the three machine-client secrets, its own among them, straight into Kubernetes Secrets. A rebuilt cluster re-runs both: bootstrap sets a new password for a login whose Secret is gone, register rotates a client secret it cannot find. Register's own secret is rotated by the root secret that mints it: before the lock, or with break glass after.
@@ -169,7 +169,7 @@ Public, in the cluster: the ConfigMap `postgres-ca` (the bootstrap Job).
 
 ## Images and deploys
 
-- **Registry: GHCR**, public ([D24](goals/civo-deploy/decisions.md)). Tag `sha-<40-character commit SHA>`, never a mutable name.
+- **Registry: GHCR**, private ([D24](goals/civo-deploy/decisions.md)). Tag `sha-<40-character commit SHA>`, never a mutable name. The deploy reads every image with `GHCR_PULL_TOKEN` before it touches the cluster, then writes the token into the Secret `ghcr-pull`, which every pod pulls with.
 - **Built once per commit** on a staging tag, for `linux/amd64`, with provenance and an SBOM, and **signed with cosign**, keyless, by `deploy-staging.yml`.
 - **Deployed by digest.** The deploy resolves each tag to its digest and the chart runs `<repository>@sha256:…`, so a moved tag changes nothing.
 
@@ -191,7 +191,7 @@ An MCP ships with its commit: nothing outside its folder changes, the image hold
 - **A failure rolls the release back**, as a migration's does: a release is its images and what they need in place, ID's rows included, and ID rolls in the same release.
 - **Access** stays a staff decision: `standalone_enable` in the admin MCP gives an organisation the sign-in, then `access_grant` with the host client as `clientId`, or `everyone: true`, the MCP's scopes.
 
-**A tag `production/<name>`** ([`promote-production.yml`](../.github/workflows/promote-production.yml), [D8](goals/civo-deploy/decisions.md)): the commit must be on `main` and each of its images must carry `deploy-staging.yml`'s signature from a staging tag, so staging always comes first; the run waits for the owner's approval, applies `infra/civo` for production, deploys exactly the verified digests, smoke-tests. Production is never rebuilt.
+**A tag `production/<name>`** ([`promote-production.yml`](../.github/workflows/promote-production.yml), [D8](goals/civo-deploy/decisions.md)): the commit must be on `main` and each of its images must carry `deploy-staging.yml`'s signature from a staging tag, so staging always comes first; the run applies `infra/civo` for production, deploys exactly the verified digests, smoke-tests. Production is never rebuilt. Nothing waits for a person: Not yet ([`Q-PRODUCTION-APPROVAL`](02-plan.md#open-register)).
 
 - **Roll back** by tagging an earlier commit, or `helm rollback` with a kubeconfig.
 - **Migrations are expand, then contract** ([D10](goals/civo-deploy/decisions.md)): a migration never breaks the image before it, because that image keeps serving during the rollout and after a rollback. A change that cannot be written that way needs a restore, not a rollback.
@@ -204,7 +204,7 @@ ID signs people in by an emailed link and code, sent through Postmark ([the desi
 | Piece | Where it comes from |
 | --- | --- |
 | **Postmark** | One **Live** server per environment, in an account with two-factor authentication; a Sandbox server delivers nothing. Tracking is off. The owner makes them by hand, in the order of [the runbook](../infra/README.md#send-mail-through-postmark) |
-| **The token** | `POSTMARK_SERVER_TOKEN`, the sixth secret the owner pastes into each GitHub environment. The deploy writes it into `id-env`, refuses to apply `id-env` without it, and ID refuses to start in production without it. The previous image ignores the variable, so a rollout and a rollback are safe |
+| **The token** | `POSTMARK_SERVER_TOKEN`, a secret the owner pastes into each GitHub environment. The deploy writes it into `id-env`, refuses to apply `id-env` without it, and ID refuses to start in production without it. The previous image ignores the variable, so a rollout and a rollback are safe |
 | **The sender** | `Answerable ID <sign-in@<ID's host>>`, derived from `BETTER_AUTH_URL`, so its domain always matches the DNS: `sign-in@id.answerable.org` in production, `sign-in@id.answerable-staging.uk` in staging. Reply-To is `info@answerable.org`, a constant in ID |
 | **The records** | DKIM, the Return-Path CNAME to `pm.mtasv.net` and DMARC, DNS-only, at `<selector>._domainkey.id.<zone>`, the host Postmark names and `_dmarc.id.<zone>`. The owner adds them by hand in Cloudflare, and rotates and tightens them there, with no tag ([the runbook](../infra/README.md#send-mail-through-postmark)). Terraform owns only the four A records and does not touch these ([`infra/civo`](../infra/civo/README.md#what-terraform-owns-in-the-zone)). No SPF record: Postmark asks for none on the From domain, and the apex's Microsoft 365 records are not Terraform's |
 | **The address** | `POSTMARK_API_URL` replaces Postmark's endpoint, for a fake Postmark that tests run. Only the kind stack sets it, and production refuses any URL that is not `https:` |
@@ -236,9 +236,10 @@ Civo's list prices, measured on 10 October 2026 from its pricing page; USD a mon
 | PostgreSQL 17 | Small, $43.45 | Medium, $86.91 |
 | Load balancer | $10.86 | $10.86 |
 | Object store for the state, one 500 GB block | $5.43 | $5.43 |
-| Cloudflare (free plan), GHCR and GitHub Actions (public repository) | $0 | $0 |
+| Cloudflare (free plan) and GHCR | $0 | $0 |
 | **Total** | **about $103** | **about $169** |
 
+- **GitHub Actions is billed apart, once the repository is private.** GitHub Team includes $18 of compute a month, about 3,000 Linux minutes at $0.006 a minute. CI used about 3,400 minutes a month at the rate of early November 2026, before any shipping runs.
 - Two Small nodes instead of Medium bring staging to about $82, with less room for the platform pods.
 - Production's database on three nodes would add the two additional nodes, priced separately by Civo and not listed, about $173; [D37](goals/civo-deploy/decisions.md) waits for a measured failover.
 - **The audit-growth caveat.** Storage is bundled with the database size, so the only line that keeps growing is the database: at the activity above, production's Medium database is full after about five months and the next size costs $86.90 more. Retention (`Q-EVIDENCE-RETENTION`) decides it.

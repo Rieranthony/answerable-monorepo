@@ -337,6 +337,8 @@ export async function startStack() {
   const apply = (namespace: string, objects: object[]) => kubectl(["apply", "-n", namespace, "-f", "-"], { stdin: JSON.stringify({ apiVersion: "v1", kind: "List", items: objects }) })
   const tls = (name: string, pair: KeyPair, extra: Record<string, string> = {}) => ({ apiVersion: "v1", kind: "Secret", metadata: { name }, type: "kubernetes.io/tls", stringData: { "tls.crt": pair.cert, "tls.key": pair.key, ...extra } })
   const opaque = (name: string, data: Record<string, string>) => ({ apiVersion: "v1", kind: "Secret", metadata: { name }, type: "Opaque", stringData: data })
+  // A login no registry knows: the stack loads its images into the nodes and never pulls one.
+  const pullSecret = (name: string) => ({ apiVersion: "v1", kind: "Secret", metadata: { name }, type: "kubernetes.io/dockerconfigjson", stringData: { ".dockerconfigjson": JSON.stringify({ auths: { "ghcr.io": { auth: Buffer.from("stack:throwaway").toString("base64") } } }) } })
   const configMap = (name: string, data: Record<string, string>) => ({ apiVersion: "v1", kind: "ConfigMap", metadata: { name }, data })
   const readSecret = async (namespace: string, name: string) => {
     const { data } = JSON.parse((await kubectl(["get", "secret", "-n", namespace, name, "-o", "json"])).stdout) as { data: Record<string, string> }
@@ -424,13 +426,14 @@ export async function startStack() {
       ...sets.flatMap(set => ["--set", set]), "--wait", "--wait-for-jobs", "--timeout", timeout,
     ])
     await step("install charts/answerable with the ops bootstrap", async () => {
-      // What Terraform writes on Civo (postgres-admin, origin-tls) and what the deploy writes (id-env);
+      // What Terraform writes on Civo (postgres-admin, origin-tls) and what the deploy writes (id-env, ghcr-pull);
       // here, throwaway values. The ops Jobs write the rest, the database's certificate authority included: the bootstrap
       // fetches it. local-ca is the stack's alone.
       await apply("answerable", [
         opaque("postgres-admin", { OPS_DATABASE_ADMIN_URL: `postgres://${databaseAdmin}:${secrets.admin}@${database}/postgres?sslmode=verify-full&sslrootcert=/etc/ssl/db/ca.pem` }),
         tls("origin-tls", certificates.publicNames),
         opaque("id-env", { BETTER_AUTH_SECRET: secrets.betterAuthSecret, ROOT_ADMIN_SECRET: secrets.rootAdminSecret, POSTMARK_SERVER_TOKEN: secrets.postmarkServerToken }),
+        pullSecret("ghcr-pull"),
         configMap("local-ca", { "ca.pem": certificates.stackCa }),
       ])
       await release(["ops.bootstrap=true"])

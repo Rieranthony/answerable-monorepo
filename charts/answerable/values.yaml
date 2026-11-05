@@ -1,7 +1,7 @@
 # Defaults: production-shaped. Each environment's overlay (values-civo-<environment>.yaml) sets its hostnames, network and
 # sizes; the pipeline sets image.tag, the digests and idEnvChecksum. The chart creates no namespace, Secret or ConfigMap:
-# Terraform creates the namespace and writes postgres-admin and origin-tls; the deploy writes id-env from the GitHub
-# environment; the ops Jobs write postgres-ca and the generated Secrets.
+# Terraform creates the namespace and writes postgres-admin and origin-tls; the deploy writes id-env and ghcr-pull from
+# the GitHub environment; the ops Jobs write postgres-ca and the generated Secrets.
 
 image:
   # sha-<40 hex> from the pipeline, local on a laptop: every image's tag unless it has a digest, and the release's version

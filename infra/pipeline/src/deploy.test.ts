@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
-import { mkdirSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { stat } from "node:fs/promises"
 import { join } from "node:path"
 import inventory from "../../../packages/config/inventory.json"
@@ -17,6 +17,7 @@ import {
   parseDigests,
   parseJob,
   readCluster,
+  registryLogin,
   runJob,
   type Deps,
   type Digests,
@@ -39,7 +40,8 @@ const ID_ENV = {
   MICROSOFT_CLIENT_ID: "11111111-2222-3333-4444-555555555555",
   MICROSOFT_CLIENT_SECRET: "microsoft-client-secret-value-012",
 }
-const ENV = { ...CLUSTER_ENV, ...ID_ENV }
+const PULL_TOKEN = "ghcr-pull-token-value-345"
+const ENV = { ...CLUSTER_ENV, ...ID_ENV, GHCR_PULL_TOKEN: PULL_TOKEN }
 const VALUES = "charts/answerable/values-civo-staging.yaml"
 const NAMES = ["id", "mcps", "ops"] as const
 
@@ -66,10 +68,10 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
 })
 
-/** The registry: answers DIGESTS for the image named in `docker buildx imagetools inspect <reference> ...`. */
+/** The registry: answers `docker buildx imagetools inspect <reference> ...` with the digest named, or DIGESTS for the image at its tag. */
 const registry = (call: RecordedCall): Partial<RunResult> => {
-  const name = call.argv[4]!.split("/").pop()!.split(":")[0]!
-  return { stdout: `${DIGESTS[name]}\n` }
+  const [repository, pinned] = call.argv[4]!.split("@")
+  return { stdout: `${pinned ?? DIGESTS[repository!.split("/").pop()!.split(":")[0]!]}\n` }
 }
 
 type FixtureOptions = {
@@ -204,6 +206,42 @@ describe("the images list, infra/pipeline/images.json", () => {
     expect(runs).toContain('"$(jq length infra/pipeline/images.json)"')
     for (const name of ["toolbox", "admin-mcp"]) expect(runs, name).not.toContain(` ${name} `)
   })
+
+  test("the promotion logs in before it reads them: they are private, and its verify job holds no environment", async () => {
+    const { jobs } = Bun.YAML.parse(await Bun.file(new URL("../../../.github/workflows/promote-production.yml", import.meta.url)).text()) as {
+      jobs: Record<string, { environment?: string; permissions?: Record<string, string>; steps: { id?: string; uses?: string; with?: Record<string, string> }[] }>
+    }
+    const verify = jobs.verify!
+    expect(verify.environment).toBeUndefined()
+    expect(verify.permissions).toEqual({ contents: "read", packages: "read" })
+    const login = verify.steps.findIndex((step) => step.uses?.startsWith("docker/login-action@"))
+    expect(verify.steps[login]!.with).toMatchObject({ registry: "ghcr.io", password: "${{ secrets.GITHUB_TOKEN }}" })
+    expect(login).toBeLessThan(verify.steps.findIndex((step) => step.id === "verify"))
+  })
+})
+
+describe("registryLogin", () => {
+  test("holds the token as Docker and the kubelet read it, under the registry's host", () => {
+    const { auths } = JSON.parse(registryLogin(ENV)) as { auths: Record<string, { username: string; password: string; auth: string }> }
+    expect(Object.keys(auths)).toEqual(["ghcr.io"])
+    expect(auths["ghcr.io"]!.password).toBe(PULL_TOKEN)
+    expect(Buffer.from(auths["ghcr.io"]!.auth, "base64").toString()).toBe(`${auths["ghcr.io"]!.username}:${PULL_TOKEN}`)
+  })
+
+  test("trims the token and names it when it is missing or empty", () => {
+    expect(registryLogin({ GHCR_PULL_TOKEN: ` ${PULL_TOKEN}\n` })).toBe(registryLogin(ENV))
+    for (const missing of [undefined, "", "  \n"]) expect(() => registryLogin({ GHCR_PULL_TOKEN: missing })).toThrow("GHCR_PULL_TOKEN is not set")
+  })
+
+  test("reaches the deploy step of both workflows from the GitHub environment", async () => {
+    for (const workflow of ["deploy-staging.yml", "promote-production.yml"]) {
+      const { jobs } = Bun.YAML.parse(await Bun.file(new URL(`../../../.github/workflows/${workflow}`, import.meta.url)).text()) as {
+        jobs: Record<string, { steps?: { name?: string; env?: Record<string, string> }[] }>
+      }
+      const env = Object.values(jobs).flatMap((job) => job.steps ?? []).find((step) => step.name === "Deploy")?.env
+      expect(env?.GHCR_PULL_TOKEN, workflow).toBe("${{ secrets.GHCR_PULL_TOKEN }}")
+    }
+  })
 })
 
 describe("id-env's variables", () => {
@@ -227,16 +265,16 @@ describe("id-env's variables", () => {
 })
 
 describe("the bootstrap workflow's check of the pasted secrets", () => {
-  test("counts six, POSTMARK_SERVER_TOKEN among them, each read from the GitHub environment", async () => {
+  test("counts seven, POSTMARK_SERVER_TOKEN and GHCR_PULL_TOKEN among them, each read from the GitHub environment", async () => {
     const { jobs } = Bun.YAML.parse(await Bun.file(new URL("../../../.github/workflows/bootstrap.yml", import.meta.url).pathname).text()) as {
       jobs: Record<string, { env?: Record<string, string>; steps?: { name?: string; env?: Record<string, string>; run?: string }[] }>
     }
     const bootstrap = jobs.bootstrap!
     const check = bootstrap.steps!.find((step) => step.name?.includes("pasted secrets"))!
-    expect(check.name).toBe("Check the six pasted secrets are present")
-    // The five secrets of the earlier step and the sixth: each name is in the loop, and its value reaches the step from the environment.
+    expect(check.name).toBe("Check the seven pasted secrets are present")
+    // Each name is in the loop, and its value reaches the step from the environment.
     const names = check.run!.match(/for name in ([A-Z_ ]+); do/)![1]!.split(" ")
-    expect(names).toEqual(["CIVO_TOKEN", "CLOUDFLARE_API_TOKEN", "MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET", "GH_TOKEN", "POSTMARK_SERVER_TOKEN"])
+    expect(names).toEqual(["CIVO_TOKEN", "CLOUDFLARE_API_TOKEN", "MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET", "GH_TOKEN", "POSTMARK_SERVER_TOKEN", "GHCR_PULL_TOKEN"])
     const env = { ...bootstrap.env, ...check.env }
     for (const name of names.filter((name) => name !== "GH_TOKEN")) expect(env[name], name).toBe(`\${{ secrets.${name} }}`)
     expect(env.GH_TOKEN).toBe("${{ secrets.GH_SECRETS_TOKEN }}")
@@ -265,7 +303,7 @@ describe("idEnv and idEnvChecksum", () => {
       "BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET are not set: id-env needs BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET, POSTMARK_SERVER_TOKEN",
     )
     expect(() => idEnv({ ...ENV, ROOT_ADMIN_SECRET: " " })).toThrow("ROOT_ADMIN_SECRET is not set")
-    // The sixth pasted secret: ID refuses to start in production without it, so the deploy stops first and names it.
+    // A pasted secret: ID refuses to start in production without it, so the deploy stops first and names it.
     for (const missing of [undefined, "", "  \n"])
       expect(() => idEnv({ ...ENV, POSTMARK_SERVER_TOKEN: missing })).toThrow("POSTMARK_SERVER_TOKEN is not set: id-env needs")
     expect(() => idEnv({ ...ENV, MICROSOFT_CLIENT_SECRET: "" })).toThrow(
@@ -285,11 +323,12 @@ describe("idEnv and idEnvChecksum", () => {
 })
 
 describe("deploy", () => {
-  test("looks up the digests, applies id-env and upgrades the release by digest, with the bootstrap, register and the secrets' checksum", async () => {
+  test("looks up the digests, applies id-env and ghcr-pull and upgrades the release by digest, with the bootstrap, register and the secrets' checksum", async () => {
     const f = await fixture()
     await deploy({ environment: "staging", imageTag: TAG }, f.deps)
     expect(f.runner.commands()).toEqual([
       ...lookups(TAG),
+      "kubectl apply -n answerable -f -",
       "kubectl apply -n answerable -f -",
       upgradeCommand(`${pins(DIGESTS)} --set-string idEnvChecksum=${checksum(ID_ENV)} --set ops.bootstrap=true --set ops.register=true`),
     ])
@@ -308,7 +347,37 @@ describe("deploy", () => {
     expect(manifest.stringData).toBeUndefined()
     expect(Object.fromEntries(Object.entries(manifest.data as Record<string, string>).map(([name, value]) => [name, Buffer.from(value, "base64").toString()]))).toEqual(ID_ENV)
     const everything = [f.log(), ...f.runner.calls.flatMap((call) => call.argv)].join(" ")
-    for (const value of [...Object.values(ID_ENV), CLUSTER_ENV.KUBE_TOKEN]) expect(everything).not.toContain(value)
+    for (const value of [...Object.values(ID_ENV), CLUSTER_ENV.KUBE_TOKEN, PULL_TOKEN]) expect(everything).not.toContain(value)
+  })
+
+  test("hands kubectl ghcr-pull on standard input, the login itself, before Helm runs its hooks, and logs no value", async () => {
+    const f = await fixture()
+    await deploy({ environment: "staging", imageTag: TAG }, f.deps)
+    const apply = f.runner.calls.filter((call) => call.argv[1] === "apply")[1]!
+    expect(apply.options.onOutput).toBeUndefined()
+    const manifest = JSON.parse(apply.options.input!)
+    expect(manifest).toMatchObject({ apiVersion: "v1", kind: "Secret", metadata: { name: "ghcr-pull", namespace: "answerable" }, type: "kubernetes.io/dockerconfigjson" })
+    expect(Object.keys(manifest.data)).toEqual([".dockerconfigjson"])
+    expect(Buffer.from(manifest.data[".dockerconfigjson"], "base64").toString()).toBe(registryLogin(ENV))
+    expect(f.runner.calls.indexOf(apply)).toBeLessThan(f.runner.calls.findIndex((call) => call.argv[0] === "helm"))
+    expect(f.log()).toContain("ghcr-pull holds .dockerconfigjson.")
+    expect(f.log()).not.toContain(Buffer.from(PULL_TOKEN).toString("base64"))
+  })
+
+  test("reads every image with the token the cluster will pull with, from a Docker configuration readable by its owner only that exists only meanwhile", async () => {
+    const seen: { directory: string; login: string; mode: number }[] = []
+    const f = await fixture(undefined, {
+      docker: (call) => {
+        const directory = call.options.env!.DOCKER_CONFIG!
+        const file = join(directory, "config.json")
+        seen.push({ directory, login: readFileSync(file, "utf8"), mode: statSync(file).mode & 0o777 })
+        return registry(call)
+      },
+    })
+    await deploy({ environment: "staging", imageTag: TAG }, f.deps)
+    expect(seen).toHaveLength(NAMES.length)
+    for (const each of seen) expect(each).toMatchObject({ login: registryLogin(ENV), mode: 0o600 })
+    expect(await stat(seen[0]!.directory).catch(() => null)).toBeNull()
   })
 
   test("a changed secret changes the checksum, so the upgrade rolls ID; the same secrets keep it", async () => {
@@ -323,11 +392,16 @@ describe("deploy", () => {
     expect(sum(rotated)).not.toBe(sum(first))
   })
 
-  test("pins the digests it is given and looks nothing up", async () => {
+  test("pins the digests it is given, reading each by digest to prove the token, whatever the registry answers", async () => {
     const f = await fixture()
     await deploy({ environment: "staging", imageTag: TAG, digests: OTHER_DIGESTS }, f.deps)
-    expect(f.runner.commands().some((command) => command.startsWith("docker "))).toBe(false)
-    expect(f.cluster()[1]).toContain(`--set image.tag=${TAG} ${pins(OTHER_DIGESTS)}`)
+    expect(f.runner.commands().filter((command) => command.startsWith("docker "))).toEqual(
+      NAMES.map((name) => `docker buildx imagetools inspect ghcr.io/answerableorg/answerable/${name}@${OTHER_DIGESTS[name]} --format {{.Manifest.Digest}}`),
+    )
+    expect(f.cluster().at(-1)).toContain(`--set image.tag=${TAG} ${pins(OTHER_DIGESTS)}`)
+    const odd = await fixture(undefined, { docker: () => ({ stdout: `${DIGESTS.id}\n` }) })
+    await deploy({ environment: "staging", imageTag: TAG, digests: OTHER_DIGESTS }, odd.deps)
+    expect(odd.cluster().at(-1)).toContain(pins(OTHER_DIGESTS))
   })
 
   test("stops before the cluster when a tag cannot be resolved", async () => {
@@ -336,6 +410,16 @@ describe("deploy", () => {
       `could not resolve ghcr.io/answerableorg/answerable/id:${TAG} to a manifest digest (exit 1): ghcr.io/…: manifest unknown`,
     )
     expect(f.runner.commands()).toEqual([lookups(TAG)[0]!])
+  })
+
+  test("stops before the cluster, naming the token, when the registry refuses it, for digests it is given too", async () => {
+    const refuse = () => ({ exitCode: 1, stderr: "ERROR: failed to authorize: 403 Forbidden\n" })
+    const f = await fixture(undefined, { docker: refuse })
+    await expect(deploy({ environment: "staging", imageTag: TAG }, f.deps)).rejects.toThrow("403 Forbidden. If the registry refused, GHCR_PULL_TOKEN cannot read the package")
+    expect(f.cluster()).toEqual([])
+    const pinned = await fixture(undefined, { docker: refuse })
+    await expect(deploy({ environment: "staging", imageTag: TAG, digests: OTHER_DIGESTS }, pinned.deps)).rejects.toThrow("GHCR_PULL_TOKEN cannot read the package")
+    expect(pinned.cluster()).toEqual([])
   })
 
   test("refuses an answer that is not a digest, and says so when there was no answer at all", async () => {
@@ -357,14 +441,14 @@ describe("deploy", () => {
     }
     await deploy({ environment: "staging", imageTag: TAG }, deps)
     const clusterCalls = f.runner.calls.filter((call) => call.argv[0] !== "docker")
-    expect(clusterCalls).toHaveLength(2)
+    expect(clusterCalls).toHaveLength(3)
     expect(new Set(modes)).toEqual(new Set([0o600]))
     for (const call of f.runner.calls) expect(call.options.cwd).toBe(f.root)
     for (const call of clusterCalls) expect(JSON.parse(call.kubeconfig!).users[0].user.token).toBe("deployer-token-value")
     const path = clusterCalls[0]!.options.env!.KUBECONFIG!
     expect(await stat(path).catch(() => null)).toBeNull()
     // The registry lookups get no kubeconfig.
-    for (const call of f.runner.calls.filter((call) => call.argv[0] === "docker")) expect(call.options.env).toBeUndefined()
+    for (const call of f.runner.calls.filter((call) => call.argv[0] === "docker")) expect(call.options.env?.KUBECONFIG).toBeUndefined()
   })
 
   test("prints only the lines in which kubectl names an object it applied", async () => {
@@ -423,10 +507,13 @@ describe("deploy", () => {
     await expect(deploy({ environment: "staging", imageTag: TAG }, noCluster.deps)).rejects.toThrow("KUBE_SERVER is not set")
     const noSecret = await fixture(undefined, { env: { ...ENV, ROOT_ADMIN_SECRET: "" } })
     await expect(deploy({ environment: "staging", imageTag: TAG }, noSecret.deps)).rejects.toThrow("ROOT_ADMIN_SECRET is not set")
-    // The sixth pasted secret: ID refuses to start in production without it, so a deploy without it never reaches the cluster.
+    // A pasted secret: ID refuses to start in production without it, so a deploy without it never reaches the cluster.
     const noToken = await fixture(undefined, { env: { ...ENV, POSTMARK_SERVER_TOKEN: undefined } })
     await expect(deploy({ environment: "staging", imageTag: TAG }, noToken.deps)).rejects.toThrow("POSTMARK_SERVER_TOKEN is not set")
-    for (const each of [f, noCluster, noSecret, noToken]) expect(each.runner.calls).toEqual([])
+    // The other: without it no pod could pull, so a deploy without it reads nothing and never reaches the cluster.
+    const noPullToken = await fixture(undefined, { env: { ...ENV, GHCR_PULL_TOKEN: " " } })
+    await expect(deploy({ environment: "staging", imageTag: TAG }, noPullToken.deps)).rejects.toThrow("GHCR_PULL_TOKEN is not set")
+    for (const each of [f, noCluster, noSecret, noToken, noPullToken]) expect(each.runner.calls).toEqual([])
   })
 
   test("reports a failed upgrade with the migration and ops Jobs' logs, and only those", async () => {

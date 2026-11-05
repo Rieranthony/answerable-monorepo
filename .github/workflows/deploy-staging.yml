@@ -176,12 +176,14 @@ jobs:
           tools: helm kubectl
 
       # No cloud key is in scope here: the deployer ServiceAccount's token reaches the answerable namespace only, and
-      # ID's secrets go from the environment into the Secret id-env on kubectl's standard input.
+      # ID's secrets go from the environment into the Secret id-env on kubectl's standard input. GHCR_PULL_TOKEN reads the
+      # private images here, proving it can, and goes into the Secret ghcr-pull the same way, for the cluster's pulls.
       - name: Deploy
         env:
           KUBE_SERVER: ${{ secrets.KUBE_SERVER }}
           KUBE_CA: ${{ secrets.KUBE_CA }}
           KUBE_TOKEN: ${{ secrets.KUBE_TOKEN }}
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
           ROOT_ADMIN_SECRET: ${{ secrets.ROOT_ADMIN_SECRET }}
           MICROSOFT_CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}

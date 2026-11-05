@@ -4,7 +4,7 @@ How to set up, ship, roll back, scale, rotate, restore and destroy Answerable's 
 
 **Status.** Built and proved locally. Staging has run on Civo (`staging/fourth`, 2026-10-23: [`reports/staging-evidence.md`](../reports/staging-evidence.md)); production has not. Brief [B7a](../docs/goals/civo-deploy/briefs/b7.md) runs this page and corrects it.
 
-**Conventions.** Nothing here is run from a laptop except `git tag`, `gh run watch` and the browser. Every secret lives in a GitHub environment or is generated where it is used; no command on this page prints one. Staging is shown; production is the same with `production`, the zone `answerable.org` and the owner's approval on each run.
+**Conventions.** Nothing here is run from a laptop except `git tag`, `gh run watch` and the browser. Every secret lives in a GitHub environment or is generated where it is used; no command on this page prints one. Staging is shown; production is the same with `production` and the zone `answerable.org`.
 
 ## Where the details live
 
@@ -23,7 +23,8 @@ How to set up, ship, roll back, scale, rotate, restore and destroy Answerable's 
 1. **Civo** ([D28](../docs/goals/civo-deploy/decisions.md)). One Civo organisation with two accounts, `answerable-staging` and `answerable-production`, region LON1. You are in each account's Owners team with MFA on your login. Each account's API key ([Civo's page](https://www.civo.com/docs/account/api-keys)) is that environment's `CIVO_TOKEN`.
 2. **Cloudflare.** The zone (`answerable-staging.uk` for staging, `answerable.org` for production) and **one API token scoped to that zone only**, `CLOUDFLARE_API_TOKEN`: Zone > Zone > Read, Zone > DNS > Edit, Zone > SSL and Certificates > Edit, Zone > Zone Settings > Edit, Zone > Config Rules > Edit, Zone > Cache Rules > Edit ([the list and why](civo/README.md#credentials)). **Bot Fight Mode off** in the zone's Security settings: no token can change it, and it would challenge every MCP host.
 3. **Microsoft Entra.** The environment's app registration, with the redirect URIs `https://id.answerable-staging.uk/auth/sso/callback` and `https://id.answerable-staging.uk/login` for staging, or production's in [`docs/06`](../docs/06-deploying-answerable-id.md#platform-applications-microsoft-entra-and-google). Its client ID and secret are `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET`. You also need the **tenant ID of Answerable's own staff directory**. A Google client is optional (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`).
-4. **GitHub.** Admin access on the repository: GitHub asks for it to write the secrets of an environment in an organisation's repository. A fine-grained personal access token with `answerableorg` as its resource owner, for `answerable-monorepo` alone, with read and write on **Environments** and nothing else, `GH_SECRETS_TOKEN`; put its expiry in your calendar. If the organisation reviews tokens, it does nothing until an organisation owner approves it. The bootstrap workflow and Terraform write the environment's secrets with it. Not Administration: that permission would also let the token rename or delete the repository, which is why the environment's policy and reviewer are set by you, once, in step 1.
+4. **GitHub.** Admin access on the repository: GitHub asks for it to write the secrets of an environment in an organisation's repository. A fine-grained personal access token with `answerableorg` as its resource owner, for `answerable-monorepo` alone, with read and write on **Environments** and nothing else, `GH_SECRETS_TOKEN`; put its expiry in your calendar. If the organisation reviews tokens, it does nothing until an organisation owner approves it. The bootstrap workflow and Terraform write the environment's secrets with it. Not Administration: that permission would also let the token rename or delete the repository, which is why the environment's policy is set by you, once, in step 1.
+5. **The registry token.** A personal access token (classic) with `read:packages` and nothing else, `GHCR_PULL_TOKEN`: the images are private, and GHCR takes no other kind from outside GitHub Actions. It reads every package its account can, so make it on a machine account if you can, one that can read `answerable/id`, `answerable/mcps` and `answerable/ops`. Put its expiry in your calendar. The organisation must allow classic tokens, which it does by default.
 
 ### Tools on your machine
 
@@ -33,7 +34,7 @@ How to set up, ship, roll back, scale, rotate, restore and destroy Answerable's 
 
 About an hour, most of it Civo creating the cluster and the database. Each step's errors name what to fix.
 
-**1. The GitHub environment.** In the repository's Settings > Environments, create `staging`. Under **Deployment branches and tags** choose **Selected branches and tags** and add the branch `main` and the tag pattern `staging/*`, so that nothing else can use the environment. Paste the six secrets: `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `GH_SECRETS_TOKEN`, `POSTMARK_SERVER_TOKEN` (Postmark's Server API token: [Send mail through Postmark](#send-mail-through-postmark)). Add the Google pair if you have one. For production the tag pattern is `production/*` and you add yourself under **Required reviewers**.
+**1. The GitHub environment.** In the repository's Settings > Environments, create `staging`. Under **Deployment branches and tags** choose **Selected branches and tags** and add the branch `main` and the tag pattern `staging/*`, so that nothing else can use the environment. Paste the seven secrets: `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `GH_SECRETS_TOKEN`, `POSTMARK_SERVER_TOKEN` (Postmark's Server API token: [Send mail through Postmark](#send-mail-through-postmark)), `GHCR_PULL_TOKEN`. Add the Google pair if you have one. For production the tag pattern is `production/*`.
 
 **2. The staff directory.** In `charts/answerable/values-civo-staging.yaml`, set `id.staffDomain` to the staff email domain (`answerable.org`) and `id.entraTenant` to the staff directory's tenant ID; commit and push. Neither is a secret: the register Job uses them to connect your directory to the platform organisation on the first deploy.
 
@@ -54,23 +55,18 @@ gh run watch
 
 In the deploy, `ops-bootstrap` records the database's certificate (its log names the SHA-256 fingerprint: record it with the date), creates the databases and their logins, and each MCP's schema, then the migrations run and ID starts. Then `ops-register` runs, as it does on every deploy. This first time it holds only the root secret, before anyone is a platform administrator, so it first mints its own machine client, `ops-register`, and keeps its secret in the Secret `ops-id-client`; it goes on as that client. The Toolbox and the admin MCP are registered in ID, each `standalone` or `both` MCP is registered, the two servers start by themselves, and the staff domain and the Entra provider are put on the platform organisation.
 
-**5. Make the images public.** New GHCR packages are private, and the cluster pulls without credentials. If the deploy failed on pulling an image, open each package of [`pipeline/images.json`](pipeline/images.json) (`answerable/id`, `answerable/mcps`, `answerable/ops`) on GitHub under the organisation's Packages, choose Package settings > Change visibility > Public (the organisation's **Package creation** setting must allow public packages), then rerun the failed jobs:
+The images stay private: the deploy reads each one with `GHCR_PULL_TOKEN` first, and every pod pulls with the Secret `ghcr-pull` it writes. If the deploy stops at `could not resolve`, replace the token as in [Rotate](#rotate); it has changed nothing in the cluster.
 
-```sh
-gh run list --workflow deploy-staging.yml --limit 1
-gh run rerun <run id> --failed
-```
+**5. Sign in once** at `https://id.answerable-staging.uk/login` with your work account. That creates your user and your platform membership.
 
-**6. Sign in once** at `https://id.answerable-staging.uk/login` with your work account. That creates your user and your platform membership.
-
-**7. Make yourself the administrator.** Run the **Ops** workflow with `staging`, `make-admin` and your email. With the root secret, the Job puts you in `answerable-owner`, the admin MCP's owner role, then in `platform-admins`. That second step locks root, which is why the owner role comes first; the Job confirms ID now refuses the root secret. Nothing else needs root afterwards: every deploy's `ops-register` runs as its own client.
+**6. Make yourself the administrator.** Run the **Ops** workflow with `staging`, `make-admin` and your email. With the root secret, the Job puts you in `answerable-owner`, the admin MCP's owner role, then in `platform-admins`. That second step locks root, which is why the owner role comes first; the Job confirms ID now refuses the root secret. Nothing else needs root afterwards: every deploy's `ops-register` runs as its own client.
 
 ```sh
 gh workflow run ops.yml --ref main -f environment=staging -f command=make-admin -f email=<you>@answerable.org
 gh run watch
 ```
 
-**8. Connect Claude Code** ([the admin MCP's setup](../apps/web/content/docs/admin/setup.mdx#connect-claude-code)):
+**7. Connect Claude Code** ([the admin MCP's setup](../apps/web/content/docs/admin/setup.mdx#connect-claude-code)):
 
 ```sh
 claude mcp add --transport http answerable-admin https://admin-mcp.answerable-staging.uk/mcp --client-id claude-code-admin --callback-port 47700
@@ -79,7 +75,7 @@ claude mcp add --transport http answerable-toolbox https://toolbox.answerable-st
 
 In Claude Code, run `/mcp`, choose `answerable-admin`, **Authenticate** and sign in with your work account; ask Claude to call `admin_whoami`, which answers `owner`. These are the commands `ops-register` prints in its log.
 
-**9. Read the database's lock limit.** A members import takes up to 1,000 advisory locks in one transaction ([`apps/id/README.md`](../apps/id/README.md)), and nobody could read the Civo database's setting before it existed. From a [kubeconfig](#get-a-kubeconfig), with ID's own runtime login, which every role may use for this read; the URL stays in the pod and is not printed, and the connection verifies the database's certificate against the authority the pod mounts (the kind stack runs this exact command):
+**8. Read the database's lock limit.** A members import takes up to 1,000 advisory locks in one transaction ([`apps/id/README.md`](../apps/id/README.md)), and nobody could read the Civo database's setting before it existed. From a [kubeconfig](#get-a-kubeconfig), with ID's own runtime login, which every role may use for this read; the URL stays in the pod and is not printed, and the connection verifies the database's certificate against the authority the pod mounts (the kind stack runs this exact command):
 
 ```sh
 kubectl -n answerable exec deploy/id -c id -- bun -e 'const sql = new Bun.SQL({ url: process.env.DATABASE_URL.split("?")[0], tls: { ca: await Bun.file("/etc/ssl/db/ca.pem").text() } }); console.log((await sql`SHOW max_locks_per_transaction`)[0], (await sql`SHOW max_connections`)[0]); await sql.close()'
@@ -87,7 +83,7 @@ kubectl -n answerable exec deploy/id -c id -- bun -e 'const sql = new Bun.SQL({ 
 
 PostgreSQL's lock table holds `max_locks_per_transaction` × (`max_connections` + `max_prepared_transactions`) locks for all transactions together ([the documentation](https://www.postgresql.org/docs/17/runtime-config-locks.html)): write both numbers in [`reports/staging-evidence.md`](../reports/staging-evidence.md), and if one import of 1,000 would not fit with the others' locks, say so before the first firm is imported. Not yet read.
 
-**Production differs in three places.** The environment is `production`, with you as its required reviewer; its first ship is a tag `production/<name>` on a commit staging has shipped, and the run waits for your approval; the Entra redirect URIs are production's.
+**Production differs in three places.** The environment is `production`; its first ship is a tag `production/<name>` on a commit staging has shipped, and [nothing waits for your approval yet](#promote-to-production); the Entra redirect URIs are production's.
 
 ## Send mail through Postmark
 
@@ -112,7 +108,7 @@ ID mails sign-in links and codes through Postmark, from `Answerable ID <sign-in@
    gh secret set POSTMARK_SERVER_TOKEN --env production
    ```
 
-   It must be there before the first tag that ships magic links, and every tag after it: without it the deploy stops, naming `POSTMARK_SERVER_TOKEN`, once Terraform has applied. The Bootstrap workflow's check of the pasted secrets counts six.
+   It must be there before the first tag that ships magic links, and every tag after it: without it the deploy stops, naming `POSTMARK_SERVER_TOKEN`, once Terraform has applied. The Bootstrap workflow's check of the pasted secrets counts seven.
 6. **Approval to send to anyone.** Once the domains are verified, ask Postmark for approval to send to any recipient. Until it is given, the account is not approved: Postmark answers 412 or 413 ([`packages/emails`](../packages/emails/README.md)), and ID logs `magic_link_send_failed` with that code.
 7. **Operating it.** Everything here is by hand, with no tag.
    - **Bounces and complaints.** Keep a server's bounce rate under 10% and its spam complaints under 0.1%: past them Postmark pauses the server, and every sign-in by email in that environment stops. Made-up addresses bounce, which is why ID admits an address no user holds only in a firm's `domain` mode, and then under a budget of its own ([`apps/id/OPERATIONS.md`](../apps/id/OPERATIONS.md)).
@@ -151,7 +147,7 @@ gh run watch
 Once per environment, the first tag of a commit that has the `mcps` image, the `mcp` hostname and `ops-register`:
 
 1. **Terraform** adds the record `mcp.<zone>` and reissues the origin certificate for the four hostnames: the new certificate reaches `origin-tls` before the old one is revoked, so nothing stops. The plan shows the record, the certificate request and the certificate replaced.
-2. **If the deploy failed pulling the `mcps` image**, the new package is private: make it public once, as in [First run](#first-run) step 5 (`answerable/mcps`), and rerun the failed jobs. Staging pulled the new `ops` package without that step ([`reports/staging-evidence.md`](../reports/staging-evidence.md#image-pulls)). The packages `answerable/toolbox` and `answerable/admin-mcp` are no longer built; delete them once production runs `mcps`.
+2. **The images move.** They are private now, under `answerableorg`, so `GHCR_PULL_TOKEN` must be in the environment before the tag. The packages under `ghcr.io/rieranthony/answerable` are public and hold staging's earlier code, and its pods run from them until this tag: delete them once it has shipped.
 3. **`ops-register` has no client of its own yet.** It is minted in this deploy, by whichever bearer the Job holds:
    - **Nobody has run `make-admin` in the environment yet:** the root secret mints it, as on a first run. Nothing to do.
    - **Root is locked already:** ID refuses the root secret, the Job stops with `register has no machine client of its own yet (the Secret ops-id-client is empty), and ID refuses the root secret (root_locked)`, and the release rolls back. So ship this tag with break glass, as in [Register again](#register-again): the Job mints `ops-register` with the root secret and goes on as `ops-register`; the next tag removes break glass.
@@ -187,7 +183,9 @@ git push origin production/<name>
 gh run watch
 ```
 
-The run verifies each image's signature (they must have been built by `deploy-staging.yml` on a staging tag), then waits for your approval (Actions > the run > Review deployments). After approval it applies production's Terraform, deploys exactly the verified digests and smoke-tests production. A commit staging never shipped is refused.
+**Not yet: an approval.** Required reviewers are not available to this repository: GitHub Team offers them on public repositories only. So a `production/*` tag ships as soon as its signatures verify, and anyone who can push tags can ship. Settle [`Q-PRODUCTION-APPROVAL`](../docs/02-plan.md#open-register) before production's first tag.
+
+The run verifies each image's signature (they must have been built by `deploy-staging.yml` on a staging tag), then applies production's Terraform, deploys exactly the verified digests and smoke-tests production. A commit staging never shipped is refused.
 
 ## Roll back
 
@@ -198,6 +196,8 @@ The run verifies each image's signature (they must have been built by `deploy-st
 | Straight to the previous release (chart, values and image together) | With a [kubeconfig](#get-a-kubeconfig): `helm history answerable -n answerable`, then `helm rollback answerable <revision> -n answerable --wait` |
 
 A migration is never rolled back: the earlier image runs on the newer schema. A change that broke that rule needs a [restore](#restore).
+
+No rollback crosses the move to private images: a commit from before the Secret `ghcr-pull` has a chart whose pods cannot pull. Fix forward instead.
 
 ## Scale
 
@@ -223,6 +223,7 @@ A changed secret in the environment reaches the cluster on the next tag: the dep
 | Register's own client (`ops-id-client`) | Empty its key and ship with break glass, as in [Register again](#register-again): `register` rotates its secret in ID with the root secret and stores it. The next tag removes break glass |
 | The origin certificate or the origin-pull certificate | Adding a hostname (as `mcp` was) reissues the origin certificate on the next apply by itself: a new one is issued and written to `origin-tls` before the old one is revoked. Otherwise, a reviewed change adds `-replace` for the key to the apply once, or run it from a trusted machine: `infra/civo/terraform.sh staging apply -replace=module.edge.tls_private_key.<name>`; both switch within one apply, with a short interruption ([`infra/civo/README.md`](civo/README.md#certificates)) |
 | The deployer token | `infra/civo/terraform.sh staging apply -replace=module.deployer.kubernetes_secret_v1.token` from a trusted machine; Terraform writes the new `KUBE_TOKEN` into the environment |
+| `GHCR_PULL_TOKEN` | Make a new classic token with `read:packages`, run `gh secret set GHCR_PULL_TOKEN --env staging` (it asks for the value), and tag. The deploy reads every image with it and rewrites `ghcr-pull`; nothing rolls. Revoke the old token once the deploy has passed |
 | `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `GH_SECRETS_TOKEN` | Regenerate in the vendor's console (for Civo, regeneration is the only control), then `gh secret set <name> --env staging` (it asks for the value) |
 | `STATE_ACCESS_KEY_ID`, `STATE_SECRET_ACCESS_KEY` | Delete both from the environment, then the Bootstrap workflow writes a new credential's pair; delete the old credential in Civo's dashboard |
 
@@ -265,7 +266,7 @@ gh run watch
 
 **Break glass, for one ship.** `register` needs the root secret only when it has no client of its own (`ops-id-client` empty) and root is locked: the first ship of `ops-register` after `make-admin`, or a rotation of its own secret. Root works again only with break glass:
 
-1. Add `ROOT_ADMIN_BREAK_GLASS: "true"` under `id.env` in `charts/answerable/values-civo-staging.yaml`, and tag (for production, tag and approve). The deploy's `register` mints, or rotates, `ops-register` with the root secret and stores its secret.
+1. Add `ROOT_ADMIN_BREAK_GLASS: "true"` under `id.env` in `charts/answerable/values-civo-staging.yaml`, and tag. The deploy's `register` mints, or rotates, `ops-register` with the root secret and stores its secret.
 2. Remove the line and tag again. Every use of the root secret is in the audit log as `admin.root_request`.
 
 ## Restore
@@ -308,7 +309,7 @@ Useful reads: `kubectl -n answerable logs deploy/id`, `kubectl -n answerable log
 
 When nobody can administer ID ([`onboard.mdx`](../apps/web/content/docs/id/onboard.mdx#first-run), step 7):
 
-1. Add `ROOT_ADMIN_BREAK_GLASS: "true"` under `id.env` in `charts/answerable/values-civo-staging.yaml`, and tag (for production, tag and approve).
+1. Add `ROOT_ADMIN_BREAK_GLASS: "true"` under `id.env` in `charts/answerable/values-civo-staging.yaml`, and tag.
 2. Repair access with the root secret. Read it into your shell without printing it: `ROOT=$(kubectl -n answerable get secret id-env -o jsonpath='{.data.ROOT_ADMIN_SECRET}' | base64 --decode)`, then run steps 2 and 5 of [`onboard.mdx` § First run](../apps/web/content/docs/id/onboard.mdx#first-run) against the environment's host, each write with a new key.
 3. Remove the line and tag again. Every use of the root secret is in the audit log as `admin.root_request`.
 
@@ -345,7 +346,8 @@ What each proves: [`docs/12`](../docs/12-deployment.md#testing). On macOS, a Ter
 - **Terraform state holds secrets.** Civo's provider keeps the database administrator's password and the cluster's admin kubeconfig in state; the state also holds the deployer's token, the two private keys of the certificates and the plaintext of the three deploy secrets Terraform writes into the environment. The state bucket's credential is as sensitive as `CIVO_TOKEN`.
 - **Civo's gaps:** no documented etcd encryption, no audit log of API calls, unscoped API keys, a database in beta with undocumented backups and no documented TLS. Each is mitigated as [`docs/12`](../docs/12-deployment.md) says, not closed.
 - **The Kubernetes API is reachable from the internet**, authenticated by the cluster ([D30](../docs/goals/civo-deploy/decisions.md)). A GitOps controller pulling from inside the cluster is the hardening if it is ever wanted.
-- **New GHCR packages are private** and have no API to change that: set them public once, after the first build.
+- **`GHCR_PULL_TOKEN` belongs to an account.** GHCR takes only a classic token, which reads every package its account can. If it expires or the account loses access, running pods carry on, a pod that needs a pull stays in `ImagePullBackOff`, and the next deploy stops before it touches the cluster, naming the token.
+- **Signing names the repository in public.** Keyless signatures go to Sigstore's public transparency log, and each certificate names the repository, the workflow and the tag (read from `staging/fourth`'s signature on 5 November 2026). So a private repository still publishes its name and every staging tag's name, MCP names included. No code or secret is in the log.
 - **Traefik's CRDs** are installed by Helm on the first install only. A later Traefik upgrade applies its CRDs first (for example with the `traefik-crds` chart).
 - **The database admits the private network**, not the nodes alone: Civo firewalls match ranges, and nothing else may join the network ([`modules/database`](civo/modules/database/README.md)).
 - **Register's own client is broad.** `ops-register` holds `platform:read platform:write`, as the Toolbox's and the admin MCP's clients do: with its secret one can mint further clients and rotate secrets. A narrower scope for registration is Not yet ([`Q-PLATFORM-REGISTER-SCOPE`](../docs/02-plan.md#open-register)); its secret lives only in `ops-id-client`, which only the ops Jobs' Role reads.

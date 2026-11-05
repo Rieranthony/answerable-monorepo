@@ -42,7 +42,8 @@ const USAGE = `Usage:
   bun infra/pipeline/src/cli.ts smoke --environment <staging|production> [--wait <seconds>] [--interval <seconds>]
 
 deploy pins the images of infra/pipeline/images.json (id, mcps, ops) by manifest digest: given with --image-digest for
-every one, or looked up with docker buildx from the tag. It writes the Secret id-env from BETTER_AUTH_SECRET,
+every one, or looked up from the tag; either way docker buildx reads each with GHCR_PULL_TOKEN, which it requires and
+writes into the Secret ghcr-pull. It writes the Secret id-env from BETTER_AUTH_SECRET,
 ROOT_ADMIN_SECRET and POSTMARK_SERVER_TOKEN, which it requires, the MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET pair and the
 GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET pair when set, and BETTER_AUTH_SECRETS when set. run-job runs one ops Job on
 the release's own values, with the chart of the commit the release runs, and prints revision=<commit> on standard

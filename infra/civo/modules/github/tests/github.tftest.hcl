@@ -1,5 +1,5 @@
 # The environment's GitHub side: the three secrets the deploy and ops jobs reach the cluster with, written into the
-# environment the owner created. The environment's policy and reviewer are the owner's, not Terraform's (main.tf).
+# environment the owner created. The environment's policy is the owner's, not Terraform's (main.tf).
 mock_provider "github" {
   override_during = plan
 }

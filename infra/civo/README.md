@@ -102,7 +102,7 @@ The last two are the ones easiest to miss ([config rules](https://developers.clo
 | Environments: Read and write | The environment's secrets: the public key they are encrypted with, and `KUBE_SERVER`, `KUBE_CA`, `KUBE_TOKEN`; the bootstrap workflow's `gh secret set` uses the same permission |
 | Metadata: Read | Reading the repository; GitHub adds it to every token |
 
-Nothing more. Managing the environment itself and its deployment policies would need Administration: Read and write, which also lets a token change the repository's settings, rename it or delete it; so the environment's policy and reviewer are set by the owner once, at creation, and Terraform never touches them.
+Nothing more. Managing the environment itself and its deployment policies would need Administration: Read and write, which also lets a token change the repository's settings, rename it or delete it; so the environment's policy is set by the owner once, at creation, and Terraform never touches it.
 
 **The state is a secret in its own right.** Anyone who reads the state bucket owns the cluster and the database, so the bucket and its credential are guarded like `CIVO_TOKEN`: only the GitHub environment holds them. Terraform cannot keep these out of state:
 
@@ -122,7 +122,7 @@ Civo clusters always have a public API endpoint (6443). The cluster firewall adm
 
 ## The GitHub environment
 
-The owner creates each environment (`staging`, `production`) by hand, once, before Terraform first runs ([`infra/README.md`](../README.md#first-run)): its deployment policy admits the branch `main` and the tags `<environment>/*` and nothing else; production names the owner as its required reviewer; and the six secrets are pasted in: `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `GH_SECRETS_TOKEN` and `POSTMARK_SERVER_TOKEN`. Terraform's `github` module writes one thing into it:
+The owner creates each environment (`staging`, `production`) by hand, once, before Terraform first runs ([`infra/README.md`](../README.md#first-run)): its deployment policy admits the branch `main` and the tags `<environment>/*` and nothing else; and the seven secrets are pasted in: `CIVO_TOKEN`, `CLOUDFLARE_API_TOKEN`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `GH_SECRETS_TOKEN`, `POSTMARK_SERVER_TOKEN` and `GHCR_PULL_TOKEN`. Terraform's `github` module writes one thing into it:
 
 - **The cluster's address and credential**: `KUBE_SERVER` (the cluster's `api_endpoint`), `KUBE_CA` (the cluster CA, PEM, from the deployer's token Secret) and `KUBE_TOKEN` (the deployer's token). A new cluster or a rotated token reaches GitHub in the same apply.
 
@@ -162,7 +162,7 @@ The apply uploads or issues the new certificate before it deletes the old one (`
 - The zone's Cloudflare token has the six permissions above.
 - Bot Fight Mode is off in the zone (Security settings in the dashboard). The token cannot change it.
 - The zone has no `http_config_settings` or `http_request_cache_settings` ruleset made by hand. Cloudflare allows one per zone and phase; import an existing one with `infra/civo/terraform.sh <environment> import 'module.edge.cloudflare_ruleset.config' 'zones/<zone id>/<ruleset id>'`.
-- The GitHub environment exists with its six secrets, its deployment policy (`main` and the tags `<environment>/*`) and, for production, the owner as required reviewer ([the GitHub environment](#the-github-environment)).
+- The GitHub environment exists with its seven secrets and its deployment policy (`main` and the tags `<environment>/*`) ([the GitHub environment](#the-github-environment)).
 - The bootstrap workflow has run for the environment: the state bucket exists and `STATE_ACCESS_KEY_ID` and `STATE_SECRET_ACCESS_KEY` are in the GitHub environment.
 
 ## First apply

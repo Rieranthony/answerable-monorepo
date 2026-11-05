@@ -109,7 +109,7 @@ The [standard](apps/web/content/docs/mcp/standard.mdx) says which rules the SDK,
 
 ### Deploying
 
-[`docs/12-deployment.md`](docs/12-deployment.md) says what runs where and why: Civo London, one account per environment, one Helm chart on Civo Kubernetes, Civo Database PostgreSQL 17, Cloudflare in front, every secret in a GitHub environment or generated where it is used, a tag `staging/<name>` shipping staging and a tag `production/<name>` shipping production behind the owner's approval, nothing done from a laptop. Staging has run on Civo; production: Not yet. [`infra/README.md`](infra/README.md) is the runbook: the first run, every ship, rollback, scaling, rotation, restore and break glass. `bun run infra:check` (charts, Terraform, workflows; no cloud, no Docker) and `bun run infra:test` (the kind stack; Docker) are the local gates, and CI runs both.
+[`docs/12-deployment.md`](docs/12-deployment.md) says what runs where and why: Civo London, one account per environment, one Helm chart on Civo Kubernetes, Civo Database PostgreSQL 17, Cloudflare in front, every secret in a GitHub environment or generated where it is used, a tag `staging/<name>` shipping staging and a tag `production/<name>` shipping production, nothing done from a laptop. Staging has run on Civo; production: Not yet. [`infra/README.md`](infra/README.md) is the runbook: the first run, every ship, rollback, scaling, rotation, restore and break glass. `bun run infra:check` (charts, Terraform, workflows; no cloud, no Docker) and `bun run infra:test` (the kind stack; Docker) are the local gates, and CI runs both.
 
 ### Repository principles
 

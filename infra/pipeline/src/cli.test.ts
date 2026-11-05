@@ -20,7 +20,7 @@ const CLUSTER_ENV = {
   KUBE_CA: Buffer.from(CERTIFICATE).toString("base64"),
   KUBE_TOKEN: "deployer-token-value",
 }
-const ENV = { ...CLUSTER_ENV, BETTER_AUTH_SECRET: "b", ROOT_ADMIN_SECRET: "r", POSTMARK_SERVER_TOKEN: "p" }
+const ENV = { ...CLUSTER_ENV, BETTER_AUTH_SECRET: "b", ROOT_ADMIN_SECRET: "r", POSTMARK_SERVER_TOKEN: "p", GHCR_PULL_TOKEN: "g" }
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -65,7 +65,8 @@ describe("deploy", () => {
     const code = await main(["deploy", "--environment", "staging", "--image-tag", TAG], f.deps)
     expect(code).toBe(0)
     expect(f.runner.commands().filter((command) => command.startsWith("docker buildx imagetools inspect"))).toHaveLength(3)
-    expect(f.runner.commands()).toHaveLength(5)
+    expect(f.runner.commands().filter((command) => command === "kubectl apply -n answerable -f -")).toHaveLength(2)
+    expect(f.runner.commands()).toHaveLength(6)
     expect(f.runner.commands().at(-1)).toContain("--set ops.bootstrap=true --set ops.register=true")
     expect(f.err()).toContain(`Deployed ${TAG} to staging.`)
     expect(f.out()).toBe("")
@@ -75,9 +76,9 @@ describe("deploy", () => {
     const f = await fixture()
     const code = await main(["deploy", "--environment", "staging", "--image-tag", TAG, ...PAIRS, "--timeout", "15m"], f.deps)
     expect(code).toBe(0)
-    expect(f.runner.commands()).toHaveLength(2)
-    expect(f.runner.commands()[1]).toContain("--timeout 15m -f charts/answerable/values-civo-staging.yaml")
-    expect(f.runner.commands()[1]).toContain(`--set images.mcps.digest=${DIGEST}`)
+    expect(f.runner.commands()).toHaveLength(6)
+    expect(f.runner.commands().at(-1)).toContain("--timeout 15m -f charts/answerable/values-civo-staging.yaml")
+    expect(f.runner.commands().at(-1)).toContain(`--set images.mcps.digest=${DIGEST}`)
   })
 
   test("exits 1 and names the failing step", async () => {
@@ -114,6 +115,9 @@ describe("deploy", () => {
     const noSecrets = await fixture(() => undefined, { env: CLUSTER_ENV })
     expect(await main(["deploy", "--environment", "staging", "--image-tag", TAG], noSecrets.deps)).toBe(2)
     expect(noSecrets.err()).toContain("error: BETTER_AUTH_SECRET, ROOT_ADMIN_SECRET, POSTMARK_SERVER_TOKEN are not set")
+    const noPullToken = await fixture(() => undefined, { env: { ...ENV, GHCR_PULL_TOKEN: "" } })
+    expect(await main(["deploy", "--environment", "staging", "--image-tag", TAG], noPullToken.deps)).toBe(2)
+    expect(noPullToken.err()).toContain("error: GHCR_PULL_TOKEN is not set")
   })
 })
 

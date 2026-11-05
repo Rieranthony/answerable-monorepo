@@ -2,8 +2,8 @@ locals {
   manage = ["get", "list", "watch", "create", "update", "patch", "delete"]
   read   = ["get", "list", "watch"]
 
-  # What `helm upgrade --install answerable charts/answerable --atomic --wait`, the `id-env` Secret the deploy applies
-  # and the ops Jobs it runs touch in the answerable namespace. Helm keeps its release records in Secrets, so the
+  # What `helm upgrade --install answerable charts/answerable --atomic --wait`, the `id-env` and `ghcr-pull` Secrets the
+  # deploy applies and the ops Jobs it runs touch in the answerable namespace. Helm keeps its release records in Secrets, so the
   # deployer manages Secrets; Roles and RoleBindings are for the ops Jobs' own Role, and Kubernetes refuses a
   # RoleBinding that grants more than the deployer itself holds. Pods are only read: their controllers own them.
   rules = [

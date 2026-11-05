@@ -172,26 +172,53 @@ export function parseDigests(pairs: readonly string[]): Digests | undefined {
   return Object.fromEntries(found)
 }
 
+/** The Secret every pod of the chart pulls with (`answerable.podCommon`): the images are private. */
+const PULL_SECRET = "ghcr-pull"
+
+/** The name the login goes by. A registry login takes a name and a token; it is the token that GHCR reads. */
+const PULL_USERNAME = "answerable-pull"
+
 /**
- * Ask the registry which manifest each image's tag points to, so that the release pins the bytes and not a tag that a
- * rerun could move. Needs Docker with buildx; the packages are public, so no login.
+ * The registry login from `GHCR_PULL_TOKEN`, in the one format a Docker `config.json` and a `kubernetes.io/dockerconfigjson`
+ * Secret share: what `kubectl create secret docker-registry` writes.
  */
-async function resolveDigests(imageTag: string, deps: Deps): Promise<Digests> {
-  const digests: Digests = {}
-  for (const name of IMAGE_NAMES) {
-    const reference = `${REGISTRY}/${name}:${imageTag}`
-    const argv = ["docker", "buildx", "imagetools", "inspect", reference, "--format", "{{.Manifest.Digest}}"]
-    deps.log(`$ ${commandLine(argv)}\n`)
-    const result = await deps.run(argv, { cwd: deps.root })
-    const digest = result.stdout.trim()
-    if (result.exitCode !== 0 || !DIGEST.test(digest))
-      throw new PipelineError(
-        `could not resolve ${reference} to a manifest digest (exit ${result.exitCode}): ${result.stderr.trim() || digest || "no answer"}`,
-      )
-    deps.log(`${name} is ${digest}\n`)
-    digests[name] = digest
+export function registryLogin(env: Deps["env"]): string {
+  const token = required(env, "GHCR_PULL_TOKEN")
+  const [host] = REGISTRY.split("/")
+  return JSON.stringify({
+    auths: { [host!]: { username: PULL_USERNAME, password: token, auth: Buffer.from(`${PULL_USERNAME}:${token}`).toString("base64") } },
+  })
+}
+
+/**
+ * Ask the registry for each image with the login the cluster will pull with, so that a token that cannot read one stops the
+ * deploy before it touches the cluster. Answers each image's manifest digest: the one given, or the one its tag points to,
+ * so that the release pins the bytes and not a tag that a rerun could move. Needs Docker with buildx. The login lives in a
+ * temporary Docker configuration, readable by its owner only, and never touches the user's own.
+ */
+async function readDigests(options: DeployOptions, login: string, deps: Deps): Promise<Digests> {
+  const directory = await mkdtemp(join(tmpdir(), "answerable-docker-"))
+  try {
+    await writeFile(join(directory, "config.json"), login, { mode: 0o600 })
+    const digests: Digests = {}
+    for (const name of IMAGE_NAMES) {
+      const given = options.digests?.[name]
+      const reference = given ? `${REGISTRY}/${name}@${given}` : `${REGISTRY}/${name}:${options.imageTag}`
+      const argv = ["docker", "buildx", "imagetools", "inspect", reference, "--format", "{{.Manifest.Digest}}"]
+      deps.log(`$ ${commandLine(argv)}\n`)
+      const result = await deps.run(argv, { cwd: deps.root, env: { DOCKER_CONFIG: directory } })
+      const digest = result.stdout.trim()
+      if (result.exitCode !== 0 || !DIGEST.test(digest))
+        throw new PipelineError(
+          `could not resolve ${reference} to a manifest digest (exit ${result.exitCode}): ${result.stderr.trim() || digest || "no answer"}. If the registry refused, GHCR_PULL_TOKEN cannot read the package: see Rotate in infra/README.md`,
+        )
+      deps.log(`${name} is ${given ?? digest}\n`)
+      digests[name] = given ?? digest
+    }
+    return digests
+  } finally {
+    await rm(directory, { recursive: true, force: true })
   }
-  return digests
 }
 
 type Session = {
@@ -233,27 +260,27 @@ async function requireFile(root: string, file: string): Promise<void> {
 const APPLIED = /^[a-z][\w.-]*\/[\w.-]+ (created|configured|unchanged|serverside-applied)$/
 
 /**
- * Apply the Secret `id-env` on kubectl's standard input. Its values are `data`, base64, not `stringData`: kubectl
- * records what it applied, and only a key it recorded under `data` is removed when a later apply leaves it out (a
- * platform application's pair, `BETTER_AUTH_SECRETS` after a rotation). Nothing of kubectl's own output is shown when the
- * apply fails: an API error can quote a value, in any encoding.
+ * Apply a Secret on kubectl's standard input. Its values are `data`, base64, not `stringData`: kubectl records what it
+ * applied, and only a key it recorded under `data` is removed when a later apply leaves it out (a platform application's
+ * pair, `BETTER_AUTH_SECRETS` after a rotation). Nothing of kubectl's own output is shown when the apply fails: an API
+ * error can quote a value, in any encoding.
  */
-async function applyIdEnv(session: Session, values: Record<string, string>): Promise<void> {
+async function applySecret(session: Session, secret: string, type: string, values: Record<string, string>): Promise<void> {
   const manifest = JSON.stringify({
     apiVersion: "v1",
     kind: "Secret",
-    metadata: { name: "id-env", namespace: NAMESPACE },
-    type: "Opaque",
+    metadata: { name: secret, namespace: NAMESPACE },
+    type,
     data: Object.fromEntries(Object.entries(values).map(([name, value]) => [name, Buffer.from(value).toString("base64")])),
   })
   const applied = await session.quiet(["kubectl", "apply", "-n", NAMESPACE, "-f", "-"], { input: manifest })
   if (applied.exitCode !== 0)
     throw new PipelineError(
-      `kubectl apply of the Secret id-env failed with exit code ${applied.exitCode}; its output is not shown, since it can quote a value`,
+      `kubectl apply of the Secret ${secret} failed with exit code ${applied.exitCode}; its output is not shown, since it can quote a value`,
     )
   for (const line of applied.stdout.split("\n"))
     if (APPLIED.test(line.trim())) session.deps.log(`${line.trim()}\n`)
-  session.deps.log(`id-env holds ${Object.keys(values).join(", ")}.\n`)
+  session.deps.log(`${secret} holds ${Object.keys(values).join(", ")}.\n`)
 }
 
 async function printJobDiagnostics(session: Session): Promise<void> {
@@ -315,19 +342,20 @@ export type DeployOptions = {
   environment: EnvironmentName
   /** `sha-` and the commit SHA the images were built from. */
   imageTag: string
-  /** The digests to pin, when they have been verified already; otherwise they are looked up from the tag. */
+  /** The digests to pin, when they have been verified already; otherwise they are read from the tag. */
   digests?: Digests
   /** How long Helm waits, as a Go duration; defaults to `10m`. */
   timeout?: string
 }
 
 /**
- * Deploy an image tag to an environment: pin each image of `images.json` by digest, log in with the deployer token, apply
- * the Secret `id-env` from the deploy's environment, then `helm upgrade --install --rollback-on-failure` with the ops
- * bootstrap and register switched on and `idEnvChecksum`, which rolls ID when a secret changed. Register runs on every
- * upgrade, as its own machine client once its first run has minted it: it registers what the release's list of MCPs
- * needs in ID. Like a migration, a failed register fails the upgrade, and Helm rolls the release back: a release is its
- * images and what they need, ID's rows included. When the upgrade fails the migration and ops Jobs' logs are printed.
+ * Deploy an image tag to an environment: pin each image of `images.json` by digest, reading each with `GHCR_PULL_TOKEN`,
+ * log in with the deployer token, apply the Secrets `id-env` and `ghcr-pull` from the deploy's environment, then
+ * `helm upgrade --install --rollback-on-failure` with the ops bootstrap and register switched on and `idEnvChecksum`, which
+ * rolls ID when a secret changed. Register runs on every upgrade, as its own machine client once its first run has minted
+ * it: it registers what the release's list of MCPs needs in ID. Like a migration, a failed register fails the upgrade, and
+ * Helm rolls the release back: a release is its images and what they need, ID's rows included. When the upgrade fails the
+ * migration and ops Jobs' logs are printed.
  */
 export async function deploy(options: DeployOptions, deps: Deps): Promise<void> {
   assertImageTag(options.imageTag)
@@ -335,9 +363,11 @@ export async function deploy(options: DeployOptions, deps: Deps): Promise<void> 
   await requireFile(deps.root, valuesFile)
   const cluster = readCluster(deps.env)
   const secrets = idEnv(deps.env)
-  const digests = options.digests ?? (await resolveDigests(options.imageTag, deps))
+  const login = registryLogin(deps.env)
+  const digests = await readDigests(options, login, deps)
   await withSession(deps, cluster, async (session) => {
-    await applyIdEnv(session, secrets)
+    await applySecret(session, "id-env", "Opaque", secrets)
+    await applySecret(session, PULL_SECRET, "kubernetes.io/dockerconfigjson", { ".dockerconfigjson": login })
     const jobs: OpsJob[] = ["bootstrap", "register"]
     await upgrade(session, true, options.timeout ?? "10m", [
       "-f",

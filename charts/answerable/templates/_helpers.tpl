@@ -143,6 +143,9 @@ and database.
 {{- define "answerable.podCommon" -}}
 # Kubernetes would otherwise set <SERVICE>_PORT=tcp://… for every Service in the namespace: TOOLBOX_PORT among them.
 enableServiceLinks: false
+# The images are private. The deploy writes this Secret from GHCR_PULL_TOKEN before the release, hooks included.
+imagePullSecrets:
+  - name: ghcr-pull
 securityContext:
   {{- include "answerable.podSecurityContext" .root | nindent 2 }}
 {{- with .root.Values.hostAliases }}

@@ -14,6 +14,7 @@ Answerable ID, the Toolbox, which serves every MCP of `mcps.json`, the admin MCP
 | Secret `origin-tls`, type `kubernetes.io/tls` | Terraform (Cloudflare's Origin CA) | Every Ingress (`ingress.tlsSecret`) |
 | Secret `postgres-admin`, key `OPS_DATABASE_ADMIN_URL` | Terraform | The ops bootstrap Job |
 | Secret `id-env` | The deploy, from the GitHub environment | ID (`envFrom`); the register and make-admin Jobs (`ROOT_ADMIN_SECRET`) |
+| Secret `ghcr-pull`, type `kubernetes.io/dockerconfigjson` | The deploy, from `GHCR_PULL_TOKEN` in the GitHub environment | Every pod (`imagePullSecrets`): the images are private |
 | ConfigMap `postgres-ca`, key `ca.pem` | The ops bootstrap Job, on first use | The servers and the migrations, at `/etc/ssl/db/ca.pem`. The ops Jobs do not mount it |
 | The database URL Secrets (`infra/ops/README.md`, Bootstrap), `toolbox-id-client`, `admin-id-client` | The ops Jobs | The servers and the migrations |
 
