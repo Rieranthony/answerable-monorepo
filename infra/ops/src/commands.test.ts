@@ -130,6 +130,17 @@ test("make-admin puts the member with the email in the owner and platform-admins
   expect(id.rootLocked()).toBe(true)
 })
 
+test("make-admin reads several emails from OPS_ADMIN_EMAIL, separated by spaces or commas, the first named the platform administrator", async () => {
+  const id = fakeId()
+  const owner = id.group(id.platform, { slug: "answerable-owner" }).id
+  const admins = id.group(id.platform, { slug: "platform-admins" }).id
+  const members = ["you@answerable.org", "stephen@answerable.org", "keir@answerable.org"].map(email => id.member(id.platform, { email }).id)
+  const { code, out } = await run(["make-admin"], { OPS_ID_URL: "https://id.example/", OPS_ID_ROOT_SECRET: id.rootSecret, OPS_ADMIN_EMAIL: " you@answerable.org stephen@answerable.org,keir@answerable.org\n" }, { id })
+  expect(code).toBe(0)
+  expect(members.map(member => [id.joined(owner, member), id.joined(admins, member)])).toEqual([[true, true], [true, false], [true, false]])
+  expect(out).toContain("Root is locked now")
+})
+
 test("a missing or invalid variable is named, with exit code 2, before anything is done", async () => {
   const missing = await run(["bootstrap"], { NODE_ENV: "production" })
   expect(missing).toMatchObject({ code: 2, statements: [] })
@@ -156,6 +167,12 @@ test("a missing or invalid variable is named, with exit code 2, before anything 
   const noEmail = await run(["make-admin"], { OPS_ID_URL: "https://id.example", OPS_ID_ROOT_SECRET: "root-secret", OPS_ADMIN_EMAIL: "you" })
   expect(noEmail.code).toBe(2)
   expect(noEmail.err).toContain("OPS_ADMIN_EMAIL")
+  for (const value of ["", "  ", "you@answerable.org stephen"]) {
+    const bad = await run(["make-admin"], { OPS_ID_URL: "https://id.example", OPS_ID_ROOT_SECRET: "root-secret", OPS_ADMIN_EMAIL: value })
+    expect(bad.code, value).toBe(2)
+    expect(bad.err, value).toContain("OPS_ADMIN_EMAIL")
+    expect(bad.id.calls(), value).toEqual([])
+  }
   const noRoot = await run(["make-admin"], { NODE_ENV: "production", OPS_ID_URL: "https://id.example", OPS_ADMIN_EMAIL: "you@answerable.org" })
   expect(noRoot.err).toStartWith("Invalid ops configuration: OPS_ID_ROOT_SECRET: ")
   expect([...noEmail.id.calls(), ...noRoot.id.calls()]).toEqual([])

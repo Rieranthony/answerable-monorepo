@@ -10,8 +10,8 @@ The ops image's Jobs (infra/ops/README.md), each switched on for one upgrade by 
   hostnames.mcp, writes the client Secrets and starts the servers, which wait at zero replicas until their Secret exists
   (_server.tpl), and, with id.staffDomain and id.entraTenant, connects the staff domain and directory to the platform
   organisation;
-- make-admin, after register, puts the first staff member, who has signed in once, in the owner and platform-admins
-  groups with ID's root secret, which locks that secret.
+- make-admin, after register, puts the staff members of ops.adminEmail, who have each signed in once, in the owner group
+  and the first of them in platform-admins with ID's root secret, which locks that secret.
 The ServiceAccount of bootstrap and register may read and patch exactly the Secrets and, for bootstrap, the ConfigMap
 their Jobs own, the Secrets of each own MCP of mcps.json among them, and, for register, the Deployments it starts.
 make-admin calls only ID and mounts no token. Their NetworkPolicy is in network-policies.yaml.
@@ -21,7 +21,7 @@ make-admin calls only ID and mounts no token. Their NetworkPolicy is in network-
 {{- $mcps := fromJsonArray (include "answerable.mcps" .) }}
 {{- $switches := dict "bootstrap" .Values.ops.bootstrap "register" .Values.ops.register "make-admin" .Values.ops.makeAdmin }}
 {{- if .Values.ops.makeAdmin }}
-{{- $_ := required "ops.makeAdmin needs ops.adminEmail: the email of the staff member who signed in once" .Values.ops.adminEmail }}
+{{- $_ := required "ops.makeAdmin needs ops.adminEmail: the emails of the staff members who signed in once, separated by spaces" .Values.ops.adminEmail }}
 {{- end }}
 {{- if or .Values.ops.bootstrap .Values.ops.register }}
 {{- $phases := list }}

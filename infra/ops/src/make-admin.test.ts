@@ -11,13 +11,13 @@ function setup(options: Parameters<typeof fakeId>[0] = {}, { signedIn = true, ow
   }
   const member = signedIn ? id.member(id.platform, { email: "you@answerable.org" }).id : undefined
   const lines: string[] = []
-  const run = (email = "you@answerable.org") => makeAdmin({ id: "https://id.example", rootSecret: id.rootSecret, email, fetch: id.fetch, log: line => lines.push(line) })
+  const run = (...emails: string[]) => makeAdmin({ id: "https://id.example", rootSecret: id.rootSecret, emails: emails.length > 0 ? emails : ["you@answerable.org"], fetch: id.fetch, log: line => lines.push(line) })
   return { id, groups, member: member!, lines, run, printed: () => lines.join("\n") }
 }
 
 test("puts the member in answerable-owner, then platform-admins, with keys of its own, and confirms root is locked", async () => {
   const { id, groups, member, run, printed } = setup()
-  expect(await run()).toEqual({ platform: id.platform, member })
+  expect(await run()).toEqual({ platform: id.platform, members: [member] })
   const puts = id.calls().filter(call => call.method === "PUT")
   expect(puts.map(call => call.path.split("/")[4])).toEqual([groups.owner!, groups.admins!])
   expect(new Set(puts.map(call => call.key)).size).toBe(2)
@@ -26,6 +26,30 @@ test("puts the member in answerable-owner, then platform-admins, with keys of it
   expect(printed()).toContain(`you@answerable.org (member ${member}): added to platform-admins, every platform scope`)
   expect(printed()).toContain("Root is locked now: ID refuses the root secret (403 root_locked)")
   expect(printed()).not.toContain(id.rootSecret)
+})
+
+test("several members: each an owner, the first alone in platform-admins, since the root secret locks with its first member", async () => {
+  const { id, groups, member, run, printed } = setup()
+  const others = ["stephen@answerable.org", "keir@answerable.org"].map(email => id.member(id.platform, { email }).id)
+  // Any case, any order of the others, and a name given twice: the first named is the platform administrator.
+  expect(await run("You@Answerable.org", "stephen@answerable.org", "keir@answerable.org", "you@answerable.org")).toEqual({ platform: id.platform, members: [member, ...others] })
+  for (const each of [member, ...others]) expect(id.joined(groups.owner!, each)).toBe(true)
+  expect([member, ...others].map(each => id.joined(groups.admins!, each))).toEqual([true, false, false])
+  const puts = id.calls().filter(call => call.method === "PUT")
+  expect(puts.map(call => call.path.split("/")[4])).toEqual([groups.owner!, groups.owner!, groups.owner!, groups.admins!])
+  expect(new Set(puts.map(call => call.key)).size).toBe(4)
+  expect(printed()).toContain("stephen@answerable.org, keir@answerable.org: owners, not in platform-admins")
+  expect(printed()).toContain("Root is locked now")
+})
+
+test("several members, one of whom has not signed in: nothing is written, and the missing are named", async () => {
+  const { id, run } = setup()
+  id.member(id.platform, { email: "stephen@answerable.org" })
+  await expect(run("you@answerable.org", "stephen@answerable.org", "keir@answerable.org", "ada@answerable.org")).rejects.toThrow(
+    "No member of the platform organisation has the email keir@answerable.org or ada@answerable.org: sign in once at https://id.example/login, then run make-admin again",
+  )
+  expect(id.calls().filter(call => call.method === "PUT")).toEqual([])
+  expect(id.rootLocked()).toBe(false)
 })
 
 test("a membership that exists is left as it is", async () => {
@@ -90,7 +114,7 @@ test("the check that root is locked: any other answer, or no answer, is an error
     let lists = 0
     const fetch = (async (input: string | URL | Request, init?: RequestInit) =>
       new URL(String(input)).pathname.endsWith("/v1/organizations") && ++lists === 2 ? check() : id.fetch(input, init)) as typeof globalThis.fetch
-    return () => makeAdmin({ id: "https://id.example", rootSecret: id.rootSecret, email: "you@answerable.org", fetch, log: line => rest.lines.push(line) })
+    return () => makeAdmin({ id: "https://id.example", rootSecret: id.rootSecret, emails: ["you@answerable.org"], fetch, log: line => rest.lines.push(line) })
   }
   await expect(checking(async () => Response.json({ code: "server_error" }, { status: 502 }))()).rejects.toThrow("GET /organizations answered 502 server_error")
   await expect(checking(async () => { throw new TypeError("connection refused") })()).rejects.toThrow("connection refused")

@@ -625,9 +625,13 @@ describe("runJob", () => {
     expect(rendered).toEqual({ mcps: await committed("charts/answerable/mcps.json"), chart: await committed("charts/answerable/Chart.yaml") })
   })
 
-  test("make-admin passes the email, runs alone and restarts nothing", async () => {
+  test("make-admin passes the emails as one value, separated by spaces, runs alone and restarts nothing", async () => {
+    const several = await fixture(restarts)
+    await runJob({ environment: "staging", job: "make-admin", emails: ["you@answerable.org", "stephen@answerable.org", "keir@answerable.org"] }, several.deps)
+    const upgrade = several.runner.calls.find((call) => call.argv[1] === "upgrade")!.argv
+    expect(upgrade.slice(-2)).toEqual(["--set-string", "ops.adminEmail=you@answerable.org stephen@answerable.org keir@answerable.org"])
     const admin = await fixture(restarts)
-    await runJob({ environment: "staging", job: "make-admin", email: "you@answerable.org", timeout: "5m" }, admin.deps)
+    await runJob({ environment: "staging", job: "make-admin", emails: ["you@answerable.org"], timeout: "5m" }, admin.deps)
     expect(commands(admin)).toEqual([
       ...prelude,
       jobUpgrade("--set ops.bootstrap=false --set ops.register=false --set ops.makeAdmin=true", " --set-string ops.adminEmail=you@answerable.org").replace("--timeout 10m", "--timeout 5m"),
@@ -646,9 +650,10 @@ describe("runJob", () => {
   test("refuses make-admin without an email, an email for another job, an address Helm would split, and starts nothing", async () => {
     const f = await fixture(restarts)
     await expect(runJob({ environment: "staging", job: "make-admin" }, f.deps)).rejects.toThrow("make-admin needs --email")
-    await expect(runJob({ environment: "staging", job: "register", email: "you@answerable.org" }, f.deps)).rejects.toThrow("--email belongs to make-admin")
+    await expect(runJob({ environment: "staging", job: "make-admin", emails: [] }, f.deps)).rejects.toThrow("make-admin needs --email")
+    await expect(runJob({ environment: "staging", job: "register", emails: ["you@answerable.org"] }, f.deps)).rejects.toThrow("--email belongs to make-admin")
     for (const email of ["you", "you@answerable.org,ops.bootstrap=true", "you @answerable.org"])
-      await expect(runJob({ environment: "staging", job: "make-admin", email }, f.deps)).rejects.toThrow("--email must be an email address")
+      await expect(runJob({ environment: "staging", job: "make-admin", emails: ["you@answerable.org", email] }, f.deps)).rejects.toThrow("--email must be an email address")
     const bare = await fixture(restarts, { env: {} })
     await expect(runJob({ environment: "staging", job: "register" }, bare.deps)).rejects.toThrow("KUBE_SERVER is not set")
     expect(f.runner.calls).toEqual([])
@@ -687,7 +692,7 @@ describe("runJob", () => {
       if (command === "kubectl get jobs -n answerable -o name") return { stdout: "job.batch/ops-make-admin\n" }
       return restarts(call)
     })
-    await expect(runJob({ environment: "staging", job: "make-admin", email: "you@answerable.org" }, f.deps)).rejects.toThrow("helm upgrade failed")
+    await expect(runJob({ environment: "staging", job: "make-admin", emails: ["you@answerable.org"] }, f.deps)).rejects.toThrow("helm upgrade failed")
     expect(f.runner.commands()).toContain("kubectl logs -n answerable -l job-name=ops-make-admin --all-containers --prefix --tail=200")
   })
 

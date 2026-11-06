@@ -26,7 +26,7 @@ The [enterprise foundation](docs/05-id-enterprise-foundation.md) implementation 
 | `charts/answerable` | The Helm chart of ID, the Toolbox, which serves every MCP of `mcps.json`, and the admin MCP, with their migrations and the ops Jobs | Proved in the kind stack |
 | `charts/platform` | The Helm chart of the cluster's edge: Traefik with the TLS option that demands Cloudflare's origin-pull certificate | Proved in the kind stack |
 | `infra/k8s` | The kind stack (`infra/k8s/local`): both charts and the images of `infra/pipeline/images.json` in a local cluster, `bun run infra:test`; and the chart tests | Locally tested |
-| `infra/ops` | The ops image: `bootstrap` (the database's certificate, databases and logins), `register` (the MCPs in ID, the staff domain and SSO provider) and `make-admin` (the first administrator), run as Kubernetes Jobs | Locally tested |
+| `infra/ops` | The ops image: `bootstrap` (the database's certificate, databases and logins), `register` (the MCPs in ID, the staff domain and SSO provider) and `make-admin` (the first owners and administrator), run as Kubernetes Jobs | Locally tested |
 | `infra/pipeline` | The scripts the workflows call: `deploy`, `run-job`, `smoke` | Locally tested |
 | `apps/community-mcp` | The tutor MCP (the Omni Accelerator community inside OmniChat)                                                                                                      | **Parked** until Answerable ID ships — its docs and Circle mocks stay in that folder, out of the plan                                                    |
 

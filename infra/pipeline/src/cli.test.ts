@@ -131,6 +131,9 @@ describe("run-job", () => {
     expect(upgrade).toEndWith("--set ops.makeAdmin=true --set-string ops.adminEmail=you@answerable.org")
     expect(f.err()).toContain("Ran make-admin in staging.")
     expect(f.out()).toBe(`revision=${REVISION}\n`)
+    const several = await fixture()
+    expect(await main(["run-job", "make-admin", "--environment", "staging", "--email", "you@answerable.org", "--email", "keir@answerable.org"], several.deps)).toBe(0)
+    expect(several.runner.commands().find((command) => command.startsWith("helm upgrade"))).toEndWith("--set-string ops.adminEmail=you@answerable.org keir@answerable.org")
   })
 
   test("exits 2 without exactly one known job, without the environment, or with options it does not take", async () => {

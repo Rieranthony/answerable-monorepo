@@ -163,8 +163,8 @@ Next:
    claude mcp add --transport http answerable-toolbox ${toolbox}/mcp --client-id claude-code-toolbox --callback-port ${callbackPort}${standalone.map(({ name }) => `
    claude mcp add --transport http ${name} ${mcpOrigin}/${name}/mcp --client-id claude-code-${name} --callback-port ${callbackPort}`).join("")}
    An organisation signs in to a standalone MCP once staff have run standalone_enable for it in the admin MCP.
-2. While nobody is the first owner: sign in once at ${id}/login with your work account, then run the ops Job make-admin with your email,
-   which puts you in the owner and platform-admins groups and locks ID's root secret.`)
+2. While nobody is the first owner: each first owner signs in once at ${id}/login with their work account, then run the ops Job make-admin
+   with their emails, yours first: it makes each an owner, puts you in platform-admins and locks ID's root secret.`)
   return { platform, ownerGroup: groups.owner }
 }
 

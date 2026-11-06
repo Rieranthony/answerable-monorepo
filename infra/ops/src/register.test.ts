@@ -71,7 +71,7 @@ describe("register's own machine client", () => {
     expect(printed()).toContain("claude mcp add --transport http answerable-admin https://admin-mcp.example/mcp --client-id claude-code-admin --callback-port 47700")
     expect(printed()).toContain("claude mcp add --transport http answerable-toolbox https://toolbox.example/mcp --client-id claude-code-toolbox --callback-port 47700")
     expect(printed()).toContain(`claude mcp add --transport http acme ${acme} --client-id claude-code-acme --callback-port 47700`)
-    expect(printed()).toContain("sign in once at https://id.example/login with your work account, then run the ops Job make-admin with your email")
+    expect(printed()).toContain("each first owner signs in once at https://id.example/login with their work account, then run the ops Job make-admin")
     for (const value of [id.rootSecret, ...Object.values(memory.values)]) expect(printed()).not.toContain(value)
     // Without a staff directory, nothing of the platform organisation's sign-in is touched.
     expect(id.calls().some(call => call.path.endsWith("/domains") || call.path.includes("/sso-provider"))).toBe(false)

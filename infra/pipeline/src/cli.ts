@@ -38,7 +38,7 @@ export function systemDeps(): CliDeps {
 
 const USAGE = `Usage:
   bun infra/pipeline/src/cli.ts deploy --environment <staging|production> --image-tag <sha-commit> [--image-digest <image>=sha256:<hex> for each image] [--timeout <10m>]
-  bun infra/pipeline/src/cli.ts run-job <register|make-admin> --environment <staging|production> [--email <address>] [--timeout <10m>]
+  bun infra/pipeline/src/cli.ts run-job <register|make-admin> --environment <staging|production> [--email <address>]... [--timeout <10m>]
   bun infra/pipeline/src/cli.ts smoke --environment <staging|production> [--wait <seconds>] [--interval <seconds>]
 
 deploy pins the images of infra/pipeline/images.json (id, mcps, ops) by manifest digest: given with --image-digest for
@@ -47,7 +47,8 @@ writes into the Secret ghcr-pull. It writes the Secret id-env from BETTER_AUTH_S
 ROOT_ADMIN_SECRET and POSTMARK_SERVER_TOKEN, which it requires, the MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET pair and the
 GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET pair when set, and BETTER_AUTH_SECRETS when set. run-job runs one ops Job on
 the release's own values, with the chart of the commit the release runs, and prints revision=<commit> on standard
-output; make-admin needs --email. deploy and run-job read the cluster from KUBE_SERVER, KUBE_CA and KUBE_TOKEN and
+output; make-admin needs --email, once
+for each staff member to make an owner; the first also becomes the platform administrator. deploy and run-job read the cluster from KUBE_SERVER, KUBE_CA and KUBE_TOKEN and
 report on standard error. smoke checks the MCPs of the checkout's charts/answerable/mcps.json and prints its table on
 standard output. Exit codes: 0 done, 1 failed, 2 wrong usage.
 `
@@ -104,7 +105,7 @@ async function runCommand(command: string, args: readonly string[], deps: CliDep
     case "run-job": {
       const { values, positionals } = parse(args, {
         environment: { type: "string" },
-        email: { type: "string" },
+        email: { type: "string", multiple: true },
         timeout: { type: "string" },
       })
       if (positionals.length !== 1) throw new UsageError("run-job takes exactly one job name")
@@ -112,7 +113,7 @@ async function runCommand(command: string, args: readonly string[], deps: CliDep
         {
           environment: parseEnvironment(values.environment),
           job: parseJob(positionals[0]),
-          email: values.email,
+          emails: values.email,
           timeout: values.timeout,
         },
         deployDeps(deps),

@@ -57,12 +57,12 @@ In the deploy, `ops-bootstrap` records the database's certificate (its log names
 
 The images stay private: the deploy reads each one with `GHCR_PULL_TOKEN` first, and every pod pulls with the Secret `ghcr-pull` it writes. If the deploy stops at `could not resolve`, replace the token as in [Rotate](#rotate); it has changed nothing in the cluster.
 
-**5. Sign in once** at `https://id.answerable-staging.uk/login` with your work account. That creates your user and your platform membership.
+**5. Sign in once** at `https://id.answerable-staging.uk/login` with your work account, and so does everyone else who should be an owner from the start. That creates each user and their platform membership.
 
-**6. Make yourself the administrator.** Run the **Ops** workflow with `staging`, `make-admin` and your email. With the root secret, the Job puts you in `answerable-owner`, the admin MCP's owner role, then in `platform-admins`. That second step locks root, which is why the owner role comes first; the Job confirms ID now refuses the root secret. Nothing else needs root afterwards: every deploy's `ops-register` runs as its own client.
+**6. Make yourselves the owners.** Run the **Ops** workflow with `staging`, `make-admin` and the emails of everyone who signed in in step 5, yours first, separated by spaces. The Job finds every one before it writes anything. With the root secret it puts each of you in `answerable-owner`, the admin MCP's owner role, then you alone in `platform-admins`. Joining `platform-admins` locks root, which is why the owner role comes first and why one person joins it here: the other owners add themselves in the admin MCP (`groups_addmember`) if they need ID's admin API. The Job confirms ID now refuses the root secret. An owner added later gets the role with `staff_grant` in the admin MCP. Nothing else needs root afterwards: every deploy's `ops-register` runs as its own client.
 
 ```sh
-gh workflow run ops.yml --ref main -f environment=staging -f command=make-admin -f email=<you>@answerable.org
+gh workflow run ops.yml --ref main -f environment=staging -f command=make-admin -f email="<you>@answerable.org <cofounder>@answerable.org"
 gh run watch
 ```
 

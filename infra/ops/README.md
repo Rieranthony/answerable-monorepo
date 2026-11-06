@@ -6,7 +6,7 @@ The ops image: three one-off commands that a deployment runs as Kubernetes Jobs 
 | --- | --- | --- |
 | `bootstrap` | Every deploy, before the migrations | Writes the database's certificate authority to the ConfigMap `postgres-ca` on first use; creates the databases, their owner logins and their runtime logins, and writes each login's URL to its Secret; provisions each MCP of the chart's list (`OPS_MCPS`): its schema in `answerable_mcps`, or its own database |
 | `register` | Every deploy, after the release | As its own machine client, `ops-register`, which its first run mints: registers the Toolbox, the admin MCP and each standalone MCP of the chart's list in Answerable ID, changing only what differs; stores the machine clients' secrets, starts the servers; with a staff domain and an Entra tenant, connects them to the platform organisation |
-| `make-admin` | Once, after the first staff member has signed in | Puts that member in the owner group and in `platform-admins`, which locks ID's root secret |
+| `make-admin` | Once, after the first owners have each signed in | Puts every member named in the owner group, and the first in `platform-admins`, which locks ID's root secret |
 
 Each is safe to run again: a second run changes nothing. None prints a password, a token or a client secret.
 
@@ -35,7 +35,7 @@ Nothing waits for ever:
 | `OPS_CLAUDE_CALLBACK_PORT` | `register` | Claude Code's `--callback-port` in the host clients' redirect URI. Default `47700`; the chart leaves it unset |
 | `OPS_START_DEPLOYMENTS` | `register` | `name=replicas,…`: Deployments to scale up from zero once their client secrets exist |
 | `OPS_STAFF_DOMAIN`, `OPS_ENTRA_TENANT` | `register` | The staff email domain (`answerable.org`) and the staff directory's Entra tenant ID, a GUID; both or neither. The chart sets them from `id.staffDomain` and `id.entraTenant` |
-| `OPS_ADMIN_EMAIL` | `make-admin` | The staff member's email. The chart sets it from `ops.adminEmail` |
+| `OPS_ADMIN_EMAIL` | `make-admin` | The staff members' emails, separated by spaces, the platform administrator's first. The chart sets it from `ops.adminEmail` |
 
 An empty variable counts as unset. Three things are constants rather than variables: the namespace, the pod's own (its ServiceAccount's); the path of the database's certificate authority in the services' URLs, `/etc/ssl/db/ca.pem`, where the chart mounts `postgres-ca`; and the platform organisation's slug, `answerable`, which ID fixes.
 
@@ -74,13 +74,13 @@ Against the fake ID (`@answerable/id-admin/testing`), a run at 200 standalone MC
 
 ## Make-admin
 
-`onboard.mdx` § First run, step 5, with the root secret: the member whose email is `OPS_ADMIN_EMAIL` goes into `answerable-owner`, the admin MCP's owner role, and then into `platform-admins`, which carries every platform scope. The owner group comes first because nothing can use the root secret afterwards. One more call confirms that ID refuses the root secret now. Each run sends new `Idempotency-Key`s: ID keeps a key's first answer for ever, so with a fixed key a run after break glass would replay the first run and add nobody.
+`onboard.mdx` § First run, step 5, with the root secret: each member whose email is in `OPS_ADMIN_EMAIL` goes into `answerable-owner`, the admin MCP's owner role, and then the first of them into `platform-admins`, which carries every platform scope. Every member is found before anything is written. The owner group comes first, and only one person joins `platform-admins`, because nothing can use the root secret once someone holds `platform:write`: the other owners add themselves in the admin MCP if they need ID's admin API. One more call confirms that ID refuses the root secret now. Each run sends new `Idempotency-Key`s: ID keeps a key's first answer for ever, so with a fixed key a run after break glass would replay the first run and add nobody.
 
 | Error | Meaning | What to do |
 | --- | --- | --- |
-| `No member of the platform organisation has the email …` | That person has not signed in yet | Sign in once at ID's `/login`, then run again |
+| `No member of the platform organisation has the email …` | That person, or those people, have not signed in yet. Nothing was written | Each signs in once at ID's `/login`, then run again |
 | `… no answerable-owner group: run register first` | `register` has not run | Run `register`, then this |
-| `ID refuses the root secret already (root_locked)` | A person is a platform administrator: the first run is over | Add more staff with your own session (`docs/id/onboard`, The next staff member) |
+| `ID refuses the root secret already (root_locked)` | A person is a platform administrator: the first run is over | An owner adds more with `staff_grant` in the admin MCP (`docs/admin`, Give someone a role) |
 | `… ID still accepts the root secret` | `ROOT_ADMIN_BREAK_GLASS` is on (after a break-glass recovery, the membership is in place) | Unset it and deploy |
 
 ## Develop

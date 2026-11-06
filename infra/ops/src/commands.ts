@@ -77,7 +77,11 @@ const opsFields = {
     doc: "register: the staff directory's Entra tenant ID, a GUID, with OPS_STAFF_DOMAIN",
     source: "chart",
   },
-  OPS_ADMIN_EMAIL: { schema: z.email(), doc: "make-admin: the email of the staff member, signed in once, to make the first administrator", source: "chart" },
+  OPS_ADMIN_EMAIL: {
+    schema: z.string().trim().min(1).transform(value => value.split(/[\s,]+/)).pipe(z.array(z.email()).min(1)),
+    doc: "make-admin: the emails of the staff members, each signed in once, to make the first owners, separated by spaces; the first also becomes the platform administrator",
+    source: "chart",
+  },
 } satisfies Record<string, Field>
 const pick = <Name extends keyof typeof opsFields>(...names: Name[]) => Object.fromEntries(names.map(name => [name, opsFields[name]])) as Pick<typeof opsFields, Name>
 
@@ -158,7 +162,7 @@ export async function main(argv: string[], env: Record<string, string | undefine
       run = () => runRegister(config, env, deps)
     } else {
       const config = makeAdminConfig.read(env)
-      run = () => makeAdmin({ id: config.OPS_ID_URL, rootSecret: config.OPS_ID_ROOT_SECRET, email: config.OPS_ADMIN_EMAIL, fetch: deps.fetch, log: deps.log })
+      run = () => makeAdmin({ id: config.OPS_ID_URL, rootSecret: config.OPS_ID_ROOT_SECRET, emails: config.OPS_ADMIN_EMAIL, fetch: deps.fetch, log: deps.log })
     }
   } catch (error) {
     deps.error(`${(error as Error).message}`)

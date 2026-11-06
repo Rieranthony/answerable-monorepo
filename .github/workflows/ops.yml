@@ -5,8 +5,8 @@ name: Ops
 # - register: the MCP servers registered in Answerable ID again (a rotated client secret, a changed registration), as
 #   its own machine client, ops-register. Only when the Secret ops-id-client is empty and root is locked does it need
 #   ROOT_ADMIN_BREAK_GLASS shipped first (infra/README.md, Register again).
-# - make-admin: the last step of the first run, after the owner has signed in once: the member with that email
-#   becomes the admin MCP's owner and a platform administrator, which locks the root secret.
+# - make-admin: the last step of the first run, after the first owners have each signed in once: the members with those
+#   emails become the admin MCP's owners, and the first named a platform administrator, which locks the root secret.
 # What this does and which secrets it needs: infra/pipeline/README.md.
 
 on:
@@ -27,7 +27,7 @@ on:
           - register
           - make-admin
       email:
-        description: For make-admin, the email of the member who signed in
+        description: For make-admin, the emails of the members who signed in, yours first, separated by spaces
         required: false
         type: string
 
@@ -80,11 +80,14 @@ jobs:
           EMAIL: ${{ inputs.email }}
         run: |
           if [ "$COMMAND" = make-admin ]; then
-            if [ -z "$EMAIL" ]; then
-              echo "::error::make-admin needs the email of the member who signed in"
+            read -ra emails <<< "${EMAIL//,/ }"
+            if [ "${#emails[@]}" -eq 0 ]; then
+              echo "::error::make-admin needs the emails of the members who signed in"
               exit 1
             fi
-            bun infra/pipeline/src/cli.ts run-job make-admin --environment "$TARGET" --email "$EMAIL" >> "$GITHUB_OUTPUT"
+            flags=()
+            for email in "${emails[@]}"; do flags+=(--email "$email"); done
+            bun infra/pipeline/src/cli.ts run-job make-admin --environment "$TARGET" "${flags[@]}" >> "$GITHUB_OUTPUT"
           else
             bun infra/pipeline/src/cli.ts run-job "$COMMAND" --environment "$TARGET" >> "$GITHUB_OUTPUT"
           fi

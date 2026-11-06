@@ -56,7 +56,7 @@ The images are private, and hold the source. The build pushes and the promotion 
 1. `bootstrap.yml` for the environment.
 2. A tag `staging/<name>` (or `production/<name>`). The first install's `ops-bootstrap` fetches the database's certificate into the ConfigMap `postgres-ca` and logs its SHA-256 fingerprint (trust on first use: `infra/ops/README.md`); `ops-register` mints its own client with the root secret, registers the MCP servers and each standalone MCP and, with `id.staffDomain` and `id.entraTenant` in the overlay, adds the staff domain and the Entra tenant to the platform organisation.
 3. Sign in once at `https://id.<zone>/login` with your work account.
-4. `ops.yml` with `make-admin` and your email: you join the owner group and `platform-admins`, and ID's root secret locks.
+4. `ops.yml` with `make-admin` and the emails of the first owners, yours first, each signed in once: each joins the owner group, you join `platform-admins`, and ID's root secret locks.
 
 ## Register again
 
@@ -76,7 +76,7 @@ export KUBE_SERVER=https://… KUBE_CA=… KUBE_TOKEN=…   # the deployer Servi
 export BETTER_AUTH_SECRET=… ROOT_ADMIN_SECRET=… POSTMARK_SERVER_TOKEN=… GHCR_PULL_TOKEN=… MICROSOFT_CLIENT_ID=… MICROSOFT_CLIENT_SECRET=…   # deploy only
 
 bun infra/pipeline/src/cli.ts deploy --environment staging --image-tag sha-<40 hex> [--image-digest <image>=sha256:<hex> for each image] [--timeout 10m]
-bun infra/pipeline/src/cli.ts run-job <register|make-admin> --environment staging [--email you@answerable.org] [--timeout 10m]
+bun infra/pipeline/src/cli.ts run-job <register|make-admin> --environment staging [--email you@answerable.org]... [--timeout 10m]
 bun infra/pipeline/src/cli.ts smoke --environment staging --wait 60
 ```
 
@@ -84,7 +84,7 @@ bun infra/pipeline/src/cli.ts smoke --environment staging --wait 60
 
 The tag must be `sha-` and a full commit SHA: the scripts refuse `latest`, `staging` and every other mutable name. `deploy` looks the digests up from the tag, or takes them as `--image-digest id=sha256:<hex>` repeated for every image of `images.json`, and reads each image either way.
 
-`run-job` reads the commit the release runs from its `image.tag` (`helm get values`), extracts that commit's `charts/answerable` with `git archive` (the checkout must hold the commit, as `ops.yml`'s full checkout does), and upgrades the release from it with `--reset-then-reuse-values`: the chart's defaults, then the values the release runs (its images, their digests, `idEnvChecksum`), then that commit's overlay, with that one Job switched on and the others off (`make-admin` with `--set-string ops.adminEmail=<email>`). So the chart, its list of MCPs and the images always agree, whatever `main` holds. It prints the Job's log, after `register` restarts the Toolbox and the admin MCP when it runs, and prints `revision=<commit>`, at which `ops.yml` runs the smoke test.
+`run-job` reads the commit the release runs from its `image.tag` (`helm get values`), extracts that commit's `charts/answerable` with `git archive` (the checkout must hold the commit, as `ops.yml`'s full checkout does), and upgrades the release from it with `--reset-then-reuse-values`: the chart's defaults, then the values the release runs (its images, their digests, `idEnvChecksum`), then that commit's overlay, with that one Job switched on and the others off (`make-admin` with `--set-string ops.adminEmail=<emails separated by spaces>`). So the chart, its list of MCPs and the images always agree, whatever `main` holds. It prints the Job's log, after `register` restarts the Toolbox and the admin MCP when it runs, and prints `revision=<commit>`, at which `ops.yml` runs the smoke test.
 
 Verify an image by hand, after `docker login ghcr.io` with a token that can read it:
 
@@ -100,7 +100,7 @@ cosign verify ghcr.io/answerableorg/answerable/id@sha256:<64 hex> \
 - The release pins each image by digest. For every image of `images.json` the value `images.<image>.digest` is `sha256:` and 64 hex characters, and the chart renders the image as `<repository>@<digest>`. `image.tag` is the same commit as a label for people.
 - Every pod names the Secret `ghcr-pull` under `imagePullSecrets`.
 - `idEnvChecksum` is an annotation of ID's pod template.
-- `ops.bootstrap`, `ops.register` and `ops.makeAdmin` (with `ops.adminEmail`) switch the three ops Jobs on; `bootstrap` runs before the migrations. `deploy` switches `bootstrap` and `register` on every time; `register` writes the Secrets `ops-id-client`, `toolbox-id-client` and `admin-id-client`.
+- `ops.bootstrap`, `ops.register` and `ops.makeAdmin` (with `ops.adminEmail`, the addresses separated by spaces) switch the three ops Jobs on; `bootstrap` runs before the migrations. `deploy` switches `bootstrap` and `register` on every time; `register` writes the Secrets `ops-id-client`, `toolbox-id-client` and `admin-id-client`.
 - The Jobs are named `ops-<job>`, and the migration Jobs' names contain `migrate`; the Deployments' names end in `toolbox` and `admin-mcp`.
 - `charts/answerable/mcps.json` is the list of MCPs, `{ "mcps": [{ name, serve, database, … }] }`, which `smoke` reads.
 

@@ -383,15 +383,15 @@ export async function deploy(options: DeployOptions, deps: Deps): Promise<void> 
   })
 }
 
-/** An address Helm's `--set-string` keeps whole: no comma, which would split it, and no backslash or space. */
+/** An address Helm's `--set-string` keeps whole: no comma, which would split it, no backslash, and no space, which separates addresses. */
 const EMAIL = /^[^\s@,\\]+@[^\s@,\\]+\.[^\s@,\\]+$/
 
 /** What `runJob` does. */
 export type RunJobOptions = {
   environment: EnvironmentName
   job: RunnableJob
-  /** `make-admin`'s staff member: the email they signed in with. */
-  email?: string
+  /** `make-admin`'s staff members: the emails they signed in with. The first also becomes the platform administrator. */
+  emails?: readonly string[]
   /** How long Helm and the restarts wait, as a Go duration; defaults to `10m`. */
   timeout?: string
 }
@@ -432,9 +432,10 @@ async function chartAt(revision: string, directory: string, deps: Deps): Promise
  * secrets the Job wrote. Answers the commit.
  */
 export async function runJob(options: RunJobOptions, deps: Deps): Promise<string> {
-  if (options.job === "make-admin" && !options.email) throw new UsageError("make-admin needs --email, the address the staff member signed in with")
-  if (options.job !== "make-admin" && options.email !== undefined) throw new UsageError("--email belongs to make-admin")
-  if (options.email !== undefined && !EMAIL.test(options.email)) throw new UsageError(`--email must be an email address, got "${options.email}"`)
+  const emails = options.emails ?? []
+  if (options.job === "make-admin" && emails.length === 0) throw new UsageError("make-admin needs --email, once for each address a staff member signed in with")
+  if (options.job !== "make-admin" && emails.length > 0) throw new UsageError("--email belongs to make-admin")
+  for (const email of emails) if (!EMAIL.test(email)) throw new UsageError(`--email must be an email address, got "${email}"`)
   const cluster = readCluster(deps.env)
   const timeout = options.timeout ?? "10m"
   const directory = await mkdtemp(join(tmpdir(), "answerable-chart-"))
@@ -450,7 +451,8 @@ export async function runJob(options: RunJobOptions, deps: Deps): Promise<string
         "-f",
         valuesFile,
         ...Object.entries(OPS_JOBS).flatMap(([job, value]) => ["--set", `${value}=${job === options.job}`]),
-        ...(options.email ? ["--set-string", `ops.adminEmail=${options.email}`] : []),
+        // One value, the addresses separated by spaces: Helm splits a value at a comma, never at a space.
+        ...(emails.length > 0 ? ["--set-string", `ops.adminEmail=${emails.join(" ")}`] : []),
       ], chart)
       const log = await session.show(["kubectl", "logs", "-n", NAMESPACE, `job/ops-${options.job}`, "--all-containers"])
       if (log.exitCode !== 0) deps.log(`(The Job's log could not be read: kubectl exited with ${log.exitCode}.)\n`)

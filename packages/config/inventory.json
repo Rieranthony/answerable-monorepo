@@ -566,7 +566,7 @@
       {
         "name": "OPS_ADMIN_EMAIL",
         "secret": false,
-        "doc": "make-admin: the email of the staff member, signed in once, to make the first administrator",
+        "doc": "make-admin: the emails of the staff members, each signed in once, to make the first owners, separated by spaces; the first also becomes the platform administrator",
         "source": "chart",
         "optional": false
       }
