@@ -69,7 +69,10 @@ export const memberEvidence = {
 const memberWhere = (organizationId: string, memberId: string) =>
   and(eq(members.organizationId, organizationId), eq(members.id, memberId));
 export async function listMembers(
-  context: TenantReadContext<"directory"> | TenantReadContext<"memberAccess">,
+  context:
+    | TenantReadContext<"directory">
+    | TenantReadContext<"memberAccess">
+    | TenantReadContext<"members">,
   query: MemberQuery,
 ) {
   const { tx: executor, organizationId } = context;

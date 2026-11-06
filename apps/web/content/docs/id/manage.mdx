@@ -34,6 +34,7 @@ See [fresh authentication](#fresh-authentication) for the additional requirement
 | `platform:write` | Staff: manage organisations, domains, SSO, groups, clients, resources and entitlements.              |
 | `org:read`       | Read your organisation, domains, SSO, members, groups, entitlements, target access and audit events. |
 | `org:users`      | Change member windows, revoke or reinstate membership, and read member access.                       |
+| `org:members`    | List your organisation's members (with their user id, email, name, status, membership window and whether the membership is effective) and groups, and nothing else: for a directory client such as a file service. `org:read` also allows these two lists. |
 
 **Who may call a route.** `x-scopes.platform` is the staff scope. When `x-scopes.org` is present, an organisation's administrator holding that scope may call the route for their own organisation. Anyone else gets `403 insufficient_scope`, or `404 not_found` for an organisation they hold no grant in. Request each scope you need. Every write is audited.
 
@@ -74,7 +75,7 @@ curl "https://id.answerable.org/api/admin/v1/organizations/$ORGANIZATION_ID/memb
 
 **Member IDs.** Set `MEMBER_ID` to an ID from `items` to read that member's access.
 
-**Current permission.** Member list and detail reads recheck `org:read` inside their database transaction. The configuration view rechecks `org:users` and excludes profile fields. These responses use `Cache-Control: no-store`; a membership revoked before the read transaction cannot authorise that read. Organisation detail, SSO provider, group, group-member, domain and tenant entitlement reads also recheck `org:read` (or staff `platform:read`) inside their transaction and return `no-store`.
+**Current permission.** The member list and the group list recheck `org:members` or `org:read`, and member detail reads recheck `org:read`, inside their database transaction. The configuration view rechecks `org:users` and excludes profile fields. These responses use `Cache-Control: no-store`; a membership revoked before the read transaction cannot authorise that read. Organisation detail, SSO provider, group, group-member, domain and tenant entitlement reads also recheck `org:read` (or staff `platform:read`) inside their transaction and return `no-store`.
 
 ## Read a member's access
 
@@ -201,9 +202,11 @@ Paths below start at `/api/admin/v1`; `{org}` means your organisation ID.
 | Sign-in diagnosis | `GET /organizations/{org}/sign-in-diagnosis?email=…`                                                                                                                                                | `org:users`                 |
 | Domains           | `GET /organizations/{org}/domains` (each with when its DNS record was seen, `verifiedAt`, and the `verificationRecord` to publish)                                                                  | `org:read`                  |
 | SSO provider      | `GET /organizations/{org}/sso-provider` (returns `oidc.credentials`, `clientId` and `hasClientSecret`; secret redacted)                                                                                                                                           | `org:read`                  |
-| Members           | `GET /organizations/{org}/members`, `GET /organizations/{org}/members/{memberId}`                                                                                                                   | `org:read`                  |
+| Members           | `GET /organizations/{org}/members`                                                                                                                                                                  | `org:members` or `org:read` |
+| Member detail     | `GET /organizations/{org}/members/{memberId}` (with the member's groups)                                                                                                                           | `org:read`                  |
 | Member changes    | `PATCH /organizations/{org}/members/{memberId}` (window), `DELETE /organizations/{org}/members/{memberId}`                                                                                          | `org:users`                 |
-| Groups            | `GET /organizations/{org}/groups`, `GET /organizations/{org}/groups/{groupId}`, `GET /organizations/{org}/groups/{groupId}/members`, `GET /organizations/{org}/groups/{groupId}/members/{memberId}` | `org:read`                  |
+| Groups            | `GET /organizations/{org}/groups` (id, slug, name and status; no memberships)                                                                                                                      | `org:members` or `org:read` |
+| Group detail      | `GET /organizations/{org}/groups/{groupId}`, `GET /organizations/{org}/groups/{groupId}/members`, `GET /organizations/{org}/groups/{groupId}/members/{memberId}`                                   | `org:read`                  |
 | Entitlements      | `GET /organizations/{org}/entitlements`, `GET /organizations/{org}/entitlements/{entitlementId}`                                                                                                    | `org:read`                  |
 | Member access     | `GET /organizations/{org}/members/{memberId}/access`                                                                                                                                                | `org:users`                 |
 | Target access     | `GET /organizations/{org}/access?clientId=…` or `?resource=…`                                                                                                                                       | `org:read`                  |

@@ -91,7 +91,7 @@ export const routes = {
     platformScope: "platform:read",
     kind: "read",
     parameters: ["organizationId"].map((name) => pathParameter(name, "uuid")),
-    orgScope: "org:read",
+    orgScope: "org:members",
     responses: {
       200: {
         description: "Success",
@@ -368,7 +368,7 @@ export function register(app: Hono<AppEnvironment>) {
     validate("query", querySchema),
     async (context) => {
       return context.json(
-        await tenantRead(context, "directory", (tenant) =>
+        await tenantRead(context, "members", (tenant) =>
           listGroups(tenant, querySchema.parse(context.req.query())),
         ),
         200,

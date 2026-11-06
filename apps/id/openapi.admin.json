@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Answerable ID Admin API",
-    "description": "Operations serve Answerable staff with a platform scope and, where x-scopes names an organisation scope, an organisation's administrators. The five scopes are platform:read, platform:users, platform:write, org:read and org:users. The x-kind extension marks read, write and erase operations; erase requires confirm equal to the target id.",
+    "description": "Operations serve Answerable staff with a platform scope and, where x-scopes names an organisation scope, an organisation's administrators. The six scopes are platform:read, platform:users, platform:write, org:read, org:users and org:members; org:members reads only an organisation's member and group lists, which org:read also allows. The x-kind extension marks read, write and erase operations; erase requires confirm equal to the target id.",
     "version": "1.0.0"
   },
   "components": {
@@ -13244,7 +13244,7 @@
         "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
-          "org": "org:read"
+          "org": "org:members"
         }
       },
       "post": {
@@ -18826,7 +18826,7 @@
         "x-fresh-authentication": false,
         "x-scopes": {
           "platform": "platform:read",
-          "org": "org:read"
+          "org": "org:members"
         }
       }
     },
