@@ -16,7 +16,7 @@ test("valid tokens return only a frozen principal and de-duplicated scopes", asy
   const principal = await issuer.verify(await issuer.sign({ resource, userId, organizationId, scopes: ["read", "write", "read"] }))
   expect(principal).toEqual({
     userId, organizationId, membershipId: expect.any(String), grantId: expect.any(String), clientId: "test-client", scopes: ["read", "write"], expiresAt: expect.any(Number),
-    organizationAuthorizationVersion: 1, upstreamAuthTime: expect.any(Number), authenticationMethod: "directory",
+    organizationAuthorizationVersion: 1, upstreamAuthTime: expect.any(Number), authenticationMethod: "directory", groups: [organizationId],
   })
   expect(Object.isFrozen(principal)).toBe(true)
   expect(Object.isFrozen(principal.scopes)).toBe(true)
@@ -112,10 +112,27 @@ test("the upstream authentication time is the token's, null when the directory r
   const now = Math.floor(Date.now() / 1000)
   expect(await time({})).toBeWithin(now - 5, now + 1)
 })
+test("the verifier returns groups from a user token", async () => {
+  const issuer = await fixture()
+  const organizationId = crypto.randomUUID()
+  const groups = [crypto.randomUUID(), crypto.randomUUID()]
+  const principal = await issuer.verify(await issuer.sign({ resource, organizationId, groups }))
+  expect(principal.groups).toEqual([organizationId, ...groups])
+  expect(Object.isFrozen(principal.groups)).toBe(true)
+})
+test("the verifier gives an empty list for a token without groups, from an older ID", async () => {
+  const issuer = await fixture()
+  expect((await issuer.verify(await issuer.sign({ resource, claims: { groups: undefined } }))).groups).toEqual([])
+})
+test("the verifier refuses a token whose groups are not a list of UUIDs", async () => {
+  const issuer = await fixture()
+  for (const groups of [["admins"], crypto.randomUUID(), [1], null])
+    await expect(issuer.verify(await issuer.sign({ resource, claims: { groups } }))).rejects.toBeInstanceOf(AuthenticationError)
+})
 // What ID puts in a client_credentials token: the client is the subject, and there is no membership or grant.
 const machine = (claims: Record<string, unknown> = {}) => ({
   subject_type: "client", sub: "staff-client", client_id: "staff-client", client_instance: crypto.randomUUID(), authorization_version: 3,
-  membership_id: undefined, grant_id: undefined, ...claims,
+  membership_id: undefined, grant_id: undefined, groups: undefined, ...claims,
 })
 const clientOnly = (issuer: Awaited<ReturnType<typeof fixture>>) => createIdVerifier({ issuer: issuer.issuer, resource, fetch: issuer.fetch, subjectType: "client" })
 

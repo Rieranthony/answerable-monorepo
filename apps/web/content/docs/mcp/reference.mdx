@@ -79,6 +79,12 @@ type UserPrincipal = Readonly<{
    * `authentication_method`, kept across refreshes. A token without the claim, from an ID older than this field, gives `null`, so no absence reads as a directory sign-in.
    */
   authenticationMethod: "directory" | "magic_link" | null
+  /**
+   * The person's groups in `organizationId` when the token was issued: the token's `groups`. The value equal to `organizationId` is
+   * "everyone in the organisation"; match it by value, not by its place in the list. The others are the ids of the ID groups the person
+   * is in. A refresh reads them again. A token without the claim, from an ID older than this field, gives an empty list.
+   */
+  groups: readonly string[]
 }>
 ```
 
@@ -150,6 +156,7 @@ type TestIssuer = {
   issuer: string
   /**
    * Sign an access token for `resource`, with ID's user claims: `upstream_auth_time` is the signing time and `authentication_method` is `directory`, as for a person who has just signed in at their directory.
+   * `groups` is the organisation's id followed by `groups`, as ID gives it.
    * `claims` replace the token's claims (an `undefined` value removes one) and `header` its header, to make unusual tokens.
    */
   sign(options: {
@@ -157,6 +164,8 @@ type TestIssuer = {
     scopes?: readonly string[]
     organizationId?: string
     userId?: string
+    /** The ids of the person's groups, after the organisation's id. Default: none. */
+    groups?: readonly string[]
     /** Lifetime as a duration string such as `"5m"` or as seconds. Default `"5m"`. */
     expiresIn?: string | number
     claims?: Record<string, unknown>

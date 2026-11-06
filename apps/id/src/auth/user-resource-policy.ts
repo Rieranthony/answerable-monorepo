@@ -1,8 +1,11 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Executor } from "../db/client.ts";
 import { withDatabaseScope } from "../db/isolation.ts";
+import { isEffective } from "../db/queries/effective.ts";
 import {
   grantContexts,
+  groupMembers,
+  groups,
   members,
   organizations,
   users,
@@ -45,6 +48,16 @@ export async function userResourcePolicy(
           grant: grantContexts,
           authenticationProviderKind: ssoProviders.kind,
           ...memberPermissionFields(tx),
+          // The member's effective, active groups in the grant's organisation, sorted.
+          groupIds: sql<
+            string[]
+          >`(select coalesce(jsonb_agg(${groups.id} order by ${groups.id}), '[]'::jsonb)
+            from ${groupMembers}
+            join ${groups} on ${groups.id} = ${groupMembers.groupId}
+            where ${groupMembers.memberId} = ${members.id}
+            and ${groupMembers.organizationId} = ${grantContexts.organizationId}
+            and ${isEffective(groupMembers)}
+            and ${groups.status} = 'active')`,
         })
         .from(grantContexts)
         .innerJoin(
@@ -98,6 +111,7 @@ export async function userResourcePolicy(
       return decision.allowed
         ? {
             ...decision,
+            groupIds: row.groupIds,
             grant: {
               ...row.grant,
               authenticationProviderKind: row.authenticationProviderKind,

@@ -64,6 +64,7 @@ An MCP server built with the kit receives the verified token as `principal`, in 
 | `organization_authorization_version` | `organizationAuthorizationVersion` | Advances when ID changes the organisation's authority, such as disabling it |
 | `upstream_auth_time` | `upstreamAuthTime` | When the person last signed in at their company's directory, in seconds, or `null` when it reported no time, as it does for a sign-in by link. Fixed when the authorisation is made: a refreshed token keeps it |
 | `authentication_method` | `authenticationMethod` | How the person proved who they are: `directory` for a company directory, `magic_link` for a link or code mailed to their work email. `null` for a token from before ID said so. Fixed when the authorisation is made, and a refreshed token keeps it. [What it is worth](/docs/id/magic-links#what-a-sign-in-by-email-is-worth) |
+| `groups` | `groups` | The organisation's id, which stands for everyone in it, then the ids of the person's groups there. Match the organisation's id by value. Read again at each refresh. An empty list for a token from before ID said so |
 | `aud` | | The resource URL. A server refuses a token for any other |
 | `subject_type` | | `user` for a person; a machine client's own token says `client` |
 
