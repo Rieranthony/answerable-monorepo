@@ -6,7 +6,12 @@ import { sessions, users } from "../db/schema/index.ts";
 import type { Environment } from "../env.ts";
 import type { Principal, BearerClaims } from "../http/principal.ts";
 import { ProblemError } from "../http/problem.ts";
-import type { AdminScope } from "../http/admin/scopes.ts";
+import {
+  adminScopes,
+  holdsScope,
+  type PlatformScope,
+  type AdminScope,
+} from "../http/admin/scopes.ts";
 
 /**
  * Current authority refused the caller: `403 insufficient_scope`, or
@@ -31,7 +36,8 @@ export async function authorizeCommand(
   principal: Principal,
   environment: Environment,
   required: {
-    platform: AdminScope;
+    // A platform scope, so the org:read rule in holdsScope never applies to it.
+    platform: PlatformScope;
     tenant?: { organizationId: string; scope: AdminScope };
   },
   claims?: BearerClaims,
@@ -91,7 +97,8 @@ export async function authorizeCommand(
       );
     if (
       grants.some(
-        (grant) => grant.isPlatform && grant.scopes.includes(required.platform),
+        (grant) =>
+          grant.isPlatform && holdsScope(grant.scopes, required.platform),
       )
     )
       return "platform";
@@ -100,7 +107,7 @@ export async function authorizeCommand(
       grants.some(
         (grant) =>
           grant.organizationId === required.tenant?.organizationId &&
-          grant.scopes.includes(required.tenant.scope),
+          holdsScope(grant.scopes, required.tenant.scope),
       )
     )
       return "tenant";
@@ -140,11 +147,14 @@ export async function authorizeCommand(
       claims.scopes.includes(scope) &&
       client.clientCredentialsScopes?.includes(scope) &&
       (client.resourceScopes === null || client.resourceScopes.includes(scope));
-    if (client.isPlatform && allowed(required.platform)) return "platform";
+    // The rule applies to the scopes that pass all three ceilings.
+    const held = adminScopes.filter(allowed);
+    if (client.isPlatform && holdsScope(held, required.platform))
+      return "platform";
     if (
       required.tenant &&
       client.organizationId === required.tenant.organizationId &&
-      allowed(required.tenant.scope)
+      holdsScope(held, required.tenant.scope)
     )
       return "tenant";
     throw new AuthorityDenied(

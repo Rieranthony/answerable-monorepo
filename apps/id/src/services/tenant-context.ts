@@ -25,6 +25,8 @@ export type TenantMemberContext = ScopedContext<"command"> & {
 };
 const readScopes = {
   directory: { platform: "platform:read", tenant: "org:read" },
+  /** Members and group names only: what a directory client such as Cloud's needs. */
+  members: { platform: "platform:read", tenant: "org:members" },
   memberAccess: { platform: "platform:read", tenant: "org:users" },
   history: { platform: "platform:read", tenant: "org:read" },
 } as const;

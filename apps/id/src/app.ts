@@ -199,7 +199,7 @@ export function createApp(services: AppServices) {
             title: "Answerable ID Admin API",
             version: "1.0.0",
             description:
-              "Operations serve Answerable staff with a platform scope and, where x-scopes names an organisation scope, an organisation's administrators. The five scopes are platform:read, platform:users, platform:write, org:read and org:users. The x-kind extension marks read, write and erase operations; erase requires confirm equal to the target id.",
+              "Operations serve Answerable staff with a platform scope and, where x-scopes names an organisation scope, an organisation's administrators. The six scopes are platform:read, platform:users, platform:write, org:read, org:users and org:members; org:members reads only an organisation's member and group lists, which org:read also allows. The x-kind extension marks read, write and erase operations; erase requires confirm equal to the target id.",
           },
           components: { securitySchemes: adminSecuritySchemes },
           tags: adminTags,

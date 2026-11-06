@@ -141,6 +141,7 @@ test("tenant users review all three sources, readers review resource and client 
     "tenantAdmin",
     "tenantReader",
     "tenantUsersOnly",
+    "tenantMembersOnly",
     "noGrant",
   ] as const;
   const expectedIds = expectedMembers

@@ -244,12 +244,21 @@ export function describeAdminRoutes(
       entry("insufficient scope", () =>
         denied(
           route.orgScope
-            ? route.orgScope === "org:read"
-              ? "tenantUsersOnly"
-              : "tenantReader"
+            ? route.orgScope === "org:users"
+              ? "tenantReader"
+              : "tenantUsersOnly"
             : "tenantAdmin",
         ),
       );
+      // org:members reads members and group names only.
+      if (route.orgScope === "org:members")
+        entry("org:members is admitted", async () => {
+          expect((await request("tenantMembersOnly")).status).toBe(200);
+        });
+      else
+        entry("org:members insufficient scope", () =>
+          denied("tenantMembersOnly"),
+        );
       if (route.platformScope !== "platform:read") {
         entry("platform reader insufficient scope", async () => {
           await problem(

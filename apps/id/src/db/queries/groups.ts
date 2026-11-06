@@ -62,7 +62,7 @@ const membershipWhere = (
     optionalEq(groupMembers.memberId, memberId),
   );
 export async function listGroups(
-  context: TenantReadContext<"directory">,
+  context: TenantReadContext<"directory"> | TenantReadContext<"members">,
   query: GroupQuery,
 ) {
   const { tx: executor, organizationId } = context;

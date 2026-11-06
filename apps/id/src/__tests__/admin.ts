@@ -43,6 +43,7 @@ type Name =
   | "tenantAdmin"
   | "tenantReader"
   | "tenantUsersOnly"
+  | "tenantMembersOnly"
   | "outsider"
   | "noGrant"
   | "expiredMember"
@@ -217,7 +218,7 @@ export async function createAdminFixture(
       await approveAdminCapability(db, {
         organizationId: org.organizationId,
         resource: environment.adminResourceIdentifier,
-        scopes: ["org:read", "org:users"],
+        scopes: ["org:read", "org:users", "org:members"],
       });
     const principals = {} as Record<Name, FixturePrincipal>;
     const shapes: {
@@ -255,6 +256,12 @@ export async function createAdminFixture(
         org: tenant,
         domain: "tenant.example.com",
         scopes: ["org:users"],
+      },
+      {
+        name: "tenantMembersOnly",
+        org: tenant,
+        domain: "tenant.example.com",
+        scopes: ["org:members"],
       },
       {
         name: "outsider",
