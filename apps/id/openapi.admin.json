@@ -1618,7 +1618,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "The strong ETag returned by the target GET route. Reuse the original tag when retrying the same operation."
+            "description": "The ETag returned by the target GET route, as sent or marked weak (W/) by a proxy on the way: both name the same revision. Reuse the original tag when retrying the same operation."
           },
           {
             "in": "header",
@@ -1689,7 +1689,7 @@
           }
         },
         "summary": "Update an organisation capability",
-        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Accepts the strong If-Match ETag from getCapability; stale returns 412. Committed replay precedes that check. Change scopes, effective windows or active/disabled status; unchanged configuration records a noop. Disabling prevents subsequent machine grants and removes authority supplied by direct-session assignments, but does not revoke already-issued offline JWTs. Assignments remain. Tenant and target are immutable. validation_failed rejects unsupported fields, grant kinds or scopes; not_found means the capability is missing; constraint_violation rejects inconsistent windows.",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Accepts the If-Match ETag from getCapability; stale returns 412. Committed replay precedes that check. Change scopes, effective windows or active/disabled status; unchanged configuration records a noop. Disabling prevents subsequent machine grants and removes authority supplied by direct-session assignments, but does not revoke already-issued offline JWTs. Assignments remain. Tenant and target are immutable. validation_failed rejects unsupported fields, grant kinds or scopes; not_found means the capability is missing; constraint_violation rejects inconsistent windows.",
         "tags": [
           "Capabilities"
         ],
@@ -8413,7 +8413,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "The strong ETag returned by the target GET route. Reuse the original tag when retrying the same operation."
+            "description": "The ETag returned by the target GET route, as sent or marked weak (W/) by a proxy on the way: both name the same revision. Reuse the original tag when retrying the same operation."
           },
           {
             "in": "header",
@@ -8479,7 +8479,7 @@
           }
         },
         "summary": "Update an organisation entitlement",
-        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Accepts the strong If-Match ETag from getEntitlement. Stale or wrong-instance supplied revisions return 412. Committed replay precedes the old revision check. Change an entitlement’s scopes or validity window and return the updated entitlement, affecting subsequent access decisions. Prefer createEntitlement to select a different principal or target; validation_failed rejects invalid scopes or an empty patch, not_found means the entitlement is missing, and constraint_violation rejects an invalid window.",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Accepts the If-Match ETag from getEntitlement. Stale or wrong-instance supplied revisions return 412. Committed replay precedes the old revision check. Change an entitlement’s scopes or validity window and return the updated entitlement, affecting subsequent access decisions. Prefer createEntitlement to select a different principal or target; validation_failed rejects invalid scopes or an empty patch, not_found means the entitlement is missing, and constraint_violation rejects an invalid window.",
         "tags": [
           "Entitlements"
         ],
@@ -14037,7 +14037,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "The strong ETag returned by the target GET route. Reuse the original tag when retrying the same operation."
+            "description": "The ETag returned by the target GET route, as sent or marked weak (W/) by a proxy on the way: both name the same revision. Reuse the original tag when retrying the same operation."
           },
           {
             "in": "header",
@@ -16488,7 +16488,7 @@
           }
         },
         "summary": "Add or update a group member",
-        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Accepts the strong If-Match ETag from getGroupMember for conditional replacement; conflicting/malformed headers return 400; stale or recreated state returns 412. Committed replay precedes the precondition check. Create or update a group membership validity window and return the membership, with 201 for creation and 200 for an update. Prefer removeGroupMember to end membership; validation_failed rejects malformed input and not_found means a parent is missing.",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Accepts the If-Match ETag from getGroupMember for conditional replacement; conflicting/malformed headers return 400; stale or recreated state returns 412. Committed replay precedes the precondition check. Create or update a group membership validity window and return the membership, with 201 for creation and 200 for an update. Prefer removeGroupMember to end membership; validation_failed rejects malformed input and not_found means a parent is missing.",
         "tags": [
           "Groups"
         ],
@@ -19277,7 +19277,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "The strong ETag returned by the target GET route. Reuse the original tag when retrying the same operation."
+            "description": "The ETag returned by the target GET route, as sent or marked weak (W/) by a proxy on the way: both name the same revision. Reuse the original tag when retrying the same operation."
           },
           {
             "in": "header",
@@ -21471,7 +21471,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "The strong ETag returned by the target GET route. Reuse the original tag when retrying the same operation."
+            "description": "The ETag returned by the target GET route, as sent or marked weak (W/) by a proxy on the way: both name the same revision. Reuse the original tag when retrying the same operation."
           },
           {
             "in": "header",
@@ -24025,7 +24025,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "The strong ETag returned by the target GET route. Reuse the original tag when retrying the same operation."
+            "description": "The ETag returned by the target GET route, as sent or marked weak (W/) by a proxy on the way: both name the same revision. Reuse the original tag when retrying the same operation."
           },
           {
             "in": "header",
@@ -31304,7 +31304,7 @@
           }
         },
         "summary": "Put the SSO provider",
-        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Accepts the strong If-Match ETag from getSsoProvider for conditional replacement; conflicting/malformed headers return 400; stale state returns 412. Committed replay precedes the original precondition. Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. A real configuration change, including first creation, irreversibly revokes the tenant’s grant contexts in the same audited transaction, and moves the provider’s revision, which ends directory sessions’ standing; unchanged configuration preserves them. Magic-link sessions and grant contexts are not touched: the two methods are independent. Other tenants and global browser sessions are preserved. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider. Omit oidc, or send oidc.credentials \"platform\", to sign the organisation in through Answerable's Google or Microsoft application; generic issuers require oidc.clientId. platform_credentials_unsupported rejects a generic issuer without own credentials; platform_application_missing means the service has no application for that directory.",
+        "description": "Accepts Idempotency-Key. Identical authorised retries under one key return the receipt without repeating the mutation or its audit event; changed input returns idempotency_key_reused. Without a key, every request is a new command. Accepts the If-Match ETag from getSsoProvider for conditional replacement; conflicting/malformed headers return 400; stale state returns 412. Committed replay precedes the original precondition. Create or replace the organisation’s SSO configuration and return the provider with credentials redacted. A real configuration change, including first creation, irreversibly revokes the tenant’s grant contexts in the same audited transaction, and moves the provider’s revision, which ends directory sessions’ standing; unchanged configuration preserves them. Magic-link sessions and grant contexts are not touched: the two methods are independent. Other tenants and global browser sessions are preserved. Prefer getSsoProvider to inspect configuration; validation_failed rejects malformed input, not_found means the organisation is missing, and conflict indicates a duplicate provider. Omit oidc, or send oidc.credentials \"platform\", to sign the organisation in through Answerable's Google or Microsoft application; generic issuers require oidc.clientId. platform_credentials_unsupported rejects a generic issuer without own credentials; platform_application_missing means the service has no application for that directory.",
         "tags": [
           "SSO provider"
         ],
@@ -33424,7 +33424,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "The strong ETag returned by the target GET route. Reuse the original tag when retrying the same operation."
+            "description": "The ETag returned by the target GET route, as sent or marked weak (W/) by a proxy on the way: both name the same revision. Reuse the original tag when retrying the same operation."
           },
           {
             "in": "header",

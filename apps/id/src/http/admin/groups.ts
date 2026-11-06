@@ -298,7 +298,7 @@ export const routes = {
     operationId: "putGroupMember",
     summary: "Add or update a group member",
     description:
-      "Accepts the strong If-Match ETag from getGroupMember for conditional replacement; conflicting/malformed headers return 400; stale or recreated state returns 412. Committed replay precedes the precondition check. Create or update a group membership validity window and return the membership, with 201 for creation and 200 for an update. Prefer removeGroupMember to end membership; validation_failed rejects malformed input and not_found means a parent is missing.",
+      "Accepts the If-Match ETag from getGroupMember for conditional replacement; conflicting/malformed headers return 400; stale or recreated state returns 412. Committed replay precedes the precondition check. Create or update a group membership validity window and return the membership, with 201 for creation and 200 for an update. Prefer removeGroupMember to end membership; validation_failed rejects malformed input and not_found means a parent is missing.",
     tag: "Groups",
     platformScope: "platform:write",
     kind: "write",

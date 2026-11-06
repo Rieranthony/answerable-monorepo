@@ -168,7 +168,7 @@ export const routes = {
     operationId: "updateCapability",
     summary: "Update an organisation capability",
     description:
-      "Accepts the strong If-Match ETag from getCapability; stale returns 412. Committed replay precedes that check. Change scopes, effective windows or active/disabled status; unchanged configuration records a noop. Disabling prevents subsequent machine grants and removes authority supplied by direct-session assignments, but does not revoke already-issued offline JWTs. Assignments remain. Tenant and target are immutable. validation_failed rejects unsupported fields, grant kinds or scopes; not_found means the capability is missing; constraint_violation rejects inconsistent windows.",
+      "Accepts the If-Match ETag from getCapability; stale returns 412. Committed replay precedes that check. Change scopes, effective windows or active/disabled status; unchanged configuration records a noop. Disabling prevents subsequent machine grants and removes authority supplied by direct-session assignments, but does not revoke already-issued offline JWTs. Assignments remain. Tenant and target are immutable. validation_failed rejects unsupported fields, grant kinds or scopes; not_found means the capability is missing; constraint_violation rejects inconsistent windows.",
     tag: "Capabilities",
     platformScope: "platform:write",
     kind: "write",

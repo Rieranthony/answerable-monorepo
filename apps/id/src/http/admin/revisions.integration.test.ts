@@ -77,9 +77,10 @@ const cases = [
         (await put("both", { "If-None-Match": "*", "If-Match": originalTag }))
           .status,
       ).toBe(400);
+      // A weak copy, as a compressing proxy passes the tag on, names the same revision.
       expect(
         (await put("weak", { "If-Match": `W/${originalTag}` })).status,
-      ).toBe(400);
+      ).toBe(200);
       const changed = await put(
         "change",
         { "If-Match": originalTag },
@@ -198,7 +199,7 @@ const cases = [
       expect(await noop.json()).toEqual(saved);
       expect((await patch(entitlement.id, "missing")).status).toBe(200);
       expect((await patch(entitlement.id, "weak", `W/${nextTag}`)).status).toBe(
-        400,
+        200,
       );
       expect((await patch(entitlement.id, "first", nextTag)).status).toBe(409);
       await expect(
@@ -305,7 +306,7 @@ const cases = [
       expect(noop.status).toBe(200);
       expect(await noop.json()).toEqual(saved);
       expect((await patch(group.id, "missing")).status).toBe(200);
-      expect((await patch(group.id, "weak", `W/${nextTag}`)).status).toBe(400);
+      expect((await patch(group.id, "weak", `W/${nextTag}`)).status).toBe(200);
       expect((await patch(group.id, "first", nextTag)).status).toBe(409);
       await expect(
         fixture.db
@@ -414,7 +415,7 @@ const cases = [
       expect(unchanged.status).toBe(200);
       expect((await read()).headers.get("ETag")).toBe(currentTag);
       expect((await patch("missing")).status).toBe(200);
-      expect((await patch("weak", `W/${currentTag}`)).status).toBe(400);
+      expect((await patch("weak", `W/${currentTag}`)).status).toBe(200);
       const original = await fixture.db
         .select()
         .from(members)
@@ -495,7 +496,7 @@ const cases = [
       expect((await patch("org-revision-first", currentTag)).status).toBe(409);
       expect((await patch("org-revision-missing")).status).toBe(200);
       expect((await patch("org-revision-weak", `W/${currentTag}`)).status).toBe(
-        400,
+        200,
       );
       expect(
         (await patch("org-revision-other", `"${crypto.randomUUID()}:1"`))
@@ -631,8 +632,15 @@ const cases = [
         412,
       );
       expect(
-        (await put(org.id, "weak", { "If-Match": `W/${currentTag}` })).status,
-      ).toBe(400);
+        (
+          await put(
+            org.id,
+            "weak",
+            { "If-Match": `W/${currentTag}` },
+            changedInput,
+          )
+        ).status,
+      ).toBe(200);
       const replay = await put(
         org.id,
         "replace",

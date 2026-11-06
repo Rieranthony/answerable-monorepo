@@ -74,12 +74,12 @@ test("configuration patches reject stale revisions but replay an already committ
   await expectNoop(fixture.db, noop);
 });
 
-test("weak, wildcard, malformed and unrelated tags do not update a client", async () => {
+test("wildcard, malformed and unrelated tags do not update a client", async () => {
   const initial = await read();
   const tag = initial.headers.get("ETag")!;
   const before = await initial.json();
   for (const [value, status, code] of [
-    [`W/${tag}`, 400, "invalid_revision"],
+    ['W/"wrong:1"', 400, "invalid_revision"],
     ["*", 400, "invalid_revision"],
     [`${tag}, ${tag}`, 400, "invalid_revision"],
     ['"wrong:1"', 400, "invalid_revision"],
@@ -101,6 +101,25 @@ test("weak, wildcard, malformed and unrelated tags do not update a client", asyn
     expect(await response.json()).toMatchObject({ code });
   }
   expect(await (await read()).json()).toEqual(before);
+});
+
+test("a weak copy of a tag, as a compressing proxy passes it on, names the same revision", async () => {
+  const initial = await read();
+  const tag = initial.headers.get("ETag")!;
+  const before = await initial.json();
+  const stale = await patch(
+    "weak-stale",
+    `W/"${before.id}:${before.revision + 1}"`,
+    "Weak stale",
+  );
+  expect(stale.status).toBe(412);
+  expect(await stale.json()).toMatchObject({ code: "revision_mismatch" });
+  const weak = await patch("weak-current", `W/${tag}`, "Weak");
+  expect(weak.status).toBe(200);
+  expect(await weak.json()).toMatchObject({
+    name: "Weak",
+    revision: before.revision + 1,
+  });
 });
 
 test("concurrent different operations cannot overwrite the same revision", async () => {

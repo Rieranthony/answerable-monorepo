@@ -25,18 +25,23 @@ export function assertRevision(
 export const revisionTag = (value: Revision): string =>
   `"${value.id}:${value.revision}"`;
 
+/** Read If-Match: one revision tag, as ID sent it or marked weak (W/). A proxy
+ * that compresses the response, as Cloudflare does, makes the tag weak on its
+ * way to the client, but the revision still names the exact state, so the weak
+ * copy matches too. RFC 9110 compares If-Match strongly; ID departs from it here
+ * on purpose, for its own tags only. */
 export function requireRevision(
   header: string | undefined,
 ): Revision | undefined {
   if (header === undefined) return undefined;
-  const match = /^"([^:]+):([1-9][0-9]*)"$/.exec(header);
+  const match = /^(?:W\/)?"([^:]+):([1-9][0-9]*)"$/.exec(header);
   const id = z.uuid().safeParse(match?.[1]);
   const revision = Number(match?.[2]);
   if (!id.success || !Number.isSafeInteger(revision))
     throw new ProblemError(
       400,
       "invalid_revision",
-      "Supply one strong revision ETag in If-Match",
+      "Supply one revision ETag in If-Match",
     );
   return { id: id.data, revision };
 }
@@ -47,7 +52,7 @@ export const revisionParameter = {
   required: false,
   schema: { type: "string" as const },
   description:
-    "The strong ETag returned by the target GET route. Reuse the original tag when retrying the same operation.",
+    "The ETag returned by the target GET route, as sent or marked weak (W/) by a proxy on the way: both name the same revision. Reuse the original tag when retrying the same operation.",
 };
 export const revisionResponseHeaders = {
   ETag: {

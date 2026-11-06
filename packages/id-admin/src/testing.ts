@@ -152,12 +152,14 @@ export function createFakeId({
     const allowed = resource === adminResource ? ["platform:read", "platform:write", "platform:users"] : resources.get(String(resource))?.allowedScopes
     return typeof resource === "string" && scopes.some(scope => !allowed?.includes(scope))
   }
-  // ID's revision preconditions (http/admin/revision.ts): If-Match names the revision a write expects, If-None-Match: * that nothing exists yet.
+  // ID's revision preconditions (http/admin/revision.ts): If-Match names the revision a write expects, as ID sent it or marked weak (W/) by a
+  // proxy on the way, If-None-Match: * that nothing exists yet.
+  const ifMatchOf = (request: Request) => request.headers.get("If-Match")?.replace(/^W\//, "") ?? null
   function precondition(request: Request, current: Stored | undefined, put = false) {
-    const ifMatch = request.headers.get("If-Match")
+    const ifMatch = ifMatchOf(request)
     const ifNoneMatch = request.headers.get("If-None-Match")
     if (put && ifNoneMatch !== null && (ifNoneMatch !== "*" || ifMatch !== null)) return problem(400, "invalid_revision", "Supply exactly one supported precondition")
-    if (ifMatch !== null && !/^"[0-9a-f-]{36}:[1-9][0-9]*"$/.test(ifMatch)) return problem(400, "invalid_revision", "Supply one strong revision ETag in If-Match")
+    if (ifMatch !== null && !/^"[0-9a-f-]{36}:[1-9][0-9]*"$/.test(ifMatch)) return problem(400, "invalid_revision", "Supply one revision ETag in If-Match")
     if ((put && ifNoneMatch === "*" && current) || (ifMatch !== null && (!current || ifMatch !== etag(current)))) {
       return problem(412, "revision_mismatch", "Configuration changed; read its current revision before issuing a new command")
     }
@@ -616,7 +618,7 @@ export function createFakeId({
       if (!found) return problem(404, "not_found", "Resource not found")
       const shown = () => Response.json({ identifier: decodeURIComponent(resource[1]!), ...found }, { headers: { ETag: etag(found) } })
       if (request.method === "GET") return shown()
-      const ifMatch = request.headers.get("If-Match")
+      const ifMatch = ifMatchOf(request)
       if (ifMatch && ifMatch !== etag(found)) return problem(412, "revision_mismatch", "Configuration revision does not match")
       const fields = Object.fromEntries(["name", "accessTokenTtl", "refreshTokenTtl", "allowedScopes"].filter(field => field in body).map(field => [field, field === "allowedScopes" ? [...new Set(body[field] as string[])].sort() : body[field]]))
       change(found, fields)

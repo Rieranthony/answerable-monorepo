@@ -358,7 +358,7 @@ curl -X POST "$ID_ORIGIN/api/admin/v1/clients/$CLIENT_ID/rotate-secret" \
 curl -i "$ID_ORIGIN/api/admin/v1/clients/$CLIENT_ID" \
   -H "Authorization: Bearer $ACCESS_TOKEN"
 
-# CLIENT_ETAG includes the quotes returned in the ETag header.
+# CLIENT_ETAG is the ETag header as returned, quotes included.
 curl -X PATCH "$ID_ORIGIN/api/admin/v1/clients/$CLIENT_ID" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
@@ -367,11 +367,13 @@ curl -X PATCH "$ID_ORIGIN/api/admin/v1/clients/$CLIENT_ID" \
   -d '{"name":"Renamed client"}'
 ```
 
+**A weak tag is the same revision.** A proxy that compresses the response, as Cloudflare does, can mark the ETag weak (`W/"…"`) on its way to you. Send it as you received it: ID reads `W/` and its own tag as the same revision. This departs from HTTP's strong comparison for `If-Match`, for ID's tags only.
+
 **Retry with the original key, tag and body.** A committed patch returns its receipt, even if the client has since changed. A new command can supply the current ETag to refuse a stale edit; without If-Match it uses the current row. An unchanged patch records a `noop` and leaves its revision unchanged. Resource-link changes advance the client revision too. Only the first response includes that result's ETag; read again to obtain current state.
 
 | Code                | Meaning                                                                | What to do                                                               |
 | ------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `invalid_revision`  | The tag is malformed, weak, a wildcard or a list (400).                | Supply one quoted ETag exactly as returned.                              |
+| `invalid_revision`  | The tag is malformed, a wildcard or a list (400).                      | Supply one ETag exactly as returned.                                     |
 | `revision_mismatch` | A new command used an outdated revision or another client's tag (412). | Read current state, reconcile the patch and issue a new logical command. |
 
 **All other client mutations** accept `Idempotency-Key` and return receipts: enable, disable, resource link/unlink and erasure. Enable/disable and link/unlink return success with a `noop` operation, and record no audit event, when the requested state already holds. Ownership cannot be changed: create a replacement client under the new owner.
@@ -546,7 +548,7 @@ Set `ASSIGNMENT_UPDATE_KEY` once for this command. Retain the same supplied prec
 
 Creating, updating, enabling, disabling and removing entitlements accept `Idempotency-Key`. An authorised retry returns its receipt, including after removal. Reusing a key with different input returns 409. A new command with unchanged scopes, windows or status records a noop and preserves timestamps. Scopes are treated as a set.
 
-Entitlement PATCH accepts the optional strong ETag from [getEntitlement](/docs/id/admin-api/entitlements/getEntitlement) in `If-Match`. Malformed tags return 400; stale or wrong-instance state returns 412. Noops preserve revisions. Lifecycle changes advance them. Keep the original tag, key and body on retry: recovery returns the receipt before checking its old revision.
+Entitlement PATCH accepts the optional ETag from [getEntitlement](/docs/id/admin-api/entitlements/getEntitlement) in `If-Match`. Malformed tags return 400; stale or wrong-instance state returns 412. Noops preserve revisions. Lifecycle changes advance them. Keep the original tag, key and body on retry: recovery returns the receipt before checking its old revision.
 
 ```bash
 ENTITLEMENT_ETAG=$(curl -sS -D - -o /dev/null \

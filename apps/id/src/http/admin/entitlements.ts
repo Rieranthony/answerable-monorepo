@@ -168,7 +168,7 @@ export const routes = {
     operationId: "updateEntitlement",
     summary: "Update an organisation entitlement",
     description:
-      "Accepts the strong If-Match ETag from getEntitlement. Stale or wrong-instance supplied revisions return 412. Committed replay precedes the old revision check. Change an entitlement’s scopes or validity window and return the updated entitlement, affecting subsequent access decisions. Prefer createEntitlement to select a different principal or target; validation_failed rejects invalid scopes or an empty patch, not_found means the entitlement is missing, and constraint_violation rejects an invalid window.",
+      "Accepts the If-Match ETag from getEntitlement. Stale or wrong-instance supplied revisions return 412. Committed replay precedes the old revision check. Change an entitlement’s scopes or validity window and return the updated entitlement, affecting subsequent access decisions. Prefer createEntitlement to select a different principal or target; validation_failed rejects invalid scopes or an empty patch, not_found means the entitlement is missing, and constraint_violation rejects an invalid window.",
     tag: "Entitlements",
     platformScope: "platform:write",
     kind: "write",
