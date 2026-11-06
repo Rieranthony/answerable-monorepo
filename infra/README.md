@@ -199,6 +199,8 @@ A migration is never rolled back: the earlier image runs on the newer schema. A 
 
 No rollback crosses the move to private images: a commit from before the Secret `ghcr-pull` has a chart whose pods cannot pull. Fix forward instead.
 
+No rollback returns to a release that started the Toolbox and the admin MCP at zero replicas, before their client Secrets existed: `ops-register` owns their replicas after starting them, so Kubernetes refuses it as a conflict and the rollback stops halfway. The deploy upgrades such a release once more so that a later failure has another to return to; before that, fix forward.
+
 ## Scale
 
 | What | Where | Then |

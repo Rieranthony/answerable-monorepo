@@ -93,6 +93,8 @@ async function fixture(reply: (call: RecordedCall) => Partial<RunResult> | undef
     log: () => logs.join(""),
     /** The commands that reached the cluster side, without the registry lookups. */
     cluster: () => runner.commands().filter((command) => !command.startsWith("docker ")),
+    /** The first `helm upgrade`. */
+    upgrade: () => runner.commands().find((command) => command.startsWith("helm upgrade")),
   }
 }
 
@@ -331,6 +333,7 @@ describe("deploy", () => {
       "kubectl apply -n answerable -f -",
       "kubectl apply -n answerable -f -",
       upgradeCommand(`${pins(DIGESTS)} --set-string idEnvChecksum=${checksum(ID_ENV)} --set ops.bootstrap=true --set ops.register=true`),
+      "helm get manifest answerable --namespace answerable",
     ])
     expect(f.log()).toContain(`Deployed ${TAG} to staging.`)
     expect(f.log()).toContain(`id is ${DIGESTS.id}`)
@@ -387,7 +390,7 @@ describe("deploy", () => {
     await deploy({ environment: "staging", imageTag: TAG }, again.deps)
     const rotated = await fixture(undefined, { env: { ...ENV, BETTER_AUTH_SECRETS: '[{"version":2,"value":"x"}]' } })
     await deploy({ environment: "staging", imageTag: TAG }, rotated.deps)
-    const sum = (f: Awaited<ReturnType<typeof fixture>>) => f.cluster().at(-1)!.match(/idEnvChecksum=([0-9a-f]{64})/)![1]
+    const sum = (f: Awaited<ReturnType<typeof fixture>>) => f.upgrade()!.match(/idEnvChecksum=([0-9a-f]{64})/)![1]
     expect(sum(again)).toBe(sum(first))
     expect(sum(rotated)).not.toBe(sum(first))
   })
@@ -398,10 +401,10 @@ describe("deploy", () => {
     expect(f.runner.commands().filter((command) => command.startsWith("docker "))).toEqual(
       NAMES.map((name) => `docker buildx imagetools inspect ghcr.io/answerableorg/answerable/${name}@${OTHER_DIGESTS[name]} --format {{.Manifest.Digest}}`),
     )
-    expect(f.cluster().at(-1)).toContain(`--set image.tag=${TAG} ${pins(OTHER_DIGESTS)}`)
+    expect(f.upgrade()).toContain(`--set image.tag=${TAG} ${pins(OTHER_DIGESTS)}`)
     const odd = await fixture(undefined, { docker: () => ({ stdout: `${DIGESTS.id}\n` }) })
     await deploy({ environment: "staging", imageTag: TAG, digests: OTHER_DIGESTS }, odd.deps)
-    expect(odd.cluster().at(-1)).toContain(pins(OTHER_DIGESTS))
+    expect(odd.upgrade()).toContain(pins(OTHER_DIGESTS))
   })
 
   test("stops before the cluster when a tag cannot be resolved", async () => {
@@ -441,7 +444,8 @@ describe("deploy", () => {
     }
     await deploy({ environment: "staging", imageTag: TAG }, deps)
     const clusterCalls = f.runner.calls.filter((call) => call.argv[0] !== "docker")
-    expect(clusterCalls).toHaveLength(3)
+    // The two Secrets, the upgrade, and the read of the release it stored.
+    expect(clusterCalls).toHaveLength(4)
     expect(new Set(modes)).toEqual(new Set([0o600]))
     for (const call of f.runner.calls) expect(call.options.cwd).toBe(f.root)
     for (const call of clusterCalls) expect(JSON.parse(call.kubeconfig!).users[0].user.token).toBe("deployer-token-value")
@@ -473,7 +477,7 @@ describe("deploy", () => {
   test("registers on every upgrade, whatever Secrets exist: register is its own machine client once its first run has minted it", async () => {
     for (const f of [await fixture(), await fixture()]) {
       await deploy({ environment: "staging", imageTag: TAG }, f.deps)
-      expect(f.cluster().at(-1)).toEndWith("--set ops.bootstrap=true --set ops.register=true")
+      expect(f.upgrade()).toEndWith("--set ops.bootstrap=true --set ops.register=true")
       expect(f.cluster().some((command) => command.startsWith("kubectl get secret"))).toBe(false)
     }
   })
@@ -493,10 +497,37 @@ describe("deploy", () => {
     expect(f.log()).not.toContain("Deployed")
   })
 
+  test("upgrades once more when the release starts a server at zero replicas, so that no rollback returns to it", async () => {
+    // The manifest Helm stored: the waiting servers first, then, once register has written their Secrets, none.
+    const manifests = ["kind: Deployment\nspec:\n  # Until ops register writes the Secret toolbox-id-client\n  replicas: 0\n", "kind: Deployment\nspec:\n  revisionHistoryLimit: 5\n"]
+    const f = await fixture((call) => (call.argv[1] === "get" ? { stdout: manifests.shift()! } : undefined))
+    await deploy({ environment: "staging", imageTag: TAG }, f.deps)
+    const upgrade = f.upgrade()!
+    expect(f.cluster().slice(2)).toEqual([upgrade, "helm get manifest answerable --namespace answerable", upgrade.replace(" --install", ""), "helm get manifest answerable --namespace answerable"])
+    expect(f.log()).toContain("Upgrading again, so that no rollback returns to it.")
+    expect(f.log()).not.toContain("revisionHistoryLimit")
+    expect(f.log()).toContain(`Deployed ${TAG} to staging.`)
+  })
+
+  test("a server the HorizontalPodAutoscaler scales from minReplicas is not one at zero replicas", async () => {
+    const f = await fixture((call) => (call.argv[1] === "get" ? { stdout: "kind: HorizontalPodAutoscaler\nspec:\n  minReplicas: 2\n  maxReplicas: 3\n" } : undefined))
+    await deploy({ environment: "staging", imageTag: TAG }, f.deps)
+    expect(f.cluster().filter((command) => command.startsWith("helm upgrade"))).toHaveLength(1)
+  })
+
+  test("fails when the release still starts a server at zero replicas after register, or when Helm cannot show it", async () => {
+    const stuck = await fixture((call) => (call.argv[1] === "get" ? { stdout: "spec:\n  replicas: 0\n" } : undefined))
+    await expect(deploy({ environment: "staging", imageTag: TAG }, stuck.deps)).rejects.toThrow("a client Secret the chart waits for is missing")
+    expect(stuck.cluster().filter((command) => command.startsWith("helm upgrade"))).toHaveLength(2)
+    const unread = await fixture((call) => (call.argv[1] === "get" ? { exitCode: 1, stderr: "Error: release: not found\n" } : undefined))
+    await expect(deploy({ environment: "staging", imageTag: TAG }, unread.deps)).rejects.toThrow("helm get manifest failed with exit code 1: Error: release: not found")
+    expect(unread.log()).not.toContain("Deployed")
+  })
+
   test("honours another timeout", async () => {
     const f = await fixture()
     await deploy({ environment: "staging", imageTag: TAG, timeout: "15m" }, f.deps)
-    expect(f.cluster().at(-1)).toContain(`--timeout 15m -f ${VALUES}`)
+    expect(f.upgrade()).toContain(`--timeout 15m -f ${VALUES}`)
   })
 
   test("refuses, before anything runs, a mutable tag, a missing values file, missing cluster credentials and a missing secret", async () => {

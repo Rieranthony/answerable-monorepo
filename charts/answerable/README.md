@@ -31,7 +31,7 @@ Answerable ID, the Toolbox, which serves every MCP of `mcps.json`, the admin MCP
 | `id.env` | The overlay: ID's other non-secret variables | ID's own defaults |
 | `id.extraEgress` | The overlay (the kind stack sets it) | ID reaches HTTPS outside the private ranges and nothing else. The kind stack adds its company directories and its fake Postmark |
 
-The Toolbox and the admin MCP render at zero replicas until their client Secret exists; `ops register` writes it and scales them up. `helm template` has no cluster to look in, so it always shows them at zero.
+The Toolbox and the admin MCP render at zero replicas until their client Secret exists; `ops register` writes it and scales them up. `helm template` has no cluster to look in, so it always shows them at zero. The deploy upgrades a release that stored them at zero once more, so that no rollback returns to it (`infra/pipeline/README.md`).
 
 ## Tests
 

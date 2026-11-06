@@ -320,6 +320,16 @@ async function upgrade(session: Session, install: boolean, timeout: string, args
   throw new PipelineError(`helm upgrade failed with exit code ${result.exitCode}`)
 }
 
+/**
+ * Whether the release Helm stored last starts a server at zero replicas: the chart's wait for a client Secret that register
+ * has not written yet (charts/answerable/templates/_server.tpl). Reads the manifest quietly and prints none of it.
+ */
+async function storedAtZero(session: Session): Promise<boolean> {
+  const manifest = await session.quiet(["helm", "get", "manifest", RELEASE, "--namespace", NAMESPACE])
+  if (manifest.exitCode !== 0) throw new PipelineError(`helm get manifest failed with exit code ${manifest.exitCode}: ${manifest.stderr.trim()}`)
+  return /^\s*replicas: 0$/m.test(manifest.stdout)
+}
+
 async function restartServers(session: Session, timeout: string): Promise<void> {
   const listed = await session.quiet(["kubectl", "get", "deployments", "-n", NAMESPACE, "-o", "name"])
   if (listed.exitCode !== 0)
@@ -355,7 +365,8 @@ export type DeployOptions = {
  * rolls ID when a secret changed. Register runs on every upgrade, as its own machine client once its first run has minted
  * it: it registers what the release's list of MCPs needs in ID. Like a migration, a failed register fails the upgrade, and
  * Helm rolls the release back: a release is its images and what they need, ID's rows included. When the upgrade fails the
- * migration and ops Jobs' logs are printed.
+ * migration and ops Jobs' logs are printed. A release that started a server at zero replicas, before register wrote its
+ * client Secret, is upgraded once more, so that no later rollback returns to it.
  */
 export async function deploy(options: DeployOptions, deps: Deps): Promise<void> {
   assertImageTag(options.imageTag)
@@ -369,7 +380,8 @@ export async function deploy(options: DeployOptions, deps: Deps): Promise<void> 
     await applySecret(session, "id-env", "Opaque", secrets)
     await applySecret(session, PULL_SECRET, "kubernetes.io/dockerconfigjson", { ".dockerconfigjson": login })
     const jobs: OpsJob[] = ["bootstrap", "register"]
-    await upgrade(session, true, options.timeout ?? "10m", [
+    const timeout = options.timeout ?? "10m"
+    const args = [
       "-f",
       valuesFile,
       "--set",
@@ -378,7 +390,18 @@ export async function deploy(options: DeployOptions, deps: Deps): Promise<void> 
       "--set-string",
       `idEnvChecksum=${idEnvChecksum(secrets)}`,
       ...jobs.flatMap((job) => ["--set", `${OPS_JOBS[job]}=true`]),
-    ])
+    ]
+    await upgrade(session, true, timeout, args)
+    // A release made before register wrote the client Secrets, the first, stores the Toolbox and the admin MCP at zero
+    // replicas, and register then starts them, which makes register the owner of their replicas. A rollback to that
+    // release would stop them, and Kubernetes refuses it as a conflict, which fails the rollback halfway. Upgrading again,
+    // now that the Secrets exist, stores a release that leaves their replicas alone, and later rollbacks return to it.
+    if (await storedAtZero(session)) {
+      deps.log("\nThis release started a server at zero replicas, before its client Secret existed. Upgrading again, so that no rollback returns to it.\n")
+      await upgrade(session, false, timeout, args)
+      if (await storedAtZero(session))
+        throw new PipelineError("the release still starts a server at zero replicas after register ran: a client Secret the chart waits for is missing")
+    }
     deps.log(`\nDeployed ${options.imageTag} to ${options.environment}.\n`)
   })
 }
