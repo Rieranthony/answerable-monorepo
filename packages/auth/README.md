@@ -11,7 +11,7 @@ const verify = createIdVerifier({
 })
 
 const principal = await verify(accessToken)
-// { userId, organizationId, membershipId, grantId, clientId, scopes, expiresAt, organizationAuthorizationVersion, upstreamAuthTime, authenticationMethod }
+// { userId, organizationId, membershipId, grantId, clientId, scopes, expiresAt, organizationAuthorizationVersion, upstreamAuthTime, authenticationMethod, groups }
 ```
 
 A service that takes a machine client's token instead, such as the Toolbox's admin API, says so:
@@ -30,6 +30,7 @@ const machine = await verifyMachine(accessToken)
 - **Authorisation version.** `organizationAuthorizationVersion` is the token's `organization_authorization_version`, a positive integer ID advances when it disables the organisation; a cache of what the person may use keys on it.
 - **Directory sign-in time.** `upstreamAuthTime` is the token's `upstream_auth_time`, in seconds, or `null` when no directory reported one: the directory gave none, or the person signed in by emailed link. ID fixes it when it creates the authorisation: a refreshed token keeps it, so only a new authorisation after a new sign-in at the directory makes it recent.
 - **Sign-in method.** `authenticationMethod` is the token's `authentication_method`: `directory` for a sign-in at the organisation's directory, `magic_link` for a link or code from an email, which shows only that the person could read that mailbox and passes through no MFA or conditional access. `null` means a token from an ID older than the claim, so an absent claim never reads as a directory sign-in. ID fixes it when it creates the authorisation, and a refreshed token keeps it.
+- **Groups.** `groups` is the token's `groups`: the organisation's id, which stands for everyone in it, then the ids of the person's groups there, as at issue. Match the organisation's id by value, not by position. A token from an ID older than the claim gives an empty list.
 - **URLs.** HTTPS, or HTTP on `localhost`, `127.0.0.1` or `[::1]`. No credentials, query or fragment.
 - **Failures.** Every rejection throws `AuthenticationError` with no detail. Answer it with a `401` challenge.
 - **Revocation.** Verification is offline: an issued token stays valid until it expires. Constrain every query by `organizationId`.

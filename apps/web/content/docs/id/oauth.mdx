@@ -80,6 +80,9 @@ For a service grant, include the same `resource` URL. Public clients use their r
 | `auth_time`                          | Native ID-token broker authentication time                          |
 | `upstream_auth_time`                 | Verified company-provider authentication time, or null when unknown, as for a sign-in by link |
 | `authentication_method`              | `directory` or `magic_link`: how the person proved who they are. Absent from a token made before ID said so |
+| `groups`                             | The selected organisation's UUID, then the UUIDs of the person's active groups in it, sorted. Absent from a token made before ID said so |
+
+**Groups.** `groups` is on access tokens, ID tokens and in UserInfo, whatever scopes the client asked for. The organisation's own UUID stands for "everyone in the organisation": match it by value, not by its place in the list. The other values are group ids, never names; an administrator reads the names with the [admin API](/docs/id/manage). A group counts only while it is active and the person's membership is in its window. A token keeps the groups of the moment it was issued; a refresh and UserInfo read them again, so UserInfo can show newer groups than an older token.
 
 The broker time does not establish upstream freshness. The five-minute freshness rule applies to sensitive human commands and identity linking, not ordinary application browsing.
 

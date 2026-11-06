@@ -2023,6 +2023,234 @@ test("user tokens carry an audience list, the authenticating session and no nonc
   expect(decodeJwt(renewed.id_token).nonce).toBeUndefined();
 });
 
+// Group claims: the organisation's id ("everyone in the organisation") and the person's effective groups in it.
+async function addGroup(
+  slug: string,
+  membership: Partial<typeof groupMembers.$inferInsert> = {},
+  organizationId = fixture.tenant.organizationId,
+  memberId = fixture.principals.tenantAdmin.memberId,
+) {
+  const groupId = createId();
+  await fixture.db
+    .insert(groups)
+    .values({ id: groupId, organizationId, slug, name: slug });
+  await fixture.db.insert(groupMembers).values({
+    id: createId(),
+    organizationId,
+    groupId,
+    memberId,
+    ...membership,
+  });
+  return groupId;
+}
+const groupsOf = (token: string) => decodeJwt(token).groups;
+const tenantGroups = (...groupIds: string[]) => [
+  fixture.tenant.organizationId,
+  ...groupIds.toSorted(),
+];
+async function userInfoOf(accessToken: string) {
+  const response = await request("/oauth2/userinfo", undefined, {
+    authorization: `Bearer ${accessToken}`,
+  });
+  expect(response.status).toBe(200);
+  return (await response.json()) as Record<string, unknown>;
+}
+test("a user token carries the firm's id and the ids of the person's effective groups in that firm", async () => {
+  const first = await addGroup("first");
+  const second = await addGroup("second");
+  const issued = await issue();
+  expect(groupsOf(issued.access_token)).toEqual(tenantGroups(first, second));
+});
+
+test("a person in groups of firms A and B gets only firm A's id and group ids in a token for firm A's resource", async () => {
+  const own = await addGroup("own");
+  const outsiderMember = createId();
+  await fixture.db.insert(members).values({
+    id: outsiderMember,
+    organizationId: fixture.outsider.organizationId,
+    userId: fixture.principals.tenantAdmin.userId,
+  });
+  await addGroup(
+    "elsewhere",
+    {},
+    fixture.outsider.organizationId,
+    outsiderMember,
+  );
+  const issued = await issue();
+  expect(groupsOf(issued.access_token)).toEqual(tenantGroups(own));
+  expect(groupsOf(issued.id_token)).toEqual(tenantGroups(own));
+});
+
+test("the access token, the ID token and UserInfo carry the same groups when nothing changed between them", async () => {
+  const groupId = await addGroup("same");
+  const issued = await issue();
+  expect(groupsOf(issued.access_token)).toEqual(tenantGroups(groupId));
+  expect(groupsOf(issued.id_token)).toEqual(tenantGroups(groupId));
+  expect((await userInfoOf(issued.access_token)).groups).toEqual(
+    tenantGroups(groupId),
+  );
+});
+
+test("a refreshed access token and a refreshed ID token carry the groups of the refresh", async () => {
+  const issued = await issue();
+  expect(groupsOf(issued.access_token)).toEqual(tenantGroups());
+  const later = await addGroup("later");
+  const refreshed = await refresh(issued.refresh_token);
+  expect(refreshed.status).toBe(200);
+  const renewed = await refreshed.json();
+  expect(groupsOf(renewed.access_token)).toEqual(tenantGroups(later));
+  expect(groupsOf(renewed.id_token)).toEqual(tenantGroups(later));
+});
+
+test("after the person leaves a group or the group is disabled, a refresh and UserInfo drop it and the older token keeps it", async () => {
+  const left = await addGroup("left");
+  const disabled = await addGroup("disabled");
+  const kept = await addGroup("kept");
+  const issued = await issue();
+  await fixture.db
+    .update(groupMembers)
+    .set({ deletedAt: new Date() })
+    .where(eq(groupMembers.groupId, left));
+  await fixture.db
+    .update(groups)
+    .set({ status: "disabled" })
+    .where(eq(groups.id, disabled));
+  expect((await userInfoOf(issued.access_token)).groups).toEqual(
+    tenantGroups(kept),
+  );
+  const refreshed = await refresh(issued.refresh_token);
+  expect(refreshed.status).toBe(200);
+  const renewed = await refreshed.json();
+  expect(groupsOf(renewed.access_token)).toEqual(tenantGroups(kept));
+  expect(groupsOf(renewed.id_token)).toEqual(tenantGroups(kept));
+  expect(groupsOf(issued.access_token)).toEqual(
+    tenantGroups(left, disabled, kept),
+  );
+});
+
+test("after a group change, UserInfo shows the new groups and the older access token keeps its own", async () => {
+  const issued = await issue();
+  const later = await addGroup("later");
+  expect((await userInfoOf(issued.access_token)).groups).toEqual(
+    tenantGroups(later),
+  );
+  expect(groupsOf(issued.access_token)).toEqual(tenantGroups());
+});
+
+test("a sign-in-only grant, with no resource, carries the same groups", async () => {
+  const groupId = await addGroup("sign-in");
+  const issued = await issue("openid email offline_access", null);
+  expect(groupsOf(issued.id_token)).toEqual(tenantGroups(groupId));
+  expect((await userInfoOf(issued.access_token)).groups).toEqual(
+    tenantGroups(groupId),
+  );
+});
+
+test("a disabled group, a deleted group, a removed group membership and a membership outside its window give no group id", async () => {
+  const live = await addGroup("live");
+  const disabled = await addGroup("disabled");
+  await fixture.db
+    .update(groups)
+    .set({ status: "disabled" })
+    .where(eq(groups.id, disabled));
+  // A group is deleted only after its memberships.
+  const deleted = await addGroup("deleted");
+  await fixture.db
+    .update(groupMembers)
+    .set({ deletedAt: new Date() })
+    .where(eq(groupMembers.groupId, deleted));
+  await fixture.db
+    .update(groups)
+    .set({ status: "disabled", deletedAt: new Date() })
+    .where(eq(groups.id, deleted));
+  const removed = await addGroup("removed");
+  await fixture.db
+    .update(groupMembers)
+    .set({ deletedAt: new Date() })
+    .where(eq(groupMembers.groupId, removed));
+  const day = 24 * 60 * 60 * 1000;
+  await addGroup("ended", { validUntil: new Date(Date.now() - day) });
+  await addGroup("not-yet", { validFrom: new Date(Date.now() + day) });
+  const issued = await issue();
+  expect(groupsOf(issued.access_token)).toEqual(tenantGroups(live));
+});
+
+test("a person in no group gets groups with only the firm's id", async () => {
+  const issued = await issue();
+  expect(groupsOf(issued.access_token)).toEqual([
+    fixture.tenant.organizationId,
+  ]);
+  expect(groupsOf(issued.id_token)).toEqual([fixture.tenant.organizationId]);
+});
+
+test("a person whose firm membership is no longer effective gets no token", async () => {
+  const issued = await issue();
+  await fixture.db
+    .update(members)
+    .set({ validUntil: new Date(Date.now() - 1000) })
+    .where(eq(members.id, fixture.principals.tenantAdmin.memberId));
+  expect((await refresh(issued.refresh_token)).status).toBe(400);
+});
+
+test("a machine token carries no groups", async () => {
+  expect(decodeJwt(await fixture.mintMachineToken())).not.toHaveProperty(
+    "groups",
+  );
+});
+
+test("a person in 200 groups gets a token with all 200 ids", async () => {
+  const organizationId = fixture.tenant.organizationId;
+  const groupIds = Array.from({ length: 200 }, () => createId());
+  await fixture.db.insert(groups).values(
+    groupIds.map((id, index) => ({
+      id,
+      organizationId,
+      slug: `group-${index}`,
+      name: `Group ${index}`,
+    })),
+  );
+  await fixture.db.insert(groupMembers).values(
+    groupIds.map((groupId) => ({
+      id: createId(),
+      organizationId,
+      groupId,
+      memberId: fixture.principals.tenantAdmin.memberId,
+    })),
+  );
+  const issued = await issue();
+  expect(groupsOf(issued.access_token)).toEqual(tenantGroups(...groupIds));
+  // About 11.7 KB: more than some proxies accept in one header line. A limit is chosen before production.
+  console.log(`a token with 200 groups is ${issued.access_token.length} bytes`);
+});
+
+test("the authorisation and code exchange audit records each keep the group ids of their own moment", async () => {
+  const before = await addGroup("before");
+  const code = await authorize();
+  const after = await addGroup("after");
+  const response = await exchange({
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: redirect,
+    code_verifier: verifier,
+    resource,
+  });
+  expect(response.status).toBe(200);
+  const issued = await response.json();
+  const recorded = async (action: string) => {
+    const [event] = await fixture.db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.action, action));
+    return (event!.data as { decision: { groupIds: string[] } }).decision
+      .groupIds;
+  };
+  expect(await recorded("oauth.user.authorized")).toEqual([before]);
+  expect(await recorded("oauth.user.issued")).toEqual(
+    [before, after].toSorted(),
+  );
+  expect(groupsOf(issued.access_token)).toEqual(tenantGroups(before, after));
+});
+
 test("the published verifier accepts the user and machine tokens this app issues", async () => {
   const fetch = (input: string | URL | Request, init?: RequestInit) =>
     auth.handler(new Request(input, init));

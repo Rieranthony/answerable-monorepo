@@ -74,6 +74,8 @@ export function createUserTokenBoundary() {
         decision.grant.authenticationProviderKind === "magic_link"
           ? "magic_link"
           : "directory",
+      // The organisation's id is "everyone in the organisation"; consumers match it by value.
+      groups: [decision.grant.organizationId, ...decision.groupIds],
     };
   }
   async function readDecision(

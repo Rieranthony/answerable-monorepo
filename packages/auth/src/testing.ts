@@ -6,6 +6,7 @@ export type TestIssuer = {
   issuer: string
   /**
    * Sign an access token for `resource`, with ID's user claims: `upstream_auth_time` is the signing time and `authentication_method` is `directory`, as for a person who has just signed in at their directory.
+   * `groups` is the organisation's id followed by `groups`, as ID gives it.
    * `claims` replace the token's claims (an `undefined` value removes one) and `header` its header, to make unusual tokens.
    */
   sign(options: {
@@ -13,6 +14,8 @@ export type TestIssuer = {
     scopes?: readonly string[]
     organizationId?: string
     userId?: string
+    /** The ids of the person's groups, after the organisation's id. Default: none. */
+    groups?: readonly string[]
     /** Lifetime as a duration string such as `"5m"` or as seconds. Default `"5m"`. */
     expiresIn?: string | number
     claims?: Record<string, unknown>
@@ -73,9 +76,10 @@ export async function createTestIssuer(options: { algorithm?: "EdDSA" | "ES256" 
     },
     async sign(options) {
       const now = Math.floor(Date.now() / 1000)
+      const organizationId = options.organizationId ?? crypto.randomUUID()
       const token = new UnsecuredJWT({
         iss: issuer, aud: options.resource, sub: options.userId ?? crypto.randomUUID(),
-        subject_type: "user", organization_id: options.organizationId ?? crypto.randomUUID(),
+        subject_type: "user", organization_id: organizationId, groups: [organizationId, ...(options.groups ?? [])],
         membership_id: crypto.randomUUID(), organization_authorization_version: 1, grant_id: crypto.randomUUID(),
         client_id: "test-client", scope: (options.scopes ?? []).join(" "), upstream_auth_time: now, authentication_method: "directory",
       }).setIssuedAt(now).setExpirationTime(options.expiresIn ?? "5m")
